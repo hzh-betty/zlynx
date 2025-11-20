@@ -7,5 +7,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_subdirectory(zlog)
 
-add_executable(${PROJECT_NAME} main.cc)
+set(SOURCES
+    core/fiber.cc
+)
+set(HEADERS
+        core
+        zlynx_util
+)
+add_executable(${PROJECT_NAME} main.cc ${SOURCES})
+target_include_directories(${PROJECT_NAME} PRIVATE ${HEADERS})
 target_link_libraries(${PROJECT_NAME} PRIVATE zlog_shared)
