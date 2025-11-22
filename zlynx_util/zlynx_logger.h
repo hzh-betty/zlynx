@@ -1,7 +1,8 @@
-#ifndef ZLYNX_LOGGER_H
-#define ZLYNX_LOGGER_H
-#include "zlog.h"
+#ifndef ZLYNX_LOGGER_H_
+#define ZLYNX_LOGGER_H_
 #include <string>
+
+#include "zlog.h"
 
 namespace zlynx
 {
@@ -26,4 +27,4 @@ namespace zlynx
 #define ZLYNX_LOG_WARN(fmt, ...) zlynx::zlynx_logger->ZLOG_WARN(fmt, ##__VA_ARGS__)
 #define ZLYNX_LOG_ERROR(fmt, ...)zlynx::zlynx_logger->ZLOG_ERROR(fmt, ##__VA_ARGS__)
 #define ZLYNX_LOG_FATAL(fmt, ...) zlynx::zlynx_logger->ZLOG_FATAL(fmt, ##__VA_ARGS__)
-#endif //ZLYNX_LOGGER_H
+#endif //ZLYNX_LOGGER_H_

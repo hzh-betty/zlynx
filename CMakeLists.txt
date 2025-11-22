@@ -13,6 +13,7 @@ set(SOURCES
 set(HEADERS
         core
         zlynx_util
+        sync
 )
 add_executable(${PROJECT_NAME} main.cc ${SOURCES})
 target_include_directories(${PROJECT_NAME} PRIVATE ${HEADERS})

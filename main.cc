@@ -1,8 +1,8 @@
-#include "zlynx_util/zlynx_logger.h"
-#include "core/fiber.h"
-#include <thread>
-#include <chrono>
-int main()
+#include "zlynx_logger.h"
+
+#include "fiber.h"
+
+void test1()
 {
     try
     {
@@ -23,7 +23,9 @@ int main()
     {
         ZLYNX_LOG_FATAL("Unhandled exception: {}", e.what());
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-
+}
+int main()
+{
+    // test1();
     return 0;
 }

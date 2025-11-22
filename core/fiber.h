@@ -1,6 +1,7 @@
-#ifndef FIBER_H
-#define FIBER_H
+#ifndef ZLYNX_FIBER_H_
+#define ZLYNX_FIBER_H_
 #include <ucontext.h>
+
 #include <memory>
 #include <atomic>
 #include <functional>
@@ -41,4 +42,4 @@ namespace zlynx
     };
 }// namespace zlynx
 
-#endif //FIBER_H
+#endif //ZLYNX_FIBER_H_
