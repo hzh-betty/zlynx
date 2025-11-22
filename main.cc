@@ -13,7 +13,9 @@ void test1()
             ZLYNX_LOG_INFO("fiber start");
             zlynx::Fiber::get_fiber()->yield();
             ZLYNX_LOG_INFO("fiber resume");
+            throw std::runtime_error("test exception in fiber");
         });
+        zlynx::Fiber::get_fiber();
         f->resume();
         ZLYNX_LOG_INFO("after first resume");
         f->resume();
@@ -26,6 +28,6 @@ void test1()
 }
 int main()
 {
-    // test1();
+    test1();
     return 0;
 }

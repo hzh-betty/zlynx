@@ -51,10 +51,6 @@ namespace zlynx
     {
         if (state_ == State::kTerminated) return;
 
-        if (!t_main_fiber){
-            get_fiber();
-        }
-
         set_fiber(this);
         state_ = State::kRunning;
 
@@ -96,17 +92,17 @@ namespace zlynx
         Fiber* f = get_fiber();
         std::shared_ptr<Fiber> guard = f->shared_from_this();  // 保持存活
 
+
         try {
             f->callback_();
         } catch (...) {
             f->state_ = State::kTerminated;
             f->exception_ = std::current_exception(); // 跨协程传递异常
-            ZLYNX_LOG_ERROR("Fiber caught exception");
         }
 
         f->callback_ = nullptr;
         f->state_ = State::kTerminated;
-        f->yield(); // 让出协程控制权
+        f->yield(); // FiberStack 切回 MainStack 能够执行后续逻辑
     }
 
     Fiber::Fiber()

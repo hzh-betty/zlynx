@@ -6,7 +6,7 @@
 
 namespace zlynx
 {
-    inline zlog::Logger::ptr zlynx_logger; // 全局日志器
+    static zlog::Logger::ptr zlynx_logger; // 全局日志器
 
     inline void Init(const zlog::LogLevel::value level = zlog::LogLevel::value::DEBUG)
     {
