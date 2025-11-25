@@ -1,5 +1,6 @@
 #include "thread.h"
 
+#include "zlynx_logger.h"
 namespace zlynx
 {
     static thread_local Thread* t_thread = nullptr;
@@ -10,7 +11,7 @@ namespace zlynx
           callback_(std::move(func)),
           sem_(0)
     {
-        pthread_create(&thread_, nullptr, [](void* arg) -> void*
+       auto ret = pthread_create(&thread_, nullptr, [](void* arg) -> void*
         {
             auto* thread = static_cast<Thread*>(arg);
             t_thread = thread;
@@ -20,6 +21,12 @@ namespace zlynx
             thread->callback_();
             return nullptr;
         }, this);
+
+        if (ret != 0)
+        {
+            ZLYNX_LOG_FATAL("pthread_create failed, ret={}", ret);
+            throw std::runtime_error("pthread_create failed");
+        }
         sem_.wait();
     }
 
@@ -35,7 +42,12 @@ namespace zlynx
     {
         if (thread_)
         {
-            pthread_join(thread_, nullptr);
+            auto ret = pthread_join(thread_, nullptr);
+            if (ret != 0)
+            {
+                ZLYNX_LOG_FATAL("pthread_join failed, ret={}", ret);
+                throw std::runtime_error("pthread_join failed");
+            }
             thread_ = 0;
         }
     }

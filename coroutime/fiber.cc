@@ -72,6 +72,22 @@ namespace zlynx
         }
     }
 
+    void Fiber::reset(std::function<void()> func)
+    {
+        if (getcontext(&ctx_) == -1)
+        {
+            throw std::runtime_error("getcontext failed");
+        }
+
+        callback_ = std::move(func);
+        ctx_.uc_stack.ss_sp = static_cast<char*>(stack_ptr_) + PAGE_SIZE; // 栈顶
+        ctx_.uc_stack.ss_size = stack_size_;
+        ctx_.uc_link = nullptr;
+
+        makecontext(&ctx_, &Fiber::main_func, 0);
+        state_ = State::kReady;
+    }
+
     void Fiber::set_fiber(Fiber *fiber) noexcept
     {
         t_fiber = fiber;

@@ -11,6 +11,8 @@ namespace zlynx
     class Fiber: public std::enable_shared_from_this<Fiber>
     {
     public:
+        using ptr = std::unique_ptr<Fiber>;
+
         enum class State {kReady, kRunning, kTerminated};
 
         explicit Fiber(std::function<void()> func,size_t stack_size = 128 * 1024);
@@ -18,6 +20,8 @@ namespace zlynx
 
         void resume(); // 恢复协程执行
         void yield(); // 挂起协程
+
+        void reset(std::function<void()> func); // 重置协程
 
         uint64_t id() const noexcept { return id_; }
         State state() const noexcept { return state_; }

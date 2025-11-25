@@ -8,12 +8,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_subdirectory(zlog)
 
 set(SOURCES
-        core/fiber.cc
+        coroutime/fiber.cc
+        coroutime/scheduler.cc
         sync/sem.cc
         sync/thread.cc
 )
 set(HEADERS
-        core
+        coroutime
         zlynx_util
         sync
 )
