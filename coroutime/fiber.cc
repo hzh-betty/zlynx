@@ -10,7 +10,7 @@ namespace zlynx
 {
     static constexpr size_t PAGE_SIZE = 8 * 1024; // 8KB页面大小
     thread_local Fiber* t_fiber = nullptr; // 当前运行的协程
-    thread_local std::unique_ptr<Fiber> t_main_fiber = nullptr; // 主协程
+    thread_local Fiber::ptr t_main_fiber = nullptr; // 主协程
     std::atomic<int> Fiber::total_fiber_count{0}; // 全局协程计数器初始化
     Fiber::Fiber(std::function<void()> func, size_t stack_size)
         :stack_size_(stack_size),
@@ -93,32 +93,31 @@ namespace zlynx
         t_fiber = fiber;
     }
 
-    Fiber * Fiber::get_fiber() noexcept
+    Fiber::ptr Fiber::get_fiber() noexcept
     {
         if (!t_fiber)
         {
             t_main_fiber.reset(new Fiber());
             t_fiber = t_main_fiber.get();
         }
-        return t_fiber;
+        return t_fiber->shared_from_this();
     }
 
     void Fiber::main_func() noexcept
     {
-        Fiber* f = get_fiber();
-        std::shared_ptr<Fiber> guard = f->shared_from_this();  // 保持存活
+        const std::shared_ptr<Fiber> guard = get_fiber();  // 保持存活
 
 
         try {
-            f->callback_();
+            guard->callback_();
         } catch (...) {
-            f->state_ = State::kTerminated;
-            f->exception_ = std::current_exception(); // 跨协程传递异常
+            guard->state_ = State::kTerminated;
+            guard->exception_ = std::current_exception(); // 跨协程传递异常
         }
 
-        f->callback_ = nullptr;
-        f->state_ = State::kTerminated;
-        f->yield(); // FiberStack 切回 MainStack 能够执行后续逻辑
+        guard->callback_ = nullptr;
+        guard->state_ = State::kTerminated;
+        guard->yield(); // FiberStack 切回 MainStack 能够执行后续逻辑
     }
 
     Fiber::Fiber()

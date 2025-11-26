@@ -11,7 +11,7 @@ namespace zlynx
     class Fiber: public std::enable_shared_from_this<Fiber>
     {
     public:
-        using ptr = std::unique_ptr<Fiber>;
+        using ptr = std::shared_ptr<Fiber>;
 
         enum class State {kReady, kRunning, kTerminated};
 
@@ -27,7 +27,7 @@ namespace zlynx
         State state() const noexcept { return state_; }
 
         static void set_fiber(Fiber* fiber) noexcept;
-        static Fiber* get_fiber() noexcept;
+        static Fiber::ptr get_fiber() noexcept;
         static void main_func() noexcept;
     private:
         Fiber(); // 主协程用

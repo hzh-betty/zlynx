@@ -10,7 +10,7 @@ namespace zlynx
 
     inline void Init(const zlog::LogLevel::value level = zlog::LogLevel::value::DEBUG)
     {
-        std::unique_ptr<zlog::GlobalLoggerBuilder> builder(new zlog::GlobalLoggerBuilder());
+        const std::unique_ptr<zlog::GlobalLoggerBuilder> builder(new zlog::GlobalLoggerBuilder());
         builder->buildLoggerName("zlynx_logger");
         builder->buildLoggerLevel(level);
         builder->buildLoggerFormatter("[%f:%l] [%d{%Y-%m-%d %H:%M:%S}] %m%n");

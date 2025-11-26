@@ -17,8 +17,8 @@ namespace zlynx
     class LockGuardImpl
     {
     public:
-        explicit LockGuardImpl(T& lock)
-            : mutex_(lock), locked_(false)
+        explicit LockGuardImpl(T& mutex)
+            : mutex_(mutex), locked_(false)
         {
             lock();
         }

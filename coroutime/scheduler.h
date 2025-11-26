@@ -35,21 +35,13 @@ namespace zlynx
         bool is_stop() const;
 
         // 投递任务
-        template <typename F,typename... Args>
-        void schedule(F&& f, Args&&... args)
-        {
-            bool need_tickle = false;
-            {
-                MutexType::Lock lock(mutex_);
-                need_tickle = tasks_.empty();
-                tasks_.emplace_back(std::function<void()>(std::bind(std::forward<F>(f),std::forward<Args>(args)...)));
-            }
-
-            if (need_tickle)
-            {
-                tickle();
-            }
+        template <class F, class... Args>
+        void schedule(F&& f, Args&&... args) {
+            schedule(std::make_shared<Fiber>(std::bind(std::forward<F>(f), std::forward<Args>(args)...)));
         }
+
+        void schedule(Fiber::ptr fiber);
+
         static Scheduler* get_this();
         static Fiber* get_scheduler_fiber();
 
@@ -64,8 +56,6 @@ namespace zlynx
         virtual void idle() noexcept;
 
         bool has_idle_threads() const { return idle_thread_count_ > 0; }
-
-        bool stopping() const { return stopping_; }
     private:
         struct Task {
             Fiber::ptr fiber; // 任务协程
@@ -96,7 +86,7 @@ namespace zlynx
         std::atomic<int> total_thread_count_{0}; // 线程总数
         std::atomic<int> active_thread_count_{0}; // 活跃线程计数
         std::atomic<int> idle_thread_count_{0}; // 空闲线程计数
-        std::atomic<bool> stopping_{true}; // 停止标志
+        std::atomic<bool> stopping_{false}; // 停止标志
 
         Fiber::ptr root_fiber_; // 主协程
     };
