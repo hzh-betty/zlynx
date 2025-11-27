@@ -104,7 +104,7 @@ namespace zlog
          * @param line 源文件行号
          * @param data 日志数据
          */
-        void serialize(const LogLevel::value level, const char *file, const size_t line, const char *data);
+        void serialize(LogLevel::value level, const char *file, size_t line, const char *data);
 
         /**
          * @brief 纯虚函数，由子类实现具体的日志输出逻辑
@@ -116,7 +116,7 @@ namespace zlog
     protected:
         std::mutex mutex_;                          ///< 互斥锁
         const char *loggerName_;                    ///< 日志器名称
-        std::atomic<LogLevel::value> limitLevel_;   ///< 日志等级限制
+        LogLevel::value limitLevel_;                ///< 日志等级限制
         Formatter::ptr formatter_;                  ///< 日志格式化器
         std::vector<LogSink::ptr> sinks_;          ///< 日志落地器列表
     };

@@ -22,7 +22,7 @@ namespace zlynx
             thread_count -= 1;
             Fiber::get_fiber();
             t_scheduler = this;
-            root_fiber_ = std::make_unique<Fiber>([this]() { run(); });
+            root_fiber_ = std::make_shared<Fiber>([this]() { run(); });
             t_scheduler_fiber = root_fiber_.get();
         }
         total_thread_count_ = thread_count;
@@ -109,7 +109,7 @@ namespace zlynx
         bool need_tickle = false;
         {
             Mutex::Lock lock(mutex_);
-            tasks_.push_back(Task(std::move(fiber)));
+            tasks_.emplace_back(std::move(fiber));
             need_tickle = has_idle_threads();
         }
         if (need_tickle)
@@ -120,8 +120,8 @@ namespace zlynx
 
     void Scheduler::run() noexcept
     {
-        // ZLYNX_LOG_DEBUG("[{}] thread start", zlynx::Thread::get_name());
-        const auto idle_fiber = std::make_unique<Fiber>([this]()
+        ZLYNX_LOG_DEBUG("[{}] thread start", zlynx::Thread::get_name());
+        const auto idle_fiber = std::make_shared<Fiber>([this]()
         {
             idle();
         });

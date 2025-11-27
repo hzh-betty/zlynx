@@ -1,3 +1,5 @@
+#include <unistd.h>
+
 #include "zlynx_logger.h"
 
 #include "fiber.h"
@@ -31,6 +33,7 @@ void test2()
     try
     {
         ZLYNX_LOG_INFO("Scheduler test start");
+        zlynx::Fiber::get_fiber();
 
         // 创建调度器，使用2个线程
         zlynx::Scheduler scheduler(2, true, "TestScheduler");
@@ -67,5 +70,6 @@ int main()
     zlynx::Init(); // 初始化日志系统
     // test1();
     test2();
+    sleep((1));
     return 0;
 }

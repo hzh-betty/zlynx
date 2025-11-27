@@ -142,7 +142,7 @@ namespace zlog
     protected:
         std::mutex mutex_;                          ///< 互斥锁
         const char *loggerName_;                    ///< 日志器名称
-        std::atomic<LogLevel::value> limitLevel_;   ///< 日志等级限制
+        LogLevel::value limitLevel_;   ///< 日志等级限制
         Formatter::ptr formatter_;                  ///< 日志格式化器
         std::vector<LogSink::ptr> sinks_;          ///< 日志落地器列表
     };

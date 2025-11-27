@@ -51,6 +51,11 @@ namespace zlynx
     {
         if (state_ == State::kTerminated) return;
 
+        if (!t_main_fiber)
+        {
+            throw std::runtime_error("Fiber::resume failed");
+        }
+
         set_fiber(this);
         state_ = State::kRunning;
 
@@ -97,7 +102,7 @@ namespace zlynx
     {
         if (!t_fiber)
         {
-            t_main_fiber.reset(new Fiber());
+            t_main_fiber = std::move(ptr(new Fiber()));
             t_fiber = t_main_fiber.get();
         }
         return t_fiber->shared_from_this();
@@ -128,4 +133,5 @@ namespace zlynx
             throw std::runtime_error("getcontext failed");
         }
     }
+
 }// namespace zlynx
