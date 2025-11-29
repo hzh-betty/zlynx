@@ -4,7 +4,7 @@
 namespace zlynx
 {
     static thread_local Thread* t_thread = nullptr;
-    static thread_local std::string t_thread_name = "UNKNOWN";
+    static thread_local std::string t_thread_name = "Main Thread";
 
     Thread::Thread(std::function<void()> func, std::string name)
         : name_(std::move(name)),

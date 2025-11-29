@@ -11,7 +11,7 @@
 namespace zlynx
 {
     static thread_local Scheduler *t_scheduler = nullptr; // 当前线程的调度器指针
-    static thread_local Fiber *t_scheduler_fiber = nullptr; // 当前线程的调度器协程指针
+    static thread_local Fiber::ptr t_scheduler_fiber = nullptr; // 当前线程的调度器协程指针
 
     Scheduler::Scheduler(int thread_count, const bool use_caller, std::string name)
         : name_(std::move(name)), use_caller_(use_caller)
@@ -23,7 +23,7 @@ namespace zlynx
             Fiber::get_fiber();
             t_scheduler = this;
             root_fiber_ = std::make_shared<Fiber>([this]() { run(); });
-            t_scheduler_fiber = root_fiber_.get();
+            t_scheduler_fiber = root_fiber_;
         }
         total_thread_count_ = thread_count;
         tickle_id = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC | EFD_SEMAPHORE );
@@ -59,9 +59,9 @@ namespace zlynx
             auto ptr = std::make_unique<Thread>([this]()
             {
                 t_scheduler = this;
-                const auto fiber = Fiber::get_fiber();
-                t_scheduler_fiber = fiber.get();
-                this->run();
+                Fiber::get_fiber();
+                t_scheduler_fiber = std::make_shared<Fiber>([this]() { run(); });
+                t_scheduler_fiber->resume(); // 主协程启动调度协程
             }, name_ + "_" + std::to_string(i));
             threads_.emplace_back(std::move(ptr));
         }
@@ -79,8 +79,10 @@ namespace zlynx
         if (use_caller_)
         {
             tickle();
-            root_fiber_->resume();
+
+            t_scheduler_fiber->resume();
         }
+
 
         for (const auto &ptr: threads_)
         {
@@ -99,7 +101,7 @@ namespace zlynx
         return t_scheduler;
     }
 
-    Fiber *Scheduler::get_scheduler_fiber()
+    Fiber::ptr Scheduler::get_scheduler_fiber()
     {
         return t_scheduler_fiber;
     }
@@ -124,7 +126,7 @@ namespace zlynx
         const auto idle_fiber = std::make_shared<Fiber>([this]()
         {
             idle();
-        });
+        }); // 调度协程启动的idle协程
         Fiber::ptr cb_fiber; // 用于执行回调的协程
 
         while (true)
@@ -156,7 +158,8 @@ namespace zlynx
                 {
                     try
                     {
-                        task.fiber->resume();
+                        ZLYNX_LOG_DEBUG("Scheduler resume fiber id={}", task.fiber->id());
+                        task.fiber->resume(t_scheduler_fiber);
                     }
                     catch (const std::exception &e)
                     {
@@ -169,45 +172,47 @@ namespace zlynx
                     --active_thread_count_;
                     if (task.fiber->state() != Fiber::State::kTerminated)
                     {
+                        ZLYNX_LOG_DEBUG("Scheduler reschedule fiber id={}", task.fiber->id());
                         schedule(std::move(task.fiber));
                     }
                     task.reset();
                 }
-                else if (task.callback)
-                {
-                    if (cb_fiber)
-                    {
-                        cb_fiber->reset(std::move(task.callback));
-                    }
-                    else
-                    {
-                        cb_fiber = std::make_unique<Fiber>(std::move(task.callback));
-                    }
-                    task.reset();
-
-                    try
-                    {
-                        cb_fiber->resume();
-                    }
-                    catch (const std::exception &e)
-                    {
-                        ZLYNX_LOG_ERROR("Fiber exception: {}", e.what());
-                    }
-                    catch (...)
-                    {
-                        ZLYNX_LOG_ERROR("Fiber unknown exception");
-                    }
-                    --active_thread_count_;
-                    if (cb_fiber->state() != Fiber::State::kTerminated)
-                    {
-                        schedule(std::move(cb_fiber));
-                        cb_fiber = nullptr;
-                    }
-                }
+                // else if (task.callback)
+                // {
+                //     if (cb_fiber)
+                //     {
+                //         cb_fiber->reset(std::move(task.callback));
+                //     }
+                //     else
+                //     {
+                //         cb_fiber = std::make_unique<Fiber>(std::move(task.callback));
+                //     }
+                //     task.reset();
+                //
+                //     try
+                //     {
+                //         cb_fiber->resume();
+                //     }
+                //     catch (const std::exception &e)
+                //     {
+                //         ZLYNX_LOG_ERROR("Fiber exception: {}", e.what());
+                //     }
+                //     catch (...)
+                //     {
+                //         ZLYNX_LOG_ERROR("Fiber unknown exception");
+                //     }
+                //     --active_thread_count_;
+                //     if (cb_fiber->state() != Fiber::State::kTerminated)
+                //     {
+                //         schedule(std::move(cb_fiber));
+                //         cb_fiber = nullptr;
+                //     }
+                // }
                 else
                 {
                     ZLYNX_LOG_ERROR("No fiber or callback!");
                     --active_thread_count_;
+                    task.reset();
                 }
             }
             else
@@ -218,7 +223,7 @@ namespace zlynx
                     break;
                 }
                 ++idle_thread_count_;
-                idle_fiber->resume();
+                idle_fiber->resume(t_scheduler_fiber);
                 --idle_thread_count_;
             }
         }
@@ -246,7 +251,7 @@ namespace zlynx
     {
         while (true)
         {
-            if (stopping_) break;
+            if (is_stop()) break;
 
             uint64_t dummy;
             const ssize_t n = read(tickle_id, &dummy, sizeof(dummy));
@@ -262,7 +267,7 @@ namespace zlynx
             }
 
             sleep(1); // 避免空转
-
+            Fiber::get_fiber()->yield();
         }
     }
 }

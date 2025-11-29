@@ -43,7 +43,7 @@ namespace zlynx
         void schedule(Fiber::ptr fiber);
 
         static Scheduler* get_this();
-        static Fiber* get_scheduler_fiber();
+        static Fiber::ptr get_scheduler_fiber();
 
     protected:
         // 每个线程主循环

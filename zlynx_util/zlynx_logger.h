@@ -14,7 +14,7 @@ namespace zlynx
         builder->buildLoggerName("zlynx_logger");
         builder->buildLoggerLevel(level);
         builder->buildLoggerFormatter("[%f:%l] [%d{%Y-%m-%d %H:%M:%S}] %m%n");
-        builder->buildLoggerType(zlog::LoggerType::LOGGER_ASYNC);
+        builder->buildLoggerType(zlog::LoggerType::LOGGER_SYNC);
         builder->buildLoggerSink<zlog::FileSink>("./logfile/zlynx.log");
         builder->buildLoggerSink<zlog::StdOutSink>();
         zlynx_logger = builder->build();

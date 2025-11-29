@@ -33,16 +33,16 @@ void test2()
     try
     {
         ZLYNX_LOG_INFO("Scheduler test start");
-        zlynx::Fiber::get_fiber();
+        // zlynx::Fiber::get_fiber();
 
         // 创建调度器，使用2个线程
-        zlynx::Scheduler scheduler(2, true, "TestScheduler");
+        zlynx::Scheduler scheduler(8, false, "TestScheduler");
 
         // 启动调度器
         scheduler.start();
 
         // 提交任务
-        for (int i = 0; i < 5; ++i)
+        for (int i = 0; i < 10000; ++i)
         {
             scheduler.schedule([i]()
             {
@@ -51,7 +51,6 @@ void test2()
                 ZLYNX_LOG_INFO("Task {} resumed in thread {}", i, zlynx::Thread::get_name());
             });
         }
-
         // 停止调度器
         scheduler.stop();
     }
@@ -60,16 +59,15 @@ void test2()
         ZLYNX_LOG_ERROR("Scheduler test exception: {}", e.what());
     }
 
-
+    usleep(1000); // 确保日志输出完整
     ZLYNX_LOG_INFO("Scheduler test end");
 }
 
 
 int main()
 {
-    zlynx::Init(); // 初始化日志系统
+    zlynx::Init( zlog::LogLevel::value::INFO); // 初始化日志系统
     // test1();
     test2();
-    sleep((1));
     return 0;
 }
