@@ -10,6 +10,7 @@ add_subdirectory(zlog)
 set(SOURCES
         coroutime/fiber.cc
         coroutime/scheduler.cc
+        coroutime/timer.cc
         sync/sem.cc
         sync/thread.cc
 )

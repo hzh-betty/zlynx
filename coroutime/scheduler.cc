@@ -230,7 +230,7 @@ namespace zlynx
         ZLYNX_LOG_DEBUG("[{}] thread end", zlynx::Thread::get_name());
     }
 
-    void Scheduler::tickle() const
+    void Scheduler::tickle()
     {
         constexpr uint64_t one = 1;
         const ssize_t n = write(tickle_id, &one, sizeof(one));

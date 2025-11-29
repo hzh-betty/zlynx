@@ -4,6 +4,7 @@
 
 #include "fiber.h"
 #include "scheduler.h"
+#include "timer.h"
 
 void test1()
 {
@@ -63,11 +64,135 @@ void test2()
     ZLYNX_LOG_INFO("Scheduler test end");
 }
 
+void test3()
+{
+    try
+    {
+        ZLYNX_LOG_INFO("Timer test start");
+
+        // 创建调度器
+        zlynx::Scheduler scheduler(4, true, "TimerScheduler");
+        scheduler.start();
+
+        // 创建定时器管理器
+        class TestTimerManager : public zlynx::TimerManager
+        {
+        protected:
+            void on_timer_inserted_at_front() override
+            {
+                ZLYNX_LOG_DEBUG("Timer inserted at front, tickling scheduler");
+                tickle();
+            }
+
+            void tickle()
+            {
+                ZLYNX_LOG_DEBUG("Tickle called");
+            }
+        };
+
+        auto timer_manager = std::make_shared<TestTimerManager>();
+
+        // 测试1: 单次定时器
+        auto timer1 = timer_manager->add_timer(1000, []()
+        {
+            ZLYNX_LOG_INFO("Timer1 executed (1000ms)");
+        }, false);
+
+        // 测试2: 循环定时器
+        std::atomic<int> counter{0};
+        auto timer2 = timer_manager->add_timer(500, [&counter]()
+        {
+            ZLYNX_LOG_INFO("Timer2 executed (500ms), count={}", ++counter);
+        }, true);
+
+        // 测试3: 条件定时器
+        std::weak_ptr<int> weak_cond(std::make_shared<int>(42));
+        auto timer3 = timer_manager->add_condition_timer(1500, [weak_cond]()
+        {
+            if (auto cond = weak_cond.lock())
+            {
+                ZLYNX_LOG_INFO("Timer3 executed (1500ms), cond={}", *cond);
+            }
+            else
+            {
+                ZLYNX_LOG_WARN("Timer3 condition expired");
+            }
+        }, weak_cond, false);
+
+        // 测试4: 定时器取消
+        auto timer4 = timer_manager->add_timer(2000, []()
+        {
+            ZLYNX_LOG_ERROR("Timer4 should not execute (canceled)");
+        }, false);
+
+        // 模拟定时器调度
+        scheduler.schedule([timer_manager]()
+        {
+            ZLYNX_LOG_INFO("Timer scheduler fiber start");
+
+            for (int i = 0; i < 10; ++i)
+            {
+                // 获取下一个超时时间
+                auto next_time = timer_manager->get_next_expire_time();
+                if (next_time > 0)
+                {
+                    ZLYNX_LOG_DEBUG("Next timer expires in {}ms", next_time);
+                    usleep(next_time * 1000); // 模拟等待
+                }
+                else
+                {
+                    usleep(100000); // 100ms
+                }
+
+                // 收集并执行到期回调
+                std::vector<zlynx::Timer::Callback> cbs;
+                timer_manager->list_expired_callbacks(cbs);
+
+                ZLYNX_LOG_DEBUG("Collected {} expired timers", cbs.size());
+
+                for (auto &cb : cbs)
+                {
+                    if (cb)
+                    {
+                        cb();
+                    }
+                }
+            }
+
+            ZLYNX_LOG_INFO("Timer scheduler fiber end");
+        });
+
+        // 500ms 后取消 timer4
+        usleep(500000);
+        if (timer4->cancel())
+        {
+            ZLYNX_LOG_INFO("Timer4 canceled successfully");
+        }
+
+        // 等待定时器执行
+        usleep(5000000); // 5秒
+
+        // 停止循环定时器
+        if (timer2->cancel())
+        {
+            ZLYNX_LOG_INFO("Timer2 canceled, executed {} times", counter.load());
+        }
+
+        scheduler.stop();
+        ZLYNX_LOG_INFO("Timer test end");
+    }
+    catch (const std::exception &e)
+    {
+        ZLYNX_LOG_ERROR("Timer test exception: {}", e.what());
+    }
+}
 
 int main()
 {
-    zlynx::Init( zlog::LogLevel::value::INFO); // 初始化日志系统
+    zlynx::Init(zlog::LogLevel::value::DEBUG);
     // test1();
-    test2();
+    // test2();
+    test3();
     return 0;
 }
+

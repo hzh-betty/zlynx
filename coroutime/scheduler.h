@@ -19,11 +19,11 @@ namespace zlynx
         using MutexType = zlynx::Mutex;
 
         explicit Scheduler(int thread_count = 1, bool use_caller = true,
-                           std::string  name = "");
+                           std::string name = "");
 
         virtual ~Scheduler();
 
-        const std::string& name()const { return name_; }
+        const std::string &name() const { return name_; }
 
         // 启动调度器
         void start();
@@ -32,17 +32,19 @@ namespace zlynx
         void stop();
 
         // 是否停止
-        bool is_stop() const;
+        virtual bool is_stop() const;
 
         // 投递任务
-        template <class F, class... Args>
-        void schedule(F&& f, Args&&... args) {
+        template<class F, class... Args>
+        void schedule(F &&f, Args &&... args)
+        {
             schedule(std::make_shared<Fiber>(std::bind(std::forward<F>(f), std::forward<Args>(args)...)));
         }
 
         void schedule(Fiber::ptr fiber);
 
-        static Scheduler* get_this();
+        static Scheduler *get_this();
+
         static Fiber::ptr get_scheduler_fiber();
 
     protected:
@@ -50,26 +52,33 @@ namespace zlynx
         virtual void run() noexcept;
 
         // 唤醒至少一个idle线程
-        void tickle() const;
+        virtual void tickle();
 
         // idle线程执行的协程
         virtual void idle() noexcept;
 
         bool has_idle_threads() const { return idle_thread_count_ > 0; }
+
     private:
-        struct Task {
+        struct Task
+        {
             Fiber::ptr fiber; // 任务协程
             std::function<void()> callback; // 任务回调函数
 
             Task() = default;
 
             explicit Task(Fiber::ptr f)
-                : fiber(std::move(f)) {}
+                : fiber(std::move(f))
+            {
+            }
 
             explicit Task(std::function<void()> cb)
-                : callback(std::move(cb)) {}
+                : callback(std::move(cb))
+            {
+            }
 
-            void reset() {
+            void reset()
+            {
                 fiber = nullptr;
                 callback = nullptr;
             }
@@ -90,8 +99,7 @@ namespace zlynx
 
         Fiber::ptr root_fiber_; // 主协程
     };
-
-}// namespace zlynx
+} // namespace zlynx
 
 
 #endif //ZLYNX_SCHEDULER_H
