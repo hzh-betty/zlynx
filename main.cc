@@ -5,6 +5,7 @@
 #include "fiber.h"
 #include "scheduler.h"
 #include "timer.h"
+#include "io_manager.h"
 
 void test1()
 {
@@ -150,7 +151,7 @@ void test3()
 
                 ZLYNX_LOG_DEBUG("Collected {} expired timers", cbs.size());
 
-                for (auto &cb : cbs)
+                for (auto &cb: cbs)
                 {
                     if (cb)
                     {
@@ -187,12 +188,120 @@ void test3()
     }
 }
 
-int main()
+void test4()
 {
-    zlynx::Init(zlog::LogLevel::value::DEBUG);
-    // test1();
-    // test2();
-    test3();
-    return 0;
+    try
+    {
+        ZLYNX_LOG_INFO("IoManager test start");
+
+        // 创建 IoManager
+        auto io_manager = std::make_shared<zlynx::IoManager>(2, true, "TestIoManager");
+
+        // 测试1: 定时器功能
+        std::atomic<int> timer_count{0};
+        io_manager->add_timer(500, [&timer_count]()
+        {
+            ZLYNX_LOG_INFO("IoManager timer executed, count={}", ++timer_count);
+        }, false);
+
+        // 测试2: 文件描述符事件
+        int pipe_fds[2];
+        if (pipe(pipe_fds) == -1)
+        {
+            ZLYNX_LOG_ERROR("pipe() failed: {}", strerror(errno));
+            return;
+        }
+
+        // 读端设置非阻塞
+        int flags = fcntl(pipe_fds[0], F_GETFL);
+        fcntl(pipe_fds[0], F_SETFL, flags | O_NONBLOCK);
+
+        // 添加读事件监听
+        io_manager->add_event(pipe_fds[0], zlynx::IoManager::kRead, [pipe_fds]()
+        {
+            char buf[256];
+            for (;;)
+            {
+                ssize_t n = read(pipe_fds[0], buf, sizeof(buf) - 1);
+                if (n > 0)
+                {
+                    buf[n] = '\0';
+                    ZLYNX_LOG_INFO("Read from pipe: {}", buf);
+                }
+                else if (n == -1 && (errno == EAGAIN || errno == EWOULDBLOCK))
+                {
+                    break; // 没有更多数据了
+                }
+                else
+                {
+                    break; // 出错或对端关闭
+                }
+            }
+        });
+
+        // 延迟写入数据
+        io_manager->add_timer(1000, [pipe_fds]()
+        {
+            const char *msg = "Hello IoManager!";
+            write(pipe_fds[1], msg, strlen(msg));
+            ZLYNX_LOG_INFO("Written to pipe");
+        }, false);
+
+
+        // 测试3: 写事件监听
+        io_manager->add_timer(1500, [pipe_fds]()
+        {
+            ZLYNX_LOG_INFO("Pipe is writable");
+            const char *msg = "Second write";
+            write(pipe_fds[1], msg, strlen(msg));
+        }, false);
+
+
+        io_manager->add_timer(2000, [pipe_fds]()
+        {
+            char buf[256];
+            for (;;)
+            {
+                ssize_t n = read(pipe_fds[0], buf, sizeof(buf) - 1);
+                if (n > 0)
+                {
+                    buf[n] = '\0';
+                    ZLYNX_LOG_INFO("Read from pipe: {}", buf);
+                }
+                else if (n == -1 && (errno == EAGAIN || errno == EWOULDBLOCK))
+                {
+                    break; // 没有更多数据了
+                }
+                else
+                {
+                    break; // 出错或对端关闭
+                }
+            }
+        }, false);
+
+
+        // 运行5秒后停止
+        sleep(5);
+
+        // 清理资源
+        close(pipe_fds[0]);
+        close(pipe_fds[1]);
+
+        io_manager->stop();
+        ZLYNX_LOG_INFO("IoManager test end");
+    }
+    catch (const std::exception &e)
+    {
+        ZLYNX_LOG_ERROR("IoManager test exception: {}", e.what());
+    }
 }
 
+int main()
+{
+    zlynx::Init(zlog::LogLevel::value::INFO);
+    // test1();
+    // test2();
+    // test3();
+    test4();
+    return 0;
+}

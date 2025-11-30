@@ -32,7 +32,7 @@ namespace zlynx
         void stop();
 
         // 是否停止
-        virtual bool is_stop() const;
+        virtual bool is_stop();
 
         // 投递任务
         template<class F, class... Args>
@@ -49,17 +49,16 @@ namespace zlynx
 
     protected:
         // 每个线程主循环
-        virtual void run() noexcept;
+        void run() noexcept;
 
         // 唤醒至少一个idle线程
-        virtual void tickle();
+        void tickle() const;
 
         // idle线程执行的协程
         virtual void idle() noexcept;
 
         bool has_idle_threads() const { return idle_thread_count_ > 0; }
 
-    private:
         struct Task
         {
             Fiber::ptr fiber; // 任务协程

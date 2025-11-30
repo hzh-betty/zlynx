@@ -133,12 +133,14 @@ namespace zlynx
         ZLYNX_LOG_DEBUG("TimerManager::get_next_expire_time called");
         tickled_ = false;
 
+        // 如果没有定时器，返回最大值
         if (timers_.empty())
         {
             ZLYNX_LOG_DEBUG("No timers available");
             return ~0ull; // 表示没有定时器
         }
 
+        // 如果下一个定时器已经到期，返回0
         const auto now = std::chrono::system_clock::now();
         const auto next_timer = *timers_.begin();
         if (next_timer->next_ms_ <= now)

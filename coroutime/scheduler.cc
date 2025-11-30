@@ -91,9 +91,10 @@ namespace zlynx
         threads_.clear();
     }
 
-    bool Scheduler::is_stop() const
+    bool Scheduler::is_stop()
     {
-        return stopping_.load() && tasks_.empty() && active_thread_count_.load() == 0;
+        MutexType::Lock lock(mutex_);
+        return stopping_ && tasks_.empty() && active_thread_count_ == 0;
     }
 
     Scheduler *Scheduler::get_this()
@@ -230,7 +231,7 @@ namespace zlynx
         ZLYNX_LOG_DEBUG("[{}] thread end", zlynx::Thread::get_name());
     }
 
-    void Scheduler::tickle()
+    void Scheduler::tickle() const
     {
         constexpr uint64_t one = 1;
         const ssize_t n = write(tickle_id, &one, sizeof(one));

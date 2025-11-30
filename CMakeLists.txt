@@ -11,6 +11,7 @@ set(SOURCES
         coroutime/fiber.cc
         coroutime/scheduler.cc
         coroutime/timer.cc
+        coroutime/io_manager.cc
         sync/sem.cc
         sync/thread.cc
 )
