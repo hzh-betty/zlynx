@@ -18,6 +18,9 @@ namespace zlynx
                 return read;
             case IoEvent::WRITE:
                 return write;
+            case IoEvent::NONE:
+                ZLYNX_LOG_ERROR("FdContext::get_context NONE is not a valid event type");
+                throw std::invalid_argument("NONE is not a valid event type");
             default:
                 ZLYNX_LOG_ERROR("FdContext::get_context invalid event type");
                 throw std::invalid_argument("invalid event type");
@@ -70,12 +73,20 @@ namespace zlynx
         // 创建tickle管道
         if (pipe(tickle_fds_) < 0)
         {
+            close(epfd_);
             ZLYNX_LOG_FATAL("IoManager::IoManager pipe failed");
             throw std::runtime_error("pipe failed");
         }
 
         // 设置管道读端为非阻塞
-        fcntl(tickle_fds_[0], F_SETFL, O_NONBLOCK);
+        if (fcntl(tickle_fds_[0], F_SETFL, O_NONBLOCK) < 0)
+        {
+            close(epfd_);
+            close(tickle_fds_[0]);
+            close(tickle_fds_[1]);
+            ZLYNX_LOG_FATAL("IoManager::IoManager fcntl failed");
+            throw std::runtime_error("fcntl failed");
+        }
 
         // 注册管道读端到epoll
         epoll_event event{};
@@ -83,6 +94,9 @@ namespace zlynx
         event.data.fd = tickle_fds_[0];
         if (epoll_ctl(epfd_, EPOLL_CTL_ADD, tickle_fds_[0], &event) < 0)
         {
+            close(epfd_);
+            close(tickle_fds_[0]);
+            close(tickle_fds_[1]);
             ZLYNX_LOG_FATAL("IoManager::IoManager epoll_ctl failed");
             throw std::runtime_error("epoll_ctl failed");
         }
@@ -133,7 +147,13 @@ namespace zlynx
             Mutex::Lock lock(mutex_);
             if (static_cast<int>(fd_contexts_.size()) <= fd)
             {
-                resize_fd_contexts(fd * 1.5);
+                // Use safe growth strategy with bounds checking
+                size_t new_size = static_cast<size_t>(fd) + 1;
+                if (new_size < static_cast<size_t>(fd) * 3 / 2)
+                {
+                    new_size = static_cast<size_t>(fd) * 3 / 2;
+                }
+                resize_fd_contexts(new_size);
             }
             fd_ctx = fd_contexts_[fd];
         }
