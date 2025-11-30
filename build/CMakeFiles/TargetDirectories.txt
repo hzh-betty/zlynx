@@ -1,8 +1,0 @@
-/home/runner/work/zlynx/zlynx/build/CMakeFiles/zlynx.dir
-/home/runner/work/zlynx/zlynx/build/CMakeFiles/edit_cache.dir
-/home/runner/work/zlynx/zlynx/build/CMakeFiles/rebuild_cache.dir
-/home/runner/work/zlynx/zlynx/build/zlog/CMakeFiles/zlog_shared.dir
-/home/runner/work/zlynx/zlynx/build/zlog/CMakeFiles/zlog_static.dir
-/home/runner/work/zlynx/zlynx/build/zlog/CMakeFiles/bench.dir
-/home/runner/work/zlynx/zlynx/build/zlog/CMakeFiles/edit_cache.dir
-/home/runner/work/zlynx/zlynx/build/zlog/CMakeFiles/rebuild_cache.dir

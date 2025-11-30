@@ -5,6 +5,7 @@
 #include "fiber.h"
 #include "scheduler.h"
 #include "timer.h"
+#include "io_manager.h"
 
 void test1()
 {
@@ -187,12 +188,88 @@ void test3()
     }
 }
 
+void test4()
+{
+    try
+    {
+        ZLYNX_LOG_INFO("IoManager test start");
+
+        // 创建IoManager
+        zlynx::IoManager iom(2, true, "IoManager");
+
+        // 测试1: 循环定时器
+        std::atomic<int> timer_count{0};
+        auto timer = iom.add_timer(500, [&timer_count]()
+        {
+            ZLYNX_LOG_INFO("IoManager timer executed, count={}", ++timer_count);
+        }, true);
+
+        // 测试2: 管道IO事件
+        int pipefd[2];
+        if (pipe(pipefd) < 0)
+        {
+            ZLYNX_LOG_ERROR("pipe failed");
+            return;
+        }
+
+        // 添加读事件
+        iom.add_event(pipefd[0], zlynx::IoEvent::READ, [pipefd]()
+        {
+            char buf[256];
+            int n = read(pipefd[0], buf, sizeof(buf) - 1);
+            if (n > 0)
+            {
+                buf[n] = '\0';
+                ZLYNX_LOG_INFO("Read from pipe: {}", buf);
+            }
+        });
+
+        // 添加写事件
+        iom.schedule([pipefd]()
+        {
+            usleep(500000); // 等待500ms
+            const char *msg = "Hello IoManager!";
+            write(pipefd[1], msg, strlen(msg));
+            ZLYNX_LOG_INFO("Written to pipe");
+        });
+
+        // 测试3: 添加写事件检测管道可写性
+        iom.schedule([&iom, pipefd]()
+        {
+            usleep(1000000); // 等待1秒
+            iom.add_event(pipefd[1], zlynx::IoEvent::WRITE, []()
+            {
+                ZLYNX_LOG_INFO("Pipe is writable");
+            });
+        });
+
+        // 等待一段时间让测试执行
+        usleep(8000000); // 8秒
+
+        // 取消定时器
+        if (timer->cancel())
+        {
+            ZLYNX_LOG_INFO("Timer canceled, executed {} times", timer_count.load());
+        }
+
+        // 关闭管道
+        close(pipefd[0]);
+        close(pipefd[1]);
+
+        ZLYNX_LOG_INFO("IoManager test end");
+    }
+    catch (const std::exception &e)
+    {
+        ZLYNX_LOG_ERROR("IoManager test exception: {}", e.what());
+    }
+}
+
 int main()
 {
     zlynx::Init(zlog::LogLevel::value::DEBUG);
     // test1();
     // test2();
-    test3();
+    // test3();
+    test4();
     return 0;
 }
-
