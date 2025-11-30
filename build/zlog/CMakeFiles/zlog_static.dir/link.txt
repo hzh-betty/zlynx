@@ -1,0 +1,2 @@
+/usr/bin/ar qc libzlog_static.a CMakeFiles/zlog_static.dir/src/buffer.cc.o CMakeFiles/zlog_static.dir/src/format.cc.o CMakeFiles/zlog_static.dir/src/level.cc.o CMakeFiles/zlog_static.dir/src/logger.cc.o CMakeFiles/zlog_static.dir/src/looper.cc.o CMakeFiles/zlog_static.dir/src/message.cc.o CMakeFiles/zlog_static.dir/src/sink.cc.o CMakeFiles/zlog_static.dir/src/util.cc.o
+/usr/bin/ranlib libzlog_static.a

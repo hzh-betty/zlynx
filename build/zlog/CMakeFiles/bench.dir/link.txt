@@ -1,0 +1,1 @@
+/usr/bin/c++ -Wl,--dependency-file=CMakeFiles/bench.dir/link.d CMakeFiles/bench.dir/bench/bench.cc.o -o ../bin/bench  -Wl,-rpath,/home/runner/work/zlynx/zlynx/build/zlog libzlog_shared.so /usr/lib/x86_64-linux-gnu/libfmt.so.9.1.0
