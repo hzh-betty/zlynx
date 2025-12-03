@@ -185,7 +185,7 @@ namespace zlynx
     bool IoManager::cancel_event(const int fd, const Event event)
     {
         ZLYNX_LOG_DEBUG("IoManager::cancel_event fd={}", fd);
-        FbContext *ctx = del_event_helper(fd, event, true);
+        FbContext *ctx = del_event_helper(fd, event, false);
         if (!ctx) return false;
         --pending_event_count_;
 
@@ -197,7 +197,7 @@ namespace zlynx
     bool IoManager::cancel_all(const int fd)
     {
         ZLYNX_LOG_DEBUG("IoManager::cancel_all fd={}", fd);
-        FbContext *ctx = del_event_helper(fd, static_cast<Event>(~0), true);
+        FbContext *ctx = del_event_helper(fd, static_cast<Event>(~0), false);
         if (!ctx) return false;
 
         if (ctx->events & kRead)

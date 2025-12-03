@@ -36,7 +36,7 @@ namespace zlynx
         void notify();
 
     private:
-        sem_t sem_; ///< 底层信号量对象
+        sem_t sem_{}; ///< 底层信号量对象
     };
 } // namespace zlynx
 

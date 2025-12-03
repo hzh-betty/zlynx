@@ -1,5 +1,5 @@
-#ifndef ZLYNX_TIMER_H
-#define ZLYNX_TIMER_H
+#ifndef ZLYNX_TIMER_H_
+#define ZLYNX_TIMER_H_
 
 #include <set>
 #include <memory>
@@ -105,4 +105,4 @@ namespace zlynx
     };
 } // namespace zlynx
 
-#endif //ZLYNX_TIMER_H
+#endif //ZLYNX_TIMER_H_

@@ -12,6 +12,7 @@ set(SOURCES
         coroutime/scheduler.cc
         coroutime/timer.cc
         coroutime/io_manager.cc
+#        coroutime/fd_manager.cc
         sync/sem.cc
         sync/thread.cc
 )

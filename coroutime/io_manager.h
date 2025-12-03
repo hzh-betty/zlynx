@@ -1,5 +1,5 @@
-#ifndef ZLYNX_IO_MANAGER_H
-#define ZLYNX_IO_MANAGER_H
+#ifndef ZLYNX_IO_MANAGER_H_
+#define ZLYNX_IO_MANAGER_H_
 
 
 #include <string>
@@ -95,4 +95,4 @@ namespace zlynx
         RWMutexType mutex_;
     };
 }
-#endif //ZLYNX_IO_MANAGER_H
+#endif //ZLYNX_IO_MANAGER_H_

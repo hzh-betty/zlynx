@@ -1,5 +1,5 @@
-#ifndef ZLYNX_SCHEDULER_H
-#define ZLYNX_SCHEDULER_H
+#ifndef ZLYNX_SCHEDULER_H_
+#define ZLYNX_SCHEDULER_H_
 
 #include <vector>
 #include <memory>
@@ -101,4 +101,4 @@ namespace zlynx
 } // namespace zlynx
 
 
-#endif //ZLYNX_SCHEDULER_H
+#endif //ZLYNX_SCHEDULER_H_
