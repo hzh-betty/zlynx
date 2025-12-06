@@ -2,6 +2,8 @@
 
 #include <dlfcn.h>
 #include <cstdarg>
+#include <unistd.h>
+#include <sys/ioctl.h>
 
 #include "timer.h"
 #include "fiber.h"
@@ -566,7 +568,7 @@ int fcntl(int fd, int cmd, ... /* arg */)
     }
 }
 
-int ioctl(int fd, unsigned long request, ...)
+int ioctl(int fd, unsigned long request, ...) noexcept
 {
     va_list va;
     va_start(va, request);
@@ -594,7 +596,7 @@ int getsockopt(int sockfd, int level, int optname, void *optval, socklen_t *optl
 
 int setsockopt(int sockfd, int level, int optname, const void *optval, socklen_t optlen)
 {
-    if (!::zlynx::is_hook_enable())
+    if (!zlynx::is_hook_enable())
     {
         return setsockopt_f(sockfd, level, optname, optval, optlen);
     }

@@ -1,11 +1,15 @@
-#include <unistd.h>
-
-#include "zlynx_logger.h"
-
-#include "fiber.h"
-#include "scheduler.h"
-#include "timer.h"
 #include "io_manager.h"
+#include "hook.h"
+
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <iostream>
+#include <cstring>
+#include <thread>
+#include "zlynx_logger.h"
 
 void test1()
 {
@@ -296,12 +300,120 @@ void test4()
     }
 }
 
+
+
+static int sock_listen_fd = -1;
+
+void test_accept();
+void error(const char *msg)
+{
+    perror(msg);
+    printf("erreur...\n");
+    exit(1);
+}
+
+void watch_io_read()
+{
+    zlynx::IoManager::get_this()->add_event(sock_listen_fd, zlynx::IoManager::kRead, test_accept);
+}
+
+void test_accept()
+{
+    struct sockaddr_in addr{};
+    memset(&addr, 0, sizeof(addr));
+    socklen_t len = sizeof(addr);
+    int fd = accept(sock_listen_fd, (struct sockaddr *)&addr, &len);
+    if (fd < 0)
+    {
+        // accept 失败直接返回，等待下一次事件
+    }
+    else
+    {
+        std::cout << "accepted connection, fd = " << fd << std::endl;
+        fcntl(fd, F_SETFL, O_NONBLOCK);
+        zlynx::IoManager::get_this()->add_event(fd, zlynx::IoManager::kRead, [fd]()
+        {
+            char buffer[1024] = {};
+            while (true)
+            {
+                int ret = recv(fd, buffer, sizeof(buffer), 0);
+                if (ret > 0)
+                {
+                    const char *response =
+                        "HTTP/1.1 200 OK\r\n"
+                        "Content-Type: text/plain\r\n"
+                        "Content-Length: 13\r\n"
+                        "Connection: keep-alive\r\n"
+                        "\r\n"
+                        "Hello, World!";
+
+                    ret = send(fd, response, strlen(response), 0);
+                    (void)ret;
+                    close(fd);
+                    break;
+                }
+                if (ret <= 0)
+                {
+                    if (ret == 0 || errno != EAGAIN)
+                    {
+                        close(fd);
+                        break;
+                    }
+                    else if (errno == EAGAIN)
+                    {
+                        // 非阻塞情况下，当前无数据可读，等待下次可读事件
+                        break;
+                    }
+                }
+            }
+        });
+    }
+ zlynx::IoManager::get_this()->add_event(sock_listen_fd, zlynx::IoManager::kRead, test_accept);
+}
+
+void test_http_server()
+{
+    int portno = 8080;
+    struct sockaddr_in server_addr{}, client_addr{};
+    socklen_t client_len = sizeof(client_addr);
+    (void)client_len;
+
+    sock_listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock_listen_fd < 0)
+    {
+        error("Error creating socket..\n");
+    }
+
+    int yes = 1;
+    setsockopt(sock_listen_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+
+    memset((char *)&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(portno);
+    server_addr.sin_addr.s_addr = INADDR_ANY;
+
+    if (bind(sock_listen_fd, reinterpret_cast<struct sockaddr *>(&server_addr), sizeof(server_addr)) < 0)
+        error("Error binding socket..\n");
+
+    if (listen(sock_listen_fd, 1024) < 0)
+    {
+        error("Error listening..\n");
+    }
+
+    printf("coroutine http server listening on port: %d\n", portno);
+    fcntl(sock_listen_fd, F_SETFL, O_NONBLOCK);
+
+    zlynx::IoManager iom(9);
+    iom.add_event(sock_listen_fd,  zlynx::IoManager::kRead, test_accept);
+}
+
 int main()
 {
     zlynx::Init(zlog::LogLevel::value::INFO);
     // test1();
     // test2();
     // test3();
-    test4();
+    // test4();
+    test_http_server();
     return 0;
 }
