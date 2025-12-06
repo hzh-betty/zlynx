@@ -20,6 +20,7 @@ namespace zlynx
         bool init();
         bool is_init() const { return is_init_; }
         bool is_socket() const { return is_socket_; }
+        bool is_closed()const {return is_closed_; }
 
         void set_sys_nonblock(const bool v) { sys_nonblock_ = v; }
         bool get_sys_nonblock() const { return sys_nonblock_; }
@@ -32,8 +33,8 @@ namespace zlynx
          * @param[in] type 超时类型，SO_RCVTIMEO表示读超时，否则表示写超时
          * @param[in] ms 超时时间，单位毫秒
          */
-        void set_timeout(const int type, const uint64_t ms);
-        uint64_t get_timeout(const int type) const;
+        void set_timeout(int type, uint64_t ms);
+        uint64_t get_timeout(int type) const;
     private:
         bool is_init_{false}; // 是否初始化
         bool is_socket_{false}; // 是否是socket

@@ -6,11 +6,12 @@
 
 namespace zlynx
 {
+    template<class T>
     class Singleton : public NonCopyable
     {
     public:
 
-        template<class T,class ... Args>
+        template<class ... Args>
         static T &get_instance(Args&&... args)
         {
             static T instance(std::forward<Args>(args)...);
