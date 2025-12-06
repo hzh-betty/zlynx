@@ -106,7 +106,7 @@ namespace zlynx
             pthread_rwlock_unlock(&rwlock_);
         }
     private:
-        pthread_rwlock_t rwlock_; // 读写锁对象
+        pthread_rwlock_t rwlock_{}; // 读写锁对象
     };
 }// namespace zlynx
 #endif //ZLYNX_RW_MUTEX_H_
