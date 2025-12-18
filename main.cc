@@ -347,6 +347,7 @@ void test_accept()
                         "\r\n"
                         "Hello, World!";
 
+                    std::this_thread::sleep_for(std::chrono::milliseconds(300));
                     ret = send(fd, response, strlen(response), 0);
                     (void)ret;
                     close(fd);
@@ -409,7 +410,7 @@ void test_http_server()
 
 int main()
 {
-    zlynx::Init(zlog::LogLevel::value::INFO);
+    zlynx::Init(zlog::LogLevel::value::WARNING);
     // test1();
     // test2();
     // test3();
