@@ -26,6 +26,7 @@ set(ZHTTP_SOURCES
     src/daemon.cc
     src/server_config.cc
     src/http_server_builder.cc
+    src/uri.cc
 )
 
 # 创建 zhttp 静态库
