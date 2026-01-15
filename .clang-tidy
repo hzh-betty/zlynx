@@ -1,0 +1,20 @@
+Checks: >
+  -*,
+  bugprone-*,
+  performance-*,
+  clang-analyzer-*,
+  modernize-*,
+  readability-*,
+  misc-*,
+  -modernize-use-auto,
+  -misc-no-recursion,
+  -google-*,
+  -cert-*,
+  -openmp-*,
+  -mpi-*,
+  -portability-*
+
+WarningsAsErrors: ''
+HeaderFilterRegex: '.*'
+AnalyzeTemporaryDtors: false
+FormatStyle: file
