@@ -67,8 +67,9 @@ TEST_F(SizeClassIndexTest, LargeSizesIndex) {
 }
 
 TEST_F(SizeClassIndexTest, NumMoveSize) {
-  // 小对象上限高
-  EXPECT_EQ(SizeClass::num_move_size(8), 512);
+  // 优化后算法：目标 4KB 单次传输，最多 128 个对象
+  // 小对象 (8字节): 4096/8 = 512，但上限 128
+  EXPECT_EQ(SizeClass::num_move_size(8), 128);
   // 大对象上限低
   EXPECT_GE(SizeClass::num_move_size(256 * 1024), 2);
 }

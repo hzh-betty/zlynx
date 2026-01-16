@@ -18,6 +18,7 @@ set(UNIT_TESTS
     size_class_test
     free_list_test
     object_pool_test
+    transfer_cache_test
     zmalloc_test
 )
 

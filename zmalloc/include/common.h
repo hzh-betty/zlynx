@@ -11,7 +11,6 @@
 #include <cstdint>
 #include <cstring>
 #include <mutex>
-#include <new>
 #include <sys/mman.h>
 
 // MAP_FIXED_NOREPLACE 可能未定义（老版本内核）

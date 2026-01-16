@@ -55,12 +55,20 @@ size_t SizeClass::index(size_t bytes) {
 
 size_t SizeClass::num_move_size(size_t size) {
   assert(size > 0);
-  // 对象越小，上限越高；对象越大，上限越低
-  size_t num = MAX_BYTES / size;
-  if (num < 2)
-    num = 2;
-  if (num > 512)
-    num = 512;
+
+  // 参考 tcmalloc：目标单次传输约 4KB-8KB 数据
+  // 小对象多传输，大对象少传输
+  constexpr size_t kTargetBytes = 4096;
+  constexpr size_t kMinObjects = 2;
+  constexpr size_t kMaxObjects = 128;
+
+  size_t num = kTargetBytes / size;
+  if (num < kMinObjects) {
+    num = kMinObjects;
+  }
+  if (num > kMaxObjects) {
+    num = kMaxObjects;
+  }
   return num;
 }
 

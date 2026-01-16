@@ -6,6 +6,7 @@
 #include "thread_cache.h"
 #include "central_cache.h"
 #include "object_pool.h"
+#include "transfer_cache.h"
 
 #include <algorithm>
 
@@ -59,6 +60,24 @@ void *ThreadCache::fetch_from_central_cache(size_t index, size_t size) {
     free_lists_[index].max_size() += 1;
   }
 
+  // 优先从 TransferCache 获取
+  void *batch[128];
+  size_t got =
+      TransferCache::get_instance().remove_range(index, batch, batch_num);
+
+  if (got > 0) {
+    // TransferCache 命中
+    if (got == 1) {
+      return batch[0];
+    }
+    // 将多余对象放入自由链表
+    for (size_t i = 1; i < got; ++i) {
+      free_lists_[index].push(batch[i]);
+    }
+    return batch[0];
+  }
+
+  // TransferCache 未命中，向 CentralCache 请求
   void *start = nullptr;
   void *end = nullptr;
   size_t actual_num =
@@ -75,11 +94,31 @@ void *ThreadCache::fetch_from_central_cache(size_t index, size_t size) {
 }
 
 void ThreadCache::list_too_long(FreeList &list, size_t size) {
-  void *start = nullptr;
-  void *end = nullptr;
-  list.pop_range(start, end, list.max_size());
+  size_t index = SizeClass::index(size);
+  size_t count = list.max_size();
 
-  CentralCache::get_instance().release_list_to_spans(start, size);
+  // 收集待回收的对象
+  void *batch[128];
+  size_t collected = 0;
+  for (size_t i = 0; i < count && !list.empty() && collected < 128; ++i) {
+    batch[collected++] = list.pop();
+  }
+
+  // 优先插入 TransferCache
+  size_t inserted =
+      TransferCache::get_instance().insert_range(index, batch, collected);
+
+  // TransferCache 满了，剩余放回 CentralCache
+  if (inserted < collected) {
+    void *start = batch[inserted];
+    void *end = batch[inserted];
+    for (size_t i = inserted + 1; i < collected; ++i) {
+      next_obj(end) = batch[i];
+      end = batch[i];
+    }
+    next_obj(end) = nullptr;
+    CentralCache::get_instance().release_list_to_spans(start, size);
+  }
 }
 
 } // namespace zmalloc
