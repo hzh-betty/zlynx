@@ -17,7 +17,11 @@ Span *PageCache::new_span(size_t k) {
     span->page_id = reinterpret_cast<PageId>(ptr) >> PAGE_SHIFT;
     span->n = k;
     span->is_use = true;
-    id_span_map_.set(span->page_id, span);
+
+    // 为所有页建立映射，确保 map_object_to_span 能找到
+    for (PageId i = 0; i < k; ++i) {
+      id_span_map_.set(span->page_id + i, span);
+    }
     return span;
   }
 
