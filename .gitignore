@@ -1,0 +1,10 @@
+compile_commands.json
+.idea/
+build*/
+bin/
+lib/
+.idea/
+.cache/
+.vscode/
+cmake-build-*/
+logfile/
