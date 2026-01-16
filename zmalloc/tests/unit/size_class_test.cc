@@ -3,128 +3,85 @@
  * @brief SizeClass 单元测试
  */
 
-#include <gtest/gtest.h>
-
 #include "common.h"
-#include "size_class.h"
+#include <gtest/gtest.h>
 
 namespace zmalloc {
 namespace {
 
-class SizeClassTest : public ::testing::Test {
-protected:
-  SizeClass &sc_ = SizeClass::Instance();
-};
+// 对齐测试
+class SizeClassRoundUpTest : public ::testing::Test {};
 
-// 功能正确性测试
-TEST_F(SizeClassTest, ZeroSizeReturnsFirstClass) {
-  EXPECT_EQ(sc_.GetClassIndex(0), 0);
+TEST_F(SizeClassRoundUpTest, SmallSizes) {
+  // [1, 128] 8 字节对齐
+  EXPECT_EQ(SizeClass::round_up(1), 8);
+  EXPECT_EQ(SizeClass::round_up(7), 8);
+  EXPECT_EQ(SizeClass::round_up(8), 8);
+  EXPECT_EQ(SizeClass::round_up(9), 16);
+  EXPECT_EQ(SizeClass::round_up(128), 128);
 }
 
-TEST_F(SizeClassTest, SmallSizesRoundUpToAlignment) {
-  // 1-8 字节应该映射到 8 字节类
-  for (size_t i = 1; i <= 8; ++i) {
-    EXPECT_EQ(sc_.GetClassSize(sc_.GetClassIndex(i)), 8);
-  }
-
-  // 9-16 字节应该映射到 16 字节类
-  for (size_t i = 9; i <= 16; ++i) {
-    EXPECT_EQ(sc_.GetClassSize(sc_.GetClassIndex(i)), 16);
-  }
+TEST_F(SizeClassRoundUpTest, MediumSizes) {
+  // [129, 1024] 16 字节对齐
+  EXPECT_EQ(SizeClass::round_up(129), 144);
+  EXPECT_EQ(SizeClass::round_up(256), 256);
+  EXPECT_EQ(SizeClass::round_up(1024), 1024);
 }
 
-TEST_F(SizeClassTest, LargeSizesReturnLargeClass) {
-  // 超过 kMaxCacheableSize 返回 kNumSizeClasses
-  EXPECT_EQ(sc_.GetClassIndex(kMaxCacheableSize + 1), kNumSizeClasses);
-  EXPECT_EQ(sc_.GetClassIndex(100000), kNumSizeClasses);
+TEST_F(SizeClassRoundUpTest, LargeSizes) {
+  // [1025, 8KB] 128 字节对齐
+  EXPECT_EQ(SizeClass::round_up(1025), 1152);
+  EXPECT_EQ(SizeClass::round_up(8 * 1024), 8 * 1024);
 }
 
-TEST_F(SizeClassTest, ClassSizeIncreases) {
-  size_t prev_size = 0;
-  for (size_t i = 0; i < kNumSizeClasses; ++i) {
-    size_t class_size = sc_.GetClassSize(i);
-    if (class_size > 0) {
-      EXPECT_GE(class_size, prev_size);
-      prev_size = class_size;
-    }
-  }
+TEST_F(SizeClassRoundUpTest, VeryLargeSizes) {
+  // [8KB+1, 64KB] 1KB 对齐
+  EXPECT_EQ(SizeClass::round_up(8 * 1024 + 1), 9 * 1024);
+  EXPECT_EQ(SizeClass::round_up(64 * 1024), 64 * 1024);
 }
 
-TEST_F(SizeClassTest, ClassSizeAlwaysGreaterOrEqualToRequest) {
-  for (size_t size = 1; size <= kMaxCacheableSize; ++size) {
-    size_t class_index = sc_.GetClassIndex(size);
-    size_t class_size = sc_.GetClassSize(class_index);
-    EXPECT_GE(class_size, size) << "Failed for size: " << size;
-  }
+TEST_F(SizeClassRoundUpTest, HugeSizes) {
+  // [64KB+1, 256KB] 8KB 对齐
+  EXPECT_EQ(SizeClass::round_up(64 * 1024 + 1), 72 * 1024);
+  EXPECT_EQ(SizeClass::round_up(256 * 1024), 256 * 1024);
 }
 
-TEST_F(SizeClassTest, BatchCountIsReasonable) {
-  for (size_t i = 0; i < kNumSizeClasses; ++i) {
-    size_t class_size = sc_.GetClassSize(i);
-    if (class_size == 0)
-      continue; // 跳过未初始化的类
-    size_t batch = sc_.GetBatchMoveCount(i);
-    EXPECT_GE(batch, 2); // 至少批量获取 2 个
-  }
+// 索引测试
+class SizeClassIndexTest : public ::testing::Test {};
+
+TEST_F(SizeClassIndexTest, SmallSizesIndex) {
+  EXPECT_EQ(SizeClass::index(1), 0);
+  EXPECT_EQ(SizeClass::index(8), 0);
+  EXPECT_EQ(SizeClass::index(9), 1);
+  EXPECT_EQ(SizeClass::index(128), 15);
 }
 
-TEST_F(SizeClassTest, SpanPagesIsPositive) {
-  for (size_t i = 0; i < kNumSizeClasses; ++i) {
-    size_t class_size = sc_.GetClassSize(i);
-    if (class_size == 0)
-      continue; // 跳过未初始化的类
-    size_t pages = sc_.GetSpanPages(i);
-    EXPECT_GE(pages, 1);
-  }
+TEST_F(SizeClassIndexTest, MediumSizesIndex) {
+  EXPECT_EQ(SizeClass::index(129), 16);
+  EXPECT_EQ(SizeClass::index(1024), 71);
 }
 
-TEST_F(SizeClassTest, ExactAlignmentBoundaries) {
-  // 测试对齐边界
-  EXPECT_EQ(sc_.GetClassSize(sc_.GetClassIndex(128)), 128);
-  EXPECT_EQ(sc_.GetClassSize(sc_.GetClassIndex(1024)), 1024);
+TEST_F(SizeClassIndexTest, LargeSizesIndex) {
+  EXPECT_EQ(SizeClass::index(1025), 72);
+  EXPECT_EQ(SizeClass::index(8 * 1024), 127);
 }
 
-TEST_F(SizeClassTest, InvalidClassIndexReturnsZero) {
-  EXPECT_EQ(sc_.GetClassSize(kNumSizeClasses), 0);
-  EXPECT_EQ(sc_.GetClassSize(kNumSizeClasses + 1), 0);
+TEST_F(SizeClassIndexTest, NumMoveSize) {
+  // 小对象上限高
+  EXPECT_EQ(SizeClass::num_move_size(8), 512);
+  // 大对象上限低
+  EXPECT_GE(SizeClass::num_move_size(256 * 1024), 2);
 }
 
-// 边界测试
-TEST_F(SizeClassTest, MaxCacheableSizeHandled) {
-  size_t class_index = sc_.GetClassIndex(kMaxCacheableSize);
-  EXPECT_LT(class_index, kNumSizeClasses);
-  EXPECT_GE(sc_.GetClassSize(class_index), kMaxCacheableSize);
-}
-
-TEST_F(SizeClassTest, SizeOfOne) {
-  size_t class_index = sc_.GetClassIndex(1);
-  EXPECT_EQ(class_index, 0);
-  EXPECT_EQ(sc_.GetClassSize(class_index), 8);
-}
-
-TEST_F(SizeClassTest, SizeClassCoverage) {
-  // 确保没有大小区间被遗漏
-  size_t prev_max = 0;
-  for (size_t i = 0; i < kNumSizeClasses; ++i) {
-    size_t class_size = sc_.GetClassSize(i);
-    if (class_size > 0) {
-      // 检查从 prev_max+1 到 class_size 的所有大小都映射到这个类或之前的类
-      for (size_t s = prev_max + 1; s <= class_size; ++s) {
-        size_t idx = sc_.GetClassIndex(s);
-        EXPECT_LE(idx, i) << "Size " << s << " mapped to class " << idx
-                          << " but expected <= " << i;
-      }
-      prev_max = class_size;
-    }
-  }
-}
-
-// 状态测试
-TEST_F(SizeClassTest, SingletonConsistency) {
-  SizeClass &sc1 = SizeClass::Instance();
-  SizeClass &sc2 = SizeClass::Instance();
-  EXPECT_EQ(&sc1, &sc2);
+TEST_F(SizeClassIndexTest, NumMovePage) {
+  EXPECT_GE(SizeClass::num_move_page(8), 1);
+  EXPECT_GE(SizeClass::num_move_page(8 * 1024), 1);
 }
 
 } // namespace
 } // namespace zmalloc
+
+int main(int argc, char **argv) {
+  ::testing::InitGoogleTest(&argc, argv);
+  return RUN_ALL_TESTS();
+}

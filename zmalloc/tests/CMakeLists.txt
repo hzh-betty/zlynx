@@ -1,60 +1,57 @@
 cmake_minimum_required(VERSION 3.18)
 
-project(zmalloc_tests LANGUAGES CXX)
+# 测试配置
+find_package(GTest QUIET)
 
-# 查找GTest
-find_package(GTest REQUIRED)
+if(NOT GTest_FOUND)
+    message(STATUS "GTest not found, zmalloc tests disabled")
+    return()
+endif()
 
-# 启用测试
 enable_testing()
 
-# 收集测试源文件
-file(GLOB TEST_UNIT_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/unit/*.cc)
-file(GLOB TEST_INTEGRATION_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/integration/*.cc)
+# zmalloc 头文件目录
+set(ZMALLOC_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
 # 单元测试
-if(TEST_UNIT_SRCS)
-    foreach(test_source ${TEST_UNIT_SRCS})
-        get_filename_component(test_name ${test_source} NAME_WE)
+set(UNIT_TESTS
+    size_class_test
+    free_list_test
+    object_pool_test
+    zmalloc_test
+)
 
-        add_executable(zmalloc_${test_name} ${test_source})
-
-        target_link_libraries(zmalloc_${test_name} PRIVATE
-            zmalloc_static
+foreach(TEST_NAME ${UNIT_TESTS})
+    add_executable(zmalloc_${TEST_NAME} unit/${TEST_NAME}.cc)
+    target_link_libraries(zmalloc_${TEST_NAME}
+        PRIVATE
+            zmalloc
             GTest::gtest
-            GTest::gtest_main
-            pthread
-        )
-
-        add_test(NAME zmalloc_${test_name} COMMAND zmalloc_${test_name})
-
-        message(STATUS "Configured zmalloc unit test: zmalloc_${test_name}")
-    endforeach()
-endif()
+    )
+    target_include_directories(zmalloc_${TEST_NAME} PRIVATE ${ZMALLOC_INCLUDE_DIR})
+    add_test(NAME zmalloc_${TEST_NAME} COMMAND zmalloc_${TEST_NAME})
+endforeach()
 
 # 集成测试
-if(TEST_INTEGRATION_SRCS)
-    foreach(test_source ${TEST_INTEGRATION_SRCS})
-        get_filename_component(test_name ${test_source} NAME_WE)
+set(INTEGRATION_TESTS
+    concurrent_alloc_test
+)
 
-        add_executable(zmalloc_${test_name} ${test_source})
-
-        target_link_libraries(zmalloc_${test_name} PRIVATE
-            zmalloc_static
+foreach(TEST_NAME ${INTEGRATION_TESTS})
+    add_executable(zmalloc_${TEST_NAME} integration/${TEST_NAME}.cc)
+    target_link_libraries(zmalloc_${TEST_NAME}
+        PRIVATE
+            zmalloc
             GTest::gtest
-            GTest::gtest_main
-            pthread
-        )
+    )
+    target_include_directories(zmalloc_${TEST_NAME} PRIVATE ${ZMALLOC_INCLUDE_DIR})
+    add_test(NAME zmalloc_${TEST_NAME} COMMAND zmalloc_${TEST_NAME})
+endforeach()
 
-        add_test(NAME zmalloc_${test_name} COMMAND zmalloc_${test_name})
-
-        message(STATUS "Configured zmalloc integration test: zmalloc_${test_name}")
-    endforeach()
-endif()
-
-message(STATUS "==============================")
-message(STATUS "zmalloc tests configuration")
-message(STATUS "------------------------------")
-message(STATUS "Unit tests        : ${TEST_UNIT_SRCS}")
-message(STATUS "Integration tests : ${TEST_INTEGRATION_SRCS}")
-message(STATUS "==============================")
+# 基准测试
+add_executable(zmalloc_benchmark benchmark/benchmark.cc)
+target_link_libraries(zmalloc_benchmark
+    PRIVATE
+        zmalloc
+)
+target_include_directories(zmalloc_benchmark PRIVATE ${ZMALLOC_INCLUDE_DIR})

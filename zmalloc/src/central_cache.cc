@@ -4,103 +4,113 @@
  */
 
 #include "central_cache.h"
-
-#include "page_heap.h"
-#include "size_class.h"
+#include "page_cache.h"
 
 namespace zmalloc {
 
-CentralCache &CentralCache::Instance() {
-  static CentralCache instance;
-  return instance;
+size_t CentralCache::fetch_range_obj(void *&start, void *&end, size_t n,
+                                     size_t size) {
+  size_t index = SizeClass::index(size);
+  span_lists_[index].mtx.lock();
+
+  // 获取一个非空的 Span
+  Span *span = get_one_span(span_lists_[index], size);
+  assert(span);
+  assert(span->free_list);
+
+  // 从 Span 获取 n 个对象，不够则有多少拿多少
+  start = span->free_list;
+  end = span->free_list;
+  size_t actual_num = 1;
+  while (next_obj(end) && n - 1) {
+    end = next_obj(end);
+    ++actual_num;
+    --n;
+  }
+  span->free_list = next_obj(end);
+  next_obj(end) = nullptr;
+  span->use_count += actual_num;
+
+  span_lists_[index].mtx.unlock();
+  return actual_num;
 }
 
-void *CentralCache::FetchRange(size_t class_index, size_t batch_count,
-                               size_t *actual_count) {
-  std::lock_guard<std::mutex> lock(mutexes_[class_index]);
-
-  Span *span = span_lists_[class_index].Front();
-
-  // 如果没有可用的 Span 或当前 Span 没有空闲对象，获取新的
-  if (span == nullptr || !span->HasFreeObject()) {
-    span = GetSpanFromPageHeap(class_index);
-    if (span == nullptr) {
-      *actual_count = 0;
-      return nullptr;
+Span *CentralCache::get_one_span(SpanList &span_list, size_t size) {
+  // 1. 先在 span_list 中寻找非空的 Span
+  Span *it = span_list.begin();
+  while (it != span_list.end()) {
+    if (it->free_list != nullptr) {
+      return it;
     }
-    span_lists_[class_index].PushFront(span);
+    it = it->next;
   }
 
-  // 从 Span 获取对象
-  void *start = nullptr;
-  void *end = nullptr;
-  size_t count = 0;
+  // 2. 没有非空 Span，向 PageCache 申请
+  // 先解桶锁，让其他线程释放内存不阻塞
+  span_list.mtx.unlock();
 
-  while (count < batch_count && span->HasFreeObject()) {
-    void *obj = span->PopFreeObject();
-    span->IncrementUseCount();
+  PageCache::get_instance().page_mtx().lock();
+  Span *span =
+      PageCache::get_instance().new_span(SizeClass::num_move_page(size));
+  span->is_use = true;
+  span->obj_size = size;
+  PageCache::get_instance().page_mtx().unlock();
 
-    *reinterpret_cast<void **>(obj) = start;
-    if (start == nullptr) {
-      end = obj;
-    }
-    start = obj;
-    ++count;
+  // 计算大块内存的起始地址和字节数
+  char *start = reinterpret_cast<char *>(span->page_id << PAGE_SHIFT);
+  size_t bytes = span->n << PAGE_SHIFT;
+
+  // 切分成 size 大小的对象
+  char *end = start + bytes;
+  span->free_list = start;
+  start += size;
+  void *tail = span->free_list;
+
+  while (start < end) {
+    next_obj(tail) = start;
+    tail = next_obj(tail);
+    start += size;
   }
+  next_obj(tail) = nullptr;
 
-  *actual_count = count;
-  return start;
+  // 重新加桶锁，挂到 span_list
+  span_list.mtx.lock();
+  span_list.push_front(span);
+
+  return span;
 }
 
-void CentralCache::ReleaseRange(size_t class_index, void *start, size_t count) {
-  std::lock_guard<std::mutex> lock(mutexes_[class_index]);
+void CentralCache::release_list_to_spans(void *start, size_t size) {
+  size_t index = SizeClass::index(size);
+  span_lists_[index].mtx.lock();
 
-  while (start != nullptr && count > 0) {
-    void *next = *reinterpret_cast<void **>(start);
+  while (start) {
+    void *next = next_obj(start);
+    Span *span = PageCache::get_instance().map_object_to_span(start);
 
-    // 找到对象所属的 Span
-    size_t page_id = reinterpret_cast<size_t>(start) >> kPageShift;
-    Span *span = PageHeap::Instance().GetSpanByPageId(page_id);
+    // 头插到 Span 的自由链表
+    next_obj(start) = span->free_list;
+    span->free_list = start;
 
-    if (span != nullptr) {
-      span->PushFreeObject(start);
-      span->DecrementUseCount();
+    --span->use_count;
+    if (span->use_count == 0) {
+      // Span 所有对象都回来了，归还给 PageCache
+      span_lists_[index].erase(span);
+      span->free_list = nullptr;
+      span->next = nullptr;
+      span->prev = nullptr;
 
-      // 如果 Span 完全空闲，归还给 PageHeap
-      if (span->IsFullyFree()) {
-        span_lists_[class_index].Erase(span);
-        span->SetSizeClass(0);
-        PageHeap::Instance().DeallocateSpan(span);
-      }
+      span_lists_[index].mtx.unlock();
+      PageCache::get_instance().page_mtx().lock();
+      PageCache::get_instance().release_span_to_page_cache(span);
+      PageCache::get_instance().page_mtx().unlock();
+      span_lists_[index].mtx.lock();
     }
 
     start = next;
-    --count;
-  }
-}
-
-Span *CentralCache::GetSpanFromPageHeap(size_t class_index) {
-  size_t span_pages = SizeClass::Instance().GetSpanPages(class_index);
-  size_t class_size = SizeClass::Instance().GetClassSize(class_index);
-
-  Span *span = PageHeap::Instance().AllocateSpan(span_pages);
-  if (span == nullptr) {
-    return nullptr;
   }
 
-  span->SetSizeClass(class_index);
-
-  // 将 Span 切分为对象并链接
-  char *start = static_cast<char *>(span->StartAddress());
-  size_t total_bytes = span->TotalBytes();
-  size_t num_objects = total_bytes / class_size;
-
-  for (size_t i = 0; i < num_objects; ++i) {
-    void *obj = start + i * class_size;
-    span->PushFreeObject(obj);
-  }
-
-  return span;
+  span_lists_[index].mtx.unlock();
 }
 
 } // namespace zmalloc
