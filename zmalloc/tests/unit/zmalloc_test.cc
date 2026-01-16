@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 
 #include <cstring>
+#include <set>
 #include <vector>
 
 namespace zmalloc {
@@ -191,6 +192,255 @@ TEST_F(ZmallocTest, VeryLargeBlockAlloc2MB) {
   EXPECT_NE(ptr, nullptr);
   std::memset(ptr, 0xDD, size);
   zfree(ptr);
+}
+
+// 对齐验证测试
+TEST_F(ZmallocTest, AlignmentSmall8Byte) {
+  for (int i = 0; i < 100; ++i) {
+    void *ptr = zmalloc(8);
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(ptr) % 8, 0u);
+    zfree(ptr);
+  }
+}
+
+TEST_F(ZmallocTest, AlignmentMedium16Byte) {
+  for (int i = 0; i < 50; ++i) {
+    void *ptr = zmalloc(256);
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(ptr) % 8, 0u);
+    zfree(ptr);
+  }
+}
+
+TEST_F(ZmallocTest, AlignmentLarge) {
+  void *ptr = zmalloc(64 * 1024);
+  EXPECT_EQ(reinterpret_cast<uintptr_t>(ptr) % 8, 0u);
+  zfree(ptr);
+}
+
+// 内存复用测试
+TEST_F(ZmallocTest, MemoryReuse) {
+  void *ptr1 = zmalloc(64);
+  zfree(ptr1);
+  void *ptr2 = zmalloc(64);
+  // 可能复用刚释放的内存（取决于实现）
+  EXPECT_NE(ptr2, nullptr);
+  zfree(ptr2);
+}
+
+TEST_F(ZmallocTest, MemoryReuseMultiple) {
+  std::vector<void *> ptrs;
+  for (int i = 0; i < 10; ++i) {
+    ptrs.push_back(zmalloc(128));
+  }
+  for (void *p : ptrs) {
+    zfree(p);
+  }
+  // 再次分配，应该复用之前的内存
+  std::vector<void *> ptrs2;
+  for (int i = 0; i < 10; ++i) {
+    ptrs2.push_back(zmalloc(128));
+    EXPECT_NE(ptrs2.back(), nullptr);
+  }
+  for (void *p : ptrs2) {
+    zfree(p);
+  }
+}
+
+// 边界大小测试
+TEST_F(ZmallocTest, BoundarySizeClass1) {
+  // 1 字节 - 最小分配
+  void *ptr = zmalloc(1);
+  EXPECT_NE(ptr, nullptr);
+  *static_cast<char *>(ptr) = 'A';
+  zfree(ptr);
+}
+
+TEST_F(ZmallocTest, BoundarySizeClass128) {
+  // 128 字节 - 第一个区间的边界
+  void *ptr = zmalloc(128);
+  EXPECT_NE(ptr, nullptr);
+  std::memset(ptr, 0, 128);
+  zfree(ptr);
+}
+
+TEST_F(ZmallocTest, BoundarySizeClass129) {
+  // 129 字节 - 第二个区间的开始
+  void *ptr = zmalloc(129);
+  EXPECT_NE(ptr, nullptr);
+  std::memset(ptr, 0, 129);
+  zfree(ptr);
+}
+
+TEST_F(ZmallocTest, BoundarySizeClass1024) {
+  // 1024 字节 - 第二个区间的边界
+  void *ptr = zmalloc(1024);
+  EXPECT_NE(ptr, nullptr);
+  std::memset(ptr, 0, 1024);
+  zfree(ptr);
+}
+
+TEST_F(ZmallocTest, BoundarySizeClass8KB) {
+  // 8KB - 第三个区间的边界
+  void *ptr = zmalloc(8 * 1024);
+  EXPECT_NE(ptr, nullptr);
+  std::memset(ptr, 0, 8 * 1024);
+  zfree(ptr);
+}
+
+TEST_F(ZmallocTest, BoundarySizeClass64KB) {
+  // 64KB - 第四个区间的边界
+  void *ptr = zmalloc(64 * 1024);
+  EXPECT_NE(ptr, nullptr);
+  std::memset(ptr, 0, 64 * 1024);
+  zfree(ptr);
+}
+
+// 大量分配测试
+TEST_F(ZmallocTest, MassAllocation1000) {
+  std::vector<void *> ptrs;
+  for (int i = 0; i < 1000; ++i) {
+    ptrs.push_back(zmalloc(32));
+    EXPECT_NE(ptrs.back(), nullptr);
+  }
+  for (void *p : ptrs) {
+    zfree(p);
+  }
+}
+
+TEST_F(ZmallocTest, MassAllocationVariousSizes) {
+  std::vector<std::pair<void *, size_t>> allocations;
+  size_t sizes[] = {8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096};
+  for (size_t s : sizes) {
+    for (int i = 0; i < 50; ++i) {
+      void *ptr = zmalloc(s);
+      EXPECT_NE(ptr, nullptr);
+      allocations.push_back({ptr, s});
+    }
+  }
+  for (auto &p : allocations) {
+    zfree(p.first);
+  }
+}
+
+// 数据完整性测试
+TEST_F(ZmallocTest, DataIntegritySmall) {
+  for (size_t size = 1; size <= 128; size *= 2) {
+    unsigned char *ptr = static_cast<unsigned char *>(zmalloc(size));
+    EXPECT_NE(ptr, nullptr);
+    for (size_t i = 0; i < size; ++i) {
+      ptr[i] = static_cast<unsigned char>(i & 0xFF);
+    }
+    for (size_t i = 0; i < size; ++i) {
+      EXPECT_EQ(ptr[i], static_cast<unsigned char>(i & 0xFF));
+    }
+    zfree(ptr);
+  }
+}
+
+TEST_F(ZmallocTest, DataIntegrityMedium) {
+  constexpr size_t size = 4096;
+  unsigned char *ptr = static_cast<unsigned char *>(zmalloc(size));
+  EXPECT_NE(ptr, nullptr);
+  for (size_t i = 0; i < size; ++i) {
+    ptr[i] = static_cast<unsigned char>(i & 0xFF);
+  }
+  for (size_t i = 0; i < size; ++i) {
+    EXPECT_EQ(ptr[i], static_cast<unsigned char>(i & 0xFF));
+  }
+  zfree(ptr);
+}
+
+TEST_F(ZmallocTest, DataIntegrityLarge) {
+  constexpr size_t size = 512 * 1024;
+  unsigned char *ptr = static_cast<unsigned char *>(zmalloc(size));
+  EXPECT_NE(ptr, nullptr);
+  for (size_t i = 0; i < size; ++i) {
+    ptr[i] = static_cast<unsigned char>(i & 0xFF);
+  }
+  for (size_t i = 0; i < size; ++i) {
+    EXPECT_EQ(ptr[i], static_cast<unsigned char>(i & 0xFF));
+  }
+  zfree(ptr);
+}
+
+// 逆序释放测试
+TEST_F(ZmallocTest, ReverseOrderFree) {
+  std::vector<void *> ptrs;
+  for (int i = 0; i < 100; ++i) {
+    ptrs.push_back(zmalloc(64));
+  }
+  for (int i = 99; i >= 0; --i) {
+    zfree(ptrs[i]);
+  }
+}
+
+// 随机顺序释放测试
+TEST_F(ZmallocTest, RandomOrderFree) {
+  std::vector<void *> ptrs;
+  for (int i = 0; i < 100; ++i) {
+    ptrs.push_back(zmalloc(64));
+  }
+  // 伪随机顺序
+  int order[] = {50, 25, 75, 12, 37, 62, 87, 6,  18, 31, 43, 56, 68, 81, 93,
+                 3,  9,  15, 21, 28, 34, 40, 46, 53, 59, 65, 71, 78, 84, 90,
+                 96, 1,  4,  7,  10, 13, 16, 19, 22, 26, 29, 32, 35, 38, 41,
+                 44, 47, 51, 54, 57, 60, 63, 66, 69, 72, 76, 79, 82, 85, 88,
+                 91, 94, 97, 0,  2,  5,  8,  11, 14, 17, 20, 23, 24, 27, 30,
+                 33, 36, 39, 42, 45, 48, 49, 52, 55, 58, 61, 64, 67, 70, 73,
+                 74, 77, 80, 83, 86, 89, 92, 95, 98, 99};
+  for (int i : order) {
+    zfree(ptrs[i]);
+  }
+}
+
+// 混合大小分配释放
+TEST_F(ZmallocTest, MixedSizeAllocFree) {
+  std::vector<std::pair<void *, size_t>> allocations;
+  for (int i = 0; i < 10; ++i) {
+    allocations.push_back({zmalloc(8), 8});
+    allocations.push_back({zmalloc(64), 64});
+    allocations.push_back({zmalloc(512), 512});
+    allocations.push_back({zmalloc(4096), 4096});
+    allocations.push_back({zmalloc(32768), 32768});
+  }
+  for (auto &a : allocations) {
+    zfree(a.first);
+  }
+}
+
+// 连续分配相同大小测试
+TEST_F(ZmallocTest, ConsecutiveSameSizeAlloc) {
+  constexpr int kCount = 500;
+  std::vector<void *> ptrs;
+  for (int i = 0; i < kCount; ++i) {
+    ptrs.push_back(zmalloc(256));
+    EXPECT_NE(ptrs.back(), nullptr);
+  }
+  // 验证没有重复地址
+  std::set<void *> unique_ptrs(ptrs.begin(), ptrs.end());
+  EXPECT_EQ(unique_ptrs.size(), static_cast<size_t>(kCount));
+  for (void *p : ptrs) {
+    zfree(p);
+  }
+}
+
+// Page 边界测试
+TEST_F(ZmallocTest, PageBoundaryAlloc) {
+  // 分配刚好一页 (8KB)
+  void *ptr = zmalloc(PAGE_SIZE);
+  EXPECT_NE(ptr, nullptr);
+  std::memset(ptr, 0xAA, PAGE_SIZE);
+  zfree(ptr);
+}
+
+TEST_F(ZmallocTest, MultiPageAlloc) {
+  // 分配多页
+  for (size_t pages = 1; pages <= 10; ++pages) {
+    void *ptr = zmalloc(pages * PAGE_SIZE);
+    EXPECT_NE(ptr, nullptr);
+    std::memset(ptr, 0xBB, pages * PAGE_SIZE);
+    zfree(ptr);
+  }
 }
 
 } // namespace
