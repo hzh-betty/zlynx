@@ -1,4 +1,5 @@
-#pragma once
+#ifndef ZMALLOC_OBJECT_POOL_H_
+#define ZMALLOC_OBJECT_POOL_H_
 
 /**
  * @file object_pool.h
@@ -68,3 +69,5 @@ private:
 };
 
 } // namespace zmalloc
+
+#endif // ZMALLOC_OBJECT_POOL_H_

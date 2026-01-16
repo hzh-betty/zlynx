@@ -1,4 +1,5 @@
-#pragma once
+#ifndef ZMALLOC_THREAD_CACHE_H_
+#define ZMALLOC_THREAD_CACHE_H_
 
 /**
  * @file thread_cache.h
@@ -61,3 +62,5 @@ private:
 ThreadCache *get_thread_cache();
 
 } // namespace zmalloc
+
+#endif // ZMALLOC_THREAD_CACHE_H_

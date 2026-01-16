@@ -1,4 +1,5 @@
-#pragma once
+#ifndef ZMALLOC_PAGE_CACHE_H_
+#define ZMALLOC_PAGE_CACHE_H_
 
 /**
  * @file page_cache.h
@@ -64,3 +65,5 @@ private:
 };
 
 } // namespace zmalloc
+
+#endif // ZMALLOC_PAGE_CACHE_H_

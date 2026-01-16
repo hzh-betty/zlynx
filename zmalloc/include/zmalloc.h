@@ -1,4 +1,5 @@
-#pragma once
+#ifndef ZMALLOC_ZMALLOC_H_
+#define ZMALLOC_ZMALLOC_H_
 
 /**
  * @file zmalloc.h
@@ -63,3 +64,5 @@ inline void zfree(void *ptr) {
 }
 
 } // namespace zmalloc
+
+#endif // ZMALLOC_ZMALLOC_H_

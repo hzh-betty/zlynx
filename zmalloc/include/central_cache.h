@@ -1,4 +1,5 @@
-#pragma once
+#ifndef ZMALLOC_CENTRAL_CACHE_H_
+#define ZMALLOC_CENTRAL_CACHE_H_
 
 /**
  * @file central_cache.h
@@ -63,3 +64,5 @@ private:
 };
 
 } // namespace zmalloc
+
+#endif // ZMALLOC_CENTRAL_CACHE_H_
