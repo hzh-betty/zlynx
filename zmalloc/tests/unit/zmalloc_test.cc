@@ -131,6 +131,68 @@ TEST_F(ZmallocTest, BoundaryAllocMaxBytesPlus1) {
   zfree(ptr);
 }
 
+// 大块内存分配释放测试 (257KB)
+TEST_F(ZmallocTest, LargeBlockAlloc257KB) {
+  constexpr size_t size = 257 * 1024;
+  void *ptr = zmalloc(size);
+  EXPECT_NE(ptr, nullptr);
+  // 验证可写
+  std::memset(ptr, 0xAB, size);
+  zfree(ptr);
+}
+
+// 大块内存分配释放测试 (1MB)
+TEST_F(ZmallocTest, LargeBlockAlloc1MB) {
+  constexpr size_t size = 1024 * 1024;
+  void *ptr = zmalloc(size);
+  EXPECT_NE(ptr, nullptr);
+  std::memset(ptr, 0xCD, size);
+  zfree(ptr);
+}
+
+// 多次大块内存分配释放测试
+TEST_F(ZmallocTest, LargeBlockMultipleAllocFree) {
+  constexpr size_t size = 512 * 1024; // 512KB
+  for (int i = 0; i < 10; ++i) {
+    void *ptr = zmalloc(size);
+    EXPECT_NE(ptr, nullptr);
+    std::memset(ptr, 0xEF, size);
+    zfree(ptr);
+  }
+}
+
+// 交替分配多个大块内存后释放
+TEST_F(ZmallocTest, LargeBlockAlternateAllocThenFree) {
+  constexpr size_t size1 = 300 * 1024;
+  constexpr size_t size2 = 400 * 1024;
+  constexpr size_t size3 = 500 * 1024;
+
+  void *p1 = zmalloc(size1);
+  void *p2 = zmalloc(size2);
+  void *p3 = zmalloc(size3);
+
+  EXPECT_NE(p1, nullptr);
+  EXPECT_NE(p2, nullptr);
+  EXPECT_NE(p3, nullptr);
+
+  std::memset(p1, 0x11, size1);
+  std::memset(p2, 0x22, size2);
+  std::memset(p3, 0x33, size3);
+
+  zfree(p2); // 先释放中间的
+  zfree(p1);
+  zfree(p3);
+}
+
+// 超大块内存测试 (2MB)
+TEST_F(ZmallocTest, VeryLargeBlockAlloc2MB) {
+  constexpr size_t size = 2 * 1024 * 1024;
+  void *ptr = zmalloc(size);
+  EXPECT_NE(ptr, nullptr);
+  std::memset(ptr, 0xDD, size);
+  zfree(ptr);
+}
+
 } // namespace
 } // namespace zmalloc
 

@@ -8,6 +8,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # 源文件
 set(ZMALLOC_SOURCES
+    src/free_list.cc
+    src/size_class.cc
+    src/system_alloc.cc
     src/thread_cache.cc
     src/central_cache.cc
     src/page_cache.cc
