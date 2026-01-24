@@ -100,7 +100,8 @@ Socket::ptr Socket::accept() {
   socklen_t len = sizeof(addr);
   const int fd = sockfd_;
 
-  // 优先使用 accept4：一次 syscall 同时设置 NONBLOCK/CLOEXEC，减少用户态/内核态切换。
+  // 优先使用 accept4：一次 syscall 同时设置
+  // NONBLOCK/CLOEXEC，减少用户态/内核态切换。
   int clientfd = -1;
 #if defined(SOCK_NONBLOCK) && defined(SOCK_CLOEXEC)
   clientfd = ::accept4(fd, reinterpret_cast<sockaddr *>(&addr), &len,
@@ -148,8 +149,8 @@ bool Socket::connect(const Address::ptr addr, uint64_t timeout_ms) {
   // 0 表示阻塞：转换为 hook 约定的 -1（不设置超时）
   const uint64_t hook_timeout =
       (timeout_ms == 0) ? static_cast<uint64_t>(-1) : timeout_ms;
-  if (::connect_with_timeout(sockfd_, addr->sockaddr_ptr(), addr->sockaddr_len(),
-                             hook_timeout) != 0) {
+  if (::connect_with_timeout(sockfd_, addr->sockaddr_ptr(),
+                             addr->sockaddr_len(), hook_timeout) != 0) {
     ZNET_LOG_ERROR("Socket::connect failed: fd={}, addr={}, errno={}, error={}",
                    sockfd_, addr->to_string(), errno, strerror(errno));
     return false;

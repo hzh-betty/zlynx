@@ -5,8 +5,8 @@
 
 #include "address.h"
 #include "znet_logger.h"
-#include <gtest/gtest.h>
 #include <arpa/inet.h>
+#include <gtest/gtest.h>
 
 using namespace znet;
 
@@ -29,7 +29,7 @@ TEST_F(AddressTest, IPv4AddressPort) {
   auto addr = std::make_shared<IPv4Address>("192.168.1.1", 9000);
   ASSERT_NE(addr, nullptr);
   EXPECT_EQ(addr->port(), 9000u);
-  
+
   addr->set_port(9001);
   EXPECT_EQ(addr->port(), 9001u);
 }
@@ -46,7 +46,7 @@ TEST_F(AddressTest, IPv6AddressPort) {
   auto addr = std::make_shared<IPv6Address>("fe80::1", 9000);
   ASSERT_NE(addr, nullptr);
   EXPECT_EQ(addr->port(), 9000u);
-  
+
   addr->set_port(9001);
   EXPECT_EQ(addr->port(), 9001u);
 }
@@ -77,11 +77,11 @@ TEST_F(AddressTest, AddressComparison) {
   auto addr1 = std::make_shared<IPv4Address>("127.0.0.1", 8080);
   auto addr2 = std::make_shared<IPv4Address>("127.0.0.1", 8080);
   auto addr3 = std::make_shared<IPv4Address>("127.0.0.1", 8081);
-  
+
   ASSERT_NE(addr1, nullptr);
   ASSERT_NE(addr2, nullptr);
   ASSERT_NE(addr3, nullptr);
-  
+
   EXPECT_EQ(addr1->to_string(), addr2->to_string());
   EXPECT_NE(addr1->to_string(), addr3->to_string());
 }
@@ -90,7 +90,7 @@ TEST_F(AddressTest, AddressComparison) {
 TEST_F(AddressTest, SockaddrLen) {
   IPv4Address addr4;
   EXPECT_EQ(addr4.sockaddr_len(), sizeof(sockaddr_in));
-  
+
   IPv6Address addr6;
   EXPECT_EQ(addr6.sockaddr_len(), sizeof(sockaddr_in6));
 }
@@ -98,7 +98,7 @@ TEST_F(AddressTest, SockaddrLen) {
 // 测试 sockaddr 指针
 TEST_F(AddressTest, SockaddrPtr) {
   IPv4Address addr("192.168.1.1", 8080);
-  const sockaddr* ptr = addr.sockaddr_ptr();
+  const sockaddr *ptr = addr.sockaddr_ptr();
   ASSERT_NE(ptr, nullptr);
   EXPECT_EQ(ptr->sa_family, AF_INET);
 }
@@ -106,7 +106,7 @@ TEST_F(AddressTest, SockaddrPtr) {
 int main(int argc, char **argv) {
 
   znet::init_logger(zlog::LogLevel::value::DEBUG);
-  
+
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

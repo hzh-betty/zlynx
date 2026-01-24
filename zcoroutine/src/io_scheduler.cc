@@ -127,7 +127,8 @@ int IoScheduler::add_event(int fd, FdContext::Event event,
     auto current_fiber = Fiber::get_this();
     event_ctx.fiber = current_fiber;
   }
-  // 记录该事件归属的调度器：即使在非调度线程触发 cancel/close，也能投递回正确的 Scheduler。
+  // 记录该事件归属的调度器：即使在非调度线程触发 cancel/close，也能投递回正确的
+  // Scheduler。
   event_ctx.scheduler = this;
 
   // 添加事件到FdContext
@@ -138,8 +139,8 @@ int IoScheduler::add_event(int fd, FdContext::Event event,
   const int new_events = fd_ctx->add_event(event);
 
   // 更新epoll
-  const int op = (old_events == FdContext::kNone) ? EPOLL_CTL_ADD
-                                                  : EPOLL_CTL_MOD;
+  const int op =
+      (old_events == FdContext::kNone) ? EPOLL_CTL_ADD : EPOLL_CTL_MOD;
   int ret = 0;
   if (op == EPOLL_CTL_ADD) {
     ret = epoll_poller_->add_event(fd, new_events, fd_ctx.get());
@@ -235,8 +236,8 @@ int IoScheduler::cancel_event(int fd, FdContext::Event event) {
   if (ret < 0) {
     if (errno == EBADF || errno == ENOENT) {
       ZCOROUTINE_LOG_DEBUG(
-          "IoScheduler::cancel_event benign epoll failure, fd={}, errno={}",
-          fd, errno);
+          "IoScheduler::cancel_event benign epoll failure, fd={}, errno={}", fd,
+          errno);
       return 0;
     }
     ZCOROUTINE_LOG_ERROR(
@@ -265,8 +266,8 @@ int IoScheduler::cancel_all(int fd) {
   // 先检查是否有事件注册，避免重复删除 epoll 事件导致 ENOENT 错误
   int old_events = fd_ctx->events();
   if (old_events == FdContext::kNone) {
-    ZCOROUTINE_LOG_DEBUG(
-        "IoScheduler::cancel_all no events registered, fd={}", fd);
+    ZCOROUTINE_LOG_DEBUG("IoScheduler::cancel_all no events registered, fd={}",
+                         fd);
     return 0;
   }
 
@@ -326,9 +327,9 @@ void IoScheduler::trigger_event(int fd, FdContext::Event event) {
   // 线程安全地取出并清空上下文，同时清除事件位
   auto popped = fd_ctx->pop_event(event);
   if (!popped.had_event) {
-    ZCOROUTINE_LOG_DEBUG(
-        "IoScheduler::trigger_event event not registered (likely race), fd={}, event={}",
-        fd, FdContext::event_to_string(event));
+    ZCOROUTINE_LOG_DEBUG("IoScheduler::trigger_event event not registered "
+                         "(likely race), fd={}, event={}",
+                         fd, FdContext::event_to_string(event));
     return;
   }
 
@@ -358,7 +359,7 @@ void IoScheduler::trigger_event(int fd, FdContext::Event event) {
         "IoScheduler::trigger_event scheduler stopping, skip scheduling");
     return;
   }
-  
+
   // 最后触发回调或调度协程（epoll已更新，回调中可以安全地重新注册）
   if (popped.callback) {
     ZCOROUTINE_LOG_DEBUG(
@@ -372,7 +373,8 @@ void IoScheduler::trigger_event(int fd, FdContext::Event event) {
                          popped.fiber->id());
     schedule(std::move(popped.fiber));
   } else {
-    // event 位存在但上下文为空，通常是上层误用 add_event(nullptr) 且不在 fiber 内
+    // event 位存在但上下文为空，通常是上层误用 add_event(nullptr) 且不在 fiber
+    // 内
     ZCOROUTINE_LOG_DEBUG(
         "IoScheduler::trigger_event empty context: fd={}, event={}", fd,
         FdContext::event_to_string(event));
@@ -490,7 +492,8 @@ void IoScheduler::wake_up() const {
     if (n < 0 && errno == EINTR) {
       continue;
     }
-    // 管道已满时，意味着读端在 epoll 中已就绪或将很快就绪；此时无需报错，直接返回。
+    // 管道已满时，意味着读端在 epoll
+    // 中已就绪或将很快就绪；此时无需报错，直接返回。
     if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
       return;
     }

@@ -8,7 +8,6 @@
 
 #include <gtest/gtest.h>
 
-
 using namespace zcoroutine;
 
 class StealableQueueBitmapTest : public ::testing::Test {
@@ -18,7 +17,8 @@ protected:
   }
 };
 
-TEST_F(StealableQueueBitmapTest, WorkerCountLessOrEqualOneAlwaysReturnsMinusOne) {
+TEST_F(StealableQueueBitmapTest,
+       WorkerCountLessOrEqualOneAlwaysReturnsMinusOne) {
   {
     StealableQueueBitmap bitmap(0);
     EXPECT_EQ(bitmap.find_victim(0), -1);
@@ -165,7 +165,8 @@ TEST_F(StealableQueueBitmapTest, SetThenClearRemovesVictim) {
   EXPECT_EQ(bitmap.find_victim(0), -1);
 }
 
-TEST_F(StealableQueueBitmapTest, AllWorkersSetReturnsNextWorkerDeterministically) {
+TEST_F(StealableQueueBitmapTest,
+       AllWorkersSetReturnsNextWorkerDeterministically) {
   constexpr size_t kN = 128;
   StealableQueueBitmap bitmap(kN);
   for (size_t i = 0; i < kN; ++i) {

@@ -73,7 +73,7 @@ SharedStackBuffer *SharedStack::allocate() {
 
   ++index_;
   size_t idx = index_ % count_;
-  
+
   ZCOROUTINE_LOG_DEBUG("SharedStack::allocate: idx={}", idx);
 
   return stack_array_[idx].get();

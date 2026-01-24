@@ -130,9 +130,10 @@ int FdContext::cancel_event(Event event) {
                          "old_events={}, new_events={}",
                          fd_, event_to_string(event), old_events, new_events);
   }
-  
+
   // 只能投递到“事件归属”的 scheduler。
-  // 不要 fallback 到 Scheduler::get_this()：当前线程 TLS 可能为空或属于另一个 Scheduler，
+  // 不要 fallback 到 Scheduler::get_this()：当前线程 TLS 可能为空或属于另一个
+  // Scheduler，
   // 否则会把回调/协程错误投递到别的线程池，导致错线程执行/卡死/竞态。
   auto *scheduler = owner_scheduler;
   if (callback) {
@@ -151,9 +152,9 @@ int FdContext::cancel_event(Event event) {
     if (scheduler) {
       scheduler->schedule(std::move(fiber));
     } else {
-      ZCOROUTINE_LOG_WARN(
-          "FdContext::cancel_event no owner scheduler: fd={}, event={} (fiber left ready)",
-          fd_, event_to_string(event));
+      ZCOROUTINE_LOG_WARN("FdContext::cancel_event no owner scheduler: fd={}, "
+                          "event={} (fiber left ready)",
+                          fd_, event_to_string(event));
     }
   } else {
     ZCOROUTINE_LOG_DEBUG(
@@ -235,9 +236,9 @@ void FdContext::cancel_all() {
     if (scheduler) {
       scheduler->schedule(std::move(read_fiber));
     } else {
-      ZCOROUTINE_LOG_WARN(
-          "FdContext::cancel_all no owner scheduler for READ fiber: fd={} (fiber left ready)",
-          fd_);
+      ZCOROUTINE_LOG_WARN("FdContext::cancel_all no owner scheduler for READ "
+                          "fiber: fd={} (fiber left ready)",
+                          fd_);
     }
   }
 
@@ -258,9 +259,9 @@ void FdContext::cancel_all() {
     if (scheduler) {
       scheduler->schedule(std::move(write_fiber));
     } else {
-      ZCOROUTINE_LOG_WARN(
-          "FdContext::cancel_all no owner scheduler for WRITE fiber: fd={} (fiber left ready)",
-          fd_);
+      ZCOROUTINE_LOG_WARN("FdContext::cancel_all no owner scheduler for WRITE "
+                          "fiber: fd={} (fiber left ready)",
+                          fd_);
     }
   }
 }
@@ -298,8 +299,8 @@ void FdContext::trigger_event(Event event) {
 
     ZCOROUTINE_LOG_DEBUG("FdContext::trigger_event deleted event: fd={}, "
                          "event={}, old_events={}, new_events={}",
-               fd_, event_to_string(event), old_events,
-               current_events);
+                         fd_, event_to_string(event), old_events,
+                         current_events);
   }
 
   // 同 cancel_event：只投递到事件归属 scheduler，避免错线程投递。
@@ -321,9 +322,9 @@ void FdContext::trigger_event(Event event) {
     if (scheduler) {
       scheduler->schedule(std::move(fiber));
     } else {
-      ZCOROUTINE_LOG_WARN(
-          "FdContext::trigger_event no owner scheduler: fd={}, event={} (fiber left ready)",
-          fd_, event_to_string(event));
+      ZCOROUTINE_LOG_WARN("FdContext::trigger_event no owner scheduler: fd={}, "
+                          "event={} (fiber left ready)",
+                          fd_, event_to_string(event));
     }
   } else {
     ZCOROUTINE_LOG_WARN(

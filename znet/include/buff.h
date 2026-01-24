@@ -5,7 +5,6 @@
 #include <cstdint>
 #include <string>
 
-
 namespace znet {
 
 /**

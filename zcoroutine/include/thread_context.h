@@ -28,9 +28,10 @@ struct SchedulerContext {
   std::weak_ptr<Fiber> current_fiber;   // 当前执行的协程
   std::weak_ptr<Fiber> scheduler_fiber; // 调度器协程
   Scheduler *scheduler = nullptr;       // 当前调度器
-  
+
   int worker_id = -1; // 当前线程的 worker id
-  std::unique_ptr<WorkStealingQueue> work_queue; // 当前线程的 work-stealing 队列
+  std::unique_ptr<WorkStealingQueue>
+      work_queue; // 当前线程的 work-stealing 队列
 
   static constexpr int kMaxCallStackDepth = 128;
   std::array<std::weak_ptr<Fiber>, kMaxCallStackDepth> call_stack{};

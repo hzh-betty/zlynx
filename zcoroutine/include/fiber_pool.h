@@ -70,7 +70,8 @@ private:
 
   // 全局配置（由 FiberPool 单例持有，所有线程共享）
   std::atomic<bool> initialized_{false};
-  std::atomic<size_t> independent_stack_size_{StackAllocator::kDefaultStackSize};
+  std::atomic<size_t> independent_stack_size_{
+      StackAllocator::kDefaultStackSize};
   std::atomic<size_t> shared_stack_size_{SharedStack::kDefaultStackSize};
   std::atomic<size_t> per_thread_max_capacity_{1000};
 };

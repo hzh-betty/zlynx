@@ -3,23 +3,23 @@
 #include "scheduler.h"
 #include "znet_logger.h"
 #include <errno.h>
-#include <string.h>
 #include <mutex>
+#include <string.h>
 
 namespace znet {
 
-const char* TcpConnection::state_to_string(State s) {
+const char *TcpConnection::state_to_string(State s) {
   switch (s) {
-    case State::Connecting:
-      return "Connecting";
-    case State::Connected:
-      return "Connected";
-    case State::Disconnecting:
-      return "Disconnecting";
-    case State::Disconnected:
-      return "Disconnected";
-    default:
-      return "Unknown";
+  case State::Connecting:
+    return "Connecting";
+  case State::Connected:
+    return "Connected";
+  case State::Disconnecting:
+    return "Disconnecting";
+  case State::Disconnected:
+    return "Disconnected";
+  default:
+    return "Unknown";
   }
 }
 
@@ -40,7 +40,7 @@ TcpConnection::~TcpConnection() {
   ZNET_LOG_DEBUG("TcpConnection::~TcpConnection [{}] fd={} state={}", name_,
                  socket_->fd(),
                  state_to_string(state_.load(std::memory_order_acquire)));
-  
+
   // 防御性清理：如果连接还没有关闭，移除 epoll 事件
   if (io_scheduler_ && !disconnected()) {
     socket_->close();
@@ -67,7 +67,8 @@ void TcpConnection::connect_established() {
     if (zcoroutine::Scheduler::get_this() == io_scheduler_) {
       cb(self);
     } else if (io_scheduler_) {
-      io_scheduler_->schedule([self, cb = std::move(cb)]() mutable { cb(self); });
+      io_scheduler_->schedule(
+          [self, cb = std::move(cb)]() mutable { cb(self); });
     } else {
       cb(self);
     }
@@ -76,7 +77,6 @@ void TcpConnection::connect_established() {
   ZNET_LOG_INFO("TcpConnection::connect_established [{}] fd={}", name_,
                 socket_->fd());
 }
-
 
 void TcpConnection::send(const void *data, size_t len) {
   if (state_.load(std::memory_order_acquire) != State::Connected) {
@@ -100,7 +100,7 @@ void TcpConnection::send(Buffer *buf) {
 void TcpConnection::shutdown() {
   State expected = State::Connected;
   if (state_.compare_exchange_strong(expected, State::Disconnecting,
-                                      std::memory_order_acq_rel)) {
+                                     std::memory_order_acq_rel)) {
     shutdown_in_loop();
   }
 }
@@ -210,7 +210,8 @@ void TcpConnection::handle_write() {
         if (zcoroutine::Scheduler::get_this() == io_scheduler_) {
           cb(self);
         } else {
-          io_scheduler_->schedule([self, cb = std::move(cb)]() mutable { cb(self); });
+          io_scheduler_->schedule(
+              [self, cb = std::move(cb)]() mutable { cb(self); });
         }
       }
 
@@ -289,7 +290,7 @@ void TcpConnection::send_in_loop(const void *data, size_t len) {
   bool fault_error = false;
 
   std::lock_guard<zcoroutine::Spinlock> lock(output_buffer_lock_);
-  
+
   // 如果输出缓冲区没有数据，尝试直接发送
   if (output_buffer_.readable_bytes() == 0) {
     n_wrote = socket_->send(data, len);

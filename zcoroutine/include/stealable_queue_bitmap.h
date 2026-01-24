@@ -14,11 +14,13 @@ namespace zcoroutine {
  * @brief 可窃取队列提示位图
  *
  * 用途：记录“哪些 worker 的本地 WorkStealingQueue 任务足够多，值得被窃取”。
- * 第 i 位为 1 表示 worker i 的队列处于可窃取状态（通常意味着队列长度超过高水位阈值）。
+ * 第 i 位为 1 表示 worker i
+ * 的队列处于可窃取状态（通常意味着队列长度超过高水位阈值）。
  *
  * @note
  * - 位图为启发式信息：允许与真实队列长度存在短暂偏差。
- * - 位图按 64bit 分段，每段使用 cacheline 独占对齐的 atomic<uint64_t>，降低 false sharing。
+ * - 位图按 64bit 分段，每段使用 cacheline 独占对齐的 atomic<uint64_t>，降低
+ * false sharing。
  */
 class StealableQueueBitmap : public NonCopyable {
 public:
@@ -57,7 +59,8 @@ public:
   bool any() const;
 
   /**
-   * @brief 从 start 开始扫描，返回一个位为 0 的 worker（倾向于“更空闲/未达到可窃取阈值”）。
+   * @brief 从 start 开始扫描，返回一个位为 0 的
+   * worker（倾向于“更空闲/未达到可窃取阈值”）。
    * @return worker id；若未找到返回 -1
    */
   int find_non_stealable(size_t start) const;

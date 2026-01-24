@@ -439,7 +439,8 @@ TEST_F(TaskQueueTest, RapidPushPop) {
 
   // 快速生产任务
   for (int i = 0; i < iterations; ++i) {
-    queue_->push(Task([]() { std::this_thread::sleep_for(std::chrono::microseconds(1)); }));
+    queue_->push(Task(
+        []() { std::this_thread::sleep_for(std::chrono::microseconds(1)); }));
   }
 
   consumer.join();
@@ -453,7 +454,8 @@ TEST_F(TaskQueueTest, BatchPushThenBatchPop) {
 
   // 批量push
   for (int i = 0; i < batch_size; ++i) {
-    queue_->push(Task([]() { std::this_thread::sleep_for(std::chrono::microseconds(1)); }));
+    queue_->push(Task(
+        []() { std::this_thread::sleep_for(std::chrono::microseconds(1)); }));
   }
 
   EXPECT_EQ(queue_->size(), batch_size);
@@ -482,7 +484,8 @@ TEST_F(TaskQueueTest, ConcurrentPop) {
 
   // 添加任务
   for (int i = 0; i < task_count; ++i) {
-    queue_->push(Task([]() { std::this_thread::sleep_for(std::chrono::microseconds(1)); }));
+    queue_->push(Task(
+        []() { std::this_thread::sleep_for(std::chrono::microseconds(1)); }));
   }
 
   // 并发pop

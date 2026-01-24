@@ -103,7 +103,8 @@ TEST_F(IoSchedulerIntegrationTest, PipeIoEvent) {
   // 延迟写入数据
   io_scheduler->add_timer(100, [&]() {
     const char *msg = "Hello IoScheduler!";
-    // 不在异线程/回调中使用 ASSERT/EXPECT，避免 gtest 线程模型导致的非确定行为。
+    // 不在异线程/回调中使用 ASSERT/EXPECT，避免 gtest
+    // 线程模型导致的非确定行为。
     const ssize_t n = write(pipe_fds[1], msg, strlen(msg));
     {
       std::lock_guard<std::mutex> lk(m);
@@ -115,7 +116,8 @@ TEST_F(IoSchedulerIntegrationTest, PipeIoEvent) {
 
   // 等待写入与读取完成（避免系统抖动导致固定 sleep 时间不足）
   std::unique_lock<std::mutex> lk(m);
-  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(3);
   cv.wait_until(lk, deadline, [&]() { return write_done && read_done; });
 
   EXPECT_TRUE(write_done);
@@ -214,8 +216,8 @@ TEST_F(IoSchedulerIntegrationTest, HookSystemCall) {
   });
 
   // 等待任务完成（避免 CI/系统抖动导致固定 sleep 时间不足）
-  const auto deadline = std::chrono::steady_clock::now() +
-                        std::chrono::seconds(5);
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(5);
   while (std::chrono::steady_clock::now() < deadline) {
     if (sleep_done.load(std::memory_order_acquire) &&
         early_ran.load(std::memory_order_acquire)) {

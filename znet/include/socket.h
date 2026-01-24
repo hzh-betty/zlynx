@@ -123,7 +123,6 @@ public:
    */
   bool shutdown_write();
 
-
   /**
    * @brief 发送数据
    * @param buffer 数据缓冲区
@@ -206,7 +205,6 @@ public:
    * @brief 设置非阻塞模式
    */
   bool set_non_blocking(bool on);
-
 
   /**
    * @brief 获取本地地址

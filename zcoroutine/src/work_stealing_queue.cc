@@ -8,23 +8,24 @@
 namespace zcoroutine {
 
 void WorkStealingQueue::bind_bitmap(StealableQueueBitmap *bitmap, int worker_id,
-                                   size_t high_watermark,
-                                   size_t low_watermark) {
+                                    size_t high_watermark,
+                                    size_t low_watermark) {
   bitmap_ = bitmap;
   bitmap_worker_id_ = worker_id;
   high_watermark_ = high_watermark;
   low_watermark_ = low_watermark;
 
   if (!bitmap_ || bitmap_worker_id_ < 0) {
-    ZCOROUTINE_LOG_DEBUG("WorkStealingQueue::bind_bitmap disabled (bitmap={}, worker_id={})",
-                        static_cast<const void *>(bitmap_), bitmap_worker_id_);
+    ZCOROUTINE_LOG_DEBUG(
+        "WorkStealingQueue::bind_bitmap disabled (bitmap={}, worker_id={})",
+        static_cast<const void *>(bitmap_), bitmap_worker_id_);
     return;
   }
   if (high_watermark_ == 0 || low_watermark_ == 0 ||
       low_watermark_ >= high_watermark_) {
-    ZCOROUTINE_LOG_WARN(
-        "WorkStealingQueue::bind_bitmap invalid watermarks: worker_id={}, H={}, L={} (bitmap disabled)",
-        bitmap_worker_id_, high_watermark_, low_watermark_);
+    ZCOROUTINE_LOG_WARN("WorkStealingQueue::bind_bitmap invalid watermarks: "
+                        "worker_id={}, H={}, L={} (bitmap disabled)",
+                        bitmap_worker_id_, high_watermark_, low_watermark_);
     return;
   }
 
@@ -143,7 +144,7 @@ size_t WorkStealingQueue::swap_if_empty(WorkStealingQueue &victim) {
 }
 
 size_t WorkStealingQueue::wait_pop_batch(Task *out, size_t max_count,
-                                        int timeout_ms) {
+                                         int timeout_ms) {
   if (max_count == 0) {
     return 0;
   }

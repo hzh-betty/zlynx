@@ -152,8 +152,9 @@ TEST_F(WorkStealingQueueTest, WaitPopBatchFastPathWhenNotEmpty) {
 
   // wait_pop_batch 在队列非空时应直接走 pop_batch，且 owner 语义为 LIFO。
   EXPECT_EQ(value.load(std::memory_order_relaxed), 2);
-  EXPECT_LT(std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count(),
-            200);
+  EXPECT_LT(
+      std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count(),
+      200);
 }
 
 TEST_F(WorkStealingQueueTest, WaitPopBatchTimeoutReturnsZero) {
@@ -166,8 +167,9 @@ TEST_F(WorkStealingQueueTest, WaitPopBatchTimeoutReturnsZero) {
 
   EXPECT_EQ(n, 0u);
   // 不做严格下限断言（避免 CI/系统抖动），只要别卡死即可。
-  EXPECT_LT(std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count(),
-            500);
+  EXPECT_LT(
+      std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count(),
+      500);
 }
 
 TEST_F(WorkStealingQueueTest, WaitPopBatchWakesOnPush) {
@@ -337,7 +339,8 @@ TEST_F(WorkStealingQueueTest, BitmapPublishAndUnpublishByWatermarks) {
   EXPECT_EQ(bitmap.find_victim(1), -1);
 }
 
-TEST_F(WorkStealingQueueTest, BitmapBindAfterQueueAlreadyLargePublishesImmediately) {
+TEST_F(WorkStealingQueueTest,
+       BitmapBindAfterQueueAlreadyLargePublishesImmediately) {
   StealableQueueBitmap bitmap(2);
   WorkStealingQueue q;
 

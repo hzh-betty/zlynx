@@ -134,7 +134,6 @@ TEST_F(HookIntegrationTest, NanosleepHook) {
   EXPECT_TRUE(done.load());
 }
 
-
 // 测试4：socket hook - 自动注册到 StatusTable
 TEST_F(HookIntegrationTest, SocketHookRegistration) {
   int sockfd = -1;
@@ -297,12 +296,14 @@ TEST_F(HookIntegrationTest, RecvSendHook) {
     set_hook_enable(true);
     size_t sent = 0;
     while (sent < expected.size()) {
-      ssize_t n = send(socks[0], expected.data() + sent, expected.size() - sent, 0);
+      ssize_t n =
+          send(socks[0], expected.data() + sent, expected.size() - sent, 0);
       if (n > 0) {
         sent += static_cast<size_t>(n);
         continue;
       }
-      if (n == -1 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)) {
+      if (n == -1 &&
+          (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)) {
         continue;
       }
       ADD_FAILURE() << "send failed, errno=" << errno;
@@ -337,11 +338,11 @@ TEST_F(HookIntegrationTest, RecvSendHook) {
   });
   scheduler_->schedule(fiber2);
 
-  // 使用轮询等待，避免固定 sleep 带来的随机性（调度线程/IO线程启动抖动、系统负载等）
+  // 使用轮询等待，避免固定 sleep
+  // 带来的随机性（调度线程/IO线程启动抖动、系统负载等）
   auto wait_start = std::chrono::steady_clock::now();
-  while (!done.load() &&
-         (std::chrono::steady_clock::now() - wait_start) <
-             std::chrono::milliseconds(1000)) {
+  while (!done.load() && (std::chrono::steady_clock::now() - wait_start) <
+                             std::chrono::milliseconds(1000)) {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
   EXPECT_TRUE(done.load());
@@ -354,7 +355,6 @@ TEST_F(HookIntegrationTest, RecvSendHook) {
   close(socks[0]);
   close(socks[1]);
 }
-
 
 // 测试9：fcntl F_SETFL - 用户非阻塞设置
 TEST_F(HookIntegrationTest, FcntlSetNonblock) {
@@ -428,7 +428,6 @@ TEST_F(HookIntegrationTest, UserNonblockBypassesHook) {
   close(socks[1]);
 }
 
-
 // 测试12：ioctl FIONBIO设置非阻塞
 TEST_F(HookIntegrationTest, IoctlFIONBIO) {
 
@@ -453,7 +452,6 @@ TEST_F(HookIntegrationTest, IoctlFIONBIO) {
 
   close(sockfd);
 }
-
 
 // 测试13：setsockopt SO_RCVTIMEO设置读超时
 TEST_F(HookIntegrationTest, SetsockoptRcvTimeout) {
@@ -600,7 +598,6 @@ TEST_F(HookIntegrationTest, CloseDeletesSocketFdContext) {
   fd_ctx = StatusTable::GetInstance()->get(sockfd);
   EXPECT_EQ(fd_ctx, nullptr);
 }
-
 
 // 测试18：多个协程并发socket IO
 TEST_F(HookIntegrationTest, ConcurrentSocketIo) {
@@ -768,7 +765,8 @@ TEST_F(HookIntegrationTest, ConnectWithTimeoutTimesOut) {
     addr.sin_port = htons(81);
     addr.sin_addr.s_addr = inet_addr("10.255.255.1");
 
-    int r = connect_with_timeout(fd, (struct sockaddr *)&addr, sizeof(addr), 50);
+    int r =
+        connect_with_timeout(fd, (struct sockaddr *)&addr, sizeof(addr), 50);
     ret = r;
     err = errno;
     close(fd);
@@ -777,9 +775,8 @@ TEST_F(HookIntegrationTest, ConnectWithTimeoutTimesOut) {
   scheduler_->schedule(fiber);
 
   auto wait_start = std::chrono::steady_clock::now();
-  while (!done.load() &&
-         (std::chrono::steady_clock::now() - wait_start) <
-             std::chrono::milliseconds(2000)) {
+  while (!done.load() && (std::chrono::steady_clock::now() - wait_start) <
+                             std::chrono::milliseconds(2000)) {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
 
@@ -923,9 +920,8 @@ TEST_F(HookIntegrationTest, ReadvWritevHook) {
   scheduler_->schedule(fiber2);
 
   auto wait_start = std::chrono::steady_clock::now();
-  while (!done.load() &&
-         (std::chrono::steady_clock::now() - wait_start) <
-             std::chrono::milliseconds(1000)) {
+  while (!done.load() && (std::chrono::steady_clock::now() - wait_start) <
+                             std::chrono::milliseconds(1000)) {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
   EXPECT_TRUE(done.load());
@@ -1037,9 +1033,8 @@ TEST_F(HookIntegrationTest, RecvmsgSendmsgHook) {
   scheduler_->schedule(fiber2);
 
   auto wait_start = std::chrono::steady_clock::now();
-  while (!done.load() &&
-         (std::chrono::steady_clock::now() - wait_start) <
-             std::chrono::milliseconds(1000)) {
+  while (!done.load() && (std::chrono::steady_clock::now() - wait_start) <
+                             std::chrono::milliseconds(1000)) {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
   EXPECT_TRUE(done.load());

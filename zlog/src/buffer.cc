@@ -29,8 +29,8 @@ static void prefaultMemory(char *data, size_t size) {
 }
 
 Buffer::Buffer()
-    : data_(static_cast<char *>(std::malloc(DEFAULT_BUFFER_SIZE))),
-      writerIdx_(0), capacity_(DEFAULT_BUFFER_SIZE), readerIdx_(0) {
+    : data_(static_cast<char *>(malloc(DEFAULT_BUFFER_SIZE))), writerIdx_(0),
+      capacity_(DEFAULT_BUFFER_SIZE), readerIdx_(0) {
   if (!data_) {
     throw std::bad_alloc();
   }
@@ -44,7 +44,7 @@ Buffer::Buffer()
 
 Buffer::~Buffer() {
   if (data_) {
-    std::free(data_);
+    free(data_);
   }
 }
 

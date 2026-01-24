@@ -132,9 +132,9 @@ public:
 
 private:
   std::vector<std::unique_ptr<SharedStackBuffer>> stack_array_; // 栈缓冲区数组
-  size_t stack_size_ = 0;                  // 每个栈的大小
-  int count_ = 0;                          // 栈缓冲区数量
-  size_t index_ = 0; // 轮询下标
+  size_t stack_size_ = 0; // 每个栈的大小
+  int count_ = 0;         // 栈缓冲区数量
+  size_t index_ = 0;      // 轮询下标
 };
 
 /**

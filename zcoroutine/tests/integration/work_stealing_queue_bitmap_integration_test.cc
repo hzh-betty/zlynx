@@ -20,7 +20,8 @@ protected:
   }
 };
 
-TEST_F(WorkStealingQueueBitmapIntegrationTest, PublishAndUnpublishByStealBatch) {
+TEST_F(WorkStealingQueueBitmapIntegrationTest,
+       PublishAndUnpublishByStealBatch) {
   StealableQueueBitmap bitmap(2);
 
   WorkStealingQueue q;
@@ -42,7 +43,8 @@ TEST_F(WorkStealingQueueBitmapIntegrationTest, PublishAndUnpublishByStealBatch) 
   EXPECT_EQ(bitmap.find_victim(1), -1);
 }
 
-TEST_F(WorkStealingQueueBitmapIntegrationTest, SwapIfEmptyUpdatesBitmapForBothQueues) {
+TEST_F(WorkStealingQueueBitmapIntegrationTest,
+       SwapIfEmptyUpdatesBitmapForBothQueues) {
   StealableQueueBitmap bitmap(2);
 
   WorkStealingQueue q0;
@@ -69,13 +71,15 @@ TEST_F(WorkStealingQueueBitmapIntegrationTest, SwapIfEmptyUpdatesBitmapForBothQu
   EXPECT_EQ(bitmap.find_victim(0), -1);
 }
 
-TEST_F(WorkStealingQueueBitmapIntegrationTest, BitmapGuidedStealConsumesAllExactlyOnce) {
+TEST_F(WorkStealingQueueBitmapIntegrationTest,
+       BitmapGuidedStealConsumesAllExactlyOnce) {
   constexpr int kTaskCount = 2000;
 
   StealableQueueBitmap bitmap(2);
   WorkStealingQueue victim;
   WorkStealingQueue thief;
-  // low=1：避免在队列仍有少量任务时提前撤销发布，导致纯 bitmap 引导的窃取循环卡住。
+  // low=1：避免在队列仍有少量任务时提前撤销发布，导致纯 bitmap
+  // 引导的窃取循环卡住。
   victim.bind_bitmap(&bitmap, 1, /*high=*/32, /*low=*/1);
   thief.bind_bitmap(&bitmap, 0, /*high=*/32, /*low=*/1);
 
@@ -161,7 +165,8 @@ TEST_F(WorkStealingQueueBitmapIntegrationTest, WatermarkBoundariesAreStrict) {
   EXPECT_EQ(bitmap.find_victim(1), -1);
 }
 
-TEST_F(WorkStealingQueueBitmapIntegrationTest, PublishAndUnpublishByOwnerPopBatch) {
+TEST_F(WorkStealingQueueBitmapIntegrationTest,
+       PublishAndUnpublishByOwnerPopBatch) {
   StealableQueueBitmap bitmap(2);
 
   WorkStealingQueue q;

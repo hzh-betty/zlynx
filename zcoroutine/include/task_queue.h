@@ -116,9 +116,9 @@ public:
   void stop();
 
 private:
-  mutable Spinlock spinlock_; // 自旋锁保护队列
-  std::condition_variable_any cv_;        // 条件变量
-  std::queue<Task> tasks_;                // 任务队列
+  mutable Spinlock spinlock_;      // 自旋锁保护队列
+  std::condition_variable_any cv_; // 条件变量
+  std::queue<Task> tasks_;         // 任务队列
 
   alignas(64) std::atomic<bool> stopped_{false}; // 停止标志
   std::atomic<size_t> size_{0};                  // 原子size，减少锁操作

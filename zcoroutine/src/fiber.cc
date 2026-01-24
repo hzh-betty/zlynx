@@ -204,8 +204,8 @@ Fiber::Fiber(std::function<void()> func, SharedStack *shared_stack,
   // 创建上下文
   context_->make_context(stack_ptr_, stack_size_, Fiber::main_func);
 
-  ZCOROUTINE_LOG_DEBUG(
-      "Fiber created: name={}, id={}, is_shared_stack=true", name_, id_);
+  ZCOROUTINE_LOG_DEBUG("Fiber created: name={}, id={}, is_shared_stack=true",
+                       name_, id_);
 }
 
 Fiber::Fiber(Fiber &&other) noexcept

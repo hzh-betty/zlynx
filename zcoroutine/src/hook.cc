@@ -1,7 +1,7 @@
 #include "hook.h"
+#include "fiber.h"
 #include "io_scheduler.h"
 #include "status_table.h"
-#include "fiber.h"
 #include "thread_context.h"
 #include "zcoroutine_logger.h"
 #include <cerrno>
@@ -76,7 +76,8 @@ static HookIniter s_hook_initer;
 } // namespace zcoroutine
 
 // 当 hook 代码运行在 scheduler_fiber 上时，绝不能 yield。
-// 因为 scheduler_fiber::yield 会切回 main_fiber，导致 worker 的 run() 直接退出。
+// 因为 scheduler_fiber::yield 会切回 main_fiber，导致 worker 的 run()
+// 直接退出。
 static inline bool in_scheduler_fiber() {
   auto cur = zcoroutine::ThreadContext::get_current_fiber();
   auto sched = zcoroutine::ThreadContext::get_scheduler_fiber();
@@ -176,7 +177,7 @@ static ssize_t do_io_hook(int fd, OriginFun fun, const char *hook_fun_name,
   }
 
   // 获取文件描述符上下文
-  auto* status_table = zcoroutine::StatusTable::GetInstance();
+  auto *status_table = zcoroutine::StatusTable::GetInstance();
   zcoroutine::SocketStatus::ptr fd_ctx = status_table->get(fd);
   if (!fd_ctx) {
     return fun(fd, std::forward<Args>(args)...);
@@ -195,7 +196,8 @@ static ssize_t do_io_hook(int fd, OriginFun fun, const char *hook_fun_name,
   }
 
   // scheduler_fiber 上禁止 yield：退化为“临时改回阻塞”直接调用原始 syscall。
-  // 说明：这会阻塞调度线程，但能保证 callback 直接执行时不因 yield 导致 worker 退出。
+  // 说明：这会阻塞调度线程，但能保证 callback 直接执行时不因 yield 导致 worker
+  // 退出。
   if (in_scheduler_fiber()) {
     (void)hook_fun_name;
     (void)event;
@@ -405,8 +407,10 @@ int socketpair(int domain, int type, int protocol, int sv[2]) {
   }
 
   // 获取 StatusTable 并注册两个fd
-  zcoroutine::StatusTable::GetInstance()->get(sv[0], true); // auto_create = true
-  zcoroutine::StatusTable::GetInstance()->get(sv[1], true); // auto_create = true
+  zcoroutine::StatusTable::GetInstance()->get(sv[0],
+                                              true); // auto_create = true
+  zcoroutine::StatusTable::GetInstance()->get(sv[1],
+                                              true); // auto_create = true
 
   ZCOROUTINE_LOG_DEBUG("hook::socketpair sv[0]={}, sv[1]={}", sv[0], sv[1]);
   return ret;
@@ -446,13 +450,14 @@ int connect_with_timeout(int fd, const struct sockaddr *addr, socklen_t addrlen,
   }
 
   // scheduler_fiber 上禁止 yield：退化为阻塞 connect。
-  // 尽力支持超时：通过 SO_SNDTIMEO 影响阻塞 connect 的等待时间（不同内核/协议栈可能不完全等价）。
+  // 尽力支持超时：通过 SO_SNDTIMEO 影响阻塞 connect
+  // 的等待时间（不同内核/协议栈可能不完全等价）。
   if (in_scheduler_fiber()) {
     timeval old_tv{};
     socklen_t old_len = sizeof(old_tv);
     bool has_old = false;
-    if (getsockopt_f && getsockopt_f(fd, SOL_SOCKET, SO_SNDTIMEO, &old_tv,
-                                    &old_len) == 0) {
+    if (getsockopt_f &&
+        getsockopt_f(fd, SOL_SOCKET, SO_SNDTIMEO, &old_tv, &old_len) == 0) {
       has_old = true;
     }
 

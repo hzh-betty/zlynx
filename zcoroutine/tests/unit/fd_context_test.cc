@@ -40,7 +40,6 @@ protected:
   FdContext::ptr ctx2_;
 };
 
-
 // 测试1：创建FdContext
 TEST_F(FdContextTest, CreateFdContext) {
   ASSERT_NE(ctx1_, nullptr);

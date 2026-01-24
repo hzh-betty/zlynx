@@ -85,12 +85,16 @@ public:
   /**
    * @brief 是否已连接
    */
-  bool connected() const { return state_.load(std::memory_order_acquire) == State::Connected; }
+  bool connected() const {
+    return state_.load(std::memory_order_acquire) == State::Connected;
+  }
 
   /**
    * @brief 是否已断开
    */
-  bool disconnected() const { return state_.load(std::memory_order_acquire) == State::Disconnected; }
+  bool disconnected() const {
+    return state_.load(std::memory_order_acquire) == State::Disconnected;
+  }
 
   void set_connection_callback(ConnectionCallback cb) {
     connection_callback_ = std::move(cb);
@@ -191,7 +195,7 @@ public:
   /**
    * @brief 将状态转换为字符串
    */
-  static const char* state_to_string(State s);
+  static const char *state_to_string(State s);
 
 private:
   /**
@@ -215,16 +219,16 @@ private:
   void force_close_in_loop();
 
 private:
-  std::string name_;                // 连接名称
-  std::atomic<State> state_;        // 连接状态（原子变量保证线程安全）
-  Socket::ptr socket_;              // Socket 对象
-  Address::ptr local_addr_;         // 本地地址
-  Address::ptr peer_addr_;          // 对端地址
+  std::string name_;         // 连接名称
+  std::atomic<State> state_; // 连接状态（原子变量保证线程安全）
+  Socket::ptr socket_;       // Socket 对象
+  Address::ptr local_addr_;  // 本地地址
+  Address::ptr peer_addr_;   // 对端地址
 
   zcoroutine::IoScheduler *io_scheduler_; // IO调度器
 
-  Buffer input_buffer_;             // 输入缓冲区
-  Buffer output_buffer_;            // 输出缓冲区
+  Buffer input_buffer_;                             // 输入缓冲区
+  Buffer output_buffer_;                            // 输出缓冲区
   mutable zcoroutine::Spinlock output_buffer_lock_; // 输出缓冲区锁
 
   // 回调函数

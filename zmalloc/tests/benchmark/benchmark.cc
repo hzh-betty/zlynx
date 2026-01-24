@@ -43,10 +43,10 @@ void benchmark_single_thread(size_t alloc_size, size_t num_allocs,
     std::vector<void *> ptrs;
     ptrs.reserve(num_allocs);
     for (size_t i = 0; i < num_allocs; ++i) {
-      ptrs.push_back(std::malloc(alloc_size));
+      ptrs.push_back(malloc(alloc_size));
     }
     for (void *ptr : ptrs) {
-      std::free(ptr);
+      free(ptr);
     }
   }
   end = Clock::now();
@@ -81,10 +81,10 @@ void benchmark_multi_thread(size_t alloc_size, size_t num_allocs,
     std::vector<void *> ptrs;
     ptrs.reserve(num_allocs);
     for (size_t i = 0; i < num_allocs; ++i) {
-      ptrs.push_back(std::malloc(alloc_size));
+      ptrs.push_back(malloc(alloc_size));
     }
     for (void *ptr : ptrs) {
-      std::free(ptr);
+      free(ptr);
     }
   };
 

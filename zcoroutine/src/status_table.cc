@@ -1,5 +1,5 @@
-#include "hook.h"
 #include "status_table.h"
+#include "hook.h"
 
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -121,7 +121,7 @@ void StatusTable::del(const int fd) {
   }
 }
 
-StatusTable* StatusTable::GetInstance() {
+StatusTable *StatusTable::GetInstance() {
   static StatusTable instance;
   return &instance;
 }

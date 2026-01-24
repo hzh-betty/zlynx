@@ -28,7 +28,8 @@ void FiberPool::init(size_t independent_stack_size, size_t shared_stack_size,
   }
 
   // 设置全局配置
-  independent_stack_size_.store(independent_stack_size, std::memory_order_release);
+  independent_stack_size_.store(independent_stack_size,
+                                std::memory_order_release);
   shared_stack_size_.store(shared_stack_size, std::memory_order_release);
   per_thread_max_capacity_.store(per_thread_max_capacity,
                                  std::memory_order_release);
@@ -61,18 +62,21 @@ Fiber::ptr FiberPool::get_fiber(std::function<void()> func, size_t stack_size,
                                 bool use_shared_stack) {
 
   const bool wants_shared =
-      use_shared_stack || (ThreadContext::get_stack_mode() == StackMode::kShared);
+      use_shared_stack ||
+      (ThreadContext::get_stack_mode() == StackMode::kShared);
 
   // 未 init：直接创建（不池化）
   if (!initialized()) {
-    ZCOROUTINE_LOG_WARN("FiberPool::get_fiber: not initialized, create directly");
-    return std::make_shared<Fiber>(std::move(func), stack_size, name, wants_shared);
+    ZCOROUTINE_LOG_WARN(
+        "FiberPool::get_fiber: not initialized, create directly");
+    return std::make_shared<Fiber>(std::move(func), stack_size, name,
+                                   wants_shared);
   }
 
   const size_t supported_stack_size =
       wants_shared ? shared_stack_size() : independent_stack_size();
 
-  //最多尝试复用一个
+  // 最多尝试复用一个
   Fiber::ptr fiber = ThreadContext::fiber_pool_pop(wants_shared);
   if (fiber) {
     // 若请求更大，复用失败：放回并直接创建新的
@@ -112,7 +116,7 @@ bool FiberPool::return_fiber(const Fiber::ptr &fiber) {
   }
 
   const bool shared = fiber->is_shared_stack();
-    const size_t supported_stack_size =
+  const size_t supported_stack_size =
       shared ? shared_stack_size() : independent_stack_size();
 
   // 按规则：fiber 实际栈大小不足（< supported）直接拒绝

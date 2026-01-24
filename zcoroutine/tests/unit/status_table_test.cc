@@ -25,7 +25,7 @@ protected:
 
   void TearDown() override { set_hook_enable(false); }
 
-  StatusTable* status_table_;
+  StatusTable *status_table_;
 };
 
 // ==================== StatusTable 基础功能测试 ====================

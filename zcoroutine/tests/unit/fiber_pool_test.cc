@@ -24,11 +24,8 @@ protected:
     ThreadContext::fiber_pool_clear();
   }
 
-  void TearDown() override {
-    ThreadContext::fiber_pool_clear();
-  }
+  void TearDown() override { ThreadContext::fiber_pool_clear(); }
 };
-
 
 // 测试 1: 从池中获取协程（第一次 - 应该创建新的）
 TEST_F(FiberPoolTest, GetFiberFirstTime) {
@@ -108,9 +105,6 @@ TEST_F(FiberPoolTest, ReturnNullFiber) {
   EXPECT_FALSE(returned);
   EXPECT_EQ(ThreadContext::fiber_pool_size(), 0);
 }
-
-
-
 
 // 测试 13: 并发获取和归还
 TEST_F(FiberPoolTest, ConcurrentGetReturn) {

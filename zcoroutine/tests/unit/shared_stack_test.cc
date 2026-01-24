@@ -29,7 +29,6 @@ protected:
   }
 };
 
-
 // 测试1：SharedStackBuffer 创建
 TEST_F(SharedStackTest, SharedStackBufferCreation) {
   const size_t stack_size = 64 * 1024;
@@ -95,7 +94,6 @@ TEST_F(SharedStackTest, SharedStackAllocateRoundRobin) {
   }
 }
 
-
 // 测试6：ThreadContext 默认模式
 TEST_F(SharedStackTest, ThreadContextDefault) {
   EXPECT_EQ(ThreadContext::get_stack_mode(), StackMode::kIndependent);
@@ -137,7 +135,6 @@ TEST_F(SharedStackTest, ThreadContextReset) {
 
   EXPECT_EQ(ThreadContext::get_stack_mode(), StackMode::kIndependent);
 }
-
 
 // 测试11：共享栈模式创建协程
 TEST_F(SharedStackTest, CreateFiberWithSharedStack) {
@@ -202,7 +199,6 @@ TEST_F(SharedStackTest, CreateFiberWithExplicitSharedStack) {
   EXPECT_EQ(fiber->state(), Fiber::State::kTerminated);
 }
 
-
 // 测试15：共享栈协程单次yield
 TEST_F(SharedStackTest, SharedStackFiberYield) {
   ThreadContext::set_stack_mode(StackMode::kShared);
@@ -251,7 +247,6 @@ TEST_F(SharedStackTest, SharedStackFiberMultipleYields) {
   fiber->resume();
   EXPECT_EQ(fiber->state(), Fiber::State::kTerminated);
 }
-
 
 // 测试17：多协程共享同一栈缓冲区
 TEST_F(SharedStackTest, MultipleFibersShareSameBuffer) {
@@ -383,7 +378,6 @@ TEST_F(SharedStackTest, SharedStackFiberReset) {
   EXPECT_EQ(fiber->state(), Fiber::State::kTerminated);
 }
 
-
 // 测试21：栈上复杂数据类型保存恢复
 TEST_F(SharedStackTest, SharedStackComplexDataPreservation) {
   auto shared_stack = std::make_shared<SharedStack>(1, 128 * 1024);
@@ -490,7 +484,6 @@ TEST_F(SharedStackTest, SharedStackRecursion) {
   EXPECT_EQ(result2, 21); // fib(8) = 21
 }
 
-
 // 测试23：共享栈协程内部异常捕获
 TEST_F(SharedStackTest, SharedStackExceptionCatch) {
   ThreadContext::set_stack_mode(StackMode::kShared);
@@ -538,7 +531,6 @@ TEST_F(SharedStackTest, SharedStackExceptionAfterYield) {
   EXPECT_TRUE(exception_caught);
   EXPECT_EQ(fiber->state(), Fiber::State::kTerminated);
 }
-
 
 // 测试25：独立栈和共享栈协程混合执行
 TEST_F(SharedStackTest, MixedStackModes) {
@@ -589,7 +581,6 @@ TEST_F(SharedStackTest, MixedStackModes) {
   }
 }
 
-
 // 测试26：空函数共享栈协程
 TEST_F(SharedStackTest, SharedStackEmptyFunction) {
   ThreadContext::set_stack_mode(StackMode::kShared);
@@ -635,7 +626,6 @@ TEST_F(SharedStackTest, SharedStackManyYields) {
   fiber->resume();
   EXPECT_EQ(fiber->state(), Fiber::State::kTerminated);
 }
-
 
 // 测试29：多线程独立的共享栈配置
 TEST_F(SharedStackTest, ThreadLocalStackConfig) {

@@ -17,8 +17,8 @@ TcpServer::TcpServer(zcoroutine::IoScheduler::ptr io_worker,
                                          1, "TcpServer-Accept", false)),
       recv_timeout_(60 * 1000 * 2), // 默认 2 分钟
       name_("znet/1.0.0"), type_("tcp"), is_stop_(true) {
-        zcoroutine::FiberPool::get_instance().init();
-      }
+  zcoroutine::FiberPool::get_instance().init();
+}
 
 TcpServer::~TcpServer() { stop(); }
 
@@ -88,11 +88,11 @@ void TcpServer::start_accept(Socket::ptr sock) {
       // 创建TcpConnection，转移 Socket 所有权
       auto local_addr = client->get_local_address();
       auto peer_addr = client->get_remote_address();
-        std::string conn_name;
-        conn_name.reserve(name_.size() + 1 + 64);
-        conn_name.append(name_);
-        conn_name.push_back('-');
-        conn_name.append(peer_addr->to_string());
+      std::string conn_name;
+      conn_name.reserve(name_.size() + 1 + 64);
+      conn_name.append(name_);
+      conn_name.push_back('-');
+      conn_name.append(peer_addr->to_string());
 
       TcpConnectionPtr conn = std::make_shared<TcpConnection>(
           std::move(conn_name), std::move(client), local_addr, peer_addr,
@@ -103,8 +103,8 @@ void TcpServer::start_accept(Socket::ptr sock) {
         auto self = shared_from_this();
         io_worker_->schedule([self, conn = std::move(conn)]() mutable {
           // 在 worker 线程中创建协程，使用 worker 线程的 SharedStack
-          auto fiber =
-              zcoroutine::FiberPool::get_instance().get_fiber([self, conn = std::move(conn)]() mutable {
+          auto fiber = zcoroutine::FiberPool::get_instance().get_fiber(
+              [self, conn = std::move(conn)]() mutable {
                 // 处理连接
                 self->handle_client(conn);
                 conn->connect_established();
@@ -175,7 +175,7 @@ void TcpServer::stop() {
     return; // 已经停止
   }
 
-  //将关闭操作调度到 accept_worker_ 执行，确保线程安全
+  // 将关闭操作调度到 accept_worker_ 执行，确保线程安全
   auto self = shared_from_this();
   if (accept_worker_) {
     accept_worker_->schedule([this, self]() {

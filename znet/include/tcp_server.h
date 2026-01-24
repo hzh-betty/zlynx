@@ -104,15 +104,15 @@ protected:
   void start_accept(Socket::ptr sock);
 
 protected:
-  std::vector<Socket::ptr> socks_;         // 监听 Socket 数组
+  std::vector<Socket::ptr> socks_;          // 监听 Socket 数组
   mutable zcoroutine::RWMutex socks_mutex_; // socks_ 读写锁保护
   zcoroutine::IoScheduler::ptr io_worker_; // 新连接的 Socket 工作的调度器
   zcoroutine::IoScheduler::ptr
       accept_worker_; // 服务器 Socket 接收连接的调度器（默认单线程）
-  uint64_t recv_timeout_; // 接收超时时间(毫秒)
-  std::string name_;      // 服务器名称
-  std::string type_;      // 服务器类型
-  std::atomic<bool> is_stop_;  // 服务是否停止
+  uint64_t recv_timeout_;     // 接收超时时间(毫秒)
+  std::string name_;          // 服务器名称
+  std::string type_;          // 服务器类型
+  std::atomic<bool> is_stop_; // 服务是否停止
 };
 
 } // namespace znet

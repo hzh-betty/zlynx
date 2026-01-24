@@ -63,7 +63,8 @@ int StealableQueueBitmap::find_victim(int self_id) const {
 
   // 扫描起点：从 (self_id + 1) % N 开始，避免所有线程都从 0 扫描导致热点。
   const size_t start = (static_cast<size_t>(self_id) + 1) % worker_count_;
-  int victim = find_in_range(start, worker_count_, static_cast<size_t>(self_id));
+  int victim =
+      find_in_range(start, worker_count_, static_cast<size_t>(self_id));
   if (victim >= 0) {
     return victim;
   }
@@ -71,7 +72,7 @@ int StealableQueueBitmap::find_victim(int self_id) const {
 }
 
 int StealableQueueBitmap::find_in_range(size_t from, size_t to,
-                                       size_t self_id) const {
+                                        size_t self_id) const {
   if (from >= to) {
     return -1;
   }
@@ -90,9 +91,9 @@ int StealableQueueBitmap::find_in_range(size_t from, size_t to,
     const size_t last = to - 1;
     if (word_index == last / 64) {
       const size_t last_off = last % 64;
-      const uint64_t end_mask =
-          (last_off == 63) ? ~uint64_t{0}
-                           : ((uint64_t{1} << (last_off + 1)) - 1);
+      const uint64_t end_mask = (last_off == 63)
+                                    ? ~uint64_t{0}
+                                    : ((uint64_t{1} << (last_off + 1)) - 1);
       word &= end_mask;
     }
 
@@ -138,9 +139,9 @@ int StealableQueueBitmap::find_zero_in_range(size_t from, size_t to) const {
     const size_t last = to - 1;
     if (word_index == last / 64) {
       const size_t last_off = last % 64;
-      const uint64_t end_mask =
-          (last_off == 63) ? ~uint64_t{0}
-                           : ((uint64_t{1} << (last_off + 1)) - 1);
+      const uint64_t end_mask = (last_off == 63)
+                                    ? ~uint64_t{0}
+                                    : ((uint64_t{1} << (last_off + 1)) - 1);
       inv &= end_mask;
     }
 

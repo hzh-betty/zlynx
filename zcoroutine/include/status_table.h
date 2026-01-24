@@ -57,7 +57,6 @@ private:
  */
 class StatusTable : public NonCopyable {
 public:
-
   /**
    * @brief 获取文件描述符上下文
    * @param fd 文件描述符
@@ -73,7 +72,7 @@ public:
   /**
    * @brief 获取单例
    */
-  static StatusTable* GetInstance();
+  static StatusTable *GetInstance();
 
 private:
   StatusTable();

@@ -3,11 +3,11 @@
  * @brief 用于 perf 热点分析的 HTTP 服务器（基于 znet）
  */
 
-#include "tcp_server.h"
-#include "tcp_connection.h"
 #include "address.h"
 #include "buff.h"
 #include "io_scheduler.h"
+#include "tcp_connection.h"
+#include "tcp_server.h"
 #include "znet_logger.h"
 
 #include <atomic>
@@ -49,24 +49,23 @@ protected:
     }
 
     // 设置消息回调
-    conn->set_message_callback(
-        [](const TcpConnectionPtr &conn, Buffer *buf) {
-          size_t readable = buf->readable_bytes();
-          if (readable > 0) {
-            // 简单检查是否收到完整HTTP请求
-            const char *crlf = buf->find_crlf();
-            if (crlf) {
-              buf->retrieve_all();
-              
-              // 发送响应
-              conn->send(HTTP_RESPONSE, HTTP_RESPONSE_LEN);
-              g_requests.fetch_add(1, std::memory_order_relaxed);
-              
-              // 短连接
-              conn->shutdown();
-            }
-          }
-        });
+    conn->set_message_callback([](const TcpConnectionPtr &conn, Buffer *buf) {
+      size_t readable = buf->readable_bytes();
+      if (readable > 0) {
+        // 简单检查是否收到完整HTTP请求
+        const char *crlf = buf->find_crlf();
+        if (crlf) {
+          buf->retrieve_all();
+
+          // 发送响应
+          conn->send(HTTP_RESPONSE, HTTP_RESPONSE_LEN);
+          g_requests.fetch_add(1, std::memory_order_relaxed);
+
+          // 短连接
+          conn->shutdown();
+        }
+      }
+    });
 
     conn->set_connection_callback([](const TcpConnectionPtr &conn) {
       if (conn->connected()) {
@@ -126,7 +125,8 @@ int main(int argc, char *argv[]) {
   g_server = std::make_shared<PerfHttpServer>(io_worker, accept_worker);
   g_server->set_name("PerfHttpServer");
 
-  auto addr = std::make_shared<IPv4Address>("0.0.0.0", static_cast<uint16_t>(port));
+  auto addr =
+      std::make_shared<IPv4Address>("0.0.0.0", static_cast<uint16_t>(port));
   if (!addr) {
     std::cerr << "Invalid address" << std::endl;
     return 1;

@@ -33,9 +33,8 @@ public:
 
   bool try_lock() noexcept {
     bool expected = false;
-    return locked_.compare_exchange_strong(expected, true,
-                                          std::memory_order_acquire,
-                                          std::memory_order_relaxed);
+    return locked_.compare_exchange_strong(
+        expected, true, std::memory_order_acquire, std::memory_order_relaxed);
   }
 
   void unlock() noexcept { locked_.store(false, std::memory_order_release); }

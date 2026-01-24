@@ -28,7 +28,7 @@ public:
 
   /**
    * @brief 绑定可窃取队列提示位图，用于在队列规模跨越阈值时上报“可窃取”状态。
-    * @note 通常仅 worker 本地队列需要绑定。
+   * @note 通常仅 worker 本地队列需要绑定。
    */
   void bind_bitmap(StealableQueueBitmap *bitmap, int worker_id,
                    size_t high_watermark, size_t low_watermark);

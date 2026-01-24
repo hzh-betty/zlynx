@@ -131,7 +131,7 @@ public:
 
 private:
   // 热数据：最常访问，放在开头
-  int fd_;             // 文件描述符 - 4字节
+  int fd_;                         // 文件描述符 - 4字节
   std::atomic<int> events_{kNone}; // 当前注册的事件
 
   // 事件上下文：紧接着热数据

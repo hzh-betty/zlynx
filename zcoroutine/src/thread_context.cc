@@ -105,10 +105,11 @@ SharedStack *ThreadContext::get_shared_stack() {
   if (ctx->shared_stack_ctx_.stack_mode == StackMode::kShared &&
       !ctx->shared_stack_ctx_.shared_stack) {
     auto &pool = FiberPool::get_instance();
-    const size_t stack_size =
-        pool.initialized() ? pool.shared_stack_size() : SharedStack::kDefaultStackSize;
-    ctx->shared_stack_ctx_.shared_stack =
-        std::make_unique<SharedStack>(SharedStack::kDefaultStackCount, stack_size);
+    const size_t stack_size = pool.initialized()
+                                  ? pool.shared_stack_size()
+                                  : SharedStack::kDefaultStackSize;
+    ctx->shared_stack_ctx_.shared_stack = std::make_unique<SharedStack>(
+        SharedStack::kDefaultStackCount, stack_size);
   }
   return ctx->shared_stack_ctx_.shared_stack.get();
 }
