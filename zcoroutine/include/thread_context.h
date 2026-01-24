@@ -30,8 +30,10 @@ struct SchedulerContext {
   Scheduler *scheduler = nullptr;       // 当前调度器
 
   int worker_id = -1; // 当前线程的 worker id
+  WorkStealingQueue *work_queue =
+      nullptr; // 当前线程的 work-stealing 队列（可注入）
   std::unique_ptr<WorkStealingQueue>
-      work_queue; // 当前线程的 work-stealing 队列
+      owned_work_queue; // 非 worker/未注入时的兜底所有权
 
   static constexpr int kMaxCallStackDepth = 128;
   std::array<std::weak_ptr<Fiber>, kMaxCallStackDepth> call_stack{};
@@ -43,11 +45,11 @@ struct SchedulerContext {
  * 管理共享栈模式下的栈状态、切换栈等
  */
 struct SharedStackContext {
-  StackMode stack_mode; // 当前线程的栈模式
+  StackMode stack_mode;                                // 当前线程的栈模式
   std::unique_ptr<SharedStack> shared_stack = nullptr; // 当前线程的共享栈
   std::unique_ptr<SwitchStack> switch_stack = nullptr; // 专用切换栈
   std::unique_ptr<Context> switch_context =
-      nullptr; // 切换上下文（运行在 switch_stack_ 上）
+      nullptr;                        // 切换上下文（运行在 switch_stack_ 上）
   std::weak_ptr<Fiber> pending_fiber; // 待切换的目标协程
 };
 
@@ -151,6 +153,12 @@ public:
    * @brief 获取当前线程的 work-stealing 队列（按需创建，仅线程本地 owner）
    */
   static WorkStealingQueue *get_work_queue();
+
+  /**
+   * @brief 注入当前线程的 work-stealing 队列（通常由线程池/Processor
+   * 创建并拥有）
+   */
+  static void set_work_queue(WorkStealingQueue *queue);
 
   /**
    * @brief 设置当前线程的栈模式

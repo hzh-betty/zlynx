@@ -25,7 +25,9 @@ TEST_F(WorkStealingQueueBitmapIntegrationTest,
   StealableQueueBitmap bitmap(2);
 
   WorkStealingQueue q;
-  q.bind_bitmap(&bitmap, 0, /*high=*/4, /*low=*/2);
+  // 使用 half-steal：单次窃取后队列剩余为 floor(n/2)。
+  // 选择 low=3 使得 n=5 时：steal=3, remain=2 < low，从而触发撤销发布。
+  q.bind_bitmap(&bitmap, 0, /*high=*/4, /*low=*/3);
 
   for (int i = 0; i < 5; ++i) {
     q.push(Task([]() {}));
@@ -35,11 +37,11 @@ TEST_F(WorkStealingQueueBitmapIntegrationTest,
   // 仅 worker0 可窃取，self=1 应能找到 victim=0
   EXPECT_EQ(bitmap.find_victim(1), 0);
 
-  Task out[4];
-  EXPECT_EQ(q.steal_batch(out, 4), 4u);
-  EXPECT_EQ(q.approx_size(), 1u);
+  Task out[8];
+  EXPECT_EQ(q.steal_batch(out, 8), 3u);
+  EXPECT_EQ(q.approx_size(), 2u);
 
-  // size=1 < low(2) 触发撤销
+  // size=2 < low(3) 触发撤销
   EXPECT_EQ(bitmap.find_victim(1), -1);
 }
 

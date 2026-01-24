@@ -105,8 +105,18 @@ size_t WorkStealingQueue::steal_batch(Task *out, size_t max_count) {
   }
 
   std::lock_guard<Spinlock> lock(lock_);
+
+  // “一次性窃取受害者队列的一半任务”：对当前队列规模取一半（向上取整）。
+  // 受 out 缓冲区容量限制，最多只能窃取 max_count 个。
+  const size_t victim_size = tasks_.size();
+  if (victim_size == 0) {
+    return 0;
+  }
+  const size_t target = (victim_size + 1) / 2;
+  const size_t limit = std::min(target, max_count);
+
   size_t n = 0;
-  while (n < max_count && !tasks_.empty()) {
+  while (n < limit && !tasks_.empty()) {
     out[n++] = std::move(tasks_.front());
     tasks_.pop_front();
   }

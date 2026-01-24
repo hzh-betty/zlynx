@@ -97,6 +97,37 @@ TEST_F(WorkStealingQueueTest, StealBatchFifoOrder) {
   EXPECT_EQ(q.approx_size(), 6u);
 }
 
+TEST_F(WorkStealingQueueTest, StealBatchStealsHalfRoundedUpWhenCapacityEnough) {
+  WorkStealingQueue q;
+
+  std::vector<int> executed;
+  std::mutex executed_mutex;
+
+  // 9 个任务，窃取应为 ceil(9/2)=5。
+  for (int i = 0; i < 9; ++i) {
+    q.push(make_id_task(i, &executed, &executed_mutex));
+  }
+  ASSERT_EQ(q.approx_size(), 9u);
+
+  Task out[16];
+  const size_t n = q.steal_batch(out, 16);
+  ASSERT_EQ(n, 5u);
+
+  for (size_t i = 0; i < n; ++i) {
+    ASSERT_TRUE(out[i].is_valid());
+    out[i].callback();
+    out[i].reset();
+  }
+
+  // thief pop_front: FIFO
+  ASSERT_EQ(executed.size(), 5u);
+  for (int i = 0; i < 5; ++i) {
+    EXPECT_EQ(executed[static_cast<size_t>(i)], i);
+  }
+
+  EXPECT_EQ(q.approx_size(), 4u);
+}
+
 TEST_F(WorkStealingQueueTest, ApproxSizeTracksPushPopSteal) {
   WorkStealingQueue q;
 

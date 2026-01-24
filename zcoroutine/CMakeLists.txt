@@ -19,19 +19,19 @@ endif()
 
 option(ENABLE_TESTS "Enable building tests" ${ENABLE_TESTS_DEFAULT})
 
-file(GLOB ZCOROUTINE_SRCS
-        ${PROJECT_SOURCE_DIR}/src/*.cc
+file(GLOB ZCOROUTINE_SRCS CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cc
 )
 
 add_library(zcoroutine_shared SHARED ${ZCOROUTINE_SRCS})
 add_library(zcoroutine_static STATIC ${ZCOROUTINE_SRCS})
 
 target_include_directories(zcoroutine_shared
-        PUBLIC ${PROJECT_SOURCE_DIR}/include
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 target_include_directories(zcoroutine_static
-        PUBLIC ${PROJECT_SOURCE_DIR}/include
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 target_link_libraries(zcoroutine_shared

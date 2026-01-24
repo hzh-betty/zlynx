@@ -80,10 +80,26 @@ int ThreadContext::get_worker_id() {
 
 WorkStealingQueue *ThreadContext::get_work_queue() {
   auto *ctx = get_current();
-  if (!ctx->scheduler_ctx_.work_queue) {
-    ctx->scheduler_ctx_.work_queue = std::make_unique<WorkStealingQueue>();
+  if (ctx->scheduler_ctx_.work_queue) {
+    return ctx->scheduler_ctx_.work_queue;
   }
-  return ctx->scheduler_ctx_.work_queue.get();
+
+  // 兜底：非 worker 线程也可能需要一个本地队列（保持历史行为）。
+  if (!ctx->scheduler_ctx_.owned_work_queue) {
+    ctx->scheduler_ctx_.owned_work_queue =
+        std::make_unique<WorkStealingQueue>();
+  }
+  ctx->scheduler_ctx_.work_queue = ctx->scheduler_ctx_.owned_work_queue.get();
+  return ctx->scheduler_ctx_.work_queue;
+}
+
+void ThreadContext::set_work_queue(WorkStealingQueue *queue) {
+  auto *ctx = get_current();
+  ctx->scheduler_ctx_.work_queue = queue;
+  if (queue) {
+    // 避免双重语义：若队列由外部拥有，则不再保留兜底所有权。
+    ctx->scheduler_ctx_.owned_work_queue.reset();
+  }
 }
 
 void ThreadContext::set_stack_mode(StackMode mode) {

@@ -2,19 +2,15 @@
 #define ZCOROUTINE_SCHEDULER_H_
 
 #include <atomic>
-#include <condition_variable>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <string>
-#include <thread>
 #include <type_traits>
-#include <vector>
 
 #include "fiber.h"
-#include "stealable_queue_bitmap.h"
 #include "task_queue.h" // for Task
 #include "thread_context.h"
+#include "work_stealing_thread_pool.h"
 
 namespace zcoroutine {
 
@@ -23,7 +19,6 @@ class WorkStealingQueue;
 /**
  * @brief 调度器类
  * 基于线程池的M:N调度模型
- * 使用std::thread和std::mutex，不再封装Thread/Mutex类
  */
 class Scheduler {
 public:
@@ -128,25 +123,6 @@ private:
    */
   void enqueue(Task &&task);
 
-  /**
-   * @brief 内部方法：获取指定worker的工作队列指针
-   * @param worker_id worker线程ID
-   * @return 工作队列指针，若无则返回nullptr
-   */
-  void register_work_queue(int worker_id, WorkStealingQueue *queue);
-
-  /**
-   * @brief 内部方法：获取指定worker的工作队列指针
-   * @param worker_id worker线程ID
-   * @return 工作队列指针，若无则返回nullptr
-   */
-  WorkStealingQueue *get_next_queue(int worker_id) const;
-
-  /**
-   * @brief 内部方法：停止所有工作队列
-   */
-  void stop_work_queues();
-
 protected:
   /**
    * @brief 工作线程主循环
@@ -160,27 +136,12 @@ protected:
    */
   void schedule_loop();
 
-  std::string name_;                                  // 调度器名称
-  int thread_count_;                                  // 线程数量
-  std::vector<std::unique_ptr<std::thread>> threads_; // 线程池
+  std::string name_; // 调度器名称
 
-  std::atomic<uint32_t> rr_enqueue_{0};
+  WorkStealingThreadPool pool_;
+
   std::atomic<size_t> pending_tasks_{0};
-
-  // 启动屏障：确保 start() 返回前，所有 worker 的 work queue 已注册。
-  mutable std::mutex start_mutex_;
-  std::condition_variable start_cv_;
-  std::atomic<int> registered_worker_queues_{0};
-
-  std::atomic<bool> stopping_;           // 停止标志
-  std::atomic<int> active_thread_count_; // 活跃线程数
-  std::atomic<int> idle_thread_count_;   // 空闲线程数
-
-  std::vector<std::atomic<WorkStealingQueue *>>
-      work_queues_; // 队列指针注册表：0..thread_count_-1 为 worker
-
-  // 可窃取队列提示位图：用于引导非随机的任务窃取选择。
-  StealableQueueBitmap stealable_bitmap_;
+  std::atomic<bool> stopping_; // 停止标志
 
   // 共享栈相关
   bool use_shared_stack_ = false; // 是否使用共享栈模式

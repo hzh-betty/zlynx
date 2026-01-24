@@ -1,6 +1,6 @@
 #include "timer.h"
 
-#include <sys/time.h>
+#include <time.h>
 
 #include "timer_manager.h"
 #include "zcoroutine_logger.h"
@@ -9,9 +9,10 @@ namespace zcoroutine {
 
 // 获取当前时间（毫秒）
 static uint64_t get_current_ms() {
-  struct timeval tv {};
-  gettimeofday(&tv, nullptr);
-  return tv.tv_sec * 1000 + tv.tv_usec / 1000;
+  struct timespec ts {};
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return static_cast<uint64_t>(ts.tv_sec) * 1000 +
+         static_cast<uint64_t>(ts.tv_nsec) / 1000000;
 }
 
 Timer::Timer(uint64_t interval_ms, Callback callback, bool recurring,
