@@ -6,7 +6,6 @@
 #include "fiber_pool.h"
 #include "hook.h"
 #include "thread_context.h"
-#include "work_stealing_queue.h"
 #include "zcoroutine_logger.h"
 
 namespace zcoroutine {
@@ -188,9 +187,16 @@ void Scheduler::schedule_loop() {
   Task tasks[kBatchSize];
   std::vector<Task> stolen_buf;
   Processor *self_p = ThreadContext::get_processor();
-  const int self_id = self_p ? self_p->id : ThreadContext::get_worker_id();
-  WorkStealingQueue *local_queue = self_p ? &self_p->run_queue
-                                          : ThreadContext::get_work_queue();
+
+  if (!self_p) {
+    ZCOROUTINE_LOG_ERROR(
+        "Scheduler[{}] schedule_loop requires Processor bound in ThreadContext",
+        name_);
+    return;
+  }
+
+  const int self_id = self_p->id;
+  WorkStealingQueue *local_queue = &self_p->run_queue;
   const int worker_count = pool_.thread_count();
 
   while (true) {

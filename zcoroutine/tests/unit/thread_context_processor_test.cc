@@ -5,7 +5,6 @@
 
 #include "processor.h"
 #include "thread_context.h"
-#include "work_stealing_queue.h"
 #include "zcoroutine_logger.h"
 
 #include <gtest/gtest.h>
@@ -21,8 +20,6 @@ protected:
   void TearDown() override {
     // 尽量清理 TLS，避免测试间相互影响。
     ThreadContext::set_processor(nullptr);
-    ThreadContext::set_work_queue(nullptr);
-    ThreadContext::set_worker_id(-1);
     ThreadContext::set_scheduler(nullptr);
     ThreadContext::set_main_fiber(nullptr);
     ThreadContext::set_scheduler_fiber(nullptr);
@@ -30,26 +27,23 @@ protected:
   }
 };
 
-TEST_F(ThreadContextProcessorTest, SetProcessorDerivesWorkQueueAndWorkerId) {
+TEST_F(ThreadContextProcessorTest, SetProcessorDerivesWorkerId) {
   Processor p0(7);
 
   ThreadContext::set_processor(&p0);
 
   EXPECT_EQ(ThreadContext::get_processor(), &p0);
   EXPECT_EQ(ThreadContext::get_worker_id(), 7);
-  EXPECT_EQ(ThreadContext::get_work_queue(), &p0.run_queue);
 }
 
-TEST_F(ThreadContextProcessorTest, SetWorkQueueClearsProcessorToAvoidAmbiguity) {
-  Processor p0(0);
+TEST_F(ThreadContextProcessorTest, ClearProcessorResetsWorkerId) {
+  Processor p0(3);
   ThreadContext::set_processor(&p0);
-  ASSERT_EQ(ThreadContext::get_work_queue(), &p0.run_queue);
+  ASSERT_EQ(ThreadContext::get_worker_id(), 3);
 
-  WorkStealingQueue injected;
-  ThreadContext::set_work_queue(&injected);
-
+  ThreadContext::set_processor(nullptr);
   EXPECT_EQ(ThreadContext::get_processor(), nullptr);
-  EXPECT_EQ(ThreadContext::get_work_queue(), &injected);
+  EXPECT_EQ(ThreadContext::get_worker_id(), -1);
 }
 
 int main(int argc, char **argv) {

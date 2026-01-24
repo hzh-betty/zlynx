@@ -14,7 +14,6 @@ class Scheduler;
 class SharedStack;
 class SwitchStack;
 class Context;
-class WorkStealingQueue;
 struct Processor;
 
 // 栈模式枚举前向声明
@@ -30,12 +29,7 @@ struct SchedulerContext {
   std::weak_ptr<Fiber> scheduler_fiber; // 调度器协程
   Scheduler *scheduler = nullptr;       // 当前调度器
 
-  int worker_id = -1; // 当前线程的 worker id
-    Processor *processor = nullptr; // 当前线程绑定的 Processor（P），优先于 work_queue
-  WorkStealingQueue *work_queue =
-      nullptr; // 当前线程的 work-stealing 队列（可注入）
-  std::unique_ptr<WorkStealingQueue>
-      owned_work_queue; // 非 worker/未注入时的兜底所有权
+  Processor *processor = nullptr; // 当前线程绑定的 Processor
 
   static constexpr int kMaxCallStackDepth = 128;
   std::array<std::weak_ptr<Fiber>, kMaxCallStackDepth> call_stack{};
@@ -146,28 +140,16 @@ public:
   static Scheduler *get_scheduler();
 
   /**
-   * @brief 设置/获取当前线程的 worker id
+    * @brief 获取当前线程的 worker id（派生自 Processor::id）
    */
-  static void set_worker_id(int id);
   static int get_worker_id();
 
   /**
    * @brief 设置/获取当前线程绑定的 Processor（P）
-   * @note 当设置 Processor 后，get_work_queue() 会优先返回 Processor::run_queue。
+    * @note 当前阶段 Scheduler 的本地队列从 Processor::run_queue 派生。
    */
   static void set_processor(Processor *processor);
   static Processor *get_processor();
-
-  /**
-   * @brief 获取当前线程的 work-stealing 队列（按需创建，仅线程本地 owner）
-   */
-  static WorkStealingQueue *get_work_queue();
-
-  /**
-   * @brief 注入当前线程的 work-stealing 队列（通常由线程池/Processor
-   * 创建并拥有）
-   */
-  static void set_work_queue(WorkStealingQueue *queue);
 
   /**
    * @brief 设置当前线程的栈模式
