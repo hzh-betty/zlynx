@@ -1,7 +1,7 @@
-#include "runtime/fiber.h"
-#include "runtime/shared_stack.h"
-#include "util/thread_context.h"
-#include "util/zcoroutine_logger.h"
+#include "fiber.h"
+#include "shared_stack.h"
+#include "thread_context.h"
+#include "zcoroutine_logger.h"
 #include <gtest/gtest.h>
 #include <vector>
 

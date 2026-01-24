@@ -1,7 +1,7 @@
-#include "runtime/fiber.h"
-#include "scheduling/scheduler.h"
-#include "util/thread_context.h"
-#include "util/zcoroutine_logger.h"
+#include "fiber.h"
+#include "scheduler.h"
+#include "thread_context.h"
+#include "zcoroutine_logger.h"
 #include <atomic>
 #include <gtest/gtest.h>
 #include <thread>

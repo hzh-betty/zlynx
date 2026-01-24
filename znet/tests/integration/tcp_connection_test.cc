@@ -4,7 +4,7 @@
  */
 
 #include "address.h"
-#include "io/io_scheduler.h"
+#include "io_scheduler.h"
 #include "socket.h"
 #include "tcp_connection.h"
 #include "znet_logger.h"

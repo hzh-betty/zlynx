@@ -4,10 +4,10 @@
  * 测试系统调用hook、协程调度、超时控制、非阻塞转换等完整功能
  */
 
-#include "hook/hook.h"
-#include "io/io_scheduler.h"
-#include "io/status_table.h"
-#include "util/zcoroutine_logger.h"
+#include "hook.h"
+#include "io_scheduler.h"
+#include "status_table.h"
+#include "zcoroutine_logger.h"
 #include <gtest/gtest.h>
 
 #include <arpa/inet.h>

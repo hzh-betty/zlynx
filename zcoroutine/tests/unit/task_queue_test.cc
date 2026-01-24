@@ -1,6 +1,6 @@
-#include "runtime/fiber.h"
-#include "scheduling/task_queue.h"
-#include "util/zcoroutine_logger.h"
+#include "fiber.h"
+#include "task_queue.h"
+#include "zcoroutine_logger.h"
 #include <atomic>
 #include <chrono>
 #include <gtest/gtest.h>

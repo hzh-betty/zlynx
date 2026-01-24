@@ -10,7 +10,7 @@
 #include <memory>
 #include <string>
 
-#include "sync/spinlock.h"
+#include "spinlock.h"
 
 // 前置声明
 namespace zcoroutine {

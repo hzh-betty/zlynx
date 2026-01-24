@@ -4,9 +4,9 @@
  * 测试调度器、协程、IO事件、定时器的协同工作
  */
 
-#include "hook/hook.h"
-#include "io/io_scheduler.h"
-#include "util/zcoroutine_logger.h"
+#include "hook.h"
+#include "io_scheduler.h"
+#include "zcoroutine_logger.h"
 #include <atomic>
 #include <chrono>
 #include <condition_variable>

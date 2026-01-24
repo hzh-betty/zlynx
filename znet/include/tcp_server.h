@@ -9,8 +9,8 @@
 #include <string>
 #include <vector>
 
-#include "io/io_scheduler.h"
-#include "sync/rw_mutex.h"
+#include "io_scheduler.h"
+#include "rw_mutex.h"
 
 namespace znet {
 

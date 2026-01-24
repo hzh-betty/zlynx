@@ -1,6 +1,6 @@
 #include "socket.h"
-#include "hook/hook.h"
-#include "io/io_scheduler.h"
+#include "hook.h"
+#include "io_scheduler.h"
 #include "znet_logger.h"
 #include <errno.h>
 #include <fcntl.h>

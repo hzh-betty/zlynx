@@ -2,7 +2,7 @@
 #include "zhttp_logger.h"
 
 #include "address.h"
-#include "io/io_scheduler.h"
+#include "io_scheduler.h"
 
 #include <chrono>
 #include <gtest/gtest.h>

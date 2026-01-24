@@ -3,8 +3,8 @@
  * @brief StealableQueueBitmap 单元测试
  */
 
-#include "scheduling/stealable_queue_bitmap.h"
-#include "util/zcoroutine_logger.h"
+#include "stealable_queue_bitmap.h"
+#include "zcoroutine_logger.h"
 
 #include <gtest/gtest.h>
 

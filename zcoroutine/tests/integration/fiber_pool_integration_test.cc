@@ -3,10 +3,10 @@
  * @brief FiberPool 与调度器的集成测试
  */
 
-#include "runtime/fiber_pool.h"
-#include "scheduling/scheduler.h"
-#include "util/thread_context.h"
-#include "util/zcoroutine_logger.h"
+#include "fiber_pool.h"
+#include "scheduler.h"
+#include "thread_context.h"
+#include "zcoroutine_logger.h"
 #include <atomic>
 #include <chrono>
 #include <gtest/gtest.h>

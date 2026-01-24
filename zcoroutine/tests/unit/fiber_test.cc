@@ -3,8 +3,8 @@
  * @brief Fiber类详细单元测试
  */
 
-#include "runtime/fiber.h"
-#include "util/zcoroutine_logger.h"
+#include "fiber.h"
+#include "zcoroutine_logger.h"
 #include <gtest/gtest.h>
 #include <set>
 #include <thread>

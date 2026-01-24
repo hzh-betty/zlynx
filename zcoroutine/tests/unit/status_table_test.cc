@@ -4,9 +4,9 @@
  * 测试文件描述符管理、超时设置、非阻塞状态管理等功能
  */
 
-#include "hook/hook.h"
-#include "io/status_table.h"
-#include "util/zcoroutine_logger.h"
+#include "hook.h"
+#include "status_table.h"
+#include "zcoroutine_logger.h"
 #include <gtest/gtest.h>
 
 #include <fcntl.h>

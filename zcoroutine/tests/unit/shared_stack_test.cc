@@ -3,10 +3,10 @@
  * @brief 共享栈模式详细单元测试
  */
 
-#include "runtime/fiber.h"
-#include "scheduling/scheduler.h"
-#include "util/thread_context.h"
-#include "util/zcoroutine_logger.h"
+#include "fiber.h"
+#include "scheduler.h"
+#include "thread_context.h"
+#include "zcoroutine_logger.h"
 #include <atomic>
 #include <cstring>
 #include <gtest/gtest.h>

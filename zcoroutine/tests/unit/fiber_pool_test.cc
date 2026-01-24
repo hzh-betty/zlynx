@@ -3,9 +3,9 @@
  * @brief FiberPool 类单元测试
  */
 
-#include "runtime/fiber_pool.h"
-#include "util/thread_context.h"
-#include "util/zcoroutine_logger.h"
+#include "fiber_pool.h"
+#include "thread_context.h"
+#include "zcoroutine_logger.h"
 #include <atomic>
 #include <gtest/gtest.h>
 #include <thread>

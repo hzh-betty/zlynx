@@ -1,7 +1,7 @@
 #include "tcp_server.h"
-#include "io/io_scheduler.h"
-#include "util/thread_context.h"
-#include "runtime/fiber_pool.h"
+#include "fiber_pool.h"
+#include "io_scheduler.h"
+#include "thread_context.h"
 #include "znet_logger.h"
 #include <errno.h>
 #include <sstream>

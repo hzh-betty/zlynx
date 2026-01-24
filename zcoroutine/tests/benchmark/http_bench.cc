@@ -11,12 +11,12 @@
  * 使用fork创建子进程运行wrk进行压测
  */
 
-#include "hook/hook.h"
-#include "io/io_scheduler.h"
-#include "runtime/fiber.h"
-#include "runtime/shared_stack.h"
-#include "scheduling/scheduler.h"
-#include "util/zcoroutine_logger.h"
+#include "hook.h"
+#include "io_scheduler.h"
+#include "fiber.h"
+#include "scheduler.h"
+#include "shared_stack.h"
+#include "zcoroutine_logger.h"
 
 #include <atomic>
 #include <chrono>

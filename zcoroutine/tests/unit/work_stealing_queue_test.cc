@@ -3,9 +3,9 @@
  * @brief WorkStealingQueue 单元测试
  */
 
-#include "scheduling/work_stealing_queue.h"
-#include "scheduling/stealable_queue_bitmap.h"
-#include "util/zcoroutine_logger.h"
+#include "stealable_queue_bitmap.h"
+#include "work_stealing_queue.h"
+#include "zcoroutine_logger.h"
 
 #include <atomic>
 #include <chrono>

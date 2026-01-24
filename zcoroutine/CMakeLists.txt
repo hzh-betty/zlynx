@@ -19,49 +19,8 @@ endif()
 
 option(ENABLE_TESTS "Enable building tests" ${ENABLE_TESTS_DEFAULT})
 
-# 工具类
-file(GLOB UTIL_SRCS
-        ${PROJECT_SOURCE_DIR}/src/util/*.cc
-)
-
-# 同步原语
-file(GLOB SYNC_SRCS
-        ${PROJECT_SOURCE_DIR}/src/sync/*.cc
-)
-
-# 运行时
-file(GLOB RUNTIME_SRCS
-        ${PROJECT_SOURCE_DIR}/src/runtime/*.cc
-)
-
-# 调度层
-file(GLOB SCHEDULING_SRCS
-        ${PROJECT_SOURCE_DIR}/src/scheduling/*.cc
-)
-
-# IO 层
-file(GLOB IO_SRCS
-        ${PROJECT_SOURCE_DIR}/src/io/*.cc
-)
-
-# 定时器
-file(GLOB TIMER_SRCS
-        ${PROJECT_SOURCE_DIR}/src/timer/*.cc
-)
-
-# Hook 层
-file(GLOB HOOK_SRCS
-        ${PROJECT_SOURCE_DIR}/src/hook/*.cc
-)
-
-set(ZCOROUTINE_SRCS
-        ${UTIL_SRCS}
-        ${SYNC_SRCS}
-        ${RUNTIME_SRCS}
-        ${SCHEDULING_SRCS}
-        ${IO_SRCS}
-        ${TIMER_SRCS}
-        ${HOOK_SRCS}
+file(GLOB ZCOROUTINE_SRCS
+        ${PROJECT_SOURCE_DIR}/src/*.cc
 )
 
 add_library(zcoroutine_shared SHARED ${ZCOROUTINE_SRCS})

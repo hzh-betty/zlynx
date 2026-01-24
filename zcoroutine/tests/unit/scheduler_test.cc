@@ -3,9 +3,9 @@
  * @brief Scheduler类单元测试
  */
 
-#include "runtime/fiber.h"
-#include "scheduling/scheduler.h"
-#include "util/zcoroutine_logger.h"
+#include "fiber.h"
+#include "scheduler.h"
+#include "zcoroutine_logger.h"
 #include <atomic>
 #include <chrono>
 #include <gtest/gtest.h>

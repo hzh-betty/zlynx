@@ -1,7 +1,7 @@
-#include "runtime/fiber.h"
-#include "scheduling/scheduler.h"
-#include "timer/timer_manager.h"
-#include "util/zcoroutine_logger.h"
+#include "fiber.h"
+#include "scheduler.h"
+#include "timer_manager.h"
+#include "zcoroutine_logger.h"
 #include <atomic>
 #include <chrono>
 #include <gtest/gtest.h>

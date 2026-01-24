@@ -1,5 +1,5 @@
-#include "runtime/stack_allocator.h"
-#include "util/zcoroutine_logger.h"
+#include "stack_allocator.h"
+#include "zcoroutine_logger.h"
 #include <gtest/gtest.h>
 
 using namespace zcoroutine;
