@@ -2,15 +2,14 @@
 #define ZCOROUTINE_WORK_STEALING_THREAD_POOL_H_
 
 #include <atomic>
-#include <condition_variable>
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
 
+#include "zcoroutine_semaphore.h"
 #include "zcoroutine_noncopyable.h"
 #include "processor.h"
 #include "stealable_queue_bitmap.h"
@@ -63,14 +62,9 @@ public:
 
   /**
    * @brief 获取指定 worker 的本地队列指针（由 Processor 持有）。
+    * @note 本接口不依赖“队列发布”，worker 线程可在启动早期使用。
    */
   WorkStealingQueue *local_queue(int worker_id) const;
-
-  /**
-   * @brief 注册 worker 的本地队列指针。
-   * @note 线程池不拥有队列，仅保存指针用于跨线程 steal / enqueue。
-   */
-  void register_work_queue(int worker_id, WorkStealingQueue *queue);
 
   /**
    * @brief 获取一个可用队列指针（可能为 nullptr，取决于启动/退出边界）。
@@ -83,7 +77,7 @@ public:
   void stop_work_queues();
 
 private:
-  void wait_for_all_queues_registered();
+  void publish_worker_queue(int worker_id);
 
 private:
   std::string name_;
@@ -95,9 +89,8 @@ private:
   std::atomic<uint32_t> rr_enqueue_{0};
 
   // 启动屏障：确保 start() 返回前，所有 worker 的 work queue 已注册。
-  mutable std::mutex start_mutex_;
-  std::condition_variable start_cv_;
-  std::atomic<int> registered_worker_queues_{0};
+  // worker 启动时发布队列并 post()，start() wait() thread_count_ 次。
+  Semaphore start_sem_{0};
 
   std::vector<std::atomic<WorkStealingQueue *>> work_queues_;
 

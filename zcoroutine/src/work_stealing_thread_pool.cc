@@ -14,9 +14,10 @@ WorkStealingThreadPool::WorkStealingThreadPool(int thread_count,
     processors_.push_back(std::make_unique<Processor>(i));
   }
 
+  // 启动前不发布队列指针（避免 start() 语义与“worker 已就绪”混淆）。
+  // start() 会在每个 worker 线程入口处 publish。
   for (int i = 0; i < thread_count_; ++i) {
-    work_queues_[static_cast<size_t>(i)].store(&processors_[static_cast<size_t>(i)]->run_queue,
-                                               std::memory_order_relaxed);
+    work_queues_[static_cast<size_t>(i)].store(nullptr, std::memory_order_relaxed);
   }
 }
 
@@ -27,19 +28,23 @@ void WorkStealingThreadPool::start(const std::function<void(int)> &worker_entry)
     return;
   }
 
-  // Processor 及其队列在构造时已创建并发布，start() 只负责拉起线程。
+  // Processor 及其队列在构造时已创建；start() 负责：拉起线程 + 发布队列指针。
   rr_enqueue_.store(0, std::memory_order_relaxed);
-  registered_worker_queues_.store(thread_count_, std::memory_order_relaxed);
 
   threads_.reserve(static_cast<size_t>(thread_count_));
   for (int i = 0; i < thread_count_; ++i) {
-    auto thread = std::make_unique<std::thread>([worker_entry, i]() {
+    auto thread = std::make_unique<std::thread>([this, worker_entry, i]() {
+      // 先发布队列，使得其他线程可以通过 get_next_queue() 找到它。
+      publish_worker_queue(i);
       worker_entry(i);
     });
     threads_.push_back(std::move(thread));
   }
 
-  wait_for_all_queues_registered();
+  // 启动屏障：等待所有队列完成发布。
+  for (int i = 0; i < thread_count_; ++i) {
+    start_sem_.wait();
+  }
 }
 
 void WorkStealingThreadPool::stop() {
@@ -51,21 +56,6 @@ void WorkStealingThreadPool::stop() {
     }
   }
   threads_.clear();
-}
-
-void WorkStealingThreadPool::register_work_queue(int worker_id,
-                                                 WorkStealingQueue *queue) {
-  if (!queue) {
-    return;
-  }
-  if (worker_id < 0 || worker_id >= thread_count_) {
-    return;
-  }
-
-  // 兼容接口：允许上层显式注册/覆盖队列指针。
-  // 当前默认由 Processor 创建并发布，因此通常无需调用。
-  work_queues_[static_cast<size_t>(worker_id)].store(queue,
-                                                     std::memory_order_release);
 }
 
 WorkStealingQueue *WorkStealingThreadPool::get_next_queue(int worker_id) const {
@@ -85,19 +75,30 @@ void WorkStealingThreadPool::stop_work_queues() {
 }
 
 WorkStealingQueue *WorkStealingThreadPool::local_queue(int worker_id) const {
-  return get_next_queue(worker_id);
+  if (worker_id < 0 || worker_id >= thread_count_) {
+    return nullptr;
+  }
+  return &processors_[static_cast<size_t>(worker_id)]->run_queue;
 }
 
-void WorkStealingThreadPool::wait_for_all_queues_registered() {
-  if (thread_count_ <= 0) {
+void WorkStealingThreadPool::publish_worker_queue(int worker_id) {
+  if (worker_id < 0 || worker_id >= thread_count_) {
+    start_sem_.post();
     return;
   }
 
-  std::unique_lock<std::mutex> lock(start_mutex_);
-  start_cv_.wait(lock, [this] {
-    return registered_worker_queues_.load(std::memory_order_acquire) >=
-           thread_count_;
-  });
+  auto *queue = &processors_[static_cast<size_t>(worker_id)]->run_queue;
+  work_queues_[static_cast<size_t>(worker_id)].store(queue,
+                                                     std::memory_order_release);
+
+  // 绑定全局位图（H/L 水位，避免每次 push/pop 触发位图写入）。
+  // H 要明显大于批处理大小，L 要明显小于 H。
+  static constexpr size_t kHighWatermark = 256;
+  static constexpr size_t kLowWatermark = 64;
+  queue->bind_bitmap(&stealable_bitmap_, worker_id, kHighWatermark,
+                     kLowWatermark);
+
+  start_sem_.post();
 }
 
 } // namespace zcoroutine

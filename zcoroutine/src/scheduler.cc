@@ -165,21 +165,6 @@ void Scheduler::run() {
   // 开启hook，让worker线程可以使用协程版的系统调用
   set_hook_enable(true);
 
-  // 创建并发布本线程的 work-stealing 队列
-  const int id = ThreadContext::get_worker_id();
-  if (id >= 0 && id < pool_.thread_count()) {
-    WorkStealingQueue *q_ptr = ThreadContext::get_work_queue();
-    pool_.register_work_queue(id, q_ptr);
-    ZCOROUTINE_LOG_DEBUG("Scheduler[{}] registered work queue for worker_id={}",
-                         name_, id);
-
-    // 绑定全局位图（H/L 水位，避免每次 push/pop 触发位图写入）。
-    // H 要明显大于批处理大小，L 要明显小于 H。
-    static constexpr size_t kHighWatermark = 256;
-    static constexpr size_t kLowWatermark = 64;
-    q_ptr->bind_bitmap(&pool_.bitmap(), id, kHighWatermark, kLowWatermark);
-  }
-
   // 创建调度器协程，它将运行调度循环
   // 注意：scheduler_fiber 必须使用独立栈，因为它负责协程切换
   // 如果使用共享栈，切换时栈内容会被覆盖导致段错误
