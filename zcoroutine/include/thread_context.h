@@ -15,6 +15,7 @@ class SharedStack;
 class SwitchStack;
 class Context;
 class WorkStealingQueue;
+struct Processor;
 
 // 栈模式枚举前向声明
 enum class StackMode;
@@ -30,6 +31,7 @@ struct SchedulerContext {
   Scheduler *scheduler = nullptr;       // 当前调度器
 
   int worker_id = -1; // 当前线程的 worker id
+    Processor *processor = nullptr; // 当前线程绑定的 Processor（P），优先于 work_queue
   WorkStealingQueue *work_queue =
       nullptr; // 当前线程的 work-stealing 队列（可注入）
   std::unique_ptr<WorkStealingQueue>
@@ -148,6 +150,13 @@ public:
    */
   static void set_worker_id(int id);
   static int get_worker_id();
+
+  /**
+   * @brief 设置/获取当前线程绑定的 Processor（P）
+   * @note 当设置 Processor 后，get_work_queue() 会优先返回 Processor::run_queue。
+   */
+  static void set_processor(Processor *processor);
+  static Processor *get_processor();
 
   /**
    * @brief 获取当前线程的 work-stealing 队列（按需创建，仅线程本地 owner）

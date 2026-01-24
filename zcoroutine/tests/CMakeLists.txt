@@ -33,9 +33,9 @@ if(ENABLE_COVERAGE)
     zcoroutine_apply_coverage(zcoroutine_static)
 endif()
 
-# 收集测试源文件
-file(GLOB TEST_UNIT_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/unit/*.cc)
-file(GLOB TEST_INTEGRATION_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/integration/*.cc)
+# 收集测试源文件（启用 CONFIGURE_DEPENDS，新增/删除测试文件可自动触发重新配置）
+file(GLOB TEST_UNIT_SRCS CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/unit/*.cc)
+file(GLOB TEST_INTEGRATION_SRCS CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/integration/*.cc)
 
 # 为每个单元测试文件创建独立的测试目标
 if(TEST_UNIT_SRCS)
@@ -82,7 +82,7 @@ if(TEST_INTEGRATION_SRCS)
 endif()
 
 # 新的性能测试基准程序
-file(GLOB BENCHMARK_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/*_bench.cc)
+file(GLOB BENCHMARK_SRCS CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/*_bench.cc)
 foreach(bench_source ${BENCHMARK_SRCS})
     get_filename_component(bench_name ${bench_source} NAME_WE)
     add_executable(${bench_name} ${bench_source})

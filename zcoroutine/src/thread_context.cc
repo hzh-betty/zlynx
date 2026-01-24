@@ -5,6 +5,7 @@
 #include "context.h"
 #include "fiber.h"
 #include "fiber_pool.h"
+#include "processor.h"
 #include "shared_stack.h"
 #include "work_stealing_queue.h"
 #include "zcoroutine_logger.h"
@@ -78,8 +79,32 @@ int ThreadContext::get_worker_id() {
   return get_current()->scheduler_ctx_.worker_id;
 }
 
+void ThreadContext::set_processor(Processor *processor) {
+  auto *ctx = get_current();
+  ctx->scheduler_ctx_.processor = processor;
+
+  // 兼容路径：历史代码依赖 worker_id/work_queue。
+  if (processor) {
+    ctx->scheduler_ctx_.worker_id = processor->id;
+    ctx->scheduler_ctx_.work_queue = &processor->run_queue;
+    ctx->scheduler_ctx_.owned_work_queue.reset();
+  } else {
+    ctx->scheduler_ctx_.work_queue = nullptr;
+  }
+}
+
+Processor *ThreadContext::get_processor() {
+  return get_current()->scheduler_ctx_.processor;
+}
+
 WorkStealingQueue *ThreadContext::get_work_queue() {
   auto *ctx = get_current();
+
+  // 优先：绑定的 Processor（P）
+  if (ctx->scheduler_ctx_.processor) {
+    return &ctx->scheduler_ctx_.processor->run_queue;
+  }
+
   if (ctx->scheduler_ctx_.work_queue) {
     return ctx->scheduler_ctx_.work_queue;
   }
@@ -97,6 +122,8 @@ void ThreadContext::set_work_queue(WorkStealingQueue *queue) {
   auto *ctx = get_current();
   ctx->scheduler_ctx_.work_queue = queue;
   if (queue) {
+    // 若外部显式注入队列，则视为未绑定 Processor，避免歧义。
+    ctx->scheduler_ctx_.processor = nullptr;
     // 避免双重语义：若队列由外部拥有，则不再保留兜底所有权。
     ctx->scheduler_ctx_.owned_work_queue.reset();
   }

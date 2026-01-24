@@ -32,48 +32,20 @@ void Scheduler::enqueue(Task &&task) {
     return;
   }
 
-  // 若当前线程正在运行本 Scheduler（即 worker
-  // 线程），优先投递到本线程本地队列。
-  WorkStealingQueue *q = nullptr;
+  Processor *hint = nullptr;
   if (Scheduler::get_this() == this) {
-    q = ThreadContext::get_work_queue();
+    hint = ThreadContext::get_processor();
   }
 
-  // 外部线程/IO 线程投递：优先选择位图中为 0 的
-  // worker（通常表示未达到“可窃取”阈值）。
-  if (!q) {
-    const size_t start = static_cast<size_t>(
-        pool_.next_rr());
-    const int preferred = pool_.bitmap().find_non_stealable(start);
-
-    // 1) 优先：位图为 0 的 worker
-    if (preferred >= 0) {
-      q = pool_.get_next_queue(preferred);
-    }
-
-    // 2) fallback：扫描找到任意已注册队列（可能处于启动/退出边界）
-    if (!q) {
-      const int n = pool_.thread_count();
-      for (int k = 0; k < n; ++k) {
-        const int idx = (static_cast<int>(start) + k) % n;
-        if (auto *cand = pool_.get_next_queue(idx)) {
-          q = cand;
-          break;
-        }
-      }
-    }
-  }
-
-  if (!q) {
-    ZCOROUTINE_LOG_ERROR(
-        "Scheduler[{}] enqueue failed: no available worker queue", name_);
-    return;
-  }
-
-  // 先增加待处理计数，再入队：避免 stop() 期间 schedule_loop 因
+  // 先增加待处理计数，再提交：避免 stop() 期间 schedule_loop 因
   // pending_tasks_=0 提前退出。
   pending_tasks_.fetch_add(1, std::memory_order_relaxed);
-  q->push(std::move(task));
+  const bool ok = pool_.submit(std::move(task), hint);
+  if (!ok) {
+    pending_tasks_.fetch_sub(1, std::memory_order_relaxed);
+    ZCOROUTINE_LOG_ERROR("Scheduler[{}] enqueue failed: pool submit failed",
+                        name_);
+  }
 }
 
 void Scheduler::start() {
@@ -91,8 +63,7 @@ void Scheduler::start() {
   pool_.start([this](int worker_id) {
     // 设置线程的调度器
     set_this(this);
-    ThreadContext::set_worker_id(worker_id);
-    ThreadContext::set_work_queue(pool_.local_queue(worker_id));
+    ThreadContext::set_processor(pool_.processor(worker_id));
 
     ZCOROUTINE_LOG_DEBUG("Scheduler[{}] worker thread {} started", name_,
                          worker_id);
@@ -216,8 +187,10 @@ void Scheduler::schedule_loop() {
   static constexpr size_t kBatchSize = 8;
   Task tasks[kBatchSize];
   std::vector<Task> stolen_buf;
-  const int self_id = ThreadContext::get_worker_id();
-  WorkStealingQueue *local_queue = ThreadContext::get_work_queue();
+  Processor *self_p = ThreadContext::get_processor();
+  const int self_id = self_p ? self_p->id : ThreadContext::get_worker_id();
+  WorkStealingQueue *local_queue = self_p ? &self_p->run_queue
+                                          : ThreadContext::get_work_queue();
   const int worker_count = pool_.thread_count();
 
   while (true) {

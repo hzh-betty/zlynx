@@ -56,7 +56,7 @@ void TcpConnection::connect_established() {
   // 注册读事件到IoScheduler
   if (io_scheduler_) {
     auto self = shared_from_this();
-    io_scheduler_->add_event(socket_->fd(), zcoroutine::FdContext::kRead,
+    io_scheduler_->add_event(socket_->fd(), zcoroutine::Channel::kRead,
                              [self]() { self->handle_read(); });
   }
 
@@ -168,7 +168,7 @@ void TcpConnection::handle_read() {
   // 重新注册读事件，保证后续数据可继续驱动回调
   if (io_scheduler_ && connected()) {
     auto self = shared_from_this();
-    io_scheduler_->add_event(socket_->fd(), zcoroutine::FdContext::kRead,
+    io_scheduler_->add_event(socket_->fd(), zcoroutine::Channel::kRead,
                              [self]() { self->handle_read(); });
   }
 }
@@ -200,7 +200,7 @@ void TcpConnection::handle_write() {
     if (remaining == 0) {
       // 数据全部发送完成，取消写事件
       if (io_scheduler_) {
-        io_scheduler_->del_event(socket_->fd(), zcoroutine::FdContext::kWrite);
+        io_scheduler_->del_event(socket_->fd(), zcoroutine::Channel::kWrite);
       }
 
       // 触发写完成回调（异步调度）
@@ -244,7 +244,7 @@ void TcpConnection::handle_write() {
   // 仍有数据未发送完，重新注册写事件等待下次可写
   if (io_scheduler_ && connected()) {
     auto self = shared_from_this();
-    io_scheduler_->add_event(socket_->fd(), zcoroutine::FdContext::kWrite,
+    io_scheduler_->add_event(socket_->fd(), zcoroutine::Channel::kWrite,
                              [self]() { self->handle_write(); });
   }
 }
@@ -325,7 +325,7 @@ void TcpConnection::send_in_loop(const void *data, size_t len) {
     // 注册写事件
     if (io_scheduler_) {
       auto self = shared_from_this();
-      io_scheduler_->add_event(socket_->fd(), zcoroutine::FdContext::kWrite,
+      io_scheduler_->add_event(socket_->fd(), zcoroutine::Channel::kWrite,
                                [self]() { self->handle_write(); });
     }
 

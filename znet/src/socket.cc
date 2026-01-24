@@ -350,7 +350,7 @@ bool Socket::cancel_read() {
   if (!scheduler) {
     return false;
   }
-  return scheduler->cancel_event(sockfd_, zcoroutine::FdContext::kRead) == 0;
+  return scheduler->cancel_event(sockfd_, zcoroutine::Channel::kRead) == 0;
 }
 
 bool Socket::cancel_write() {
@@ -358,7 +358,7 @@ bool Socket::cancel_write() {
   if (!scheduler) {
     return false;
   }
-  return scheduler->cancel_event(sockfd_, zcoroutine::FdContext::kWrite) == 0;
+  return scheduler->cancel_event(sockfd_, zcoroutine::Channel::kWrite) == 0;
 }
 
 bool Socket::cancel_accept() {

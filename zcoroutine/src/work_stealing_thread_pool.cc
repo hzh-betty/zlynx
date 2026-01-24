@@ -82,6 +82,37 @@ WorkStealingQueue *WorkStealingThreadPool::local_queue(int worker_id) const {
   return &processors_[static_cast<size_t>(worker_id)]->run_queue;
 }
 
+Processor *WorkStealingThreadPool::processor(int worker_id) const {
+  if (worker_id < 0 || worker_id >= thread_count_) {
+    return nullptr;
+  }
+  return processors_[static_cast<size_t>(worker_id)].get();
+}
+
+bool WorkStealingThreadPool::submit(Task &&task, Processor *hint) {
+  if (!task.is_valid()) {
+    return false;
+  }
+  if (thread_count_ <= 0) {
+    return false;
+  }
+
+  // 优先：投递到本线程绑定的 Processor（本地 runq）。
+  if (hint) {
+    hint->run_queue.push(std::move(task));
+    return true;
+  }
+
+  const size_t start = static_cast<size_t>(next_rr());
+  const int preferred = stealable_bitmap_.find_non_stealable(start);
+  const int target = (preferred >= 0)
+                         ? preferred
+                         : static_cast<int>(start % static_cast<size_t>(thread_count_));
+
+  processors_[static_cast<size_t>(target)]->run_queue.push(std::move(task));
+  return true;
+}
+
 void WorkStealingThreadPool::publish_worker_queue(int worker_id) {
   if (worker_id < 0 || worker_id >= thread_count_) {
     start_sem_.post();

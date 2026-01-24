@@ -9,6 +9,7 @@
 #include <thread>
 #include <vector>
 
+#include "task_queue.h" // for Task
 #include "zcoroutine_semaphore.h"
 #include "zcoroutine_noncopyable.h"
 #include "processor.h"
@@ -75,6 +76,20 @@ public:
    * @brief 停止所有队列并唤醒 waiters。
    */
   void stop_work_queues();
+
+  /**
+   * @brief 获取指定 worker_id 对应的 Processor（P）。
+   * @note 当前阶段保持 1:1 绑定：worker_id == processor_id。
+   */
+  Processor *processor(int worker_id) const;
+
+  /**
+   * @brief 提交任务到线程池。
+   * @param task 任务
+   * @param hint 可选：本线程绑定的 Processor（用于优先投递到本地 runq）
+   * @return true 表示成功投递
+   */
+  bool submit(Task &&task, Processor *hint);
 
 private:
   void publish_worker_queue(int worker_id);
