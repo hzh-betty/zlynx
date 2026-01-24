@@ -9,13 +9,14 @@ WorkStealingThreadPool::WorkStealingThreadPool(int thread_count,
     : name_(std::move(name)), thread_count_(thread_count),
       work_queues_(static_cast<size_t>(thread_count_)),
       stealable_bitmap_(static_cast<size_t>(thread_count_)) {
+
+  // 创建 Processor 
   processors_.reserve(static_cast<size_t>(thread_count_));
   for (int i = 0; i < thread_count_; ++i) {
     processors_.push_back(std::make_unique<Processor>(i));
   }
 
-  // 启动前不发布队列指针（避免 start() 语义与“worker 已就绪”混淆）。
-  // start() 会在每个 worker 线程入口处 publish。
+  // 初始化队列指针为 nullptr
   for (int i = 0; i < thread_count_; ++i) {
     work_queues_[static_cast<size_t>(i)].store(nullptr, std::memory_order_relaxed);
   }

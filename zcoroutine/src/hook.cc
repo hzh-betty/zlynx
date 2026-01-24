@@ -246,14 +246,14 @@ static ssize_t do_io_hook(int fd, OriginFun fun, const char *hook_fun_name,
               it->cancelled = ETIMEDOUT;
               // 取消IO事件，这会触发epoll事件从而唤醒协程
               iom->cancel_event(
-                  fd, static_cast<zcoroutine::FdContext::Event>(event));
+                  fd, static_cast<zcoroutine::Channel::Event>(event));
             },
             winfo);
       }
 
       // 添加IO事件监听
       int add_event_ret =
-          iom->add_event(fd, static_cast<zcoroutine::FdContext::Event>(event));
+          iom->add_event(fd, static_cast<zcoroutine::Channel::Event>(event));
       if (add_event_ret != 0) {
         ZCOROUTINE_LOG_WARN("{} add_event failed, fd={}, event={}, ret={}",
                             hook_fun_name, fd, event, add_event_ret);
@@ -519,12 +519,12 @@ int connect_with_timeout(int fd, const struct sockaddr *addr, socklen_t addrlen,
             return;
           }
           it->cancelled = ETIMEDOUT;
-          iom->cancel_event(fd, zcoroutine::FdContext::kWrite);
+          iom->cancel_event(fd, zcoroutine::Channel::kWrite);
         },
         winfo);
   }
   // 添加写事件监听
-  int add_event_ret = iom->add_event(fd, zcoroutine::FdContext::kWrite);
+  int add_event_ret = iom->add_event(fd, zcoroutine::Channel::kWrite);
   if (add_event_ret != 0) {
     if (timer) {
       timer->cancel();
@@ -568,7 +568,7 @@ int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
 
 int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
   int fd = static_cast<int>(do_io_hook(sockfd, accept_f, "accept",
-                                       zcoroutine::FdContext::kRead,
+                                       zcoroutine::Channel::kRead,
                                        SO_RCVTIMEO, addr, addrlen));
   if (fd >= 0) {
     // 注册新连接的fd
@@ -581,7 +581,7 @@ int accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen, int flags) {
   // 如果 accept4 符号不可用，则退化为 accept（flags 语义由上层负责兜底）
   if (!accept4_f) {
     int fd = static_cast<int>(do_io_hook(sockfd, accept_f, "accept4->accept",
-                                         zcoroutine::FdContext::kRead,
+                                         zcoroutine::Channel::kRead,
                                          SO_RCVTIMEO, addr, addrlen));
     if (fd >= 0) {
       zcoroutine::StatusTable::GetInstance()->get(fd, true);
@@ -590,7 +590,7 @@ int accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen, int flags) {
   }
 
   int fd = static_cast<int>(do_io_hook(sockfd, accept4_f, "accept4",
-                                       zcoroutine::FdContext::kRead,
+                                       zcoroutine::Channel::kRead,
                                        SO_RCVTIMEO, addr, addrlen, flags));
   if (fd >= 0) {
     zcoroutine::StatusTable::GetInstance()->get(fd, true);
@@ -599,57 +599,57 @@ int accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen, int flags) {
 }
 
 ssize_t read(int fd, void *buf, size_t count) {
-  return do_io_hook(fd, read_f, "read", zcoroutine::FdContext::kRead,
+  return do_io_hook(fd, read_f, "read", zcoroutine::Channel::kRead,
                     SO_RCVTIMEO, buf, count);
 }
 
 ssize_t readv(int fd, const struct iovec *iov, int iovcnt) {
-  return do_io_hook(fd, readv_f, "readv", zcoroutine::FdContext::kRead,
+  return do_io_hook(fd, readv_f, "readv", zcoroutine::Channel::kRead,
                     SO_RCVTIMEO, iov, iovcnt);
 }
 
 ssize_t recv(int sockfd, void *buf, size_t len, int flags) {
-  return do_io_hook(sockfd, recv_f, "recv", zcoroutine::FdContext::kRead,
+  return do_io_hook(sockfd, recv_f, "recv", zcoroutine::Channel::kRead,
                     SO_RCVTIMEO, buf, len, flags);
 }
 
 ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags,
                  struct sockaddr *src_addr, socklen_t *addrlen) {
   return do_io_hook(sockfd, recvfrom_f, "recvfrom",
-                    zcoroutine::FdContext::kRead, SO_RCVTIMEO, buf, len, flags,
+                    zcoroutine::Channel::kRead, SO_RCVTIMEO, buf, len, flags,
                     src_addr, addrlen);
 }
 
 ssize_t recvmsg(int sockfd, struct msghdr *msg, int flags) {
-  return do_io_hook(sockfd, recvmsg_f, "recvmsg", zcoroutine::FdContext::kRead,
+  return do_io_hook(sockfd, recvmsg_f, "recvmsg", zcoroutine::Channel::kRead,
                     SO_RCVTIMEO, msg, flags);
 }
 
 // ==================== Write系列 ====================
 
 ssize_t write(int fd, const void *buf, size_t count) {
-  return do_io_hook(fd, write_f, "write", zcoroutine::FdContext::kWrite,
+  return do_io_hook(fd, write_f, "write", zcoroutine::Channel::kWrite,
                     SO_SNDTIMEO, buf, count);
 }
 
 ssize_t writev(int fd, const struct iovec *iov, int iovcnt) {
-  return do_io_hook(fd, writev_f, "writev", zcoroutine::FdContext::kWrite,
+  return do_io_hook(fd, writev_f, "writev", zcoroutine::Channel::kWrite,
                     SO_SNDTIMEO, iov, iovcnt);
 }
 
 ssize_t send(int sockfd, const void *buf, size_t len, int flags) {
-  return do_io_hook(sockfd, send_f, "send", zcoroutine::FdContext::kWrite,
+  return do_io_hook(sockfd, send_f, "send", zcoroutine::Channel::kWrite,
                     SO_SNDTIMEO, buf, len, flags);
 }
 
 ssize_t sendto(int sockfd, const void *buf, size_t len, int flags,
                const struct sockaddr *dest_addr, socklen_t addrlen) {
-  return do_io_hook(sockfd, sendto_f, "sendto", zcoroutine::FdContext::kWrite,
+  return do_io_hook(sockfd, sendto_f, "sendto", zcoroutine::Channel::kWrite,
                     SO_SNDTIMEO, buf, len, flags, dest_addr, addrlen);
 }
 
 ssize_t sendmsg(int sockfd, const struct msghdr *msg, int flags) {
-  return do_io_hook(sockfd, sendmsg_f, "sendmsg", zcoroutine::FdContext::kWrite,
+  return do_io_hook(sockfd, sendmsg_f, "sendmsg", zcoroutine::Channel::kWrite,
                     SO_SNDTIMEO, msg, flags);
 }
 
@@ -703,10 +703,10 @@ int shutdown(int sockfd, int how) {
     if (iom) {
       switch (how) {
       case SHUT_RD:
-        (void)iom->cancel_event(sockfd, zcoroutine::FdContext::kRead);
+        (void)iom->cancel_event(sockfd, zcoroutine::Channel::kRead);
         break;
       case SHUT_WR:
-        (void)iom->cancel_event(sockfd, zcoroutine::FdContext::kWrite);
+        (void)iom->cancel_event(sockfd, zcoroutine::Channel::kWrite);
         break;
       case SHUT_RDWR:
         (void)iom->cancel_all(sockfd);

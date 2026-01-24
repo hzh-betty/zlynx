@@ -50,7 +50,7 @@ void accept_connection();
 
 void register_accept() {
   if (g_io_scheduler && g_running.load()) {
-    g_io_scheduler->add_event(g_listen_fd, FdContext::kRead, accept_connection);
+    g_io_scheduler->add_event(g_listen_fd, Channel::kRead, accept_connection);
   }
 }
 
@@ -129,7 +129,7 @@ int main(int argc, char *argv[]) {
   g_io_scheduler->start();
   set_hook_enable(true);
 
-  g_io_scheduler->add_event(g_listen_fd, FdContext::kRead, accept_connection);
+  g_io_scheduler->add_event(g_listen_fd, Channel::kRead, accept_connection);
 
   std::cout << "Server running, press Ctrl+C to stop or wait " << duration
             << "s..." << std::endl;

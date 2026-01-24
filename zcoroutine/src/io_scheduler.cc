@@ -5,15 +5,15 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-#include "fd_context_table.h"
+#include "channel_registry.h"
 #include "scheduler.h"
 #include "zcoroutine_logger.h"
 namespace zcoroutine {
-FdContext::ptr IoScheduler::get_fd_context(int fd, bool auto_create) {
+Channel::ptr IoScheduler::get_fd_context(int fd, bool auto_create) {
   if (auto_create) {
-    return fd_context_table_->get_or_create(fd);
+    return channels_->get_or_create(fd);
   }
-  return fd_context_table_->get(fd);
+  return channels_->get(fd);
 }
 
 IoScheduler::IoScheduler(int thread_count, const std::string &name,
@@ -33,8 +33,8 @@ IoScheduler::IoScheduler(int thread_count, const std::string &name,
   // 设置定时器插入回调：当有新定时器插入到最前面时，唤醒IO线程
   timer_manager_->set_on_timer_inserted_at_front([this]() { this->wake_up(); });
 
-  // 创建 FdContext 表
-  fd_context_table_ = std::make_unique<FdContextTable>();
+  // 创建 Channel 表
+  channels_ = std::make_unique<ChannelRegistry>();
 
   // 创建唤醒管道
   int ret = pipe(wake_fd_);
@@ -105,21 +105,21 @@ void IoScheduler::stop() {
   ZCOROUTINE_LOG_INFO("IoScheduler::stop stopped successfully");
 }
 
-int IoScheduler::add_event(int fd, FdContext::Event event,
+int IoScheduler::add_event(int fd, Channel::Event event,
                            std::function<void()> callback) {
   ZCOROUTINE_LOG_DEBUG(
       "IoScheduler::add_event fd={}, event={}, has_callback={}", fd,
-      FdContext::event_to_string(event), callback != nullptr);
+      Channel::event_to_string(event), callback != nullptr);
 
-  FdContext::ptr fd_ctx = get_fd_context(fd, true);
+  Channel::ptr fd_ctx = get_fd_context(fd, true);
   if (!fd_ctx) {
     ZCOROUTINE_LOG_ERROR(
-        "IoScheduler::add_event failed to get FdContext, fd={}", fd);
+        "IoScheduler::add_event failed to get Channel, fd={}", fd);
     return -1;
   }
 
   // 设置回调或协程
-  FdContext::EventContext &event_ctx = fd_ctx->get_event_context(event);
+  Channel::EventContext &event_ctx = fd_ctx->get_event_context(event);
   if (callback) {
     event_ctx.callback = callback;
   } else {
@@ -132,7 +132,7 @@ int IoScheduler::add_event(int fd, FdContext::Event event,
   event_ctx.scheduler = this;
 
   // 添加事件到FdContext
-  // 注意：FdContext::add_event 在事件已存在时会直接返回当前 events_。
+  // 注意：Channel::add_event 在事件已存在时会直接返回当前 events_。
   // 因此这里必须基于“添加前”的 old_events 来决定 epoll_ctl 的 op，
   // 否则会对已在 epoll 中的 fd 误做 EPOLL_CTL_ADD（EEXIST）并错误回滚。
   const int old_events = fd_ctx->events();
@@ -140,7 +140,7 @@ int IoScheduler::add_event(int fd, FdContext::Event event,
 
   // 更新epoll
   const int op =
-      (old_events == FdContext::kNone) ? EPOLL_CTL_ADD : EPOLL_CTL_MOD;
+      (old_events == Channel::kNone) ? EPOLL_CTL_ADD : EPOLL_CTL_MOD;
   int ret = 0;
   if (op == EPOLL_CTL_ADD) {
     ret = epoll_poller_->add_event(fd, new_events, fd_ctx.get());
@@ -151,7 +151,7 @@ int IoScheduler::add_event(int fd, FdContext::Event event,
   if (ret < 0) {
     ZCOROUTINE_LOG_ERROR(
         "IoScheduler::add_event epoll operation failed, fd={}, event={}, op={}",
-        fd, FdContext::event_to_string(event),
+        fd, Channel::event_to_string(event),
         op == EPOLL_CTL_ADD ? "ADD" : "MOD");
     // 只在本次确实“新添加”了该事件时才回滚；
     // 若该事件原本就存在，回滚会把已有事件错误删除。
@@ -163,18 +163,18 @@ int IoScheduler::add_event(int fd, FdContext::Event event,
 
   ZCOROUTINE_LOG_DEBUG(
       "IoScheduler::add_event success, fd={}, event={}, new_events={}", fd,
-      FdContext::event_to_string(event), new_events);
+      Channel::event_to_string(event), new_events);
   return 0;
 }
 
-int IoScheduler::del_event(int fd, FdContext::Event event) {
+int IoScheduler::del_event(int fd, Channel::Event event) {
   ZCOROUTINE_LOG_DEBUG("IoScheduler::del_event fd={}, event={}", fd,
-                       FdContext::event_to_string(event));
+                       Channel::event_to_string(event));
 
   auto self = this;
-  FdContext::ptr fd_ctx = self->get_fd_context(fd, false);
+  Channel::ptr fd_ctx = self->get_fd_context(fd, false);
   if (!fd_ctx) {
-    ZCOROUTINE_LOG_DEBUG("IoScheduler::del_event FdContext not found, fd={}",
+    ZCOROUTINE_LOG_DEBUG("IoScheduler::del_event Channel not found, fd={}",
                          fd);
     return 0;
   }
@@ -184,7 +184,7 @@ int IoScheduler::del_event(int fd, FdContext::Event event) {
 
   // 更新epoll
   int ret = 0;
-  if (new_events == FdContext::kNone) {
+  if (new_events == Channel::kNone) {
     ret = epoll_poller_->del_event(fd);
   } else {
     ret = epoll_poller_->mod_event(fd, new_events, fd_ctx.get());
@@ -206,18 +206,18 @@ int IoScheduler::del_event(int fd, FdContext::Event event) {
 
   ZCOROUTINE_LOG_DEBUG(
       "IoScheduler::del_event success, fd={}, event={}, remaining_events={}",
-      fd, FdContext::event_to_string(event), new_events);
+      fd, Channel::event_to_string(event), new_events);
   return 0;
 }
 
-int IoScheduler::cancel_event(int fd, FdContext::Event event) {
+int IoScheduler::cancel_event(int fd, Channel::Event event) {
   ZCOROUTINE_LOG_DEBUG("IoScheduler::cancel_event fd={}, event={}", fd,
-                       FdContext::event_to_string(event));
+                       Channel::event_to_string(event));
 
   auto self = this;
-  FdContext::ptr fd_ctx = self->get_fd_context(fd, false);
+  Channel::ptr fd_ctx = self->get_fd_context(fd, false);
   if (!fd_ctx) {
-    ZCOROUTINE_LOG_DEBUG("IoScheduler::cancel_event FdContext not found, fd={}",
+    ZCOROUTINE_LOG_DEBUG("IoScheduler::cancel_event Channel not found, fd={}",
                          fd);
     return 0;
   }
@@ -227,7 +227,7 @@ int IoScheduler::cancel_event(int fd, FdContext::Event event) {
 
   // 更新epoll
   int ret = 0;
-  if (new_events == FdContext::kNone) {
+  if (new_events == Channel::kNone) {
     ret = epoll_poller_->del_event(fd);
   } else {
     ret = epoll_poller_->mod_event(fd, new_events, fd_ctx.get());
@@ -248,7 +248,7 @@ int IoScheduler::cancel_event(int fd, FdContext::Event event) {
 
   ZCOROUTINE_LOG_DEBUG(
       "IoScheduler::cancel_event success, fd={}, event={}, remaining_events={}",
-      fd, FdContext::event_to_string(event), new_events);
+      fd, Channel::event_to_string(event), new_events);
   return 0;
 }
 
@@ -256,16 +256,16 @@ int IoScheduler::cancel_all(int fd) {
   ZCOROUTINE_LOG_DEBUG("IoScheduler::cancel_all fd={}", fd);
 
   auto self = this;
-  FdContext::ptr fd_ctx = self->get_fd_context(fd, false);
+  Channel::ptr fd_ctx = self->get_fd_context(fd, false);
   if (!fd_ctx) {
-    ZCOROUTINE_LOG_DEBUG("IoScheduler::cancel_all FdContext not found, fd={}",
+    ZCOROUTINE_LOG_DEBUG("IoScheduler::cancel_all Channel not found, fd={}",
                          fd);
     return 0;
   }
 
   // 先检查是否有事件注册，避免重复删除 epoll 事件导致 ENOENT 错误
   int old_events = fd_ctx->events();
-  if (old_events == FdContext::kNone) {
+  if (old_events == Channel::kNone) {
     ZCOROUTINE_LOG_DEBUG("IoScheduler::cancel_all no events registered, fd={}",
                          fd);
     return 0;
@@ -313,29 +313,29 @@ Timer::ptr IoScheduler::add_condition_timer(uint64_t timeout,
                                              std::move(weak_cond), recurring);
 }
 
-void IoScheduler::trigger_event(int fd, FdContext::Event event) {
-  FdContext::ptr fd_ctx = get_fd_context(fd, false);
+void IoScheduler::trigger_event(int fd, Channel::Event event) {
+  Channel::ptr fd_ctx = get_fd_context(fd, false);
   if (!fd_ctx) {
-    ZCOROUTINE_LOG_WARN("IoScheduler::trigger_event FdContext not found, fd={}",
+    ZCOROUTINE_LOG_WARN("IoScheduler::trigger_event Channel not found, fd={}",
                         fd);
     return;
   }
 
   ZCOROUTINE_LOG_DEBUG("IoScheduler::trigger_event fd={}, event={}", fd,
-                       FdContext::event_to_string(event));
+                       Channel::event_to_string(event));
 
   // 线程安全地取出并清空上下文，同时清除事件位
   auto popped = fd_ctx->pop_event(event);
   if (!popped.had_event) {
     ZCOROUTINE_LOG_DEBUG("IoScheduler::trigger_event event not registered "
                          "(likely race), fd={}, event={}",
-                         fd, FdContext::event_to_string(event));
+                         fd, Channel::event_to_string(event));
     return;
   }
 
   // 先更新 epoll，避免回调/协程中 re-arm 后被后续 DEL/MOD 覆盖
   int ret = 0;
-  if (popped.remaining_events == FdContext::kNone) {
+  if (popped.remaining_events == Channel::kNone) {
     ret = epoll_poller_->del_event(fd_ctx->fd());
   } else {
     ret = epoll_poller_->mod_event(fd_ctx->fd(), popped.remaining_events,
@@ -364,12 +364,12 @@ void IoScheduler::trigger_event(int fd, FdContext::Event event) {
   if (popped.callback) {
     ZCOROUTINE_LOG_DEBUG(
         "IoScheduler::trigger_event executing callback: fd={}, event={}", fd,
-        FdContext::event_to_string(event));
+        Channel::event_to_string(event));
     schedule(std::move(popped.callback));
   } else if (popped.fiber) {
     ZCOROUTINE_LOG_DEBUG("IoScheduler::trigger_event scheduling fiber: fd={}, "
                          "event={}, fiber_id={}",
-                         fd, FdContext::event_to_string(event),
+                         fd, Channel::event_to_string(event),
                          popped.fiber->id());
     schedule(std::move(popped.fiber));
   } else {
@@ -377,7 +377,7 @@ void IoScheduler::trigger_event(int fd, FdContext::Event event) {
     // 内
     ZCOROUTINE_LOG_DEBUG(
         "IoScheduler::trigger_event empty context: fd={}, event={}", fd,
-        FdContext::event_to_string(event));
+        Channel::event_to_string(event));
   }
 }
 
@@ -444,7 +444,7 @@ void IoScheduler::io_thread_func() {
       }
 
       // 处理IO事件
-      auto *fd_ctx = static_cast<FdContext *>(ev.data.ptr);
+      auto *fd_ctx = static_cast<Channel *>(ev.data.ptr);
       int fd = fd_ctx->fd();
 
       uint32_t ready_events = ev.events;
@@ -458,12 +458,12 @@ void IoScheduler::io_thread_func() {
       if (ready_events & EPOLLIN) {
         ZCOROUTINE_LOG_DEBUG(
             "IoScheduler::io_thread_func triggering READ event, fd={}", fd);
-        trigger_event(fd, FdContext::kRead);
+        trigger_event(fd, Channel::kRead);
       }
       if (ready_events & EPOLLOUT) {
         ZCOROUTINE_LOG_DEBUG(
             "IoScheduler::io_thread_func triggering WRITE event, fd={}", fd);
-        trigger_event(fd, FdContext::kWrite);
+        trigger_event(fd, Channel::kWrite);
       }
     }
 

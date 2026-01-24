@@ -4,8 +4,8 @@
 #include <memory>
 
 #include "epoll_poller.h"
-#include "fd_context.h"
-#include "fd_context_table.h"
+#include "channel.h"
+#include "channel_registry.h"
 #include "scheduler.h"
 #include "timer_manager.h"
 
@@ -50,7 +50,7 @@ public:
    * @param callback 事件回调函数
    * @return 成功返回0，失败返回-1
    */
-  int add_event(int fd, FdContext::Event event,
+  int add_event(int fd, Channel::Event event,
                 std::function<void()> callback = nullptr);
 
   /**
@@ -59,7 +59,7 @@ public:
    * @param event 事件类型
    * @return 成功返回0，失败返回-1
    */
-  int del_event(int fd, FdContext::Event event);
+  int del_event(int fd, Channel::Event event);
 
   /**
    * @brief 取消IO事件
@@ -67,7 +67,7 @@ public:
    * @param event 事件类型
    * @return 成功返回0，失败返回-1
    */
-  int cancel_event(int fd, FdContext::Event event);
+  int cancel_event(int fd, Channel::Event event);
 
   /**
    * @brief 取消文件描述符上的所有事件
@@ -82,7 +82,7 @@ public:
    * @param event 事件类型
    *
    */
-  void trigger_event(int fd, FdContext::Event event);
+  void trigger_event(int fd, Channel::Event event);
 
   /**
    * @brief 添加定时器
@@ -130,12 +130,12 @@ private:
   void wake_up() const;
 
   // 获取/创建 fd 对应的 FdContext（epoll 事件上下文）
-  FdContext::ptr get_fd_context(int fd, bool auto_create);
+  Channel::ptr get_fd_context(int fd, bool auto_create);
 
 private:
   EpollPoller::ptr epoll_poller_;                    // Epoll封装
   TimerManager::ptr timer_manager_;                  // 定时器管理器
-  std::unique_ptr<FdContextTable> fd_context_table_; // FdContext表
+  std::unique_ptr<ChannelRegistry> channels_; // FdContext表
   std::unique_ptr<std::thread> io_thread_;           // IO线程
   int wake_fd_[2]{}; // 用于唤醒epoll的管道
 };

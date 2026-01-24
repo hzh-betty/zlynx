@@ -86,7 +86,7 @@ TEST_F(IoSchedulerIntegrationTest, PipeIoEvent) {
   std::string received_data;
 
   // 添加读事件
-  io_scheduler->add_event(pipe_fds[0], FdContext::kRead, [&]() {
+  io_scheduler->add_event(pipe_fds[0], Channel::kRead, [&]() {
     char buffer[256];
     ssize_t n = read(pipe_fds[0], buffer, sizeof(buffer) - 1);
     if (n > 0) {
@@ -152,7 +152,7 @@ TEST_F(IoSchedulerIntegrationTest, FiberWithIoEvent) {
 
   // 读协程
   io_scheduler->schedule([&]() {
-    io_scheduler->add_event(pipe_fds[0], FdContext::kRead, [&]() {
+    io_scheduler->add_event(pipe_fds[0], Channel::kRead, [&]() {
       char buffer[256];
       ssize_t n = read(pipe_fds[0], buffer, sizeof(buffer) - 1);
       if (n > 0) {

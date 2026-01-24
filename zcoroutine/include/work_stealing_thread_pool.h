@@ -82,19 +82,17 @@ private:
 private:
   std::string name_;
   int thread_count_{0};
-  std::vector<std::unique_ptr<std::thread>> threads_;
+  std::vector<std::unique_ptr<std::thread>> threads_; // worker 线程
 
-  std::vector<std::unique_ptr<Processor>> processors_;
+  std::vector<std::unique_ptr<Processor>> processors_; // 处理器对象
 
-  std::atomic<uint32_t> rr_enqueue_{0};
+  std::atomic<uint32_t> rr_enqueue_{0}; // 轮询计数器
 
-  // 启动屏障：确保 start() 返回前，所有 worker 的 work queue 已注册。
-  // worker 启动时发布队列并 post()，start() wait() thread_count_ 次。
-  Semaphore start_sem_{0};
+  Semaphore start_sem_{0}; // 启动屏障
 
-  std::vector<std::atomic<WorkStealingQueue *>> work_queues_;
+  std::vector<std::atomic<WorkStealingQueue *>> work_queues_; // 队列注册表
 
-  StealableQueueBitmap stealable_bitmap_;
+  StealableQueueBitmap stealable_bitmap_; // 窃取位图
 };
 
 } // namespace zcoroutine

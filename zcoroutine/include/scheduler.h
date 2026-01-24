@@ -138,7 +138,7 @@ protected:
 
   std::string name_; // 调度器名称
 
-  WorkStealingThreadPool pool_;
+  WorkStealingThreadPool pool_; // 窃取线程池
 
   std::atomic<size_t> pending_tasks_{0};
   std::atomic<bool> stopping_; // 停止标志

@@ -1,21 +1,21 @@
-#include "fd_context.h"
+#include "channel.h"
 
 #include "scheduler.h"
 #include "zcoroutine_logger.h"
 
 namespace zcoroutine {
-FdContext::FdContext(int fd) : fd_(fd) {
-  ZCOROUTINE_LOG_DEBUG("FdContext created: fd={}", fd_);
+Channel::Channel(int fd) : fd_(fd) {
+  ZCOROUTINE_LOG_DEBUG("Channel created: fd={}", fd_);
 }
 
-int FdContext::add_event(Event event) {
+int Channel::add_event(Event event) {
   std::lock_guard<std::mutex> lock(mutex_);
 
   int current_events = events_.load(std::memory_order_relaxed);
 
   // 检查事件是否已存在
   if (current_events & event) {
-    ZCOROUTINE_LOG_WARN("FdContext::add_event event already exists: fd={}, "
+    ZCOROUTINE_LOG_WARN("Channel::add_event event already exists: fd={}, "
                         "event={}, current_events={}",
                         fd_, event_to_string(event), current_events);
     return current_events;
@@ -26,21 +26,21 @@ int FdContext::add_event(Event event) {
   int new_events = current_events | event;
   events_.store(new_events, std::memory_order_relaxed);
 
-  ZCOROUTINE_LOG_DEBUG("FdContext::add_event success: fd={}, event={}, "
+  ZCOROUTINE_LOG_DEBUG("Channel::add_event success: fd={}, event={}, "
                        "old_events={}, new_events={}",
                        fd_, event_to_string(event), old_events, new_events);
 
   return new_events;
 }
 
-int FdContext::del_event(Event event) {
+int Channel::del_event(Event event) {
   std::lock_guard<std::mutex> lock(mutex_);
 
   int current_events = events_.load(std::memory_order_relaxed);
 
   // 检查事件是否存在
   if (!(current_events & event)) {
-    ZCOROUTINE_LOG_DEBUG("FdContext::del_event event not exists: fd={}, "
+    ZCOROUTINE_LOG_DEBUG("Channel::del_event event not exists: fd={}, "
                          "event={}, current_events={}",
                          fd_, event_to_string(event), current_events);
     return current_events;
@@ -54,21 +54,21 @@ int FdContext::del_event(Event event) {
   // 重置对应的事件上下文
   if (event == kRead) {
     reset_event_context(read_ctx_);
-    ZCOROUTINE_LOG_DEBUG("FdContext::del_event READ context reset: fd={}", fd_);
+    ZCOROUTINE_LOG_DEBUG("Channel::del_event READ context reset: fd={}", fd_);
   } else if (event == kWrite) {
     reset_event_context(write_ctx_);
-    ZCOROUTINE_LOG_DEBUG("FdContext::del_event WRITE context reset: fd={}",
+    ZCOROUTINE_LOG_DEBUG("Channel::del_event WRITE context reset: fd={}",
                          fd_);
   }
 
-  ZCOROUTINE_LOG_DEBUG("FdContext::del_event success: fd={}, event={}, "
+  ZCOROUTINE_LOG_DEBUG("Channel::del_event success: fd={}, event={}, "
                        "old_events={}, new_events={}",
                        fd_, event_to_string(event), old_events, new_events);
 
   return new_events;
 }
 
-FdContext::PopResult FdContext::pop_event(Event event) {
+Channel::PopResult Channel::pop_event(Event event) {
   PopResult result;
   {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -95,7 +95,7 @@ FdContext::PopResult FdContext::pop_event(Event event) {
   return result;
 }
 
-int FdContext::cancel_event(Event event) {
+int Channel::cancel_event(Event event) {
   int new_events = 0;
   std::function<void()> callback = nullptr;
   Fiber::ptr fiber = nullptr;
@@ -105,7 +105,7 @@ int FdContext::cancel_event(Event event) {
     int current_events = events_.load(std::memory_order_relaxed);
     // 检查事件是否存在
     if (!(current_events & event)) {
-      ZCOROUTINE_LOG_DEBUG("FdContext::cancel_event event not exists: fd={}, "
+      ZCOROUTINE_LOG_DEBUG("Channel::cancel_event event not exists: fd={}, "
                            "event={}, current_events={}",
                            fd_, event_to_string(event), current_events);
       return current_events;
@@ -126,7 +126,7 @@ int FdContext::cancel_event(Event event) {
 
     reset_event_context(ctx);
 
-    ZCOROUTINE_LOG_DEBUG("FdContext::cancel_event success: fd={}, event={}, "
+    ZCOROUTINE_LOG_DEBUG("Channel::cancel_event success: fd={}, event={}, "
                          "old_events={}, new_events={}",
                          fd_, event_to_string(event), old_events, new_events);
   }
@@ -138,7 +138,7 @@ int FdContext::cancel_event(Event event) {
   auto *scheduler = owner_scheduler;
   if (callback) {
     ZCOROUTINE_LOG_DEBUG(
-        "FdContext::cancel_event executing callback: fd={}, event={}", fd_,
+        "Channel::cancel_event executing callback: fd={}, event={}", fd_,
         event_to_string(event));
     if (scheduler) {
       scheduler->schedule(std::move(callback));
@@ -146,26 +146,26 @@ int FdContext::cancel_event(Event event) {
       callback();
     }
   } else if (fiber) {
-    ZCOROUTINE_LOG_DEBUG("FdContext::cancel_event scheduling fiber: fd={}, "
+    ZCOROUTINE_LOG_DEBUG("Channel::cancel_event scheduling fiber: fd={}, "
                          "event={}, fiber_id={}",
                          fd_, event_to_string(event), fiber->id());
     if (scheduler) {
       scheduler->schedule(std::move(fiber));
     } else {
-      ZCOROUTINE_LOG_WARN("FdContext::cancel_event no owner scheduler: fd={}, "
+      ZCOROUTINE_LOG_WARN("Channel::cancel_event no owner scheduler: fd={}, "
                           "event={} (fiber left ready)",
                           fd_, event_to_string(event));
     }
   } else {
     ZCOROUTINE_LOG_DEBUG(
-        "FdContext::cancel_event no callback or fiber: fd={}, event={}", fd_,
+        "Channel::cancel_event no callback or fiber: fd={}, event={}", fd_,
         event_to_string(event));
   }
 
   return new_events;
 }
 
-void FdContext::cancel_all() {
+void Channel::cancel_all() {
   // 读/写事件的回调和协程
   std::function<void()> read_callback = nullptr;
   Fiber::ptr read_fiber = nullptr;
@@ -181,7 +181,7 @@ void FdContext::cancel_all() {
     int current_events = events_.load(std::memory_order_relaxed);
 
     if (current_events == kNone) {
-      ZCOROUTINE_LOG_DEBUG("FdContext::cancel_all no events to cancel: fd={}",
+      ZCOROUTINE_LOG_DEBUG("Channel::cancel_all no events to cancel: fd={}",
                            fd_);
       return;
     }
@@ -214,13 +214,13 @@ void FdContext::cancel_all() {
 
     events_.store(kNone, std::memory_order_relaxed);
 
-    ZCOROUTINE_LOG_DEBUG("FdContext::cancel_all complete: fd={}, "
+    ZCOROUTINE_LOG_DEBUG("Channel::cancel_all complete: fd={}, "
                          "old_events={}, read_triggered={}, write_triggered={}",
                          fd_, old_events, read_triggered, write_triggered);
   }
 
   if (read_callback) {
-    ZCOROUTINE_LOG_DEBUG("FdContext::cancel_all executing READ callback: fd={}",
+    ZCOROUTINE_LOG_DEBUG("Channel::cancel_all executing READ callback: fd={}",
                          fd_);
     Scheduler *scheduler = read_owner_scheduler;
     if (scheduler) {
@@ -230,13 +230,13 @@ void FdContext::cancel_all() {
     }
   } else if (read_fiber) {
     ZCOROUTINE_LOG_DEBUG(
-        "FdContext::cancel_all scheduling READ fiber: fd={}, fiber_id={}", fd_,
+        "Channel::cancel_all scheduling READ fiber: fd={}, fiber_id={}", fd_,
         read_fiber->id());
     Scheduler *scheduler = read_owner_scheduler;
     if (scheduler) {
       scheduler->schedule(std::move(read_fiber));
     } else {
-      ZCOROUTINE_LOG_WARN("FdContext::cancel_all no owner scheduler for READ "
+      ZCOROUTINE_LOG_WARN("Channel::cancel_all no owner scheduler for READ "
                           "fiber: fd={} (fiber left ready)",
                           fd_);
     }
@@ -244,7 +244,7 @@ void FdContext::cancel_all() {
 
   if (write_callback) {
     ZCOROUTINE_LOG_DEBUG(
-        "FdContext::cancel_all executing WRITE callback: fd={}", fd_);
+        "Channel::cancel_all executing WRITE callback: fd={}", fd_);
     Scheduler *scheduler = write_owner_scheduler;
     if (scheduler) {
       scheduler->schedule(std::move(write_callback));
@@ -253,20 +253,20 @@ void FdContext::cancel_all() {
     }
   } else if (write_fiber) {
     ZCOROUTINE_LOG_DEBUG(
-        "FdContext::cancel_all scheduling WRITE fiber: fd={}, fiber_id={}", fd_,
+        "Channel::cancel_all scheduling WRITE fiber: fd={}, fiber_id={}", fd_,
         write_fiber->id());
     Scheduler *scheduler = write_owner_scheduler;
     if (scheduler) {
       scheduler->schedule(std::move(write_fiber));
     } else {
-      ZCOROUTINE_LOG_WARN("FdContext::cancel_all no owner scheduler for WRITE "
+      ZCOROUTINE_LOG_WARN("Channel::cancel_all no owner scheduler for WRITE "
                           "fiber: fd={} (fiber left ready)",
                           fd_);
     }
   }
 }
 
-void FdContext::trigger_event(Event event) {
+void Channel::trigger_event(Event event) {
   std::function<void()> callback = nullptr;
   Fiber::ptr fiber = nullptr;
   Scheduler *owner_scheduler = nullptr;
@@ -275,7 +275,7 @@ void FdContext::trigger_event(Event event) {
     int current_events = events_.load(std::memory_order_relaxed);
     // 检查事件是否存在
     if (!(current_events & event)) {
-      ZCOROUTINE_LOG_DEBUG("FdContext::trigger_event event not registered: "
+      ZCOROUTINE_LOG_DEBUG("Channel::trigger_event event not registered: "
                            "fd={}, event={}, current_events={}",
                            fd_, event_to_string(event), current_events);
       return;
@@ -297,7 +297,7 @@ void FdContext::trigger_event(Event event) {
     current_events &= ~event;
     events_.store(current_events, std::memory_order_relaxed);
 
-    ZCOROUTINE_LOG_DEBUG("FdContext::trigger_event deleted event: fd={}, "
+    ZCOROUTINE_LOG_DEBUG("Channel::trigger_event deleted event: fd={}, "
                          "event={}, old_events={}, new_events={}",
                          fd_, event_to_string(event), old_events,
                          current_events);
@@ -308,7 +308,7 @@ void FdContext::trigger_event(Event event) {
   // 触发回调或调度协程
   if (callback) {
     ZCOROUTINE_LOG_DEBUG(
-        "FdContext::trigger_event executing callback: fd={}, event={}", fd_,
+        "Channel::trigger_event executing callback: fd={}, event={}", fd_,
         event_to_string(event));
     if (scheduler) {
       scheduler->schedule(std::move(callback));
@@ -316,24 +316,24 @@ void FdContext::trigger_event(Event event) {
       callback();
     }
   } else if (fiber) {
-    ZCOROUTINE_LOG_DEBUG("FdContext::trigger_event scheduling fiber: fd={}, "
+    ZCOROUTINE_LOG_DEBUG("Channel::trigger_event scheduling fiber: fd={}, "
                          "event={}, fiber_id={}",
                          fd_, event_to_string(event), fiber->id());
     if (scheduler) {
       scheduler->schedule(std::move(fiber));
     } else {
-      ZCOROUTINE_LOG_WARN("FdContext::trigger_event no owner scheduler: fd={}, "
+      ZCOROUTINE_LOG_WARN("Channel::trigger_event no owner scheduler: fd={}, "
                           "event={} (fiber left ready)",
                           fd_, event_to_string(event));
     }
   } else {
     ZCOROUTINE_LOG_WARN(
-        "FdContext::trigger_event no callback or fiber: fd={}, event={}", fd_,
+        "Channel::trigger_event no callback or fiber: fd={}, event={}", fd_,
         event_to_string(event));
   }
 }
 
-FdContext::EventContext &FdContext::get_event_context(Event event) {
+Channel::EventContext &Channel::get_event_context(Event event) {
   if (event == kRead) {
     return read_ctx_;
   } else if (event == kWrite) {
@@ -342,12 +342,12 @@ FdContext::EventContext &FdContext::get_event_context(Event event) {
 
   // 不应该到达这里
   ZCOROUTINE_LOG_ERROR(
-      "FdContext::get_event_context invalid event: fd={}, event={}", fd_,
+      "Channel::get_event_context invalid event: fd={}, event={}", fd_,
       event_to_string(event));
   return read_ctx_;
 }
 
-void FdContext::reset_event_context(EventContext &ctx) {
+void Channel::reset_event_context(EventContext &ctx) {
   bool had_fiber = ctx.fiber != nullptr;
   bool had_callback = ctx.callback != nullptr;
 
@@ -358,7 +358,7 @@ void FdContext::reset_event_context(EventContext &ctx) {
 
   if (had_fiber || had_callback) {
     ZCOROUTINE_LOG_DEBUG(
-        "FdContext::reset_event_context: fd={}, had_fiber={}, had_callback={}",
+        "Channel::reset_event_context: fd={}, had_fiber={}, had_callback={}",
         fd_, had_fiber, had_callback);
   }
 }

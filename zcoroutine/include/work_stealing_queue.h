@@ -47,8 +47,7 @@ public:
     * @brief thief 批量 steal（FIFO，默认窃取 victim 的一半任务）
    * @param out 输出任务数组指针
     * @param max_count 输出缓冲区容量（上限）
-    * @return 实际取出的任务数量：$\lceil\frac{n}{2}\rceil$ 的截断值，
-    *         其中 $n$ 为 victim 队列在 steal 时刻的任务数。
+    * @return 实际取出的任务数量
     * @note 为满足“窃取一半”的语义，调用方应保证 max_count 足够大。
    */
   size_t steal_batch(Task *out, size_t max_count);

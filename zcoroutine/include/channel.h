@@ -20,9 +20,9 @@ class Scheduler;
  * 管理单个文件描述符的IO事件和对应的协程回调。
  * 支持读、写两种事件类型，每种事件可以关联一个协程。
  */
-class FdContext : public NonCopyable {
+class Channel : public NonCopyable {
 public:
-  using ptr = std::shared_ptr<FdContext>;
+  using ptr = std::shared_ptr<Channel>;
 
   /**
    * @brief 事件类型定义
@@ -61,8 +61,8 @@ public:
     Scheduler *scheduler = nullptr; // 负责调度该事件的调度器（非 owning）
   };
 
-  explicit FdContext(int fd);
-  ~FdContext() = default;
+  explicit Channel(int fd);
+  ~Channel() = default;
 
   /**
    * @brief 获取文件描述符
@@ -130,7 +130,6 @@ public:
   void reset_event_context(EventContext &ctx);
 
 private:
-  // 热数据：最常访问，放在开头
   int fd_;                         // 文件描述符 - 4字节
   std::atomic<int> events_{kNone}; // 当前注册的事件
 

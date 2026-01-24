@@ -145,7 +145,7 @@ void accept_connection();
 // 注册监听socket的读事件
 void register_accept_event() {
   if (g_io_scheduler && g_running.load(std::memory_order_relaxed)) {
-    g_io_scheduler->add_event(g_listen_fd, FdContext::kRead, accept_connection);
+    g_io_scheduler->add_event(g_listen_fd, Channel::kRead, accept_connection);
   }
 }
 
@@ -249,7 +249,7 @@ void start_server(const BenchConfig &config) {
   g_stats.reset();
 
   // 注册accept事件
-  g_io_scheduler->add_event(g_listen_fd, FdContext::kRead, accept_connection);
+  g_io_scheduler->add_event(g_listen_fd, Channel::kRead, accept_connection);
 
   std::cout << "Server started on port " << config.port
             << " (shared_stack=" << (config.use_shared_stack ? "true" : "false")

@@ -14,20 +14,20 @@ TEST_F(IoSchedulerTest, AddInvalidFd) {
   IoScheduler scheduler(1, "test");
 
   // FD -1 is invalid
-  EXPECT_EQ(scheduler.add_event(-1, FdContext::kRead), -1);
+  EXPECT_EQ(scheduler.add_event(-1, Channel::kRead), -1);
 }
 
 TEST_F(IoSchedulerTest, DelCancelNonExistentFd) {
   IoScheduler scheduler(1, "test");
   // Random large FD
-  EXPECT_EQ(scheduler.del_event(9999, FdContext::kRead), 0);
-  EXPECT_EQ(scheduler.cancel_event(9999, FdContext::kRead), 0);
+  EXPECT_EQ(scheduler.del_event(9999, Channel::kRead), 0);
+  EXPECT_EQ(scheduler.cancel_event(9999, Channel::kRead), 0);
   EXPECT_EQ(scheduler.cancel_all(9999), 0);
 }
 
 TEST_F(IoSchedulerTest, TriggerEventNonExistent) {
   IoScheduler scheduler(1, "test");
-  scheduler.trigger_event(9999, FdContext::kRead);
+  scheduler.trigger_event(9999, Channel::kRead);
 }
 
 int main(int argc, char **argv) {

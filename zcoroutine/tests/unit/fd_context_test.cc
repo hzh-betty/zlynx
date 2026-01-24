@@ -1,4 +1,4 @@
-#include "fd_context.h"
+#include "channel.h"
 #include "fiber.h"
 #include "zcoroutine_logger.h"
 #include <fcntl.h>
@@ -21,8 +21,8 @@ protected:
     fcntl(fd1_, F_SETFL, O_NONBLOCK);
     fcntl(fd2_, F_SETFL, O_NONBLOCK);
 
-    ctx1_ = std::make_shared<FdContext>(fd1_);
-    ctx2_ = std::make_shared<FdContext>(fd2_);
+    ctx1_ = std::make_shared<Channel>(fd1_);
+    ctx2_ = std::make_shared<Channel>(fd2_);
   }
 
   void TearDown() override {
@@ -36,99 +36,99 @@ protected:
 
   int fd1_ = -1;
   int fd2_ = -1;
-  FdContext::ptr ctx1_;
-  FdContext::ptr ctx2_;
+  Channel::ptr ctx1_;
+  Channel::ptr ctx2_;
 };
 
 // 测试1：创建FdContext
 TEST_F(FdContextTest, CreateFdContext) {
   ASSERT_NE(ctx1_, nullptr);
   EXPECT_EQ(ctx1_->fd(), fd1_);
-  EXPECT_EQ(ctx1_->events(), FdContext::kNone);
+  EXPECT_EQ(ctx1_->events(), Channel::kNone);
 }
 
 // 测试2：添加读事件
 TEST_F(FdContextTest, AddReadEvent) {
-  int result = ctx1_->add_event(FdContext::kRead);
-  EXPECT_EQ(result, FdContext::kRead);
-  EXPECT_EQ(ctx1_->events(), FdContext::kRead);
+  int result = ctx1_->add_event(Channel::kRead);
+  EXPECT_EQ(result, Channel::kRead);
+  EXPECT_EQ(ctx1_->events(), Channel::kRead);
 }
 
 // 测试3：添加写事件
 TEST_F(FdContextTest, AddWriteEvent) {
-  int result = ctx1_->add_event(FdContext::kWrite);
-  EXPECT_EQ(result, FdContext::kWrite);
-  EXPECT_EQ(ctx1_->events(), FdContext::kWrite);
+  int result = ctx1_->add_event(Channel::kWrite);
+  EXPECT_EQ(result, Channel::kWrite);
+  EXPECT_EQ(ctx1_->events(), Channel::kWrite);
 }
 
 // 测试4：添加读写事件
 TEST_F(FdContextTest, AddReadWriteEvents) {
-  ctx1_->add_event(FdContext::kRead);
-  ctx1_->add_event(FdContext::kWrite);
+  ctx1_->add_event(Channel::kRead);
+  ctx1_->add_event(Channel::kWrite);
 
-  EXPECT_EQ(ctx1_->events(), FdContext::kRead | FdContext::kWrite);
+  EXPECT_EQ(ctx1_->events(), Channel::kRead | Channel::kWrite);
 }
 
 // 测试5：删除读事件
 TEST_F(FdContextTest, DelReadEvent) {
-  ctx1_->add_event(FdContext::kRead);
-  ctx1_->add_event(FdContext::kWrite);
+  ctx1_->add_event(Channel::kRead);
+  ctx1_->add_event(Channel::kWrite);
 
-  int result = ctx1_->del_event(FdContext::kRead);
-  EXPECT_EQ(result, FdContext::kWrite);
-  EXPECT_EQ(ctx1_->events(), FdContext::kWrite);
+  int result = ctx1_->del_event(Channel::kRead);
+  EXPECT_EQ(result, Channel::kWrite);
+  EXPECT_EQ(ctx1_->events(), Channel::kWrite);
 }
 
 // 测试6：删除写事件
 TEST_F(FdContextTest, DelWriteEvent) {
-  ctx1_->add_event(FdContext::kRead);
-  ctx1_->add_event(FdContext::kWrite);
+  ctx1_->add_event(Channel::kRead);
+  ctx1_->add_event(Channel::kWrite);
 
-  int result = ctx1_->del_event(FdContext::kWrite);
-  EXPECT_EQ(result, FdContext::kRead);
-  EXPECT_EQ(ctx1_->events(), FdContext::kRead);
+  int result = ctx1_->del_event(Channel::kWrite);
+  EXPECT_EQ(result, Channel::kRead);
+  EXPECT_EQ(ctx1_->events(), Channel::kRead);
 }
 
 // 测试7：删除所有事件
 TEST_F(FdContextTest, DelAllEvents) {
-  ctx1_->add_event(FdContext::kRead);
-  ctx1_->add_event(FdContext::kWrite);
+  ctx1_->add_event(Channel::kRead);
+  ctx1_->add_event(Channel::kWrite);
 
-  ctx1_->del_event(FdContext::kRead);
-  ctx1_->del_event(FdContext::kWrite);
+  ctx1_->del_event(Channel::kRead);
+  ctx1_->del_event(Channel::kWrite);
 
-  EXPECT_EQ(ctx1_->events(), FdContext::kNone);
+  EXPECT_EQ(ctx1_->events(), Channel::kNone);
 }
 
 // 测试8：取消读事件
 TEST_F(FdContextTest, CancelReadEvent) {
   bool callback_called = false;
 
-  ctx1_->add_event(FdContext::kRead);
-  auto &read_ctx = ctx1_->get_event_context(FdContext::kRead);
+  ctx1_->add_event(Channel::kRead);
+  auto &read_ctx = ctx1_->get_event_context(Channel::kRead);
   read_ctx.callback = [&callback_called]() { callback_called = true; };
 
-  ctx1_->cancel_event(FdContext::kRead);
+  ctx1_->cancel_event(Channel::kRead);
 
-  EXPECT_EQ(ctx1_->events(), FdContext::kNone);
+  EXPECT_EQ(ctx1_->events(), Channel::kNone);
 }
 
 // 测试9：取消所有事件
 TEST_F(FdContextTest, CancelAllEvents) {
-  ctx1_->add_event(FdContext::kRead);
-  ctx1_->add_event(FdContext::kWrite);
+  ctx1_->add_event(Channel::kRead);
+  ctx1_->add_event(Channel::kWrite);
 
   ctx1_->cancel_all();
 
-  EXPECT_EQ(ctx1_->events(), FdContext::kNone);
+  EXPECT_EQ(ctx1_->events(), Channel::kNone);
 }
 
 // ==================== 事件上下文测试 ====================
 
 // 测试10：获取读事件上下文
 TEST_F(FdContextTest, GetReadEventContext) {
-  ctx1_->add_event(FdContext::kRead);
-  auto &read_ctx = ctx1_->get_event_context(FdContext::kRead);
+  ctx1_->add_event(Channel::kRead);
+  auto &read_ctx = ctx1_->get_event_context(Channel::kRead);
 
   // 设置回调
   bool called = false;
@@ -141,8 +141,8 @@ TEST_F(FdContextTest, GetReadEventContext) {
 
 // 测试11：获取写事件上下文
 TEST_F(FdContextTest, GetWriteEventContext) {
-  ctx1_->add_event(FdContext::kWrite);
-  auto &write_ctx = ctx1_->get_event_context(FdContext::kWrite);
+  ctx1_->add_event(Channel::kWrite);
+  auto &write_ctx = ctx1_->get_event_context(Channel::kWrite);
 
   // 设置协程
   auto fiber = std::make_shared<Fiber>([]() {});
@@ -154,8 +154,8 @@ TEST_F(FdContextTest, GetWriteEventContext) {
 
 // 测试12：重置事件上下文
 TEST_F(FdContextTest, ResetEventContext) {
-  ctx1_->add_event(FdContext::kRead);
-  auto &read_ctx = ctx1_->get_event_context(FdContext::kRead);
+  ctx1_->add_event(Channel::kRead);
+  auto &read_ctx = ctx1_->get_event_context(Channel::kRead);
 
   read_ctx.callback = []() {};
   read_ctx.fiber = std::make_shared<Fiber>([]() {});
@@ -170,11 +170,11 @@ TEST_F(FdContextTest, ResetEventContext) {
 TEST_F(FdContextTest, TriggerReadEventCallback) {
   bool callback_called = false;
 
-  ctx1_->add_event(FdContext::kRead);
-  auto &read_ctx = ctx1_->get_event_context(FdContext::kRead);
+  ctx1_->add_event(Channel::kRead);
+  auto &read_ctx = ctx1_->get_event_context(Channel::kRead);
   read_ctx.callback = [&callback_called]() { callback_called = true; };
 
-  ctx1_->trigger_event(FdContext::kRead);
+  ctx1_->trigger_event(Channel::kRead);
 
   EXPECT_TRUE(callback_called);
 }
@@ -183,11 +183,11 @@ TEST_F(FdContextTest, TriggerReadEventCallback) {
 TEST_F(FdContextTest, TriggerWriteEventCallback) {
   int value = 0;
 
-  ctx1_->add_event(FdContext::kWrite);
-  auto &write_ctx = ctx1_->get_event_context(FdContext::kWrite);
+  ctx1_->add_event(Channel::kWrite);
+  auto &write_ctx = ctx1_->get_event_context(Channel::kWrite);
   write_ctx.callback = [&value]() { value = 42; };
 
-  ctx1_->trigger_event(FdContext::kWrite);
+  ctx1_->trigger_event(Channel::kWrite);
 
   EXPECT_EQ(value, 42);
 }
@@ -196,14 +196,14 @@ TEST_F(FdContextTest, TriggerWriteEventCallback) {
 TEST_F(FdContextTest, TriggerEventResumesFiber) {
   bool fiber_executed = false;
 
-  ctx1_->add_event(FdContext::kRead);
-  auto &read_ctx = ctx1_->get_event_context(FdContext::kRead);
+  ctx1_->add_event(Channel::kRead);
+  auto &read_ctx = ctx1_->get_event_context(Channel::kRead);
 
   auto fiber =
       std::make_shared<Fiber>([&fiber_executed]() { fiber_executed = true; });
   read_ctx.fiber = fiber;
 
-  ctx1_->trigger_event(FdContext::kRead);
+  ctx1_->trigger_event(Channel::kRead);
 
   // 注意：trigger_event 只是准备恢复，实际需要调度器来执行
   // 这里我们手动执行协程来验证
@@ -218,41 +218,41 @@ TEST_F(FdContextTest, TriggerEventResumesFiber) {
 
 // 测试16：重复添加相同事件
 TEST_F(FdContextTest, AddSameEventTwice) {
-  ctx1_->add_event(FdContext::kRead);
+  ctx1_->add_event(Channel::kRead);
 
   // 第二次添加应该被忽略或返回错误
-  int result = ctx1_->add_event(FdContext::kRead);
-  EXPECT_EQ(result, FdContext::kRead);
+  int result = ctx1_->add_event(Channel::kRead);
+  EXPECT_EQ(result, Channel::kRead);
 
   // 事件应该保持不变
-  EXPECT_EQ(ctx1_->events() & FdContext::kRead, FdContext::kRead);
+  EXPECT_EQ(ctx1_->events() & Channel::kRead, Channel::kRead);
 }
 
 // 测试17：删除不存在的事件
 TEST_F(FdContextTest, DelNonexistentEvent) {
-  EXPECT_EQ(ctx1_->events(), FdContext::kNone);
+  EXPECT_EQ(ctx1_->events(), Channel::kNone);
 
-  int result = ctx1_->del_event(FdContext::kRead);
-  EXPECT_EQ(result, FdContext::kNone);
+  int result = ctx1_->del_event(Channel::kRead);
+  EXPECT_EQ(result, Channel::kNone);
 
-  EXPECT_EQ(ctx1_->events(), FdContext::kNone);
+  EXPECT_EQ(ctx1_->events(), Channel::kNone);
 }
 
 // 测试18：取消不存在的事件
 TEST_F(FdContextTest, CancelNonexistentEvent) {
-  EXPECT_NO_THROW({ ctx1_->cancel_event(FdContext::kRead); });
+  EXPECT_NO_THROW({ ctx1_->cancel_event(Channel::kRead); });
 }
 
 // 测试19：触发未设置的事件
 TEST_F(FdContextTest, TriggerUnsetEvent) {
-  EXPECT_NO_THROW({ ctx1_->trigger_event(FdContext::kRead); });
+  EXPECT_NO_THROW({ ctx1_->trigger_event(Channel::kRead); });
 }
 
 // 测试20：无效文件描述符
 TEST_F(FdContextTest, InvalidFileDescriptor) {
-  auto invalid_ctx = std::make_shared<FdContext>(-1);
+  auto invalid_ctx = std::make_shared<Channel>(-1);
   EXPECT_EQ(invalid_ctx->fd(), -1);
-  EXPECT_EQ(invalid_ctx->events(), FdContext::kNone);
+  EXPECT_EQ(invalid_ctx->events(), Channel::kNone);
 }
 
 // ==================== 多事件组合测试 ====================
@@ -262,17 +262,17 @@ TEST_F(FdContextTest, BothReadWriteCallbacks) {
   bool read_called = false;
   bool write_called = false;
 
-  ctx1_->add_event(FdContext::kRead);
-  ctx1_->add_event(FdContext::kWrite);
+  ctx1_->add_event(Channel::kRead);
+  ctx1_->add_event(Channel::kWrite);
 
-  auto &read_ctx = ctx1_->get_event_context(FdContext::kRead);
-  auto &write_ctx = ctx1_->get_event_context(FdContext::kWrite);
+  auto &read_ctx = ctx1_->get_event_context(Channel::kRead);
+  auto &write_ctx = ctx1_->get_event_context(Channel::kWrite);
 
   read_ctx.callback = [&read_called]() { read_called = true; };
   write_ctx.callback = [&write_called]() { write_called = true; };
 
-  ctx1_->trigger_event(FdContext::kRead);
-  ctx1_->trigger_event(FdContext::kWrite);
+  ctx1_->trigger_event(Channel::kRead);
+  ctx1_->trigger_event(Channel::kWrite);
 
   EXPECT_TRUE(read_called);
   EXPECT_TRUE(write_called);
@@ -280,11 +280,11 @@ TEST_F(FdContextTest, BothReadWriteCallbacks) {
 
 // 测试22：读写事件独立管理
 TEST_F(FdContextTest, IndependentReadWriteManagement) {
-  ctx1_->add_event(FdContext::kRead);
-  ctx1_->add_event(FdContext::kWrite);
+  ctx1_->add_event(Channel::kRead);
+  ctx1_->add_event(Channel::kWrite);
 
-  auto &read_ctx = ctx1_->get_event_context(FdContext::kRead);
-  auto &write_ctx = ctx1_->get_event_context(FdContext::kWrite);
+  auto &read_ctx = ctx1_->get_event_context(Channel::kRead);
+  auto &write_ctx = ctx1_->get_event_context(Channel::kWrite);
 
   read_ctx.callback = []() {};
   write_ctx.fiber = std::make_shared<Fiber>([]() {});
@@ -301,20 +301,20 @@ TEST_F(FdContextTest, PartialEventDeletion) {
   bool read_called = false;
   bool write_called = false;
 
-  ctx1_->add_event(FdContext::kRead);
-  ctx1_->add_event(FdContext::kWrite);
+  ctx1_->add_event(Channel::kRead);
+  ctx1_->add_event(Channel::kWrite);
 
-  auto &read_ctx = ctx1_->get_event_context(FdContext::kRead);
-  auto &write_ctx = ctx1_->get_event_context(FdContext::kWrite);
+  auto &read_ctx = ctx1_->get_event_context(Channel::kRead);
+  auto &write_ctx = ctx1_->get_event_context(Channel::kWrite);
 
   read_ctx.callback = [&read_called]() { read_called = true; };
   write_ctx.callback = [&write_called]() { write_called = true; };
 
   // 只删除读事件
-  ctx1_->del_event(FdContext::kRead);
+  ctx1_->del_event(Channel::kRead);
 
-  ctx1_->trigger_event(FdContext::kRead);
-  ctx1_->trigger_event(FdContext::kWrite);
+  ctx1_->trigger_event(Channel::kRead);
+  ctx1_->trigger_event(Channel::kWrite);
 
   EXPECT_FALSE(read_called); // 读事件已删除
   EXPECT_TRUE(write_called); // 写事件仍然有效
@@ -329,12 +329,12 @@ TEST_F(FdContextTest, SimulateReadableEvent) {
   ASSERT_EQ(write(fd2_, msg, strlen(msg)), strlen(msg));
 
   bool read_ready = false;
-  ctx1_->add_event(FdContext::kRead);
-  auto &read_ctx = ctx1_->get_event_context(FdContext::kRead);
+  ctx1_->add_event(Channel::kRead);
+  auto &read_ctx = ctx1_->get_event_context(Channel::kRead);
   read_ctx.callback = [&read_ready]() { read_ready = true; };
 
   // 模拟epoll检测到可读并触发
-  ctx1_->trigger_event(FdContext::kRead);
+  ctx1_->trigger_event(Channel::kRead);
 
   EXPECT_TRUE(read_ready);
 
@@ -349,11 +349,11 @@ TEST_F(FdContextTest, SimulateWritableEvent) {
   // socket通常默认可写
   bool write_ready = false;
 
-  ctx1_->add_event(FdContext::kWrite);
-  auto &write_ctx = ctx1_->get_event_context(FdContext::kWrite);
+  ctx1_->add_event(Channel::kWrite);
+  auto &write_ctx = ctx1_->get_event_context(Channel::kWrite);
   write_ctx.callback = [&write_ready]() { write_ready = true; };
 
-  ctx1_->trigger_event(FdContext::kWrite);
+  ctx1_->trigger_event(Channel::kWrite);
 
   EXPECT_TRUE(write_ready);
 
@@ -368,23 +368,23 @@ TEST_F(FdContextTest, MultipleFdContextIndependence) {
   bool fd1_read = false;
   bool fd2_read = false;
 
-  ctx1_->add_event(FdContext::kRead);
-  ctx2_->add_event(FdContext::kRead);
+  ctx1_->add_event(Channel::kRead);
+  ctx2_->add_event(Channel::kRead);
 
-  auto &ctx1_read = ctx1_->get_event_context(FdContext::kRead);
-  auto &ctx2_read = ctx2_->get_event_context(FdContext::kRead);
+  auto &ctx1_read = ctx1_->get_event_context(Channel::kRead);
+  auto &ctx2_read = ctx2_->get_event_context(Channel::kRead);
 
   ctx1_read.callback = [&fd1_read]() { fd1_read = true; };
   ctx2_read.callback = [&fd2_read]() { fd2_read = true; };
 
   // 触发fd1的读事件
-  ctx1_->trigger_event(FdContext::kRead);
+  ctx1_->trigger_event(Channel::kRead);
 
   EXPECT_TRUE(fd1_read);
   EXPECT_FALSE(fd2_read);
 
   // 触发fd2的读事件
-  ctx2_->trigger_event(FdContext::kRead);
+  ctx2_->trigger_event(Channel::kRead);
 
   EXPECT_TRUE(fd1_read);
   EXPECT_TRUE(fd2_read);
@@ -394,20 +394,20 @@ TEST_F(FdContextTest, MultipleFdContextIndependence) {
 TEST_F(FdContextTest, ModifyEventsInCallback) {
   int callback_count = 0;
 
-  ctx1_->add_event(FdContext::kRead);
-  auto &read_ctx = ctx1_->get_event_context(FdContext::kRead);
+  ctx1_->add_event(Channel::kRead);
+  auto &read_ctx = ctx1_->get_event_context(Channel::kRead);
 
   read_ctx.callback = [this, &callback_count]() {
     callback_count++;
     // 在回调中删除读事件并添加写事件
-    ctx1_->del_event(FdContext::kRead);
-    ctx1_->add_event(FdContext::kWrite);
+    ctx1_->del_event(Channel::kRead);
+    ctx1_->add_event(Channel::kWrite);
   };
 
-  ctx1_->trigger_event(FdContext::kRead);
+  ctx1_->trigger_event(Channel::kRead);
 
   EXPECT_EQ(callback_count, 1);
-  EXPECT_EQ(ctx1_->events(), FdContext::kWrite);
+  EXPECT_EQ(ctx1_->events(), Channel::kWrite);
 }
 
 // 测试28：协程和回调同时设置
@@ -415,14 +415,14 @@ TEST_F(FdContextTest, BothFiberAndCallbackSet) {
   bool callback_called = false;
   bool fiber_executed = false;
 
-  ctx1_->add_event(FdContext::kRead);
-  auto &read_ctx = ctx1_->get_event_context(FdContext::kRead);
+  ctx1_->add_event(Channel::kRead);
+  auto &read_ctx = ctx1_->get_event_context(Channel::kRead);
 
   read_ctx.callback = [&callback_called]() { callback_called = true; };
   read_ctx.fiber =
       std::make_shared<Fiber>([&fiber_executed]() { fiber_executed = true; });
 
-  ctx1_->trigger_event(FdContext::kRead);
+  ctx1_->trigger_event(Channel::kRead);
 
   // 至少应该执行其中一个
   EXPECT_TRUE(callback_called || fiber_executed);
