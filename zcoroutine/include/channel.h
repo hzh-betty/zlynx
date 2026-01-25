@@ -13,7 +13,6 @@
 namespace zcoroutine {
 
 class Fiber;
-class Scheduler;
 /**
  * @brief 文件描述符上下文类
  *
@@ -58,7 +57,6 @@ public:
   struct EventContext {
     std::function<void()> callback; // 事件回调函数 - 16字节
     std::shared_ptr<Fiber> fiber;   // 等待该事件的协程 - 16字节
-    Scheduler *scheduler = nullptr; // 负责调度该事件的调度器（非 owning）
   };
 
   explicit Channel(int fd);

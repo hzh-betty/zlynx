@@ -127,9 +127,6 @@ int IoScheduler::add_event(int fd, Channel::Event event,
     auto current_fiber = Fiber::get_this();
     event_ctx.fiber = current_fiber;
   }
-  // 记录该事件归属的调度器：即使在非调度线程触发 cancel/close，也能投递回正确的
-  // Scheduler。
-  event_ctx.scheduler = this;
 
   // 添加事件到FdContext
   // 注意：Channel::add_event 在事件已存在时会直接返回当前 events_。
@@ -191,7 +188,7 @@ int IoScheduler::del_event(int fd, Channel::Event event) {
   if (ret < 0) {
     // 收尾/close 竞态：fd 可能已关闭(EBADF)或已不在 epoll 中(ENOENT)
     if (errno == EBADF || errno == ENOENT) {
-      ZCOROUTINE_LOG_DEBUG(
+      ZCOROUTINE_LOG_WARN(
           "IoScheduler::del_event benign epoll failure, fd={}, errno={}", fd,
           errno);
       return 0;
@@ -233,7 +230,7 @@ int IoScheduler::cancel_event(int fd, Channel::Event event) {
 
   if (ret < 0) {
     if (errno == EBADF || errno == ENOENT) {
-      ZCOROUTINE_LOG_DEBUG(
+      ZCOROUTINE_LOG_WARN(
           "IoScheduler::cancel_event benign epoll failure, fd={}, errno={}", fd,
           errno);
       return 0;
@@ -276,7 +273,7 @@ int IoScheduler::cancel_all(int fd) {
   int ret = epoll_poller_->del_event(fd);
   if (ret < 0) {
     if (errno == EBADF || errno == ENOENT) {
-      ZCOROUTINE_LOG_DEBUG(
+      ZCOROUTINE_LOG_WARN(
           "IoScheduler::cancel_all benign epoll failure, fd={}, errno={}", fd,
           errno);
       return 0;

@@ -376,7 +376,6 @@ int nanosleep(const struct timespec *req, struct timespec *rem) {
   return 0;
 }
 
-// ==================== Socket系列 ====================
 
 int socket(int domain, int type, int protocol) {
   if (!zcoroutine::is_hook_enabled()) {

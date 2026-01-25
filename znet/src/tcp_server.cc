@@ -113,8 +113,8 @@ void TcpServer::start_accept(Socket::ptr sock) {
           (void)zcoroutine::FiberPool::get_instance().return_fiber(fiber);
         });
       } else {
-        handle_client(conn);
-        conn->connect_established();
+        ZNET_LOG_FATAL("TcpServer::start no io_worker_ available");
+        throw std::runtime_error("TcpServer::start no io_worker_ available");
       }
     } else {
       if (is_stop_.load(std::memory_order_acquire)) {

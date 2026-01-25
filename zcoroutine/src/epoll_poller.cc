@@ -69,9 +69,9 @@ int EpollPoller::mod_event(int fd, int events, void *data) {
 int EpollPoller::del_event(int fd) {
   int ret = epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
   if (ret < 0) {
-    // 竞态收尾时 fd 可能已关闭(EBADF)或已不在 epoll 中(ENOENT)，视为成功即可。
+    // 竞态收尾时 fd 可能已关闭(EBADF)或已不在 epoll 中(ENOENT)
     if (errno == EBADF || errno == ENOENT) {
-      ZCOROUTINE_LOG_DEBUG(
+      ZCOROUTINE_LOG_WARN(
           "EpollPoller::del_event epoll_ctl DEL benign failure, fd={} errno={}",
           fd, errno);
       return 0;
