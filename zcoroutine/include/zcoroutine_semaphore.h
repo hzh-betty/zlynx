@@ -10,7 +10,7 @@
 namespace zcoroutine {
 
 /**
- * @brief Linux(POSIX) 信号量封装（线程内同步用，进程共享未启用）
+ * @brief Linux(POSIX) 信号量封装
  *
  * 基于 sem_t：
  * - post()：计数 +1

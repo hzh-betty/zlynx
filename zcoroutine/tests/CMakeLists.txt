@@ -81,16 +81,12 @@ if(TEST_INTEGRATION_SRCS)
     endforeach()
 endif()
 
-# 新的性能测试基准程序
-file(GLOB BENCHMARK_SRCS CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/*_bench.cc)
-foreach(bench_source ${BENCHMARK_SRCS})
-    get_filename_component(bench_name ${bench_source} NAME_WE)
-    add_executable(${bench_name} ${bench_source})
-    target_link_libraries(${bench_name} PRIVATE
-            zcoroutine_shared
-            pthread
-    )
-    # 使用 -O2 优化级别和调试符号（用于perf）
-    target_compile_options(${bench_name} PRIVATE -O2 -g)
-    message(STATUS "Configured benchmark: ${bench_name}")
-endforeach()
+# 性能/压力测试基准程序
+add_executable(zcoroutine_benchmark ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/zcoroutine_benchmark.cc)
+target_link_libraries(zcoroutine_benchmark PRIVATE
+    zcoroutine_shared
+    pthread
+)
+# 使用 -O2 优化级别和调试符号（用于 perf/valgrind 分析）
+target_compile_options(zcoroutine_benchmark PRIVATE -O2 -g)
+message(STATUS "Configured benchmark: zcoroutine_benchmark")

@@ -153,8 +153,6 @@ int IoScheduler::add_event(int fd, Channel::Event event,
         "IoScheduler::add_event epoll operation failed, fd={}, event={}, op={}",
         fd, Channel::event_to_string(event),
         op == EPOLL_CTL_ADD ? "ADD" : "MOD");
-    // 只在本次确实“新添加”了该事件时才回滚；
-    // 若该事件原本就存在，回滚会把已有事件错误删除。
     if (!(old_events & event)) {
       fd_ctx->del_event(event);
     }

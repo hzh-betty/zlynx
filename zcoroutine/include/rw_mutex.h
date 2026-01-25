@@ -73,7 +73,6 @@ private:
 /**
  * @brief 读写锁类
  * 使用pthread_rwlock_t实现
- * C++14标准库没有提供读写锁，因此保留pthread实现
  */
 class RWMutex : public NonCopyable {
 public:
