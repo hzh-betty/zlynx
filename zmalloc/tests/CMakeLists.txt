@@ -10,6 +10,8 @@ endif()
 
 enable_testing()
 
+find_package(Threads REQUIRED)
+
 # zmalloc 头文件目录
 set(ZMALLOC_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
@@ -20,6 +22,10 @@ set(UNIT_TESTS
     object_pool_test
     transfer_cache_test
     zmalloc_test
+    page_map_test
+    page_cache_test
+    central_cache_test
+    thread_cache_test
 )
 
 foreach(TEST_NAME ${UNIT_TESTS})
@@ -54,5 +60,16 @@ add_executable(zmalloc_benchmark benchmark/benchmark.cc)
 target_link_libraries(zmalloc_benchmark
     PRIVATE
         zmalloc
+        Threads::Threads
 )
 target_include_directories(zmalloc_benchmark PRIVATE ${ZMALLOC_INCLUDE_DIR})
+
+# perf 性能分析驱动
+add_executable(zmalloc_performance benchmark/performance.cc)
+target_link_libraries(zmalloc_performance
+    PRIVATE
+        zmalloc
+        Threads::Threads
+)
+target_include_directories(zmalloc_performance PRIVATE ${ZMALLOC_INCLUDE_DIR})
+target_compile_options(zmalloc_performance PRIVATE -g -O2)

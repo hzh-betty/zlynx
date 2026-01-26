@@ -173,6 +173,98 @@ TEST_F(SizeClassIndexTest, NumMovePageLarge) {
   EXPECT_GE(SizeClass::num_move_page(256 * 1024), 1);
 }
 
+// ------------------------------
+// 补充：更细粒度的 round_up 用例（每个用例一个点）
+// ------------------------------
+
+#define ZMALLOC_SC_ROUNDUP_CASE(NAME, SIZE, EXPECTED)                          \
+  TEST_F(SizeClassRoundUpTest, RoundUp_##NAME) {                               \
+    EXPECT_EQ(SizeClass::round_up(static_cast<size_t>(SIZE)),                  \
+              static_cast<size_t>(EXPECTED));                                  \
+  }
+
+ZMALLOC_SC_ROUNDUP_CASE(S2, 2, 8)
+ZMALLOC_SC_ROUNDUP_CASE(S15, 15, 16)
+ZMALLOC_SC_ROUNDUP_CASE(S63, 63, 64)
+ZMALLOC_SC_ROUNDUP_CASE(S64, 64, 64)
+ZMALLOC_SC_ROUNDUP_CASE(S72, 72, 72)
+ZMALLOC_SC_ROUNDUP_CASE(S73, 73, 80)
+ZMALLOC_SC_ROUNDUP_CASE(S120, 120, 120)
+ZMALLOC_SC_ROUNDUP_CASE(S121, 121, 128)
+
+ZMALLOC_SC_ROUNDUP_CASE(S255, 255, 256)
+ZMALLOC_SC_ROUNDUP_CASE(S257, 257, 272)
+ZMALLOC_SC_ROUNDUP_CASE(S1000, 1000, 1008)
+
+ZMALLOC_SC_ROUNDUP_CASE(S2000, 2000, 2048)
+ZMALLOC_SC_ROUNDUP_CASE(S4097, 4097, 4224)
+ZMALLOC_SC_ROUNDUP_CASE(S8192, 8192, 8192)
+ZMALLOC_SC_ROUNDUP_CASE(S8193, 8193, 9216)
+
+ZMALLOC_SC_ROUNDUP_CASE(S65535, 65535, 65536)
+ZMALLOC_SC_ROUNDUP_CASE(S65536, 65536, 65536)
+ZMALLOC_SC_ROUNDUP_CASE(S65537, 65537, 73728)
+
+#undef ZMALLOC_SC_ROUNDUP_CASE
+
+// ------------------------------
+// 补充：更多 index 精细点
+// ------------------------------
+
+#define ZMALLOC_SC_INDEX_CASE(NAME, SIZE, EXPECTED)                            \
+  TEST_F(SizeClassIndexTest, Index_##NAME) {                                   \
+    EXPECT_EQ(SizeClass::index(static_cast<size_t>(SIZE)),                     \
+              static_cast<size_t>(EXPECTED));                                  \
+  }
+
+ZMALLOC_SC_INDEX_CASE(S16, 16, 1)
+ZMALLOC_SC_INDEX_CASE(S24, 24, 2)
+ZMALLOC_SC_INDEX_CASE(S72, 72, 8)
+ZMALLOC_SC_INDEX_CASE(S80, 80, 9)
+ZMALLOC_SC_INDEX_CASE(S144, 144, 16)
+ZMALLOC_SC_INDEX_CASE(S1008, 1008, 70)
+ZMALLOC_SC_INDEX_CASE(S1152, 1152, 72)
+ZMALLOC_SC_INDEX_CASE(S2048, 2048, 79)
+ZMALLOC_SC_INDEX_CASE(S7168, 7168, 119)
+ZMALLOC_SC_INDEX_CASE(S9216, 9216, 128)
+
+#undef ZMALLOC_SC_INDEX_CASE
+
+// ------------------------------
+// 补充：num_move_size / num_move_page 典型点
+// ------------------------------
+
+#define ZMALLOC_SC_NUMMOVE_SIZE_CASE(NAME, SIZE, EXPECTED)                     \
+  TEST_F(SizeClassIndexTest, NumMoveSize_##NAME) {                             \
+    EXPECT_EQ(SizeClass::num_move_size(static_cast<size_t>(SIZE)),             \
+              static_cast<size_t>(EXPECTED));                                  \
+  }
+
+ZMALLOC_SC_NUMMOVE_SIZE_CASE(B8, 8, 128)
+ZMALLOC_SC_NUMMOVE_SIZE_CASE(B24, 24, 128)
+ZMALLOC_SC_NUMMOVE_SIZE_CASE(B80, 80, 51)
+ZMALLOC_SC_NUMMOVE_SIZE_CASE(B144, 144, 28)
+ZMALLOC_SC_NUMMOVE_SIZE_CASE(B1008, 1008, 4)
+ZMALLOC_SC_NUMMOVE_SIZE_CASE(B1152, 1152, 3)
+ZMALLOC_SC_NUMMOVE_SIZE_CASE(B4096, 4096, 2)
+ZMALLOC_SC_NUMMOVE_SIZE_CASE(B73728, 73728, 2)
+
+#undef ZMALLOC_SC_NUMMOVE_SIZE_CASE
+
+#define ZMALLOC_SC_NUMMOVE_PAGE_ATLEAST_CASE(NAME, SIZE)                       \
+  TEST_F(SizeClassIndexTest, NumMovePage_AtLeast1_##NAME) {                    \
+    EXPECT_GE(SizeClass::num_move_page(static_cast<size_t>(SIZE)), 1u);        \
+  }
+
+ZMALLOC_SC_NUMMOVE_PAGE_ATLEAST_CASE(S8, 8)
+ZMALLOC_SC_NUMMOVE_PAGE_ATLEAST_CASE(S128, 128)
+ZMALLOC_SC_NUMMOVE_PAGE_ATLEAST_CASE(S1024, 1024)
+ZMALLOC_SC_NUMMOVE_PAGE_ATLEAST_CASE(S8192, 8192)
+ZMALLOC_SC_NUMMOVE_PAGE_ATLEAST_CASE(S65536, 65536)
+ZMALLOC_SC_NUMMOVE_PAGE_ATLEAST_CASE(S262144, 262144)
+
+#undef ZMALLOC_SC_NUMMOVE_PAGE_ATLEAST_CASE
+
 // round_up 与 index 一致性
 TEST(SizeClassConsistencyTest, RoundUpIndexConsistency) {
   for (size_t size = 1; size <= 256 * 1024; size += 100) {

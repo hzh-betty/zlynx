@@ -16,6 +16,51 @@ namespace {
 
 class ConcurrentAllocTest : public ::testing::Test {};
 
+static void AllocTouchAndFree(size_t size, unsigned char tag) {
+  unsigned char *p = static_cast<unsigned char *>(zmalloc(size));
+  ASSERT_NE(p, nullptr);
+  p[0] = static_cast<unsigned char>(tag ^ 0xA5);
+  p[size - 1] = static_cast<unsigned char>(tag ^ 0x5A);
+  if (size > 8) {
+    p[size / 2] = tag;
+  }
+  zfree(p);
+}
+
+static void RunConcurrentAllocFree(int thread_count, int iters, size_t size,
+                                   unsigned char tag) {
+  std::vector<std::thread> threads;
+  threads.reserve(thread_count);
+  for (int t = 0; t < thread_count; ++t) {
+    threads.emplace_back([=]() {
+      for (int i = 0; i < iters; ++i) {
+        AllocTouchAndFree(size, static_cast<unsigned char>(tag + t + i));
+      }
+    });
+  }
+  for (auto &th : threads) {
+    th.join();
+  }
+}
+
+static void RunConcurrentMixedSizes(int thread_count, int iters,
+                                    const std::vector<size_t> &sizes,
+                                    unsigned char tag) {
+  std::vector<std::thread> threads;
+  threads.reserve(thread_count);
+  for (int t = 0; t < thread_count; ++t) {
+    threads.emplace_back([=, &sizes]() {
+      for (int i = 0; i < iters; ++i) {
+        size_t size = sizes[static_cast<size_t>((t + i) % static_cast<int>(sizes.size()))];
+        AllocTouchAndFree(size, static_cast<unsigned char>(tag + t + i));
+      }
+    });
+  }
+  for (auto &th : threads) {
+    th.join();
+  }
+}
+
 // 多线程同时分配释放
 TEST_F(ConcurrentAllocTest, MultiThreadBasic) {
   constexpr int kThreadCount = 4;
@@ -492,6 +537,87 @@ TEST_F(ConcurrentAllocTest, BoundarySizesConcurrent) {
                              64 * 1024, 64 * 1024 + 1, 256 * 1024};
   for (size_t s : boundary_sizes) {
     threads.emplace_back(worker, s);
+  }
+  for (auto &t : threads) {
+    t.join();
+  }
+}
+
+// ------------------------------
+// 补充：轻量并发参数化用例（控制总耗时）
+// ------------------------------
+
+#define ZMALLOC_CONC_ALLOC_CASE(NAME, THREADS, ITERS, SIZE)                    \
+  TEST_F(ConcurrentAllocTest, ParamAllocFree_##NAME) {                         \
+    RunConcurrentAllocFree((THREADS), (ITERS), static_cast<size_t>(SIZE),      \
+                           static_cast<unsigned char>(0x10));                  \
+  }
+
+// 小对象/中对象：2 线程 * 200 次
+ZMALLOC_CONC_ALLOC_CASE(S1, 2, 200, 1)
+ZMALLOC_CONC_ALLOC_CASE(S8, 2, 200, 8)
+ZMALLOC_CONC_ALLOC_CASE(S16, 2, 200, 16)
+ZMALLOC_CONC_ALLOC_CASE(S72, 2, 200, 72)
+ZMALLOC_CONC_ALLOC_CASE(S80, 2, 200, 80)
+ZMALLOC_CONC_ALLOC_CASE(S96, 2, 200, 96)
+ZMALLOC_CONC_ALLOC_CASE(S144, 2, 200, 144)
+ZMALLOC_CONC_ALLOC_CASE(S24, 2, 200, 24)
+ZMALLOC_CONC_ALLOC_CASE(S32, 2, 200, 32)
+ZMALLOC_CONC_ALLOC_CASE(S64, 2, 200, 64)
+ZMALLOC_CONC_ALLOC_CASE(S128, 2, 200, 128)
+ZMALLOC_CONC_ALLOC_CASE(S256, 2, 200, 256)
+ZMALLOC_CONC_ALLOC_CASE(S512, 2, 200, 512)
+ZMALLOC_CONC_ALLOC_CASE(S1024, 2, 200, 1024)
+ZMALLOC_CONC_ALLOC_CASE(S1008, 2, 200, 1008)
+ZMALLOC_CONC_ALLOC_CASE(S1152, 2, 200, 1152)
+ZMALLOC_CONC_ALLOC_CASE(S2048, 2, 200, 2048)
+ZMALLOC_CONC_ALLOC_CASE(S4096, 2, 200, 4096)
+ZMALLOC_CONC_ALLOC_CASE(S7168, 2, 200, 7168)
+
+// 典型边界：4 线程 * 100 次
+ZMALLOC_CONC_ALLOC_CASE(B128, 4, 100, 128)
+ZMALLOC_CONC_ALLOC_CASE(B129, 4, 100, 129)
+ZMALLOC_CONC_ALLOC_CASE(B1024, 4, 100, 1024)
+ZMALLOC_CONC_ALLOC_CASE(B1025, 4, 100, 1025)
+ZMALLOC_CONC_ALLOC_CASE(B8192, 4, 100, 8 * 1024)
+ZMALLOC_CONC_ALLOC_CASE(B8193, 4, 100, 8 * 1024 + 1)
+ZMALLOC_CONC_ALLOC_CASE(B65536, 4, 50, 64 * 1024)
+ZMALLOC_CONC_ALLOC_CASE(B65537, 4, 50, 64 * 1024 + 1)
+ZMALLOC_CONC_ALLOC_CASE(B262144, 4, 25, 256 * 1024)
+
+// 大对象（>MAX_BYTES）：2 线程 * 少量
+ZMALLOC_CONC_ALLOC_CASE(L262145, 2, 10, 256 * 1024 + 1)
+ZMALLOC_CONC_ALLOC_CASE(L512K, 2, 5, 512 * 1024)
+
+#undef ZMALLOC_CONC_ALLOC_CASE
+
+// 混合 size 集合：保持多样性但每个用例很轻
+#define ZMALLOC_CONC_MIXED_CASE(NAME, THREADS, ITERS)                          \
+  TEST_F(ConcurrentAllocTest, ParamMixedSizes_##NAME) {                        \
+    std::vector<size_t> sizes = {                                              \
+        1,   8,   16,  24,  32,  64,  128, 256, 512, 1024,                     \
+        2048, 4096, 8192, 8193, 16384, 32768};                                \
+    RunConcurrentMixedSizes((THREADS), (ITERS), sizes,                         \
+                            static_cast<unsigned char>(0x55));                \
+  }
+
+ZMALLOC_CONC_MIXED_CASE(SetA_T2, 2, 200)
+ZMALLOC_CONC_MIXED_CASE(SetA_T4, 4, 100)
+
+#undef ZMALLOC_CONC_MIXED_CASE
+
+// 并发 zfree(nullptr)（确保不会崩溃）
+TEST_F(ConcurrentAllocTest, ConcurrentNullptrFreeNoCrash) {
+  constexpr int kThreadCount = 8;
+  constexpr int kIters = 10000;
+  std::vector<std::thread> threads;
+  threads.reserve(kThreadCount);
+  for (int i = 0; i < kThreadCount; ++i) {
+    threads.emplace_back([]() {
+      for (int j = 0; j < kIters; ++j) {
+        zfree(nullptr);
+      }
+    });
   }
   for (auto &t : threads) {
     t.join();

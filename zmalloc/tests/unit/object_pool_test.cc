@@ -25,6 +25,12 @@ protected:
   ObjectPool<TestObject> pool_;
 };
 
+static void ExpectPointerAligned(void *p) {
+  ASSERT_NE(p, nullptr);
+  const uintptr_t v = reinterpret_cast<uintptr_t>(p);
+  EXPECT_EQ(v % alignof(void *), 0u);
+}
+
 TEST_F(ObjectPoolTest, AllocateReturnsNonNull) {
   TestObject *obj = pool_.allocate();
   EXPECT_NE(obj, nullptr);
@@ -190,6 +196,191 @@ TEST(ObjectPoolIndependentTest, PoolsAreIndependent) {
   pool1.deallocate(obj1);
   pool2.deallocate(obj2);
 }
+
+// ------------------------------
+// 批量用例：释放顺序决定复用顺序（LIFO）
+// ------------------------------
+
+#define ZMALLOC_OBJECTPOOL_LIFO_REUSE_CASE(N)                                 \
+  TEST_F(ObjectPoolTest, LifoReuseOrder_N##N) {                                \
+    std::vector<TestObject *> objs;                                            \
+    objs.reserve(N);                                                          \
+    for (int i = 0; i < (N); ++i) {                                            \
+      auto *p = pool_.allocate();                                              \
+      ASSERT_NE(p, nullptr);                                                   \
+      p->value = 100 + i;                                                      \
+      objs.push_back(p);                                                       \
+    }                                                                          \
+    for (int i = 0; i < (N); ++i) {                                            \
+      pool_.deallocate(objs[i]);                                               \
+    }                                                                          \
+    std::vector<TestObject *> reused;                                          \
+    reused.reserve(N);                                                         \
+    for (int i = 0; i < (N); ++i) {                                            \
+      auto *q = pool_.allocate();                                              \
+      ASSERT_NE(q, nullptr);                                                   \
+      reused.push_back(q);                                                     \
+    }                                                                          \
+    for (int i = 0; i < (N); ++i) {                                            \
+      EXPECT_EQ(reused[i], objs[(N)-1 - i]);                                   \
+      EXPECT_EQ(reused[i]->value, 42);                                         \
+    }                                                                          \
+    for (auto *q : reused) {                                                   \
+      pool_.deallocate(q);                                                     \
+    }                                                                          \
+  }
+
+ZMALLOC_OBJECTPOOL_LIFO_REUSE_CASE(2)
+ZMALLOC_OBJECTPOOL_LIFO_REUSE_CASE(3)
+ZMALLOC_OBJECTPOOL_LIFO_REUSE_CASE(4)
+ZMALLOC_OBJECTPOOL_LIFO_REUSE_CASE(5)
+ZMALLOC_OBJECTPOOL_LIFO_REUSE_CASE(6)
+ZMALLOC_OBJECTPOOL_LIFO_REUSE_CASE(7)
+ZMALLOC_OBJECTPOOL_LIFO_REUSE_CASE(8)
+ZMALLOC_OBJECTPOOL_LIFO_REUSE_CASE(9)
+ZMALLOC_OBJECTPOOL_LIFO_REUSE_CASE(10)
+
+#undef ZMALLOC_OBJECTPOOL_LIFO_REUSE_CASE
+
+// ------------------------------
+// 批量用例：批量分配唯一性 + 可正常释放
+// ------------------------------
+
+#define ZMALLOC_OBJECTPOOL_BATCH_UNIQUE_CASE(N)                               \
+  TEST_F(ObjectPoolTest, BatchAllocationUnique_N##N) {                         \
+    std::vector<TestObject *> objs;                                            \
+    objs.reserve(N);                                                          \
+    for (int i = 0; i < (N); ++i) {                                            \
+      auto *p = pool_.allocate();                                              \
+      ASSERT_NE(p, nullptr);                                                   \
+      ExpectPointerAligned(p);                                                 \
+      objs.push_back(p);                                                       \
+    }                                                                          \
+    for (int i = 0; i < (N); ++i) {                                            \
+      for (int j = i + 1; j < (N); ++j) {                                      \
+        ASSERT_NE(objs[i], objs[j]);                                           \
+      }                                                                        \
+    }                                                                          \
+    for (auto *p : objs) {                                                     \
+      pool_.deallocate(p);                                                     \
+    }                                                                          \
+  }
+
+ZMALLOC_OBJECTPOOL_BATCH_UNIQUE_CASE(5)
+ZMALLOC_OBJECTPOOL_BATCH_UNIQUE_CASE(10)
+ZMALLOC_OBJECTPOOL_BATCH_UNIQUE_CASE(20)
+ZMALLOC_OBJECTPOOL_BATCH_UNIQUE_CASE(50)
+ZMALLOC_OBJECTPOOL_BATCH_UNIQUE_CASE(100)
+
+#undef ZMALLOC_OBJECTPOOL_BATCH_UNIQUE_CASE
+
+// ------------------------------
+// 批量用例：交替分配/释放不同迭代次数
+// ------------------------------
+
+#define ZMALLOC_OBJECTPOOL_ALTERNATE_CASE(ITERS)                              \
+  TEST_F(ObjectPoolTest, AlternateAllocateDeallocate_Iters##ITERS) {           \
+    for (int i = 0; i < (ITERS); ++i) {                                        \
+      auto *p = pool_.allocate();                                              \
+      ASSERT_NE(p, nullptr);                                                   \
+      p->value = i;                                                            \
+      pool_.deallocate(p);                                                     \
+    }                                                                          \
+    auto *q = pool_.allocate();                                                \
+    ASSERT_NE(q, nullptr);                                                     \
+    EXPECT_EQ(q->value, 42);                                                   \
+    pool_.deallocate(q);                                                       \
+  }
+
+ZMALLOC_OBJECTPOOL_ALTERNATE_CASE(1)
+ZMALLOC_OBJECTPOOL_ALTERNATE_CASE(2)
+ZMALLOC_OBJECTPOOL_ALTERNATE_CASE(10)
+ZMALLOC_OBJECTPOOL_ALTERNATE_CASE(100)
+ZMALLOC_OBJECTPOOL_ALTERNATE_CASE(1000)
+
+#undef ZMALLOC_OBJECTPOOL_ALTERNATE_CASE
+
+// ------------------------------
+// SmallObject：对齐/批量/复用
+// ------------------------------
+
+static void SmallObjectBatch(ObjectPool<SmallObject> &pool, int n) {
+  std::vector<SmallObject *> objs;
+  objs.reserve(n);
+  for (int i = 0; i < n; ++i) {
+    auto *p = pool.allocate();
+    ASSERT_NE(p, nullptr);
+    ExpectPointerAligned(p);
+    objs.push_back(p);
+  }
+  for (auto *p : objs) {
+    pool.deallocate(p);
+  }
+}
+
+#define ZMALLOC_OBJECTPOOL_SMALL_BATCH_CASE(N)                                \
+  TEST(ObjectPoolSmallTest, SmallObjectBatch_N##N) {                           \
+    ObjectPool<SmallObject> pool;                                              \
+    SmallObjectBatch(pool, N);                                                 \
+  }
+
+ZMALLOC_OBJECTPOOL_SMALL_BATCH_CASE(1)
+ZMALLOC_OBJECTPOOL_SMALL_BATCH_CASE(2)
+ZMALLOC_OBJECTPOOL_SMALL_BATCH_CASE(3)
+ZMALLOC_OBJECTPOOL_SMALL_BATCH_CASE(4)
+ZMALLOC_OBJECTPOOL_SMALL_BATCH_CASE(5)
+ZMALLOC_OBJECTPOOL_SMALL_BATCH_CASE(6)
+ZMALLOC_OBJECTPOOL_SMALL_BATCH_CASE(7)
+ZMALLOC_OBJECTPOOL_SMALL_BATCH_CASE(8)
+ZMALLOC_OBJECTPOOL_SMALL_BATCH_CASE(9)
+ZMALLOC_OBJECTPOOL_SMALL_BATCH_CASE(10)
+
+#undef ZMALLOC_OBJECTPOOL_SMALL_BATCH_CASE
+
+// LargeObject：复用顺序 + 构造函数重置
+static void LargeObjectLifoReuse(ObjectPool<LargeObject> &pool, int n) {
+  std::vector<LargeObject *> objs;
+  objs.reserve(n);
+  for (int i = 0; i < n; ++i) {
+    auto *p = pool.allocate();
+    ASSERT_NE(p, nullptr);
+    ExpectPointerAligned(p);
+    p->value = 1000 + i;
+    objs.push_back(p);
+  }
+  for (int i = 0; i < n; ++i) {
+    pool.deallocate(objs[i]);
+  }
+  std::vector<LargeObject *> reused;
+  reused.reserve(n);
+  for (int i = 0; i < n; ++i) {
+    auto *q = pool.allocate();
+    ASSERT_NE(q, nullptr);
+    reused.push_back(q);
+  }
+  for (int i = 0; i < n; ++i) {
+    EXPECT_EQ(reused[i], objs[n - 1 - i]);
+    EXPECT_EQ(reused[i]->value, 999);
+  }
+  for (auto *q : reused) {
+    pool.deallocate(q);
+  }
+}
+
+#define ZMALLOC_OBJECTPOOL_LARGE_REUSE_CASE(N)                                \
+  TEST(ObjectPoolLargeTest, LargeObjectLifoReuse_N##N) {                       \
+    ObjectPool<LargeObject> pool;                                              \
+    LargeObjectLifoReuse(pool, N);                                             \
+  }
+
+ZMALLOC_OBJECTPOOL_LARGE_REUSE_CASE(2)
+ZMALLOC_OBJECTPOOL_LARGE_REUSE_CASE(3)
+ZMALLOC_OBJECTPOOL_LARGE_REUSE_CASE(4)
+ZMALLOC_OBJECTPOOL_LARGE_REUSE_CASE(5)
+ZMALLOC_OBJECTPOOL_LARGE_REUSE_CASE(6)
+ZMALLOC_OBJECTPOOL_LARGE_REUSE_CASE(7)
+
+#undef ZMALLOC_OBJECTPOOL_LARGE_REUSE_CASE
 
 } // namespace
 } // namespace zmalloc

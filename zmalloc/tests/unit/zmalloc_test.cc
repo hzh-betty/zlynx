@@ -15,6 +15,20 @@ namespace {
 
 class ZmallocTest : public ::testing::Test {};
 
+static void AllocTouchFree(size_t size) {
+  ASSERT_NE(size, 0u);
+  unsigned char *p = static_cast<unsigned char *>(zmalloc(size));
+  ASSERT_NE(p, nullptr);
+  // 触达不同位置，验证可写且不会越界
+  p[0] = 0xA5;
+  p[size - 1] = 0x5A;
+  if (size > 4) {
+    p[size / 2] = 0x3C;
+    p[size / 4] = 0xC3;
+  }
+  zfree(p);
+}
+
 // 基本分配释放测试
 TEST_F(ZmallocTest, BasicAllocFree) {
   void *ptr = zmalloc(64);
@@ -442,6 +456,30 @@ TEST_F(ZmallocTest, MultiPageAlloc) {
     zfree(ptr);
   }
 }
+
+// ------------------------------
+// 补充：更多 size 覆盖（边界 + 典型点）
+// ------------------------------
+
+#define ZMALLOC_API_TOUCH_CASE(NAME, SIZE)                                    \
+  TEST_F(ZmallocTest, AllocTouchFree_##NAME) { AllocTouchFree(static_cast<size_t>(SIZE)); }
+
+ZMALLOC_API_TOUCH_CASE(S2, 2)
+ZMALLOC_API_TOUCH_CASE(S7, 7)
+ZMALLOC_API_TOUCH_CASE(S15, 15)
+ZMALLOC_API_TOUCH_CASE(S31, 31)
+ZMALLOC_API_TOUCH_CASE(S33, 33)
+ZMALLOC_API_TOUCH_CASE(S127, 127)
+ZMALLOC_API_TOUCH_CASE(S255, 255)
+ZMALLOC_API_TOUCH_CASE(S1023, 1023)
+ZMALLOC_API_TOUCH_CASE(S1025, 1025)
+ZMALLOC_API_TOUCH_CASE(S8191, 8191)
+ZMALLOC_API_TOUCH_CASE(S8193, 8193)
+ZMALLOC_API_TOUCH_CASE(S65535, 65535)
+ZMALLOC_API_TOUCH_CASE(S65537, 65537)
+ZMALLOC_API_TOUCH_CASE(S262143, 262143)
+
+#undef ZMALLOC_API_TOUCH_CASE
 
 } // namespace
 } // namespace zmalloc
