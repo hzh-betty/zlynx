@@ -3,9 +3,9 @@
 
 #include <memory>
 
-#include "epoll_poller.h"
 #include "channel.h"
 #include "channel_registry.h"
+#include "epoll_poller.h"
 #include "scheduler.h"
 #include "timer_manager.h"
 
@@ -133,11 +133,11 @@ private:
   Channel::ptr get_fd_context(int fd, bool auto_create);
 
 private:
-  EpollPoller::ptr epoll_poller_;                    // Epoll封装
-  TimerManager::ptr timer_manager_;                  // 定时器管理器
+  EpollPoller::ptr epoll_poller_;             // Epoll封装
+  TimerManager::ptr timer_manager_;           // 定时器管理器
   std::unique_ptr<ChannelRegistry> channels_; // FdContext表
-  std::unique_ptr<std::thread> io_thread_;           // IO线程
-  int wake_fd_[2]{}; // 用于唤醒epoll的管道
+  std::unique_ptr<std::thread> io_thread_;    // IO线程
+  int wake_fd_[2]{};                          // 用于唤醒epoll的管道
 };
 } // namespace zcoroutine
 

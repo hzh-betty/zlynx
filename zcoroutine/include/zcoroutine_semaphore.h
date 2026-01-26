@@ -22,9 +22,7 @@ namespace zcoroutine {
  */
 class Semaphore : public NonCopyable {
 public:
-  explicit Semaphore(unsigned int initial = 0) {
-    sem_init(&sem_, 0, initial);
-  }
+  explicit Semaphore(unsigned int initial = 0) { sem_init(&sem_, 0, initial); }
 
   ~Semaphore() { sem_destroy(&sem_); }
 

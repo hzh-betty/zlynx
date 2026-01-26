@@ -27,7 +27,7 @@ static void AllocTouchFree(zmalloc::ThreadCache *tc, size_t size) {
 }
 
 static void TriggerListTooLongOnce(zmalloc::ThreadCache *tc, size_t size,
-                                  size_t new_max_size) {
+                                   size_t new_max_size) {
   const size_t index = zmalloc::SizeClass::index_fast(size);
   size_t old = tc->free_lists_[index].max_size();
   tc->free_lists_[index].max_size() = new_max_size;

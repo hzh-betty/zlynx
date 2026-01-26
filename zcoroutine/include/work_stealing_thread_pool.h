@@ -9,11 +9,11 @@
 #include <thread>
 #include <vector>
 
-#include "task_queue.h" // for Task
-#include "zcoroutine_semaphore.h"
-#include "zcoroutine_noncopyable.h"
 #include "processor.h"
 #include "stealable_queue_bitmap.h"
+#include "task_queue.h" // for Task
+#include "zcoroutine_noncopyable.h"
+#include "zcoroutine_semaphore.h"
 
 namespace zcoroutine {
 
@@ -63,7 +63,7 @@ public:
 
   /**
    * @brief 获取指定 worker 的本地队列指针（由 Processor 持有）。
-    * @note 本接口不依赖“队列发布”，worker 线程可在启动早期使用。
+   * @note 本接口不依赖“队列发布”，worker 线程可在启动早期使用。
    */
   WorkStealingQueue *local_queue(int worker_id) const;
 

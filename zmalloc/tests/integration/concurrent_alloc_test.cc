@@ -51,7 +51,8 @@ static void RunConcurrentMixedSizes(int thread_count, int iters,
   for (int t = 0; t < thread_count; ++t) {
     threads.emplace_back([=, &sizes]() {
       for (int i = 0; i < iters; ++i) {
-        size_t size = sizes[static_cast<size_t>((t + i) % static_cast<int>(sizes.size()))];
+        size_t size = sizes[static_cast<size_t>(
+            (t + i) % static_cast<int>(sizes.size()))];
         AllocTouchAndFree(size, static_cast<unsigned char>(tag + t + i));
       }
     });
@@ -594,11 +595,11 @@ ZMALLOC_CONC_ALLOC_CASE(L512K, 2, 5, 512 * 1024)
 // 混合 size 集合：保持多样性但每个用例很轻
 #define ZMALLOC_CONC_MIXED_CASE(NAME, THREADS, ITERS)                          \
   TEST_F(ConcurrentAllocTest, ParamMixedSizes_##NAME) {                        \
-    std::vector<size_t> sizes = {                                              \
-        1,   8,   16,  24,  32,  64,  128, 256, 512, 1024,                     \
-        2048, 4096, 8192, 8193, 16384, 32768};                                \
+    std::vector<size_t> sizes = {1,    8,    16,    24,   32,   64,            \
+                                 128,  256,  512,   1024, 2048, 4096,          \
+                                 8192, 8193, 16384, 32768};                    \
     RunConcurrentMixedSizes((THREADS), (ITERS), sizes,                         \
-                            static_cast<unsigned char>(0x55));                \
+                            static_cast<unsigned char>(0x55));                 \
   }
 
 ZMALLOC_CONC_MIXED_CASE(SetA_T2, 2, 200)

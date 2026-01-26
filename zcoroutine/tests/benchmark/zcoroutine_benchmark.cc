@@ -83,13 +83,12 @@ static IoScheduler::ptr g_io_scheduler;
 static std::atomic<bool> g_running{false};
 static BenchStats g_stats;
 
-static const char *kHttpResponse =
-    "HTTP/1.1 200 OK\r\n"
-    "Content-Type: text/plain\r\n"
-    "Content-Length: 2\r\n"
-    "Connection: close\r\n"
-    "\r\n"
-    "OK";
+static const char *kHttpResponse = "HTTP/1.1 200 OK\r\n"
+                                   "Content-Type: text/plain\r\n"
+                                   "Content-Length: 2\r\n"
+                                   "Connection: close\r\n"
+                                   "\r\n"
+                                   "OK";
 
 void usage(const char *prog) {
   std::cout
@@ -230,7 +229,8 @@ int create_server_socket(int port) {
   addr.sin_port = htons(static_cast<uint16_t>(port));
   addr.sin_addr.s_addr = INADDR_ANY;
 
-  if (::bind(listen_fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0) {
+  if (::bind(listen_fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) <
+      0) {
     std::cerr << "bind() failed: " << std::strerror(errno) << std::endl;
     ::close(listen_fd);
     return -1;
@@ -267,9 +267,9 @@ void handle_client(int client_fd) {
   int ret = ::recv(client_fd, buf, sizeof(buf), 0);
   if (ret > 0) {
     g_stats.bytes_received.fetch_add(static_cast<uint64_t>(ret),
-                                    std::memory_order_relaxed);
-    int send_ret = ::send(client_fd, kHttpResponse, std::strlen(kHttpResponse),
-                          0);
+                                     std::memory_order_relaxed);
+    int send_ret =
+        ::send(client_fd, kHttpResponse, std::strlen(kHttpResponse), 0);
     if (send_ret > 0) {
       g_stats.bytes_sent.fetch_add(static_cast<uint64_t>(send_ret),
                                    std::memory_order_relaxed);
@@ -291,9 +291,8 @@ void accept_connection() {
   socklen_t client_len = sizeof(client_addr);
   std::memset(&client_addr, 0, sizeof(client_addr));
 
-  int client_fd =
-      ::accept(g_listen_fd, reinterpret_cast<sockaddr *>(&client_addr),
-               &client_len);
+  int client_fd = ::accept(
+      g_listen_fd, reinterpret_cast<sockaddr *>(&client_addr), &client_len);
   if (client_fd < 0) {
     register_accept_event();
     return;
@@ -306,7 +305,8 @@ void accept_connection() {
     ::fcntl(client_fd, F_SETFL, flags | O_NONBLOCK);
   }
 
-  auto fiber = std::make_shared<Fiber>([client_fd]() { handle_client(client_fd); });
+  auto fiber =
+      std::make_shared<Fiber>([client_fd]() { handle_client(client_fd); });
   g_io_scheduler->schedule(std::move(fiber));
 
   register_accept_event();
@@ -319,8 +319,8 @@ void start_server(const BenchConfig &cfg) {
     std::exit(1);
   }
 
-  g_io_scheduler =
-      std::make_shared<IoScheduler>(cfg.thread_num, "ZBench", cfg.use_shared_stack);
+  g_io_scheduler = std::make_shared<IoScheduler>(cfg.thread_num, "ZBench",
+                                                 cfg.use_shared_stack);
   g_io_scheduler->start();
 
   set_hook_enable(true);
@@ -418,7 +418,8 @@ void print_summary(const BenchConfig &cfg) {
   std::cout << "tx_bytes=" << g_stats.bytes_sent.load() << "\n";
   if (elapsed > 0) {
     std::cout << "server_rps="
-              << (static_cast<double>(g_stats.requests_handled.load()) / elapsed)
+              << (static_cast<double>(g_stats.requests_handled.load()) /
+                  elapsed)
               << "\n";
   }
   std::cout << "==============\n";

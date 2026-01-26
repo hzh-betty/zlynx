@@ -85,7 +85,8 @@ TEST_F(PageCacheTest, MapObjectToSpanWorksForSpanMiddle) {
   std::lock_guard<std::mutex> lk(pc.page_mtx());
   zmalloc::Span *span = pc.new_span(4);
   ASSERT_NE(span, nullptr);
-  void *p = reinterpret_cast<void *>((span->page_id + 2) << zmalloc::PAGE_SHIFT);
+  void *p =
+      reinterpret_cast<void *>((span->page_id + 2) << zmalloc::PAGE_SHIFT);
   EXPECT_EQ(pc.map_object_to_span(p), span);
 }
 
@@ -102,7 +103,8 @@ TEST_F(PageCacheTest, ReleaseSpanMarksNotInUse) {
   ASSERT_NE(mapped, nullptr);
   EXPECT_FALSE(mapped->is_use);
   // 原 span 的起始页/结束页仍应映射到一个有效 span。
-  auto *mapped_end = static_cast<zmalloc::Span *>(pc.id_span_map_.get(page_id + n - 1));
+  auto *mapped_end =
+      static_cast<zmalloc::Span *>(pc.id_span_map_.get(page_id + n - 1));
   ASSERT_NE(mapped_end, nullptr);
   EXPECT_EQ(mapped_end, mapped);
 }
@@ -119,7 +121,8 @@ TEST_F(PageCacheTest, ReleaseThenNewSpanCanReuseBucket) {
   // release 后原 span1 指针可能失效；只验证映射仍可用。
   auto *mapped = static_cast<zmalloc::Span *>(pc.id_span_map_.get(page_id));
   ASSERT_NE(mapped, nullptr);
-  auto *mapped_end = static_cast<zmalloc::Span *>(pc.id_span_map_.get(page_id + n - 1));
+  auto *mapped_end =
+      static_cast<zmalloc::Span *>(pc.id_span_map_.get(page_id + n - 1));
   ASSERT_NE(mapped_end, nullptr);
   EXPECT_EQ(mapped, mapped_end);
   EXPECT_FALSE(mapped->is_use);
@@ -162,7 +165,8 @@ TEST_F(PageCacheTest, NewSpanEstablishesAllPagesMapForSmallK) {
   zmalloc::Span *span = pc.new_span(3);
   ASSERT_NE(span, nullptr);
   for (size_t i = 0; i < span->n; ++i) {
-    auto *m = static_cast<zmalloc::Span *>(pc.id_span_map_.get(span->page_id + i));
+    auto *m =
+        static_cast<zmalloc::Span *>(pc.id_span_map_.get(span->page_id + i));
     ASSERT_EQ(m, span);
   }
 }
@@ -198,7 +202,8 @@ TEST_F(PageCacheTest, NewSpanFromBucketClearsIsUse) {
 
   zmalloc::Span *span2 = pc.new_span(2);
   ASSERT_NE(span2, nullptr);
-  // new_span 返回的 span 不一定清 is_use，但中央层会设置。这里保证可用性，不崩溃即可。
+  // new_span 返回的 span 不一定清
+  // is_use，但中央层会设置。这里保证可用性，不崩溃即可。
   SUCCEED();
 }
 
@@ -218,8 +223,8 @@ TEST_F(PageCacheTest, MultipleSmallAllocationsDoNotOverlapInMapping) {
 // ------------------------------
 
 #define ZMALLOC_PC_SMALL_K_CASE(K)                                             \
-  TEST_F(PageCacheTest, NewSpanMappingAndRelease_K_##K) {                       \
-    NewSpanCheckMappingAndRelease(pc, K);                                       \
+  TEST_F(PageCacheTest, NewSpanMappingAndRelease_K_##K) {                      \
+    NewSpanCheckMappingAndRelease(pc, K);                                      \
   }
 
 ZMALLOC_PC_SMALL_K_CASE(1)
@@ -267,7 +272,9 @@ ZMALLOC_PC_SMALL_K_CASE(128)
 // ------------------------------
 
 #define ZMALLOC_PC_LARGE_K_CASE(K)                                             \
-  TEST_F(PageCacheTest, LargeSpanAllocFree_K_##K) { NewLargeSpanAllocAndFree(pc, K); }
+  TEST_F(PageCacheTest, LargeSpanAllocFree_K_##K) {                            \
+    NewLargeSpanAllocAndFree(pc, K);                                           \
+  }
 
 ZMALLOC_PC_LARGE_K_CASE(129)
 ZMALLOC_PC_LARGE_K_CASE(256)

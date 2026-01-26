@@ -315,7 +315,7 @@ ZMALLOC_FREELIST_POPRANGE_CASE(10)
     for (int i = 0; i < (N); ++i) {                                            \
       next_obj(blocks_[i]) = (i + 1 < (N)) ? blocks_[i + 1] : nullptr;         \
     }                                                                          \
-    list_.push_range(blocks_[0], blocks_[(N)-1], (N));                         \
+    list_.push_range(blocks_[0], blocks_[(N) - 1], (N));                       \
     EXPECT_EQ(list_.size(), static_cast<size_t>(N));                           \
     for (int i = 0; i < (N); ++i) {                                            \
       EXPECT_EQ(list_.pop(), blocks_[i]);                                      \

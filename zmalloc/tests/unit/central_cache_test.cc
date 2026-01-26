@@ -56,7 +56,7 @@ static void FetchAndRelease(zmalloc::CentralCache &cc, size_t batch_n,
 }
 
 static void FetchTwiceConcatAndRelease(zmalloc::CentralCache &cc, size_t n1,
-                                      size_t n2, size_t size) {
+                                       size_t n2, size_t size) {
   void *s1 = nullptr;
   void *e1 = nullptr;
   const size_t g1 = cc.fetch_range_obj(s1, e1, n1, size);
@@ -139,7 +139,9 @@ TEST_F(CentralCacheTest, SpanObjSizeMatchesRequest) {
 TEST_F(CentralCacheTest, EmptyNonEmptyListsInitiallySmall) {
   const size_t index = zmalloc::SizeClass::index_fast(64);
   // 刚开始不要求为空，但至少结构可访问。
-  EXPECT_LE(CountSpans(cc.free_lists_[index].nonempty) + CountSpans(cc.free_lists_[index].empty), 1024u);
+  EXPECT_LE(CountSpans(cc.free_lists_[index].nonempty) +
+                CountSpans(cc.free_lists_[index].empty),
+            1024u);
 }
 
 TEST_F(CentralCacheTest, DrainSpanMovesToEmptyList) {
@@ -283,7 +285,8 @@ TEST_F(CentralCacheTest, EmptyListSpansHaveNoFreeObjectsWhenPresent) {
   cc.fetch_range_obj(all_s, all_e, capacity, size);
 
   // empty 链表里出现的 span，其 free_list 应为空。
-  for (zmalloc::Span *it = cc.free_lists_[index].empty.begin(); it != cc.free_lists_[index].empty.end(); it = it->next) {
+  for (zmalloc::Span *it = cc.free_lists_[index].empty.begin();
+       it != cc.free_lists_[index].empty.end(); it = it->next) {
     EXPECT_EQ(it->free_list, nullptr);
   }
 

@@ -113,8 +113,8 @@ int IoScheduler::add_event(int fd, Channel::Event event,
 
   Channel::ptr fd_ctx = get_fd_context(fd, true);
   if (!fd_ctx) {
-    ZCOROUTINE_LOG_ERROR(
-        "IoScheduler::add_event failed to get Channel, fd={}", fd);
+    ZCOROUTINE_LOG_ERROR("IoScheduler::add_event failed to get Channel, fd={}",
+                         fd);
     return -1;
   }
 
@@ -136,8 +136,7 @@ int IoScheduler::add_event(int fd, Channel::Event event,
   const int new_events = fd_ctx->add_event(event);
 
   // 更新epoll
-  const int op =
-      (old_events == Channel::kNone) ? EPOLL_CTL_ADD : EPOLL_CTL_MOD;
+  const int op = (old_events == Channel::kNone) ? EPOLL_CTL_ADD : EPOLL_CTL_MOD;
   int ret = 0;
   if (op == EPOLL_CTL_ADD) {
     ret = epoll_poller_->add_event(fd, new_events, fd_ctx.get());
@@ -169,8 +168,7 @@ int IoScheduler::del_event(int fd, Channel::Event event) {
   auto self = this;
   Channel::ptr fd_ctx = self->get_fd_context(fd, false);
   if (!fd_ctx) {
-    ZCOROUTINE_LOG_DEBUG("IoScheduler::del_event Channel not found, fd={}",
-                         fd);
+    ZCOROUTINE_LOG_DEBUG("IoScheduler::del_event Channel not found, fd={}", fd);
     return 0;
   }
 

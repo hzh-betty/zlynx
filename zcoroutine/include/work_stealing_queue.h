@@ -44,11 +44,11 @@ public:
   size_t pop_batch(Task *out, size_t max_count);
 
   /**
-    * @brief thief 批量 steal（FIFO，默认窃取 victim 的一半任务）
+   * @brief thief 批量 steal（FIFO，默认窃取 victim 的一半任务）
    * @param out 输出任务数组指针
-    * @param max_count 输出缓冲区容量（上限）
-    * @return 实际取出的任务数量
-    * @note 为满足“窃取一半”的语义，调用方应保证 max_count 足够大。
+   * @param max_count 输出缓冲区容量（上限）
+   * @return 实际取出的任务数量
+   * @note 为满足“窃取一半”的语义，调用方应保证 max_count 足够大。
    */
   size_t steal_batch(Task *out, size_t max_count);
 

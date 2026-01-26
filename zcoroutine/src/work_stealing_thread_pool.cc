@@ -10,7 +10,7 @@ WorkStealingThreadPool::WorkStealingThreadPool(int thread_count,
       work_queues_(static_cast<size_t>(thread_count_)),
       stealable_bitmap_(static_cast<size_t>(thread_count_)) {
 
-  // 创建 Processor 
+  // 创建 Processor
   processors_.reserve(static_cast<size_t>(thread_count_));
   for (int i = 0; i < thread_count_; ++i) {
     processors_.push_back(std::make_unique<Processor>(i));
@@ -18,13 +18,15 @@ WorkStealingThreadPool::WorkStealingThreadPool(int thread_count,
 
   // 初始化队列指针为 nullptr
   for (int i = 0; i < thread_count_; ++i) {
-    work_queues_[static_cast<size_t>(i)].store(nullptr, std::memory_order_relaxed);
+    work_queues_[static_cast<size_t>(i)].store(nullptr,
+                                               std::memory_order_relaxed);
   }
 }
 
 WorkStealingThreadPool::~WorkStealingThreadPool() { stop(); }
 
-void WorkStealingThreadPool::start(const std::function<void(int)> &worker_entry) {
+void WorkStealingThreadPool::start(
+    const std::function<void(int)> &worker_entry) {
   if (!threads_.empty()) {
     return;
   }
@@ -105,9 +107,10 @@ bool WorkStealingThreadPool::submit(Task &&task, Processor *hint) {
 
   const size_t start = static_cast<size_t>(next_rr());
   const int preferred = stealable_bitmap_.find_non_stealable(start);
-  const int target = (preferred >= 0)
-                         ? preferred
-                         : static_cast<int>(start % static_cast<size_t>(thread_count_));
+  const int target =
+      (preferred >= 0)
+          ? preferred
+          : static_cast<int>(start % static_cast<size_t>(thread_count_));
 
   processors_[static_cast<size_t>(target)]->run_queue.push(std::move(task));
   return true;

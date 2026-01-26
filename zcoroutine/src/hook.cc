@@ -245,8 +245,8 @@ static ssize_t do_io_hook(int fd, OriginFun fun, const char *hook_fun_name,
               }
               it->cancelled = ETIMEDOUT;
               // 取消IO事件，这会触发epoll事件从而唤醒协程
-              iom->cancel_event(
-                  fd, static_cast<zcoroutine::Channel::Event>(event));
+              iom->cancel_event(fd,
+                                static_cast<zcoroutine::Channel::Event>(event));
             },
             winfo);
       }
@@ -375,7 +375,6 @@ int nanosleep(const struct timespec *req, struct timespec *rem) {
 
   return 0;
 }
-
 
 int socket(int domain, int type, int protocol) {
   if (!zcoroutine::is_hook_enabled()) {
@@ -567,8 +566,8 @@ int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
 
 int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
   int fd = static_cast<int>(do_io_hook(sockfd, accept_f, "accept",
-                                       zcoroutine::Channel::kRead,
-                                       SO_RCVTIMEO, addr, addrlen));
+                                       zcoroutine::Channel::kRead, SO_RCVTIMEO,
+                                       addr, addrlen));
   if (fd >= 0) {
     // 注册新连接的fd
     zcoroutine::StatusTable::GetInstance()->get(fd, true);
@@ -589,8 +588,8 @@ int accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen, int flags) {
   }
 
   int fd = static_cast<int>(do_io_hook(sockfd, accept4_f, "accept4",
-                                       zcoroutine::Channel::kRead,
-                                       SO_RCVTIMEO, addr, addrlen, flags));
+                                       zcoroutine::Channel::kRead, SO_RCVTIMEO,
+                                       addr, addrlen, flags));
   if (fd >= 0) {
     zcoroutine::StatusTable::GetInstance()->get(fd, true);
   }
@@ -598,8 +597,8 @@ int accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen, int flags) {
 }
 
 ssize_t read(int fd, void *buf, size_t count) {
-  return do_io_hook(fd, read_f, "read", zcoroutine::Channel::kRead,
-                    SO_RCVTIMEO, buf, count);
+  return do_io_hook(fd, read_f, "read", zcoroutine::Channel::kRead, SO_RCVTIMEO,
+                    buf, count);
 }
 
 ssize_t readv(int fd, const struct iovec *iov, int iovcnt) {
@@ -614,9 +613,8 @@ ssize_t recv(int sockfd, void *buf, size_t len, int flags) {
 
 ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags,
                  struct sockaddr *src_addr, socklen_t *addrlen) {
-  return do_io_hook(sockfd, recvfrom_f, "recvfrom",
-                    zcoroutine::Channel::kRead, SO_RCVTIMEO, buf, len, flags,
-                    src_addr, addrlen);
+  return do_io_hook(sockfd, recvfrom_f, "recvfrom", zcoroutine::Channel::kRead,
+                    SO_RCVTIMEO, buf, len, flags, src_addr, addrlen);
 }
 
 ssize_t recvmsg(int sockfd, struct msghdr *msg, int flags) {

@@ -21,7 +21,8 @@ protected:
 
 static void FillUniquePtrs(void **out, size_t n, uintptr_t base) {
   for (size_t i = 0; i < n; ++i) {
-    out[i] = reinterpret_cast<void *>(base + static_cast<uintptr_t>((i + 1) * 16));
+    out[i] =
+        reinterpret_cast<void *>(base + static_cast<uintptr_t>((i + 1) * 16));
   }
 }
 
@@ -332,7 +333,7 @@ TEST_F(TransferCacheTest, ConcurrentInsertRemove) {
 #define ZMALLOC_TC_ENTRY_EXACT_CASE(N)                                         \
   TEST_F(TransferCacheTest, Entry_InsertRemoveExact_N##N) {                    \
     TransferCacheEntry cache;                                                  \
-    InsertRemoveExactEntry(cache, N, 0x1000u + static_cast<uintptr_t>(N));      \
+    InsertRemoveExactEntry(cache, N, 0x1000u + static_cast<uintptr_t>(N));     \
   }
 
 ZMALLOC_TC_ENTRY_EXACT_CASE(1)
@@ -364,7 +365,7 @@ ZMALLOC_TC_ENTRY_EXACT_CASE(128)
   TEST_F(TransferCacheTest, Entry_PartialRemove_Insert##INS##_Remove##REM) {   \
     TransferCacheEntry cache;                                                  \
     std::vector<void *> in(INS);                                               \
-    FillUniquePtrs(in.data(), INS, 0x2000u + static_cast<uintptr_t>(INS));      \
+    FillUniquePtrs(in.data(), INS, 0x2000u + static_cast<uintptr_t>(INS));     \
     ASSERT_EQ(cache.insert_range(in.data(), INS), static_cast<size_t>(INS));   \
     std::vector<void *> out(REM, nullptr);                                     \
     size_t removed = cache.remove_range(out.data(), REM);                      \
@@ -396,7 +397,7 @@ ZMALLOC_TC_ENTRY_PARTIAL_CASE(128, 64)
   TEST_F(TransferCacheTest, Entry_EmptyRemove_Returns0_N##N) {                 \
     TransferCacheEntry cache;                                                  \
     std::vector<void *> out(N, nullptr);                                       \
-    EXPECT_EQ(cache.remove_range(out.data(), N), 0u);                           \
+    EXPECT_EQ(cache.remove_range(out.data(), N), 0u);                          \
     EXPECT_TRUE(cache.empty());                                                \
   }
 
@@ -412,10 +413,11 @@ ZMALLOC_TC_ENTRY_EMPTY_REMOVE_CASE(64)
 // ------------------------------
 
 #define ZMALLOC_TC_MANAGER_EXACT_CASE(INDEX, N)                                \
-  TEST_F(TransferCacheTest, Manager_InsertRemoveExact_Index##INDEX##_N##N) {  \
+  TEST_F(TransferCacheTest, Manager_InsertRemoveExact_Index##INDEX##_N##N) {   \
     TransferCache &manager = TransferCache::get_instance();                    \
     InsertRemoveExactManager(manager, INDEX, N,                                \
-                             0x3000u + static_cast<uintptr_t>(INDEX * 1024 + N)); \
+                             0x3000u +                                         \
+                                 static_cast<uintptr_t>(INDEX * 1024 + N));    \
   }
 
 ZMALLOC_TC_MANAGER_EXACT_CASE(0, 1)

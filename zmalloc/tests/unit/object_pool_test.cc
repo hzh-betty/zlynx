@@ -201,10 +201,10 @@ TEST(ObjectPoolIndependentTest, PoolsAreIndependent) {
 // 批量用例：释放顺序决定复用顺序（LIFO）
 // ------------------------------
 
-#define ZMALLOC_OBJECTPOOL_LIFO_REUSE_CASE(N)                                 \
+#define ZMALLOC_OBJECTPOOL_LIFO_REUSE_CASE(N)                                  \
   TEST_F(ObjectPoolTest, LifoReuseOrder_N##N) {                                \
     std::vector<TestObject *> objs;                                            \
-    objs.reserve(N);                                                          \
+    objs.reserve(N);                                                           \
     for (int i = 0; i < (N); ++i) {                                            \
       auto *p = pool_.allocate();                                              \
       ASSERT_NE(p, nullptr);                                                   \
@@ -222,7 +222,7 @@ TEST(ObjectPoolIndependentTest, PoolsAreIndependent) {
       reused.push_back(q);                                                     \
     }                                                                          \
     for (int i = 0; i < (N); ++i) {                                            \
-      EXPECT_EQ(reused[i], objs[(N)-1 - i]);                                   \
+      EXPECT_EQ(reused[i], objs[(N) - 1 - i]);                                 \
       EXPECT_EQ(reused[i]->value, 42);                                         \
     }                                                                          \
     for (auto *q : reused) {                                                   \
@@ -246,10 +246,10 @@ ZMALLOC_OBJECTPOOL_LIFO_REUSE_CASE(10)
 // 批量用例：批量分配唯一性 + 可正常释放
 // ------------------------------
 
-#define ZMALLOC_OBJECTPOOL_BATCH_UNIQUE_CASE(N)                               \
+#define ZMALLOC_OBJECTPOOL_BATCH_UNIQUE_CASE(N)                                \
   TEST_F(ObjectPoolTest, BatchAllocationUnique_N##N) {                         \
     std::vector<TestObject *> objs;                                            \
-    objs.reserve(N);                                                          \
+    objs.reserve(N);                                                           \
     for (int i = 0; i < (N); ++i) {                                            \
       auto *p = pool_.allocate();                                              \
       ASSERT_NE(p, nullptr);                                                   \
@@ -278,7 +278,7 @@ ZMALLOC_OBJECTPOOL_BATCH_UNIQUE_CASE(100)
 // 批量用例：交替分配/释放不同迭代次数
 // ------------------------------
 
-#define ZMALLOC_OBJECTPOOL_ALTERNATE_CASE(ITERS)                              \
+#define ZMALLOC_OBJECTPOOL_ALTERNATE_CASE(ITERS)                               \
   TEST_F(ObjectPoolTest, AlternateAllocateDeallocate_Iters##ITERS) {           \
     for (int i = 0; i < (ITERS); ++i) {                                        \
       auto *p = pool_.allocate();                                              \
@@ -318,7 +318,7 @@ static void SmallObjectBatch(ObjectPool<SmallObject> &pool, int n) {
   }
 }
 
-#define ZMALLOC_OBJECTPOOL_SMALL_BATCH_CASE(N)                                \
+#define ZMALLOC_OBJECTPOOL_SMALL_BATCH_CASE(N)                                 \
   TEST(ObjectPoolSmallTest, SmallObjectBatch_N##N) {                           \
     ObjectPool<SmallObject> pool;                                              \
     SmallObjectBatch(pool, N);                                                 \
@@ -367,7 +367,7 @@ static void LargeObjectLifoReuse(ObjectPool<LargeObject> &pool, int n) {
   }
 }
 
-#define ZMALLOC_OBJECTPOOL_LARGE_REUSE_CASE(N)                                \
+#define ZMALLOC_OBJECTPOOL_LARGE_REUSE_CASE(N)                                 \
   TEST(ObjectPoolLargeTest, LargeObjectLifoReuse_N##N) {                       \
     ObjectPool<LargeObject> pool;                                              \
     LargeObjectLifoReuse(pool, N);                                             \

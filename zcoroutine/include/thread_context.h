@@ -41,11 +41,11 @@ struct SchedulerContext {
  * 管理共享栈模式下的栈状态、切换栈等
  */
 struct SharedStackContext {
-  StackMode stack_mode;                                // 当前线程的栈模式
+  StackMode stack_mode; // 当前线程的栈模式
   std::unique_ptr<SharedStack> shared_stack = nullptr; // 当前线程的共享栈
   std::unique_ptr<SwitchStack> switch_stack = nullptr; // 专用切换栈
   std::unique_ptr<Context> switch_context =
-      nullptr;                        // 切换上下文（运行在 switch_stack_ 上）
+      nullptr; // 切换上下文（运行在 switch_stack_ 上）
   std::weak_ptr<Fiber> pending_fiber; // 待切换的目标协程
 };
 
@@ -140,13 +140,13 @@ public:
   static Scheduler *get_scheduler();
 
   /**
-    * @brief 获取当前线程的 worker id（派生自 Processor::id）
+   * @brief 获取当前线程的 worker id（派生自 Processor::id）
    */
   static int get_worker_id();
 
   /**
    * @brief 设置/获取当前线程绑定的 Processor（P）
-    * @note 当前阶段 Scheduler 的本地队列从 Processor::run_queue 派生。
+   * @note 当前阶段 Scheduler 的本地队列从 Processor::run_queue 派生。
    */
   static void set_processor(Processor *processor);
   static Processor *get_processor();

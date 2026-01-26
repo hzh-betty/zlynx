@@ -57,8 +57,7 @@ int Channel::del_event(Event event) {
     ZCOROUTINE_LOG_DEBUG("Channel::del_event READ context reset: fd={}", fd_);
   } else if (event == kWrite) {
     reset_event_context(write_ctx_);
-    ZCOROUTINE_LOG_DEBUG("Channel::del_event WRITE context reset: fd={}",
-                         fd_);
+    ZCOROUTINE_LOG_DEBUG("Channel::del_event WRITE context reset: fd={}", fd_);
   }
 
   ZCOROUTINE_LOG_DEBUG("Channel::del_event success: fd={}, event={}, "
@@ -233,8 +232,8 @@ void Channel::cancel_all() {
   }
 
   if (write_callback) {
-    ZCOROUTINE_LOG_DEBUG(
-        "Channel::cancel_all executing WRITE callback: fd={}", fd_);
+    ZCOROUTINE_LOG_DEBUG("Channel::cancel_all executing WRITE callback: fd={}",
+                         fd_);
     if (scheduler) {
       scheduler->schedule(std::move(write_callback));
     } else {

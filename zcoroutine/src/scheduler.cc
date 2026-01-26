@@ -43,7 +43,7 @@ void Scheduler::enqueue(Task &&task) {
   if (!ok) {
     pending_tasks_.fetch_sub(1, std::memory_order_relaxed);
     ZCOROUTINE_LOG_ERROR("Scheduler[{}] enqueue failed: pool submit failed",
-                        name_);
+                         name_);
   }
 }
 
@@ -53,7 +53,7 @@ void Scheduler::start() {
   // pool_ 内部会忽略重复 start
   if (pool_.thread_count() <= 0) {
     ZCOROUTINE_LOG_WARN("Scheduler[{}] start called with non-positive threads",
-                       name_);
+                        name_);
   }
 
   ZCOROUTINE_LOG_INFO("Scheduler[{}] starting with {} threads...", name_,
@@ -233,9 +233,9 @@ void Scheduler::schedule_loop() {
 
             const size_t n = victim_q->steal_batch(stolen_buf.data(), target);
             if (n > 0) {
-              ZCOROUTINE_LOG_DEBUG(
-                  "Scheduler[{}] worker_id={} stole {} tasks from victim {} (target={})",
-                  name_, self_id, n, victim, target);
+              ZCOROUTINE_LOG_DEBUG("Scheduler[{}] worker_id={} stole {} tasks "
+                                   "from victim {} (target={})",
+                                   name_, self_id, n, victim, target);
               for (size_t i = 0; i < n; ++i) {
                 if (batch_count < kBatchSize) {
                   tasks[batch_count++] = std::move(stolen_buf[i]);
@@ -275,9 +275,8 @@ void Scheduler::schedule_loop() {
         // 执行协程
         const Fiber::ptr fiber = task.fiber;
 
-        ZCOROUTINE_LOG_DEBUG(
-          "Scheduler[{}] executing fiber name={}, id={}", name_,
-          fiber->name(), fiber->id());
+        ZCOROUTINE_LOG_DEBUG("Scheduler[{}] executing fiber name={}, id={}",
+                             name_, fiber->name(), fiber->id());
 
         try {
           fiber->resume();

@@ -19,7 +19,7 @@ template <typename PM> void SmokeSetGet(PM &pm, uintptr_t k1, uintptr_t k2) {
 
 template <typename PM>
 static void SetManyAndCheckSome(PM &pm, uintptr_t start, uintptr_t step,
-                               int count) {
+                                int count) {
   static constexpr int kMax = 64;
   ASSERT_LE(count, kMax);
   int values[kMax];
@@ -157,9 +157,13 @@ TEST_F(PageMap1Test, SetManyIncludingEnds) {
   EXPECT_EQ(pm.get(4095), &c);
 }
 
-TEST_F(PageMap1Test, EnsureOneElementAtEndInRange) { EXPECT_TRUE(pm.ensure(4095, 1)); }
+TEST_F(PageMap1Test, EnsureOneElementAtEndInRange) {
+  EXPECT_TRUE(pm.ensure(4095, 1));
+}
 
-TEST_F(PageMap1Test, EnsureTwoElementsAtEndOutOfRange) { EXPECT_FALSE(pm.ensure(4095, 2)); }
+TEST_F(PageMap1Test, EnsureTwoElementsAtEndOutOfRange) {
+  EXPECT_FALSE(pm.ensure(4095, 2));
+}
 
 class PageMap2Test : public ::testing::Test {
 protected:

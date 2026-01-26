@@ -53,7 +53,7 @@ private:
   Channel::ptr expand_and_create(int fd);
 
 private:
-  mutable RWMutex mutex_;                // 读写锁
+  mutable RWMutex mutex_;              // 读写锁
   std::vector<Channel::ptr> contexts_; // fd -> Channel 映射
 };
 
