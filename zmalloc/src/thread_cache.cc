@@ -37,7 +37,7 @@ void *ThreadCache::allocate(size_t size) {
     free_lists_[index].max_size() = kLargeSizeMinMax;
   }
 
-  if (!free_lists_[index].empty()) {
+  if (ZM_LIKELY(!free_lists_[index].empty())) {
     return free_lists_[index].pop();
   } else {
     return fetch_from_central_cache(index, align_size);
@@ -57,7 +57,7 @@ void ThreadCache::deallocate(void *ptr, size_t size) {
   free_lists_[index].push(ptr);
 
   // 自由链表过长时，回收到 CentralCache
-  if (free_lists_[index].size() >= free_lists_[index].max_size()) {
+  if (ZM_UNLIKELY(free_lists_[index].size() >= free_lists_[index].max_size())) {
     list_too_long(free_lists_[index], size);
   }
 }
@@ -111,29 +111,30 @@ void ThreadCache::list_too_long(FreeList &list, size_t size) {
   if (count == 0) {
     count = 1;
   }
-    if (count > 128) {
-      count = 128;
-    }
-    if (count > list.size()) {
-      count = list.size();
-    }
-    if (count == 0) {
-      return;
-    }
 
-    // 一次性从 ThreadCache 的自由链表摘下一段链表
-    void *chain_start = nullptr;
-    void *chain_end = nullptr;
-    list.pop_range(chain_start, chain_end, count);
+  if (count > 128) {
+    count = 128;
+  }
+  if (count > list.size()) {
+    count = list.size();
+  }
+  if (count == 0) {
+    return;
+  }
 
-    // 收集待回收的对象指针数组（TransferCache 接口需要数组）
-    void *batch[128];
-    void *cur = chain_start;
-    for (size_t i = 0; i < count; ++i) {
-      batch[i] = cur;
-      cur = next_obj(cur);
-    }
-    const size_t collected = count;
+  // 一次性从 ThreadCache 的自由链表摘下一段链表
+  void *chain_start = nullptr;
+  void *chain_end = nullptr;
+  list.pop_range(chain_start, chain_end, count);
+
+  // 收集待回收的对象指针数组（TransferCache 接口需要数组）
+  void *batch[128];
+  void *cur = chain_start;
+  for (size_t i = 0; i < count; ++i) {
+    batch[i] = cur;
+    cur = next_obj(cur);
+  }
+  const size_t collected = count;
 
   // 优先插入 TransferCache
   size_t inserted =

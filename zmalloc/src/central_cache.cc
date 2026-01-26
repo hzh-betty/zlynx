@@ -35,7 +35,7 @@ size_t CentralCache::fetch_range_obj(void *&start, void *&end, size_t n,
   span->use_count += actual_num;
 
   // 结构化维护：non-empty/empty 双链表（更接近 tcmalloc central freelist）
-  if (span->free_list == nullptr) {
+  if (ZM_UNLIKELY(span->free_list == nullptr)) {
     free_list.nonempty.erase(span);
     free_list.empty.push_front(span);
   }

@@ -11,16 +11,24 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <mutex>
 #include <thread>
 #include <sys/mman.h>
 
-// MAP_FIXED_NOREPLACE 可能未定义（老版本内核）
+// MAP_FIXED_NOREPLACE 可能未定义
 #ifndef MAP_FIXED_NOREPLACE
 #define MAP_FIXED_NOREPLACE 0x100000
 #endif
 
 namespace zmalloc {
+
+// 分支预测提示
+#if defined(__GNUC__) || defined(__clang__)
+#define ZM_LIKELY(x) (__builtin_expect(!!(x), 1))
+#define ZM_UNLIKELY(x) (__builtin_expect(!!(x), 0))
+#else
+#define ZM_LIKELY(x) (x)
+#define ZM_UNLIKELY(x) (x)
+#endif
 
 // 小于等于 MAX_BYTES 找 ThreadCache 申请，大于则找 PageCache 或系统
 static constexpr size_t MAX_BYTES = 256 * 1024;

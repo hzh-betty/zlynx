@@ -51,11 +51,11 @@ public:
    * @param size 对象大小
    * @return Span 指针
    */
-  struct CentralFreeList {
+  struct alignas(64) CentralFreeList {
     SpanList nonempty;
     SpanList empty;
     // 保护 nonempty/empty 以及 span 在两者之间的迁移。
-    std::mutex lock;
+    SpinLock lock;
   };
 
   Span *get_one_span(CentralFreeList &free_list, size_t size);
