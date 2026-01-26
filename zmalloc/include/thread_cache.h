@@ -57,8 +57,9 @@ private:
    * @brief 自由链表过长时，回收部分对象到 CentralCache
    * @param list 自由链表
    * @param size 对象大小
+   * @param index 哈希桶索引（由调用方预先计算，避免重复查表）
    */
-  void list_too_long(FreeList &list, size_t size);
+  void list_too_long(FreeList &list, size_t size, size_t index);
 
 private:
   FreeList free_lists_[NFREELISTS]; // 哈希桶

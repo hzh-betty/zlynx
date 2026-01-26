@@ -69,6 +69,19 @@ public:
     array_[static_cast<size_t>(k)] = v;
   }
 
+  // 批量设置 [start, start+n-1] 的映射。
+  // 适用于 Span 按页连续建映射的场景。
+  void set_range(Number start, size_t n, void *v) {
+    if (n == 0) {
+      return;
+    }
+    assert(ensure(start, n));
+    const Number last = start + static_cast<Number>(n - 1);
+    for (Number k = start; k <= last; ++k) {
+      array_[static_cast<size_t>(k)] = v;
+    }
+  }
+
   bool ensure(Number start, size_t n) {
     if (n == 0) {
       return true;
@@ -110,6 +123,20 @@ public:
     const Number i2 = k & (LEAF_LENGTH - 1);
     assert(i1 < ROOT_LENGTH);
     root_[i1]->values[i2] = v;
+  }
+
+  // 批量设置 [start, start+n-1] 的映射。
+  void set_range(Number start, size_t n, void *v) {
+    if (n == 0) {
+      return;
+    }
+    assert(ensure(start, n));
+    const Number last = start + static_cast<Number>(n - 1);
+    for (Number k = start; k <= last; ++k) {
+      const Number i1 = k >> LEAF_BITS;
+      const Number i2 = k & (LEAF_LENGTH - 1);
+      root_[i1]->values[i2] = v;
+    }
   }
 
   bool ensure(Number start, size_t n) {
@@ -177,6 +204,24 @@ public:
 
     ensure(k, 1);
     reinterpret_cast<Leaf *>(root_->ptrs[i1]->ptrs[i2])->values[i3] = v;
+  }
+
+  // 批量设置 [start, start+n-1] 的映射。
+  // 说明：set(k) 内部每次都会 ensure(k, 1)，对连续页映射来说开销较大。
+  // 这里改成 ensure(start, n) 一次性建好节点/叶子，再逐页写入。
+  void set_range(Number start, size_t n, void *v) {
+    if (n == 0) {
+      return;
+    }
+    assert(ensure(start, n));
+
+    const Number last = start + static_cast<Number>(n - 1);
+    for (Number k = start; k <= last; ++k) {
+      const Number i1 = k >> (LEAF_BITS + INTERIOR_BITS);
+      const Number i2 = (k >> LEAF_BITS) & (INTERIOR_LENGTH - 1);
+      const Number i3 = k & (LEAF_LENGTH - 1);
+      reinterpret_cast<Leaf *>(root_->ptrs[i1]->ptrs[i2])->values[i3] = v;
+    }
   }
 
   bool ensure(Number start, size_t n) {

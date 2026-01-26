@@ -52,7 +52,8 @@ public:
    *
    * - 每个 sizeclass 维护两条 SpanList：
    *   - nonempty：至少还有一个可分配对象（span->free_list != nullptr）
-   *   - empty：已无可分配对象（span->free_list == nullptr），但仍有对象在外部(ThreadCache)持有
+   *   - empty：已无可分配对象（span->free_list ==
+   * nullptr），但仍有对象在外部(ThreadCache)持有
    * - 这样 fetch 不需要线性扫描，通常 O(1) 取到可用 span。
    * - 同一 sizeclass 的 nonempty/empty 由同一把锁保护。
    * @param size 对象大小
@@ -81,6 +82,7 @@ public:
 
 private:
   CentralCache() = default;
+
 private:
   CentralFreeList free_lists_[NFREELISTS];
 };

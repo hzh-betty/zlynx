@@ -62,9 +62,8 @@ Span *CentralCache::get_one_span(CentralFreeList &free_list, size_t size) {
 
   PageCache::get_instance().page_mtx().lock();
   // 申请页数直接用查表结果，避免每次 miss 计算。
-  Span *span =
-      PageCache::get_instance().new_span(
-        static_cast<size_t>(SizeClass::lookup(size).num_pages));
+  Span *span = PageCache::get_instance().new_span(
+      static_cast<size_t>(SizeClass::lookup(size).num_pages));
   span->is_use = true;
   span->obj_size = size;
   PageCache::get_instance().page_mtx().unlock();
@@ -99,7 +98,7 @@ void CentralCache::release_list_to_spans(void *start, size_t size) {
 }
 
 void CentralCache::release_list_to_spans(void *start, size_t size,
-                                        size_t index) {
+                                         size_t index) {
   (void)size;
   CentralFreeList &free_list = free_lists_[index];
   if (start == nullptr) {
@@ -108,7 +107,8 @@ void CentralCache::release_list_to_spans(void *start, size_t size,
 
   // 两阶段批处理
   // 1) 无锁阶段：把对象按 Span 分组 + 本地拼接，减少 PageMap::get 次数。
-  // 2) 持锁阶段：对每个 Span 一次性 splice 链表并批量更新 use_count，缩短桶锁持有时间。
+  // 2) 持锁阶段：对每个 Span 一次性 splice 链表并批量更新
+  // use_count，缩短桶锁持有时间。
   //
   // 注意：ThreadCache 过长回收最多 128 个对象，因此这里固定上限 128。
   Span *spans[128];

@@ -18,10 +18,8 @@ Span *PageCache::new_span(size_t k) {
     span->n = k;
     span->is_use = true;
 
-    // 为所有页建立映射，确保 map_object_to_span 能找到
-    for (PageId i = 0; i < k; ++i) {
-      id_span_map_.set(span->page_id + i, span);
-    }
+    // 大对象只需要起始页映射即可：zmalloc_free 传回的就是分配时返回的起始指针。
+    id_span_map_.set(span->page_id, span);
     return span;
   }
 
@@ -33,9 +31,7 @@ Span *PageCache::new_span(size_t k) {
     k_span->is_use = true;
 
     // 建立页号与 Span 的映射
-    for (PageId i = 0; i < k_span->n; ++i) {
-      id_span_map_.set(k_span->page_id + i, k_span);
-    }
+    id_span_map_.set_range(k_span->page_id, k_span->n, k_span);
     return k_span;
   }
 
@@ -62,9 +58,7 @@ Span *PageCache::new_span(size_t k) {
       id_span_map_.set(n_span->page_id + n_span->n - 1, n_span);
 
       // 建立 k_span 所有页的映射
-      for (PageId j = 0; j < k_span->n; ++j) {
-        id_span_map_.set(k_span->page_id + j, k_span);
-      }
+      id_span_map_.set_range(k_span->page_id, k_span->n, k_span);
       return k_span;
     }
   }
@@ -86,6 +80,8 @@ void PageCache::release_span_to_page_cache(Span *span) {
   // 大于 128 页直接释放给系统
   if (span->n > NPAGES - 1) {
     void *ptr = reinterpret_cast<void *>(span->page_id << PAGE_SHIFT);
+    // 清理起始页映射，避免遗留指向已回收 Span 的条目。
+    id_span_map_.set(span->page_id, nullptr);
     system_free(ptr, span->n);
     span_pool_.deallocate(span);
     return;

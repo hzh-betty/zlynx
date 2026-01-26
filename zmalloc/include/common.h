@@ -6,13 +6,13 @@
  * @brief zmalloc 公共定义，包含常量、类型、对齐算法、自由链表和 Span 管理
  */
 
-#include <cassert>
 #include <atomic>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <thread>
 #include <sys/mman.h>
+#include <thread>
 
 // MAP_FIXED_NOREPLACE 可能未定义
 #ifndef MAP_FIXED_NOREPLACE
@@ -175,6 +175,23 @@ public:
     size_ -= n;
   }
 
+  size_t pop_batch(void **batch, size_t n) {
+    assert(batch);
+    if (n == 0) {
+      return 0;
+    }
+    assert(n <= size_);
+    void *cur = free_list_;
+    for (size_t i = 0; i < n; ++i) {
+      batch[i] = cur;
+      cur = next_obj(cur);
+    }
+    free_list_ = cur;
+    next_obj(batch[n - 1]) = nullptr;
+    size_ -= n;
+    return n;
+  }
+
   bool empty() const { return free_list_ == nullptr; }
   size_t size() const { return size_; }
   size_t &max_size() { return max_size_; }
@@ -229,8 +246,7 @@ public:
     return static_cast<size_t>(lookup(bytes).index);
   }
 
-  static inline void classify(size_t bytes, size_t &align_size,
-                              size_t &index) {
+  static inline void classify(size_t bytes, size_t &align_size, size_t &index) {
     const SizeClassLookup &e = lookup(bytes);
     align_size = static_cast<size_t>(e.align_size);
     index = static_cast<size_t>(e.index);

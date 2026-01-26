@@ -3,7 +3,7 @@
  * @brief SizeClass 查表初始化
  *
  * 说明：
- * - 参考 tcmalloc 的 SizeMap 思路，把“按 size 计算对齐/索引/批量策略”的逻辑
+ * - 把“按 size 计算对齐/索引/批量策略”的逻辑
  *   从热路径挪到初始化阶段。
  * - 热路径直接按 8 字节分桶查表，减少分支与除法。
  */
@@ -61,7 +61,8 @@ static void init_size_class_lookup() {
 #if defined(__GNUC__) || defined(__clang__)
 __attribute__((constructor))
 #endif
-static void zmalloc_init_tables() {
+static void
+zmalloc_init_tables() {
   // 进程级初始化：构建 SizeClass 查表。
   init_size_class_lookup();
 }

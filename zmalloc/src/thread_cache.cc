@@ -24,7 +24,7 @@ ThreadCache *get_thread_cache() { return &tls_thread_cache; }
 namespace {
 constexpr size_t kLargeSizeThreshold = 1024;
 constexpr size_t kLargeSizeMinMax = 32;
-}
+} // namespace
 
 void *ThreadCache::allocate(size_t size) {
   assert(size <= MAX_BYTES);
@@ -34,7 +34,8 @@ void *ThreadCache::allocate(size_t size) {
   const size_t index = static_cast<size_t>(e.index);
   const size_t num_move = static_cast<size_t>(e.num_move);
 
-  if (align_size >= kLargeSizeThreshold && free_lists_[index].max_size() < kLargeSizeMinMax) {
+  if (align_size >= kLargeSizeThreshold &&
+      free_lists_[index].max_size() < kLargeSizeMinMax) {
     free_lists_[index].max_size() = kLargeSizeMinMax;
   }
 
@@ -50,17 +51,19 @@ void ThreadCache::deallocate(void *ptr, size_t size) {
   assert(ptr);
   assert(size <= MAX_BYTES);
 
-  const size_t align_size = SizeClass::round_up_fast(size);
-  size_t index = SizeClass::index_fast(size);
+  const SizeClassLookup &e = SizeClass::lookup(size);
+  const size_t align_size = static_cast<size_t>(e.align_size);
+  const size_t index = static_cast<size_t>(e.index);
 
-  if (align_size >= kLargeSizeThreshold && free_lists_[index].max_size() < kLargeSizeMinMax) {
+  if (align_size >= kLargeSizeThreshold &&
+      free_lists_[index].max_size() < kLargeSizeMinMax) {
     free_lists_[index].max_size() = kLargeSizeMinMax;
   }
   free_lists_[index].push(ptr);
 
   // 自由链表过长时，回收到 CentralCache
   if (ZM_UNLIKELY(free_lists_[index].size() >= free_lists_[index].max_size())) {
-    list_too_long(free_lists_[index], size);
+    list_too_long(free_lists_[index], size, index);
   }
 }
 
@@ -70,12 +73,11 @@ void *ThreadCache::fetch_from_central_cache(size_t index, size_t size) {
 }
 
 void *ThreadCache::fetch_from_central_cache(size_t index, size_t size,
-                                           size_t num_move) {
+                                            size_t num_move) {
   // 慢启动反馈调节：
   // - 批量大小 batch_num 不超过当前 freelist 的 max_size()
   // - 若频繁 miss，会逐步增大 max_size()，减少后续锁争用
-  size_t batch_num =
-      std::min(free_lists_[index].max_size(), num_move);
+  size_t batch_num = std::min(free_lists_[index].max_size(), num_move);
   if (batch_num == free_lists_[index].max_size()) {
     free_lists_[index].max_size() += 1;
   }
@@ -100,9 +102,8 @@ void *ThreadCache::fetch_from_central_cache(size_t index, size_t size,
   // TransferCache 未命中，向 CentralCache 请求
   void *start = nullptr;
   void *end = nullptr;
-  size_t actual_num =
-      CentralCache::get_instance().fetch_range_obj(start, end, batch_num, size,
-                             index);
+  size_t actual_num = CentralCache::get_instance().fetch_range_obj(
+      start, end, batch_num, size, index);
   assert(actual_num >= 1);
 
   if (actual_num == 1) {
@@ -114,8 +115,7 @@ void *ThreadCache::fetch_from_central_cache(size_t index, size_t size,
   }
 }
 
-void ThreadCache::list_too_long(FreeList &list, size_t size) {
-  size_t index = SizeClass::index_fast(size);
+void ThreadCache::list_too_long(FreeList &list, size_t size, size_t index) {
   // 超过阈值时释放一部分而不是全部。
   // 这样能在高并发下减少“抖动”（刚释放完又立刻去 Central/Transfer 拉取）。
   size_t count = list.max_size() / 2;
@@ -133,19 +133,12 @@ void ThreadCache::list_too_long(FreeList &list, size_t size) {
     return;
   }
 
-  // 一次性从 ThreadCache 的自由链表摘下一段链表
-  void *chain_start = nullptr;
-  void *chain_end = nullptr;
-  list.pop_range(chain_start, chain_end, count);
-
-  // 收集待回收的对象指针数组（TransferCache 接口需要数组）
+  // 直接批量 pop 到数组，避免 pop_range + 二次遍历
   void *batch[128];
-  void *cur = chain_start;
-  for (size_t i = 0; i < count; ++i) {
-    batch[i] = cur;
-    cur = next_obj(cur);
+  const size_t collected = list.pop_batch(batch, count);
+  if (collected == 0) {
+    return;
   }
-  const size_t collected = count;
 
   // 优先插入 TransferCache
   size_t inserted =
@@ -153,11 +146,12 @@ void ThreadCache::list_too_long(FreeList &list, size_t size) {
 
   // TransferCache 满了，剩余放回 CentralCache
   if (inserted < collected) {
-    if (inserted > 0) {
-      // 断开链表：防止把已进入 TransferCache 的部分也回收到 CentralCache
-      next_obj(batch[inserted - 1]) = nullptr;
-    }
+    // 为剩余部分重建链表（CentralCache 接口接收链表起点）
     void *start = batch[inserted];
+    for (size_t i = inserted; i + 1 < collected; ++i) {
+      next_obj(batch[i]) = batch[i + 1];
+    }
+    next_obj(batch[collected - 1]) = nullptr;
     CentralCache::get_instance().release_list_to_spans(start, size, index);
   }
 }

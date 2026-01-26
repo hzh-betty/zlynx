@@ -17,7 +17,7 @@ namespace zmalloc {
  * @brief 定长内存池模板类
  * @tparam T 管理的对象类型
  */
-template <typename T> class ObjectPool: public NonCopyable {
+template <typename T> class ObjectPool : public NonCopyable {
 public:
   /**
    * @brief 分配一个对象
@@ -39,7 +39,8 @@ public:
       auto ensure_block = [&]() {
         if (memory_ == nullptr || remain_bytes_ < obj_size) {
           remain_bytes_ = 128 * 1024;
-          memory_ = static_cast<char *>(system_alloc(remain_bytes_ >> PAGE_SHIFT));
+          memory_ =
+              static_cast<char *>(system_alloc(remain_bytes_ >> PAGE_SHIFT));
         }
       };
 
@@ -47,7 +48,8 @@ public:
 
       // 对齐当前切分指针
       uintptr_t cur = reinterpret_cast<uintptr_t>(memory_);
-      uintptr_t aligned = (cur + obj_align - 1) & ~(static_cast<uintptr_t>(obj_align - 1));
+      uintptr_t aligned =
+          (cur + obj_align - 1) & ~(static_cast<uintptr_t>(obj_align - 1));
       size_t padding = static_cast<size_t>(aligned - cur);
 
       if (remain_bytes_ < padding + obj_size) {
@@ -56,7 +58,8 @@ public:
         remain_bytes_ = 0;
         ensure_block();
         cur = reinterpret_cast<uintptr_t>(memory_);
-        aligned = (cur + obj_align - 1) & ~(static_cast<uintptr_t>(obj_align - 1));
+        aligned =
+            (cur + obj_align - 1) & ~(static_cast<uintptr_t>(obj_align - 1));
         padding = static_cast<size_t>(aligned - cur);
       }
 
