@@ -4,7 +4,6 @@
 /**
  * @brief 非拷贝类基类
  * 通过继承该类，可以禁止派生类的拷贝构造和赋值操作
- * 使用C++11 delete关键字实现
  */
 namespace zcoroutine {
 

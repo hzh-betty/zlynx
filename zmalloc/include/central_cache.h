@@ -7,6 +7,7 @@
  */
 
 #include "common.h"
+#include "zmalloc_noncopyable.h"
 
 namespace zmalloc {
 
@@ -19,7 +20,7 @@ class PageCache;
  * 作为 ThreadCache 和 PageCache 之间的中间层。
  * 每个桶有独立的锁，减少锁竞争。
  */
-class CentralCache {
+class CentralCache : public NonCopyable {
 public:
   /**
    * @brief 获取单例实例
@@ -41,11 +42,23 @@ public:
 
   /**
    * @brief 获取一个非空的 Span
-   * @param span_list Span 链表
+   *
+   * - 每个 sizeclass 维护两条 SpanList：
+   *   - nonempty：至少还有一个可分配对象（span->free_list != nullptr）
+   *   - empty：已无可分配对象（span->free_list == nullptr），但仍有对象在外部(ThreadCache)持有
+   * - 这样 fetch 不需要线性扫描，通常 O(1) 取到可用 span。
+   * - 同一 sizeclass 的 nonempty/empty 由同一把锁保护。
    * @param size 对象大小
    * @return Span 指针
    */
-  Span *get_one_span(SpanList &span_list, size_t size);
+  struct CentralFreeList {
+    SpanList nonempty;
+    SpanList empty;
+    // 保护 nonempty/empty 以及 span 在两者之间的迁移。
+    std::mutex lock;
+  };
+
+  Span *get_one_span(CentralFreeList &free_list, size_t size);
 
   /**
    * @brief 将对象链表归还给对应的 Span
@@ -56,11 +69,8 @@ public:
 
 private:
   CentralCache() = default;
-  CentralCache(const CentralCache &) = delete;
-  CentralCache &operator=(const CentralCache &) = delete;
-
 private:
-  SpanList span_lists_[NFREELISTS];
+  CentralFreeList free_lists_[NFREELISTS];
 };
 
 } // namespace zmalloc

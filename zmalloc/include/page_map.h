@@ -13,11 +13,76 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 
 #include "common.h"
 #include "object_pool.h"
 
 namespace zmalloc {
+
+/**
+ * @brief 一层基数树（适用于小地址空间/小 BITS）
+ *
+ * 这是最简单的页号 -> 指针映射：直接用数组下标访问。
+ *
+ * 注意：空间开销为 O(2^BITS)。为了避免误用导致超大内存占用，
+ * 这里用 static_assert 限制 BITS 不能太大（用于单元测试与小场景）。
+ */
+template <int BITS> class PageMap1 {
+public:
+  using Number = uintptr_t;
+  static_assert(BITS > 0, "BITS must be positive");
+  static_assert(BITS <= 20, "PageMap1 is only intended for small BITS (<=20)");
+
+  static constexpr size_t LENGTH = static_cast<size_t>(1) << BITS;
+
+  PageMap1() {
+    // 需要开辟数组的大小（字节）
+    const size_t bytes = sizeof(void *) * LENGTH;
+    // 按页对齐后的大小（字节）
+    const size_t aligned_bytes = (bytes + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    pages_ = aligned_bytes >> PAGE_SHIFT;
+
+    array_ = static_cast<void **>(system_alloc(pages_));
+    std::memset(array_, 0, bytes);
+  }
+
+  ~PageMap1() {
+    if (array_ != nullptr) {
+      system_free(array_, pages_);
+      array_ = nullptr;
+      pages_ = 0;
+    }
+  }
+
+  PageMap1(const PageMap1 &) = delete;
+  PageMap1 &operator=(const PageMap1 &) = delete;
+
+  void *get(Number k) const {
+    if ((k >> BITS) > 0) {
+      return nullptr;
+    }
+    return array_[static_cast<size_t>(k)];
+  }
+
+  void set(Number k, void *v) {
+    assert((k >> BITS) == 0);
+    array_[static_cast<size_t>(k)] = v;
+  }
+
+  bool ensure(Number start, size_t n) {
+    if (n == 0) {
+      return true;
+    }
+    // [start, start+n-1] 必须落在 BITS 范围内。
+    const Number last = start + static_cast<Number>(n - 1);
+    return ((start >> BITS) == 0) && ((last >> BITS) == 0);
+  }
+
+private:
+  void **array_ = nullptr;
+  size_t pages_ = 0;
+};
 
 /**
  * @brief 二层基数树（适用于 32 位系统）
@@ -49,6 +114,9 @@ public:
   }
 
   bool ensure(Number start, size_t n) {
+    if (n == 0) {
+      return true;
+    }
     for (Number key = start; key <= start + n - 1;) {
       const Number i1 = key >> LEAF_BITS;
       if (i1 >= ROOT_LENGTH) {
@@ -113,6 +181,9 @@ public:
   }
 
   bool ensure(Number start, size_t n) {
+    if (n == 0) {
+      return true;
+    }
     for (Number key = start; key <= start + n - 1;) {
       const Number i1 = key >> (LEAF_BITS + INTERIOR_BITS);
       const Number i2 = (key >> LEAF_BITS) & (INTERIOR_LENGTH - 1);

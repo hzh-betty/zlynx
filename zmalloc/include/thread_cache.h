@@ -7,6 +7,7 @@
  */
 
 #include "common.h"
+#include "zmalloc_noncopyable.h"
 
 namespace zmalloc {
 
@@ -19,7 +20,7 @@ class CentralCache;
  * 每个线程独享一个 ThreadCache，用于快速分配和释放小对象。
  * 小于等于 MAX_BYTES 的申请走 ThreadCache，无锁操作。
  */
-class ThreadCache {
+class ThreadCache : public NonCopyable {
 public:
   /**
    * @brief 分配内存

@@ -56,8 +56,7 @@ size_t SizeClass::index(size_t bytes) {
 size_t SizeClass::num_move_size(size_t size) {
   assert(size > 0);
 
-  // 参考 tcmalloc：目标单次传输约 4KB-8KB 数据
-  // 小对象多传输，大对象少传输
+  // 用“目标传输字节数”来决定每次批量对象个数。
   constexpr size_t kTargetBytes = 4096;
   constexpr size_t kMinObjects = 2;
   constexpr size_t kMaxObjects = 128;

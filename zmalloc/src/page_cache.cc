@@ -29,6 +29,9 @@ Span *PageCache::new_span(size_t k) {
   if (!span_lists_[k].empty()) {
     Span *k_span = span_lists_[k].pop_front();
 
+    // 该 Span 被分配出去，标记为在用。
+    k_span->is_use = true;
+
     // 建立页号与 Span 的映射
     for (PageId i = 0; i < k_span->n; ++i) {
       id_span_map_.set(k_span->page_id + i, k_span);
@@ -45,9 +48,11 @@ Span *PageCache::new_span(size_t k) {
       // 在 n_span 头部切 k 页
       k_span->page_id = n_span->page_id;
       k_span->n = k;
+      k_span->is_use = true;
 
       n_span->page_id += k;
       n_span->n -= k;
+      n_span->is_use = false;
 
       // 剩余部分挂到对应桶
       span_lists_[n_span->n].push_front(n_span);
@@ -69,18 +74,12 @@ Span *PageCache::new_span(size_t k) {
   void *ptr = system_alloc(NPAGES - 1);
   big_span->page_id = reinterpret_cast<PageId>(ptr) >> PAGE_SHIFT;
   big_span->n = NPAGES - 1;
+  big_span->is_use = false;
 
   span_lists_[big_span->n].push_front(big_span);
 
   // 递归调用
   return new_span(k);
-}
-
-Span *PageCache::map_object_to_span(void *obj) {
-  PageId id = reinterpret_cast<PageId>(obj) >> PAGE_SHIFT;
-  Span *ret = static_cast<Span *>(id_span_map_.get(id));
-  assert(ret != nullptr);
-  return ret;
 }
 
 void PageCache::release_span_to_page_cache(Span *span) {
@@ -107,8 +106,15 @@ void PageCache::release_span_to_page_cache(Span *span) {
       break;
     }
 
-    span->page_id = prev_span->page_id;
+    const PageId prev_start = prev_span->page_id;
+    const PageId prev_end = prev_span->page_id + prev_span->n - 1;
+
+    span->page_id = prev_start;
     span->n += prev_span->n;
+
+    // prev_span 即将被回收：更新其边界页映射，避免遗留指向已回收 Span 的条目。
+    id_span_map_.set(prev_start, span);
+    id_span_map_.set(prev_end, span);
 
     span_lists_[prev_span->n].erase(prev_span);
     span_pool_.deallocate(prev_span);
@@ -129,7 +135,14 @@ void PageCache::release_span_to_page_cache(Span *span) {
       break;
     }
 
+    const PageId next_start = next_span->page_id;
+    const PageId next_end = next_span->page_id + next_span->n - 1;
+
     span->n += next_span->n;
+
+    // next_span 即将被回收：更新其边界页映射，避免遗留指向已回收 Span 的条目。
+    id_span_map_.set(next_start, span);
+    id_span_map_.set(next_end, span);
 
     span_lists_[next_span->n].erase(next_span);
     span_pool_.deallocate(next_span);

@@ -9,6 +9,7 @@
 #include "common.h"
 #include "object_pool.h"
 #include "page_map.h"
+#include "zmalloc_noncopyable.h"
 
 namespace zmalloc {
 
@@ -17,7 +18,7 @@ namespace zmalloc {
  *
  * 管理 Span 的分配和回收，支持 Span 的合并以减少外碎片。
  */
-class PageCache {
+class PageCache : public NonCopyable {
 public:
   /**
    * @brief 获取单例实例
@@ -39,7 +40,12 @@ public:
    * @param obj 对象指针
    * @return Span 指针
    */
-  Span *map_object_to_span(void *obj);
+  inline Span *map_object_to_span(void *obj) {
+    PageId id = reinterpret_cast<PageId>(obj) >> PAGE_SHIFT;
+    Span *ret = static_cast<Span *>(id_span_map_.get(id));
+    assert(ret != nullptr);
+    return ret;
+  }
 
   /**
    * @brief 释放 Span 到 PageCache，并尝试合并相邻 Span
@@ -54,8 +60,6 @@ public:
 
 private:
   PageCache() = default;
-  PageCache(const PageCache &) = delete;
-  PageCache &operator=(const PageCache &) = delete;
 
 private:
   SpanList span_lists_[NPAGES]; // 按页数分桶

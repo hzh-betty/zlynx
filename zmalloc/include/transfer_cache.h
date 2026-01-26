@@ -11,9 +11,9 @@
  * - 批量传输提高缓存效率
  */
 
-#include <mutex>
 
 #include "common.h"
+#include "zmalloc_noncopyable.h"
 
 namespace zmalloc {
 
@@ -27,6 +27,9 @@ class TransferCacheEntry {
 public:
   // 环形缓冲区最大容量（64个批次，每批次最多128个对象）
   static constexpr size_t kMaxCacheSlots = 2048;
+  static constexpr size_t kMask = kMaxCacheSlots - 1;
+  static_assert((kMaxCacheSlots & (kMaxCacheSlots - 1)) == 0,
+                "kMaxCacheSlots must be power of two");
 
   TransferCacheEntry() = default;
 
@@ -62,7 +65,7 @@ public:
   bool full() const { return size() >= kMaxCacheSlots; }
 
 private:
-  mutable std::mutex mtx_;
+  mutable SpinLock mtx_;
   void *slots_[kMaxCacheSlots]; // 环形缓冲区
   size_t head_ = 0;             // 插入位置
   size_t tail_ = 0;             // 取出位置
@@ -74,7 +77,7 @@ private:
  *
  * 管理所有 size class 的 TransferCacheEntry。
  */
-class TransferCache {
+class TransferCache : public NonCopyable {
 public:
   /**
    * @brief 获取单例实例
@@ -110,8 +113,6 @@ public:
 
 private:
   TransferCache() = default;
-  TransferCache(const TransferCache &) = delete;
-  TransferCache &operator=(const TransferCache &) = delete;
 
 private:
   TransferCacheEntry entries_[NFREELISTS];
