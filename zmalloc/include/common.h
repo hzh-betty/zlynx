@@ -185,6 +185,18 @@ private:
   size_t size_ = 0;           // 当前对象数量
 };
 
+// ---- SizeClass 查表（定义在 src/size_class_lookup.cc） ----
+static constexpr size_t kSizeClassLookupLen = (MAX_BYTES / 8) + 1;
+
+struct SizeClassLookup {
+  uint32_t align_size;
+  uint16_t index;
+  uint16_t num_move;
+  uint16_t num_pages;
+};
+
+extern SizeClassLookup g_size_class_lookup[kSizeClassLookupLen];
+
 /**
  * @brief 大小类，管理对齐和映射关系
  *
@@ -204,49 +216,36 @@ public:
   static size_t num_move_size(size_t size);
   static size_t num_move_page(size_t size);
 
-  // Hot-path helpers (inline) for allocator fast paths.
+  // 热路径内联辅助：
+  // - 小对象按 8 字节分桶查表，避免重复计算对齐/索引/批量策略。
+  // - 查表仅覆盖 [1, MAX_BYTES]。
+  static inline const SizeClassLookup &lookup(size_t bytes);
+
   static inline size_t round_up_fast(size_t bytes) {
-    if (bytes <= 128) {
-      return (bytes + 7) & ~static_cast<size_t>(7);
-    } else if (bytes <= 1024) {
-      return (bytes + 15) & ~static_cast<size_t>(15);
-    } else if (bytes <= 8 * 1024) {
-      return (bytes + 127) & ~static_cast<size_t>(127);
-    } else if (bytes <= 64 * 1024) {
-      return (bytes + 1023) & ~static_cast<size_t>(1023);
-    } else if (bytes <= 256 * 1024) {
-      return (bytes + (8 * 1024 - 1)) & ~static_cast<size_t>(8 * 1024 - 1);
-    } else {
-      return (bytes + PAGE_SIZE - 1) & ~static_cast<size_t>(PAGE_SIZE - 1);
-    }
+    return static_cast<size_t>(lookup(bytes).align_size);
   }
 
   static inline size_t index_fast(size_t bytes) {
-    static constexpr size_t kGroupArray[4] = {16, 56, 56, 56};
-    if (bytes <= 128) {
-      return (((bytes + 7) >> 3) - 1);
-    } else if (bytes <= 1024) {
-      return ((((bytes - 128) + 15) >> 4) - 1) + kGroupArray[0];
-    } else if (bytes <= 8 * 1024) {
-      return ((((bytes - 1024) + 127) >> 7) - 1) + kGroupArray[0] +
-             kGroupArray[1];
-    } else if (bytes <= 64 * 1024) {
-      return ((((bytes - 8 * 1024) + 1023) >> 10) - 1) + kGroupArray[0] +
-             kGroupArray[1] + kGroupArray[2];
-    } else {
-      // bytes <= 256KB
-      return ((((bytes - 64 * 1024) + (8 * 1024 - 1)) >> 13) - 1) +
-             kGroupArray[0] + kGroupArray[1] + kGroupArray[2] +
-             kGroupArray[3];
-    }
+    return static_cast<size_t>(lookup(bytes).index);
   }
 
   static inline void classify(size_t bytes, size_t &align_size,
                               size_t &index) {
-    align_size = round_up_fast(bytes);
-    index = index_fast(bytes);
+    const SizeClassLookup &e = lookup(bytes);
+    align_size = static_cast<size_t>(e.align_size);
+    index = static_cast<size_t>(e.index);
   }
 };
+
+inline const SizeClassLookup &SizeClass::lookup(size_t bytes) {
+  if (bytes == 0) {
+    return g_size_class_lookup[0];
+  }
+  assert(bytes <= MAX_BYTES);
+  // 按 8 字节分桶：bucket = ceil(bytes / 8)
+  const size_t bucket = (bytes + 7) >> 3;
+  return g_size_class_lookup[bucket];
+}
 
 // 前向声明
 template <typename T> class ObjectPool;

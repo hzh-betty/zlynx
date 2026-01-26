@@ -46,6 +46,14 @@ private:
   void *fetch_from_central_cache(size_t index, size_t size);
 
   /**
+   * @brief 从 CentralCache 获取对象（调用方传入批量策略）
+   * @param index 哈希桶索引
+   * @param size 对象大小
+   * @param num_move_size 建议的批量搬运个数（通常来自 SizeClass 查表）
+   */
+  void *fetch_from_central_cache(size_t index, size_t size, size_t num_move);
+
+  /**
    * @brief 自由链表过长时，回收部分对象到 CentralCache
    * @param list 自由链表
    * @param size 对象大小

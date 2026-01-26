@@ -29,9 +29,10 @@ constexpr size_t kLargeSizeMinMax = 32;
 void *ThreadCache::allocate(size_t size) {
   assert(size <= MAX_BYTES);
 
-  size_t align_size = 0;
-  size_t index = 0;
-  SizeClass::classify(size, align_size, index);
+  const SizeClassLookup &e = SizeClass::lookup(size);
+  const size_t align_size = static_cast<size_t>(e.align_size);
+  const size_t index = static_cast<size_t>(e.index);
+  const size_t num_move = static_cast<size_t>(e.num_move);
 
   if (align_size >= kLargeSizeThreshold && free_lists_[index].max_size() < kLargeSizeMinMax) {
     free_lists_[index].max_size() = kLargeSizeMinMax;
@@ -40,7 +41,8 @@ void *ThreadCache::allocate(size_t size) {
   if (ZM_LIKELY(!free_lists_[index].empty())) {
     return free_lists_[index].pop();
   } else {
-    return fetch_from_central_cache(index, align_size);
+    // miss：走慢路径，从 TransferCache/CentralCache 批量获取。
+    return fetch_from_central_cache(index, align_size, num_move);
   }
 }
 
@@ -63,9 +65,17 @@ void ThreadCache::deallocate(void *ptr, size_t size) {
 }
 
 void *ThreadCache::fetch_from_central_cache(size_t index, size_t size) {
-  // 慢启动反馈调节算法
+  // 兼容包装：保留旧签名，内部用 SizeClass 策略计算一次批量参数。
+  return fetch_from_central_cache(index, size, SizeClass::num_move_size(size));
+}
+
+void *ThreadCache::fetch_from_central_cache(size_t index, size_t size,
+                                           size_t num_move) {
+  // 慢启动反馈调节：
+  // - 批量大小 batch_num 不超过当前 freelist 的 max_size()
+  // - 若频繁 miss，会逐步增大 max_size()，减少后续锁争用
   size_t batch_num =
-      std::min(free_lists_[index].max_size(), SizeClass::num_move_size(size));
+      std::min(free_lists_[index].max_size(), num_move);
   if (batch_num == free_lists_[index].max_size()) {
     free_lists_[index].max_size() += 1;
   }

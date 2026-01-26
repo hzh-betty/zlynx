@@ -12,6 +12,7 @@ find_package(Threads REQUIRED)
 # 源文件
 set(ZMALLOC_SOURCES
     src/size_class.cc
+    src/size_class_lookup.cc
     src/system_alloc.cc
     src/transfer_cache.cc
     src/thread_cache.cc

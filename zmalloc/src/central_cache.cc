@@ -61,8 +61,10 @@ Span *CentralCache::get_one_span(CentralFreeList &free_list, size_t size) {
   free_list.lock.unlock();
 
   PageCache::get_instance().page_mtx().lock();
+  // 申请页数直接用查表结果，避免每次 miss 计算。
   Span *span =
-      PageCache::get_instance().new_span(SizeClass::num_move_page(size));
+      PageCache::get_instance().new_span(
+        static_cast<size_t>(SizeClass::lookup(size).num_pages));
   span->is_use = true;
   span->obj_size = size;
   PageCache::get_instance().page_mtx().unlock();

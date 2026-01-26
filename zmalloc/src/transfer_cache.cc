@@ -14,13 +14,21 @@ namespace zmalloc {
 constexpr size_t TransferCacheEntry::kMaxCacheSlots;
 
 size_t TransferCacheEntry::insert_range(void *batch[], size_t count) {
+  // 快路径：锁外快速判断是否已满，尽量减少锁竞争。
+  const size_t cur = count_.load(std::memory_order_relaxed);
+  if (cur >= kMaxCacheSlots) {
+    return 0;
+  }
+
   // 短临界区：搬运指针 + 更新 head/count
   std::lock_guard<SpinLock> lock(mtx_);
 
   // 计算可插入的数量
-  size_t available = kMaxCacheSlots - count_;
+  const size_t cur_locked = count_.load(std::memory_order_relaxed);
+  size_t available = kMaxCacheSlots - cur_locked;
   size_t to_insert = std::min(count, available);
 
+  // 二次确认：锁内重新计算，确保并发下正确。
   if (to_insert == 0) {
     return 0;
   }
@@ -34,17 +42,24 @@ size_t TransferCacheEntry::insert_range(void *batch[], size_t count) {
   }
 
   head_ = (head_ + to_insert) & kMask;
-  count_ += to_insert;
+  count_.store(cur_locked + to_insert, std::memory_order_relaxed);
 
   return to_insert;
 }
 
 size_t TransferCacheEntry::remove_range(void *batch[], size_t count) {
+  // 快路径：锁外快速判断是否为空，尽量减少锁竞争。
+  if (count_.load(std::memory_order_relaxed) == 0) {
+    return 0;
+  }
+
   std::lock_guard<SpinLock> lock(mtx_);
 
   // 计算可取出的数量
-  size_t to_remove = std::min(count, count_);
+  const size_t cur_locked = count_.load(std::memory_order_relaxed);
+  size_t to_remove = std::min(count, cur_locked);
 
+  // 二次确认：锁内重新计算，确保并发下正确。
   if (to_remove == 0) {
     return 0;
   }
@@ -57,14 +72,13 @@ size_t TransferCacheEntry::remove_range(void *batch[], size_t count) {
   }
 
   tail_ = (tail_ + to_remove) & kMask;
-  count_ -= to_remove;
+  count_.store(cur_locked - to_remove, std::memory_order_relaxed);
 
   return to_remove;
 }
 
 size_t TransferCacheEntry::size() const {
-  std::lock_guard<SpinLock> lock(mtx_);
-  return count_;
+  return count_.load(std::memory_order_relaxed);
 }
 
 size_t TransferCache::insert_range(size_t index, void *batch[], size_t count) {
