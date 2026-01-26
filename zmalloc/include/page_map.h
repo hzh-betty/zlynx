@@ -13,7 +13,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <memory>
 
 #include "common.h"
 #include "object_pool.h"

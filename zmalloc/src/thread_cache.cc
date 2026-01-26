@@ -91,7 +91,8 @@ void *ThreadCache::fetch_from_central_cache(size_t index, size_t size) {
   void *start = nullptr;
   void *end = nullptr;
   size_t actual_num =
-      CentralCache::get_instance().fetch_range_obj(start, end, batch_num, size);
+      CentralCache::get_instance().fetch_range_obj(start, end, batch_num, size,
+                             index);
   assert(actual_num >= 1);
 
   if (actual_num == 1) {
@@ -147,7 +148,7 @@ void ThreadCache::list_too_long(FreeList &list, size_t size) {
       next_obj(batch[inserted - 1]) = nullptr;
     }
     void *start = batch[inserted];
-    CentralCache::get_instance().release_list_to_spans(start, size);
+    CentralCache::get_instance().release_list_to_spans(start, size, index);
   }
 }
 

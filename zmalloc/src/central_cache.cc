@@ -9,7 +9,12 @@ namespace zmalloc {
 
 size_t CentralCache::fetch_range_obj(void *&start, void *&end, size_t n,
                                      size_t size) {
-  size_t index = SizeClass::index_fast(size);
+  const size_t index = SizeClass::index_fast(size);
+  return fetch_range_obj(start, end, n, size, index);
+}
+
+size_t CentralCache::fetch_range_obj(void *&start, void *&end, size_t n,
+                                     size_t size, size_t index) {
   CentralFreeList &free_list = free_lists_[index];
   free_list.lock.lock();
 
@@ -87,7 +92,13 @@ Span *CentralCache::get_one_span(CentralFreeList &free_list, size_t size) {
 }
 
 void CentralCache::release_list_to_spans(void *start, size_t size) {
-  size_t index = SizeClass::index_fast(size);
+  const size_t index = SizeClass::index_fast(size);
+  release_list_to_spans(start, size, index);
+}
+
+void CentralCache::release_list_to_spans(void *start, size_t size,
+                                        size_t index) {
+  (void)size;
   CentralFreeList &free_list = free_lists_[index];
   if (start == nullptr) {
     return;
@@ -123,13 +134,20 @@ void CentralCache::release_list_to_spans(void *start, size_t size) {
       last_end = span->page_id + span->n;
     }
 
-    size_t gi = 0;
-    for (; gi < groups; ++gi) {
-      if (spans[gi] == span) {
-        break;
+    // 常见情况：回收链表里相邻对象来自同一个 span
+    size_t gi = static_cast<size_t>(-1);
+    if (groups > 0 && spans[groups - 1] == span) {
+      gi = groups - 1;
+    } else {
+      for (size_t i = 0; i < groups; ++i) {
+        if (spans[i] == span) {
+          gi = i;
+          break;
+        }
       }
     }
-    if (gi == groups) {
+
+    if (gi == static_cast<size_t>(-1)) {
       // new group
       spans[groups] = span;
       group_start[groups] = start;

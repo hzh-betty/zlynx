@@ -41,6 +41,13 @@ public:
   size_t fetch_range_obj(void *&start, void *&end, size_t n, size_t size);
 
   /**
+   * @brief 与 fetch_range_obj 相同，但调用方已计算好 size class 索引
+   * @note 这是 ThreadCache 热路径的优化重载，避免重复的 size->index 映射。
+   */
+  size_t fetch_range_obj(void *&start, void *&end, size_t n, size_t size,
+                         size_t index);
+
+  /**
    * @brief 获取一个非空的 Span
    *
    * - 每个 sizeclass 维护两条 SpanList：
@@ -66,6 +73,11 @@ public:
    * @param size 对象大小
    */
   void release_list_to_spans(void *start, size_t size);
+
+  /**
+   * @brief 与 release_list_to_spans 相同，但调用方已计算好 size class 索引
+   */
+  void release_list_to_spans(void *start, size_t size, size_t index);
 
 private:
   CentralCache() = default;
