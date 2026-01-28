@@ -36,6 +36,35 @@ public:
    */
   void deallocate(void *ptr, size_t size);
 
+  /**
+   * @brief 快路径弹出（无锁直接弹出，供 zmalloc 热路径调用）
+   * @param index 哈希桶索引
+   * @return 对象指针，如果链表为空返回 nullptr
+   */
+  ZM_ALWAYS_INLINE void *try_pop_fast(size_t index) {
+    if (ZM_LIKELY(!free_lists_[index].empty())) {
+      return free_lists_[index].pop();
+    }
+    return nullptr;
+  }
+
+  /**
+   * @brief 快路径压入（无锁直接压入，不检查过长，供 zfree 热路径调用）
+   * @param ptr 对象指针
+   * @param index 哈希桶索引
+   * @return true: 成功且无需回收；false: 链表过长需走慢路径
+   */
+  ZM_ALWAYS_INLINE bool try_push_fast(void *ptr, size_t index) {
+    FreeList &list = free_lists_[index];
+    // 先检查：如果链表已经接近满，直接返回 false 让调用方走慢路径
+    if (ZM_UNLIKELY(list.size() >= list.max_size())) {
+      return false;
+    }
+    // 快路径：压入对象
+    list.push(ptr);
+    return true;
+  }
+
 private:
   /**
    * @brief 从 CentralCache 获取对象

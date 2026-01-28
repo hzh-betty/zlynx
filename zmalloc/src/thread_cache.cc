@@ -82,12 +82,16 @@ void *ThreadCache::fetch_from_central_cache(size_t index, size_t size,
     free_lists_[index].max_size() += 1;
   }
 
-  // 优先从 TransferCache 获取
   void *batch[128];
-  size_t got =
-      TransferCache::get_instance().remove_range(index, batch, batch_num);
+  size_t got = 0;
 
-  if (got > 0) {
+  // 优先尝试从 TransferCache 获取（无阻塞）
+  // - try_remove_range 返回 true: 操作完成（got 可能为 0）
+  // - try_remove_range 返回 false: 锁竞争，直接 fallback 到 CentralCache
+  bool try_success = TransferCache::get_instance().try_remove_range(
+      index, batch, batch_num, got);
+
+  if (try_success && got > 0) {
     // TransferCache 命中
     if (got == 1) {
       return batch[0];
@@ -99,7 +103,7 @@ void *ThreadCache::fetch_from_central_cache(size_t index, size_t size,
     return batch[0];
   }
 
-  // TransferCache 未命中，向 CentralCache 请求
+  // TransferCache 未命中或锁竞争，向 CentralCache 请求
   void *start = nullptr;
   void *end = nullptr;
   size_t actual_num = CentralCache::get_instance().fetch_range_obj(
@@ -140,15 +144,20 @@ void ThreadCache::list_too_long(FreeList &list, size_t size, size_t index) {
     return;
   }
 
-  // 优先插入 TransferCache
-  size_t inserted =
-      TransferCache::get_instance().insert_range(index, batch, collected);
+  // 尝试插入 TransferCache（无阻塞）
+  // - try_insert_range 返回 true: 操作完成（inserted 可能 < collected）
+  // - try_insert_range 返回 false: 锁竞争，全部放入 CentralCache
+  size_t inserted = 0;
+  bool try_success = TransferCache::get_instance().try_insert_range(
+      index, batch, collected, inserted);
 
-  // TransferCache 满了，剩余放回 CentralCache
-  if (inserted < collected) {
+  size_t remaining_start = try_success ? inserted : 0;
+
+  // 剩余放回 CentralCache
+  if (remaining_start < collected) {
     // 为剩余部分重建链表（CentralCache 接口接收链表起点）
-    void *start = batch[inserted];
-    for (size_t i = inserted; i + 1 < collected; ++i) {
+    void *start = batch[remaining_start];
+    for (size_t i = remaining_start; i + 1 < collected; ++i) {
       next_obj(batch[i]) = batch[i + 1];
     }
     next_obj(batch[collected - 1]) = nullptr;

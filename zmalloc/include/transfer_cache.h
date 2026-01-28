@@ -49,6 +49,24 @@ public:
   size_t remove_range(void *batch[], size_t count);
 
   /**
+   * @brief 尝试批量插入（无阻塞）
+   * @param batch 对象指针数组
+   * @param count 对象数量
+   * @param inserted 输出实际插入的对象数量
+   * @return true: 操作完成（可能插入0个）; false: 锁竞争，需要 fallback
+   */
+  bool try_insert_range(void *batch[], size_t count, size_t &inserted);
+
+  /**
+   * @brief 尝试批量获取（无阻塞）
+   * @param batch 输出对象指针数组
+   * @param count 请求的对象数量
+   * @param removed 输出实际获取的对象数量
+   * @return true: 操作完成（可能获取0个）; false: 锁竞争，需要 fallback
+   */
+  bool try_remove_range(void *batch[], size_t count, size_t &removed);
+
+  /**
    * @brief 获取当前缓存的对象数量
    */
   size_t size() const;
@@ -112,6 +130,28 @@ public:
    * @return 实际获取的对象数量
    */
   size_t remove_range(size_t index, void *batch[], size_t count);
+
+  /**
+   * @brief 尝试批量插入（无阻塞）
+   * @param index size class 索引
+   * @param batch 对象指针数组
+   * @param count 对象数量
+   * @param inserted 输出实际插入的对象数量
+   * @return true: 操作完成; false: 锁竞争
+   */
+  bool try_insert_range(size_t index, void *batch[], size_t count,
+                        size_t &inserted);
+
+  /**
+   * @brief 尝试批量获取（无阻塞）
+   * @param index size class 索引
+   * @param batch 输出对象指针数组
+   * @param count 请求的对象数量
+   * @param removed 输出实际获取的对象数量
+   * @return true: 操作完成; false: 锁竞争
+   */
+  bool try_remove_range(size_t index, void *batch[], size_t count,
+                        size_t &removed);
 
 private:
   TransferCache() = default;

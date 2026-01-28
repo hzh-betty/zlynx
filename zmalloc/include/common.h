@@ -76,6 +76,14 @@ public:
     lock_slow();
   }
 
+  /**
+   * @brief 尝试获取锁（非阻塞）
+   * @return true: 成功获取锁; false: 锁被占用
+   */
+  bool try_lock() noexcept {
+    return !locked_.exchange(true, std::memory_order_acquire);
+  }
+
   void unlock() noexcept { locked_.store(false, std::memory_order_release); }
 
 private:
@@ -136,17 +144,18 @@ inline void *&next_obj(void *ptr) { return *static_cast<void **>(ptr); }
 
 /**
  * @brief 自由链表，管理切分好的小对象
+ *
  */
 class FreeList {
 public:
-  void push(void *obj) {
+  ZM_ALWAYS_INLINE void push(void *obj) {
     assert(obj);
     next_obj(obj) = free_list_;
     free_list_ = obj;
     ++size_;
   }
 
-  void *pop() {
+  ZM_ALWAYS_INLINE void *pop() {
     assert(free_list_);
     void *obj = free_list_;
     free_list_ = next_obj(free_list_);
@@ -188,7 +197,12 @@ public:
     void *cur = free_list_;
     for (size_t i = 0; i < n; ++i) {
       batch[i] = cur;
-      cur = next_obj(cur);
+      void *next = next_obj(cur);
+      // 简单预取：直接预取下一个对象的内存
+      if (next != nullptr) {
+        __builtin_prefetch(next, 0, 3);
+      }
+      cur = next;
     }
     free_list_ = cur;
     next_obj(batch[n - 1]) = nullptr;
@@ -196,17 +210,18 @@ public:
     return n;
   }
 
-  bool empty() const { return free_list_ == nullptr; }
-  size_t size() const { return size_; }
-  size_t &max_size() { return max_size_; }
+  ZM_ALWAYS_INLINE bool empty() const { return free_list_ == nullptr; }
+  ZM_ALWAYS_INLINE size_t size() const { return size_; }
+  ZM_ALWAYS_INLINE size_t &max_size() { return max_size_; }
 
 private:
+  // 热数据：每次 push/pop 都访问
   void *free_list_ = nullptr; // 自由链表头
-  size_t max_size_ = 1;       // 慢启动最大批量
   size_t size_ = 0;           // 当前对象数量
+  // 冷数据：只在回收时检查
+  size_t max_size_ = 1; // 慢启动最大批量
 };
 
-// ---- SizeClass 查表（定义在 src/size_class_lookup.cc） ----
 static constexpr size_t kSizeClassLookupLen = (MAX_BYTES / 8) + 1;
 
 struct SizeClassLookup {

@@ -27,9 +27,10 @@ size_t CentralCache::fetch_range_obj(void *&start, void *&end, size_t n,
   start = span->free_list;
   end = start;
   size_t actual_num = 1;
-  while (actual_num < n) {
+  // 优化：大多数情况下 n > 1 且链表有足够对象
+  while (ZM_LIKELY(actual_num < n)) {
     void *next = next_obj(end);
-    if (next == nullptr) {
+    if (ZM_UNLIKELY(next == nullptr)) {
       break;
     }
     end = next;
@@ -52,7 +53,7 @@ size_t CentralCache::fetch_range_obj(void *&start, void *&end, size_t n,
 Span *CentralCache::get_one_span(CentralFreeList &free_list, size_t size) {
   // 1. 热点路径：nonempty 链表首部一定是可用 span（O(1)）。
   Span *front = free_list.nonempty.begin();
-  if (front != free_list.nonempty.end()) {
+  if (ZM_LIKELY(front != free_list.nonempty.end())) {
     assert(front->free_list != nullptr);
     return front;
   }
@@ -70,13 +71,13 @@ Span *CentralCache::get_one_span(CentralFreeList &free_list, size_t size) {
 
   // 计算大块内存的起始地址和字节数
   char *start = reinterpret_cast<char *>(span->page_id << PAGE_SHIFT);
-  size_t bytes = span->n << PAGE_SHIFT;
+  const size_t bytes = span->n << PAGE_SHIFT;
+  char *const obj_end = start + bytes;
 
   // 切分成 size 大小的对象
-  char *obj_end = start + bytes;
   span->free_list = start;
+  void *tail = start;
   start += size;
-  void *tail = span->free_list;
 
   while (start < obj_end) {
     next_obj(tail) = start;
