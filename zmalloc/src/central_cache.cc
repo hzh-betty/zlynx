@@ -19,7 +19,7 @@ size_t CentralCache::fetch_range_obj(void *&start, void *&end, size_t n,
   free_list.lock.lock();
 
   // 获取一个非空的 Span
-  Span *span = get_one_span(free_list, size);
+  Span *span = get_one_span(free_list, size, index);
   assert(span);
   assert(span->free_list);
 
@@ -50,7 +50,8 @@ size_t CentralCache::fetch_range_obj(void *&start, void *&end, size_t n,
   return actual_num;
 }
 
-Span *CentralCache::get_one_span(CentralFreeList &free_list, size_t size) {
+Span *CentralCache::get_one_span(CentralFreeList &free_list, size_t size,
+                                 size_t index) {
   // 1. 热点路径：nonempty 链表首部一定是可用 span（O(1)）。
   Span *front = free_list.nonempty.begin();
   if (ZM_LIKELY(front != free_list.nonempty.end())) {
@@ -67,6 +68,10 @@ Span *CentralCache::get_one_span(CentralFreeList &free_list, size_t size) {
       static_cast<size_t>(SizeClass::lookup(size).num_pages));
   span->is_use = true;
   span->obj_size = size;
+  // 设置 size class 到 PageMap，优化 zfree 路径
+  // 注意：new_span 已经设置了 Span 映射，这里只设置 sizeclass
+  PageCache::get_instance().set_range_sizeclass_only(
+      span->page_id, span->n, static_cast<uint8_t>(index + 1));
   PageCache::get_instance().page_mtx().unlock();
 
   // 计算大块内存的起始地址和字节数

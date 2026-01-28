@@ -14,6 +14,9 @@ namespace zmalloc {
 
 SizeClassLookup g_size_class_lookup[kSizeClassLookupLen];
 
+// size class index -> align_size 反向映射表
+uint32_t g_class_to_size[NFREELISTS];
+
 namespace {
 
 static inline size_t clamp_min(size_t v, size_t min_v) {
@@ -55,14 +58,19 @@ static void init_size_class_lookup() {
     e.num_move = static_cast<uint16_t>(num_move);
     e.num_pages = static_cast<uint16_t>(num_pages);
     g_size_class_lookup[bucket] = e;
+
+    // 填充反向映射表：index -> align_size
+    // 同一个 index 可能有多个 bucket 映射，但 align_size 相同
+    if (index < NFREELISTS) {
+      g_class_to_size[index] = static_cast<uint32_t>(align_size);
+    }
   }
 }
 
 #if defined(__GNUC__) || defined(__clang__)
 __attribute__((constructor))
 #endif
-static void
-zmalloc_init_tables() {
+static void zmalloc_init_tables() {
   // 进程级初始化：构建 SizeClass 查表。
   init_size_class_lookup();
 }

@@ -233,6 +233,9 @@ struct SizeClassLookup {
 
 extern SizeClassLookup g_size_class_lookup[kSizeClassLookupLen];
 
+// size class index -> align_size 反向映射表（用于 zfree 路径优化）
+extern uint32_t g_class_to_size[NFREELISTS];
+
 /**
  * @brief 大小类，管理对齐和映射关系
  *
@@ -270,6 +273,16 @@ public:
     const SizeClassLookup &e = lookup(bytes);
     align_size = static_cast<size_t>(e.align_size);
     index = static_cast<size_t>(e.index);
+  }
+
+  /**
+   * @brief 从 size class index 获取对齐后的 size
+   * @param index size class 索引
+   * @return 对齐后的对象大小
+   */
+  static ZM_ALWAYS_INLINE size_t class_to_size(size_t index) {
+    assert(index < NFREELISTS);
+    return static_cast<size_t>(g_class_to_size[index]);
   }
 };
 
