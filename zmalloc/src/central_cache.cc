@@ -57,9 +57,9 @@ Span *CentralCache::get_one_span(CentralFreeList &free_list, size_t size) {
     return front;
   }
 
-  // 2. 没有非空 Span，向 PageCache 申请（先解桶锁，让其他线程释放不阻塞）
-  free_list.lock.unlock();
-
+  // 2. 没有非空 Span，向 PageCache 申请
+  // 注意：保持桶锁持有，避免竞态条件
+  // 锁顺序：桶锁 -> PageCache 锁（固定顺序避免死锁）
   PageCache::get_instance().page_mtx().lock();
   // 申请页数直接用查表结果，避免每次 miss 计算。
   Span *span = PageCache::get_instance().new_span(
@@ -85,8 +85,7 @@ Span *CentralCache::get_one_span(CentralFreeList &free_list, size_t size) {
   }
   next_obj(tail) = nullptr;
 
-  // 重新加桶锁，挂到 nonempty
-  free_list.lock.lock();
+  // 挂到 nonempty（桶锁已持有，无需再次加锁）
   free_list.nonempty.push_front(span);
 
   return span;

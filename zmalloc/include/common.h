@@ -25,9 +25,13 @@ namespace zmalloc {
 #if defined(__GNUC__) || defined(__clang__)
 #define ZM_LIKELY(x) (__builtin_expect(!!(x), 1))
 #define ZM_UNLIKELY(x) (__builtin_expect(!!(x), 0))
+#define ZM_ALWAYS_INLINE __attribute__((always_inline)) inline
+#define ZM_NOINLINE __attribute__((noinline))
 #else
 #define ZM_LIKELY(x) (x)
 #define ZM_UNLIKELY(x) (x)
+#define ZM_ALWAYS_INLINE inline
+#define ZM_NOINLINE
 #endif
 
 // 小于等于 MAX_BYTES 找 ThreadCache 申请，大于则找 PageCache 或系统
@@ -238,23 +242,24 @@ public:
   // - 查表仅覆盖 [1, MAX_BYTES]。
   static inline const SizeClassLookup &lookup(size_t bytes);
 
-  static inline size_t round_up_fast(size_t bytes) {
+  static ZM_ALWAYS_INLINE size_t round_up_fast(size_t bytes) {
     return static_cast<size_t>(lookup(bytes).align_size);
   }
 
-  static inline size_t index_fast(size_t bytes) {
+  static ZM_ALWAYS_INLINE size_t index_fast(size_t bytes) {
     return static_cast<size_t>(lookup(bytes).index);
   }
 
-  static inline void classify(size_t bytes, size_t &align_size, size_t &index) {
+  static ZM_ALWAYS_INLINE void classify(size_t bytes, size_t &align_size,
+                                        size_t &index) {
     const SizeClassLookup &e = lookup(bytes);
     align_size = static_cast<size_t>(e.align_size);
     index = static_cast<size_t>(e.index);
   }
 };
 
-inline const SizeClassLookup &SizeClass::lookup(size_t bytes) {
-  if (bytes == 0) {
+ZM_ALWAYS_INLINE const SizeClassLookup &SizeClass::lookup(size_t bytes) {
+  if (ZM_UNLIKELY(bytes == 0)) {
     return g_size_class_lookup[0];
   }
   assert(bytes <= MAX_BYTES);

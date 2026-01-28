@@ -20,14 +20,13 @@ namespace zmalloc {
  * @return 内存指针，失败抛出 std::bad_alloc
  */
 inline void *zmalloc(size_t size) {
-  if (size == 0) {
+  if (ZM_UNLIKELY(size == 0)) {
     return nullptr;
   }
 
-  if (size > MAX_BYTES) {
-    // 大于 256KB 直接向 PageCache 申请
-    size_t align_size = SizeClass::round_up(size);
-    size_t k_page = align_size >> PAGE_SHIFT;
+  if (ZM_UNLIKELY(size > MAX_BYTES)) {
+    // 大于 256KB 直接向 PageCache 申请，按页对齐
+    size_t k_page = (size + PAGE_SIZE - 1) >> PAGE_SHIFT;
 
     PageCache::get_instance().page_mtx().lock();
     Span *span = PageCache::get_instance().new_span(k_page);
