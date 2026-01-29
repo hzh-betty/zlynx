@@ -14,8 +14,9 @@
 #include <cstdint>
 #include <cstring>
 
-#include "common.h"
 #include "object_pool.h"
+#include "system_alloc.h"
+#include "zmalloc_config.h"
 
 namespace zmalloc {
 

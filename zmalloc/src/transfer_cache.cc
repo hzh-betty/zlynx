@@ -6,6 +6,7 @@
 #include "transfer_cache.h"
 
 #include <algorithm>
+#include <cstring>
 #include <mutex>
 
 namespace zmalloc {

@@ -3,7 +3,7 @@
  * @brief FreeList 单元测试
  */
 
-#include "common.h"
+#include "free_list.h"
 #include <gtest/gtest.h>
 
 namespace zmalloc {

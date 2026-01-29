@@ -4,8 +4,9 @@
 #include <cstdint>
 #include <vector>
 
-#include "common.h"
-// 先 include common，避免 private->public 影响标准库头
+#include "size_class.h"
+#include "zmalloc_config.h"
+// 先 include 基础头，避免 private->public 影响标准库头
 #define private public
 #include "thread_cache.h"
 #undef private

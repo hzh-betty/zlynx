@@ -26,7 +26,7 @@
 
 #include "common.h"
 #include "prefetch.h"
-#include "zmalloc_noncopyable.h"
+#include "zmalloc_config.h"
 
 namespace zmalloc {
 
@@ -35,6 +35,14 @@ static constexpr size_t kMaxCpus = 256;
 
 // 每个 size class 在 CPU 缓存中的最大对象数
 static constexpr size_t kCpuCacheCapacity = 32;
+
+// 注意：CpuCache 内部是 [CPU][SizeClass] 的二维数组：
+// slots_[kMaxCpus][NFREELISTS]。
+// 这会带来较大的静态内存占用（每个 slot 还包含一个小数组 + 原子计数 + 锁）。
+// 当前实现更偏向“实验/性能验证”用途；若要用于生产，可考虑：
+// - 降低 kMaxCpus 上限
+// - 只为实际 num_cpus_ 动态分配
+// - 或按热点 size class 稀疏存储
 
 /**
  * @brief 获取当前 CPU ID
@@ -67,6 +75,7 @@ struct alignas(64) CpuCacheSlot {
    */
   size_t try_pop(void **batch, size_t max_count) {
     // 快速检查（无锁）
+    // 关键点：这里使用 relaxed 仅用于“快判断”，正确性由锁保护。
     if (size.load(std::memory_order_relaxed) == 0) {
       return 0;
     }
@@ -103,6 +112,8 @@ struct alignas(64) CpuCacheSlot {
    */
   size_t try_push(void **batch, size_t count) {
     // 快速检查（无锁）
+    // 关键点：这里的满判断只是“尽量避免加锁”，并不保证精确；
+    // 进入锁后会再次根据 current_size 精确计算可用容量。
     if (size.load(std::memory_order_relaxed) >= kCpuCacheCapacity) {
       return 0;
     }

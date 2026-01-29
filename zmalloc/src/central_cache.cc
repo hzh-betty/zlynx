@@ -4,6 +4,12 @@
  */
 #include "central_cache.h"
 #include "page_cache.h"
+#include "free_list.h"
+#include "size_class.h"
+
+#include "zmalloc_config.h"
+
+#include <cassert>
 
 namespace zmalloc {
 
@@ -16,6 +22,12 @@ size_t CentralCache::fetch_range_obj(void *&start, void *&end, size_t n,
 size_t CentralCache::fetch_range_obj(void *&start, void *&end, size_t n,
                                      size_t size, size_t index) {
   CentralFreeList &free_list = free_lists_[index];
+
+  // 关键步骤：每个 size class 维护独立桶锁，避免全局锁。
+  // 桶锁保护：
+  // - nonempty/empty 两条 SpanList
+  // - span 在两条链表之间的迁移
+  // - span->free_list / span->use_count 的更新
   free_list.lock.lock();
 
   // 获取一个非空的 Span
@@ -23,7 +35,9 @@ size_t CentralCache::fetch_range_obj(void *&start, void *&end, size_t n,
   assert(span);
   assert(span->free_list);
 
-  // 从 Span 获取 n 个对象，不够则有多少拿多少
+  // 关键步骤：从 span->free_list 单链表上切一段出来。
+  // 返回给 ThreadCache 的也是“单链表”，对象的 next 指针存放在对象起始处。
+  // 不变量：切完后必须把 end->next 置空，避免调用方误遍历到 span 内部链表。
   start = span->free_list;
   end = start;
   size_t actual_num = 1;
@@ -40,7 +54,10 @@ size_t CentralCache::fetch_range_obj(void *&start, void *&end, size_t n,
   next_obj(end) = nullptr;
   span->use_count += actual_num;
 
-  // 结构化维护：non-empty/empty 双链表（更接近 tcmalloc central freelist）
+  // 关键不变量：
+  // - nonempty：span->free_list != nullptr
+  // - empty：span->free_list == nullptr 且仍有对象在外部（use_count>0）
+  // fetch 后如果该 span 被耗尽，需要从 nonempty 移到 empty。
   if (ZM_UNLIKELY(span->free_list == nullptr)) {
     free_list.nonempty.erase(span);
     free_list.empty.push_front(span);
@@ -58,9 +75,9 @@ Span *CentralCache::get_one_span(CentralFreeList &free_list, size_t size) {
     return front;
   }
 
-  // 2. 没有非空 Span，向 PageCache 申请
-  // 注意：保持桶锁持有，避免竞态条件
-  // 锁顺序：桶锁 -> PageCache 锁（固定顺序避免死锁）
+  // 2. 没有非空 Span，向 PageCache 申请。
+  // 注意：这里仍保持桶锁持有，确保同一个 size class 下不会并发重复建 span。
+  // 锁顺序固定为：桶锁 -> PageCache 锁（避免死锁）。
   PageCache::get_instance().page_mtx().lock();
   // 申请页数直接用查表结果，避免每次 miss 计算。
   Span *span = PageCache::get_instance().new_span(
@@ -74,7 +91,8 @@ Span *CentralCache::get_one_span(CentralFreeList &free_list, size_t size) {
   const size_t bytes = span->n << PAGE_SHIFT;
   char *const obj_end = start + bytes;
 
-  // 切分成 size 大小的对象
+  // 关键步骤：把 [span_start, span_end) 切分成 size 大小对象，构建单链表。
+  // 这里不做额外对齐：align_size 已由 SizeClass 查表保证。
   span->free_list = start;
   void *tail = start;
   start += size;
@@ -105,7 +123,7 @@ void CentralCache::release_list_to_spans(void *start, size_t size,
     return;
   }
 
-  // 两阶段批处理
+  // 两阶段批处理：减少桶锁持有时间。
   // 1) 无锁阶段：把对象按 Span 分组 + 本地拼接，减少 PageMap::get 次数。
   // 2) 持锁阶段：对每个 Span 一次性 splice 链表并批量更新
   // use_count，缩短桶锁持有时间。
@@ -117,6 +135,8 @@ void CentralCache::release_list_to_spans(void *start, size_t size,
   size_t group_count[128];
   size_t groups = 0;
 
+  // last_span 小优化：回收链表中相邻对象常来自同一 span。
+  // 缓存上一次 span 的页区间，可减少 PageCache::map_object_to_span 调用次数。
   Span *last_span = nullptr;
   PageId last_begin = 0;
   PageId last_end = 0;
@@ -165,7 +185,10 @@ void CentralCache::release_list_to_spans(void *start, size_t size,
     start = next;
   }
 
-  // 持锁阶段：每个 Span 一次性 splice + 批量更新。
+  // 持锁阶段：对每个 Span 一次性 splice + 批量更新。
+  // 注意：如果某个 span use_count 归零，需要释放回 PageCache。
+  // 释放过程中会获取 PageCache 锁，因此这里采取“临时释放桶锁 -> 释放 -> 再加锁”
+  // 的模式，避免长时间持有桶锁。
   free_list.lock.lock();
   for (size_t gi = 0; gi < groups; ++gi) {
     Span *span = spans[gi];

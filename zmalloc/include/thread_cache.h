@@ -7,7 +7,8 @@
  */
 
 #include "common.h"
-#include "zmalloc_noncopyable.h"
+#include "free_list.h"
+#include "zmalloc_config.h"
 
 namespace zmalloc {
 

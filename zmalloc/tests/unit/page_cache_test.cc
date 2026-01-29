@@ -3,9 +3,11 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "common.h"
 
-// 先包含 common.h 避免 private->public 影响标准库头
+#include "span_list.h"
+#include "zmalloc_config.h"
+
+// 先包含基础头，避免 private->public 影响标准库头
 #define private public
 #include "page_cache.h"
 #undef private

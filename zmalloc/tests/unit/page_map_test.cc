@@ -2,8 +2,9 @@
 
 #include <cstdint>
 
-#include "common.h"
 #include "page_map.h"
+
+#include "zmalloc_config.h"
 
 namespace {
 

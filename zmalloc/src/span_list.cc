@@ -3,7 +3,9 @@
  * @brief SpanList 成员函数实现
  */
 
-#include "common.h"
+#include <cassert>
+
+#include "span_list.h"
 #include "object_pool.h"
 
 namespace zmalloc {

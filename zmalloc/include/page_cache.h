@@ -6,12 +6,14 @@
  * @brief 页缓存，以页为单位管理内存，支持 Span 的分配、合并和释放
  */
 
+#include <cassert>
 #include <mutex>
 
 #include "common.h"
 #include "object_pool.h"
 #include "page_map.h"
-#include "zmalloc_noncopyable.h"
+#include "span_list.h"
+#include "zmalloc_config.h"
 
 namespace zmalloc {
 

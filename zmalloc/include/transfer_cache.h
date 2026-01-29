@@ -11,8 +11,10 @@
  * - 批量传输提高缓存效率
  */
 
+#include <atomic>
+
 #include "common.h"
-#include "zmalloc_noncopyable.h"
+#include "zmalloc_config.h"
 
 namespace zmalloc {
 
@@ -86,10 +88,7 @@ private:
   void *slots_[kMaxCacheSlots]; // 环形缓冲区
   size_t head_ = 0;             // 插入位置
   size_t tail_ = 0;             // 取出位置
-  // 当前对象数量：
-  // - 允许锁外读取用于快判断（空/满）
-  // - 修改仍在锁内完成
-  std::atomic<size_t> count_{0};
+  std::atomic<size_t> count_{0}; // 当前对象数量
 };
 
 /**
