@@ -79,47 +79,11 @@ ZM_ALWAYS_INLINE void zfree(void *ptr) {
   }
 
   PageCache &pc = PageCache::get_instance();
-
-  // 优化：通过 PageMap 直接获取 sizeclass，避免加载完整 Span
-  const uint8_t sc = pc.get_sizeclass(ptr);
-  if (ZM_LIKELY(sc > 0)) {
-    // 热路径：小对象释放（sc > 0 表示小对象）
-    // 注意：存储时 size class = index + 1，所以这里要减 1
-    const size_t index = static_cast<size_t>(sc - 1);
-    const size_t size = SizeClass::class_to_size(index);
-
-    ThreadCache *tc = get_thread_cache();
-    // 尝试快路径（无锁压入，不检查过长）
-    if (ZM_LIKELY(internal::fast_dealloc(tc, ptr, size))) {
-      return;
-    }
-    // 慢路径：链表过长，需要回收到 CentralCache
-    tc->deallocate(ptr, size);
-    return;
-  }
-
-  // 冷路径：大对象释放（sc == 0）
   Span *span = pc.map_object_to_span(ptr);
-  pc.page_mtx().lock();
-  pc.release_span_to_page_cache(span);
-  pc.page_mtx().unlock();
-}
-
-/**
- * @brief 释放内存（带 size 参数优化版本）
- * @param ptr 内存指针
- * @param size 分配时请求的大小
- *
- * 当调用方知道分配大小时，使用此接口可完全避免 PageMap 查询。
- * 类似于 C++14 的 sized delete。
- */
-ZM_ALWAYS_INLINE void zfree_sized(void *ptr, size_t size) {
-  if (ZM_UNLIKELY(ptr == nullptr)) {
-    return;
-  }
+  const size_t size = span->obj_size;
 
   if (ZM_LIKELY(size <= MAX_BYTES)) {
-    // 热路径：小对象释放 - 直接通过 size 计算 index，完全避免 PageMap 查询
+    // 热路径：小对象释放
     ThreadCache *tc = get_thread_cache();
     // 尝试快路径（无锁压入，不检查过长）
     if (ZM_LIKELY(internal::fast_dealloc(tc, ptr, size))) {
@@ -131,8 +95,6 @@ ZM_ALWAYS_INLINE void zfree_sized(void *ptr, size_t size) {
   }
 
   // 冷路径：大对象释放
-  PageCache &pc = PageCache::get_instance();
-  Span *span = pc.map_object_to_span(ptr);
   pc.page_mtx().lock();
   pc.release_span_to_page_cache(span);
   pc.page_mtx().unlock();

@@ -60,38 +60,6 @@ public:
    */
   std::mutex &page_mtx() { return page_mtx_; }
 
-  /**
-   * @brief 快速获取对象的 size class（不加载 Span）
-   * @param obj 对象指针
-   * @return size class，0 表示大对象
-   */
-  inline uint8_t get_sizeclass(void *obj) const {
-    PageId id = reinterpret_cast<PageId>(obj) >> PAGE_SHIFT;
-    return id_span_map_.sizeclass(id);
-  }
-
-  /**
-   * @brief 设置页映射并同时设置 size class
-   * @param page_id 起始页号
-   * @param n 页数
-   * @param span Span 指针
-   * @param sc size class
-   */
-  inline void set_range_with_sizeclass(PageId page_id, size_t n, Span *span,
-                                       uint8_t sc) {
-    id_span_map_.set_range_with_sizeclass(page_id, n, span, sc);
-  }
-
-  /**
-   * @brief 只设置 size class，不覆盖 Span 映射
-   * @param page_id 起始页号
-   * @param n 页数
-   * @param sc size class
-   */
-  inline void set_range_sizeclass_only(PageId page_id, size_t n, uint8_t sc) {
-    id_span_map_.set_range_sizeclass_only(page_id, n, sc);
-  }
-
 private:
   PageCache() = default;
 

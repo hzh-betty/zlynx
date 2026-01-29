@@ -77,9 +77,6 @@ Span *PageCache::new_span(size_t k) {
 }
 
 void PageCache::release_span_to_page_cache(Span *span) {
-  // 清除所有页的 sizeclass，避免旧值遗留
-  id_span_map_.set_range_sizeclass_only(span->page_id, span->n, 0);
-
   // 大于 128 页直接释放给系统
   if (span->n > NPAGES - 1) {
     void *ptr = reinterpret_cast<void *>(span->page_id << PAGE_SHIFT);

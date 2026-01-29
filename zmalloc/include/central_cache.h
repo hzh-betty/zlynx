@@ -66,7 +66,7 @@ public:
     SpinLock lock;
   };
 
-  Span *get_one_span(CentralFreeList &free_list, size_t size, size_t index);
+  Span *get_one_span(CentralFreeList &free_list, size_t size);
 
   /**
    * @brief 将对象链表归还给对应的 Span

@@ -224,102 +224,6 @@ public:
     }
   }
 
-  /**
-   * @brief 快速获取 size class（不加载 Span）
-   * @param k 页号
-   * @return size class，0 表示大对象或未分配
-   */
-  uint8_t sizeclass(Number k) const {
-    const Number i1 = k >> (LEAF_BITS + INTERIOR_BITS);
-    const Number i2 = (k >> LEAF_BITS) & (INTERIOR_LENGTH - 1);
-    const Number i3 = k & (LEAF_LENGTH - 1);
-
-    if ((k >> BITS) > 0 || root_->ptrs[i1] == nullptr ||
-        root_->ptrs[i1]->ptrs[i2] == nullptr) {
-      return 0;
-    }
-    return reinterpret_cast<Leaf *>(root_->ptrs[i1]->ptrs[i2])->sizeclass[i3];
-  }
-
-  /**
-   * @brief 设置映射并同时设置 size class
-   * @param k 页号
-   * @param v Span 指针
-   * @param sc size class
-   */
-  void set_with_sizeclass(Number k, void *v, uint8_t sc) {
-    assert((k >> BITS) == 0);
-    const Number i1 = k >> (LEAF_BITS + INTERIOR_BITS);
-    const Number i2 = (k >> LEAF_BITS) & (INTERIOR_LENGTH - 1);
-    const Number i3 = k & (LEAF_LENGTH - 1);
-
-    ensure(k, 1);
-    Leaf *leaf = reinterpret_cast<Leaf *>(root_->ptrs[i1]->ptrs[i2]);
-    leaf->values[i3] = v;
-    leaf->sizeclass[i3] = sc;
-  }
-
-  /**
-   * @brief 批量设置映射并同时设置 size class
-   * @param start 起始页号
-   * @param n 页数
-   * @param v Span 指针
-   * @param sc size class
-   */
-  void set_range_with_sizeclass(Number start, size_t n, void *v, uint8_t sc) {
-    if (n == 0) {
-      return;
-    }
-    assert(ensure(start, n));
-
-    const Number last = start + static_cast<Number>(n - 1);
-    for (Number k = start; k <= last; ++k) {
-      const Number i1 = k >> (LEAF_BITS + INTERIOR_BITS);
-      const Number i2 = (k >> LEAF_BITS) & (INTERIOR_LENGTH - 1);
-      const Number i3 = k & (LEAF_LENGTH - 1);
-      Leaf *leaf = reinterpret_cast<Leaf *>(root_->ptrs[i1]->ptrs[i2]);
-      leaf->values[i3] = v;
-      leaf->sizeclass[i3] = sc;
-    }
-  }
-
-  /**
-   * @brief 清除 size class（释放时调用）
-   * @param k 页号
-   */
-  void clear_sizeclass(Number k) {
-    const Number i1 = k >> (LEAF_BITS + INTERIOR_BITS);
-    const Number i2 = (k >> LEAF_BITS) & (INTERIOR_LENGTH - 1);
-    const Number i3 = k & (LEAF_LENGTH - 1);
-
-    if (root_->ptrs[i1] != nullptr && root_->ptrs[i1]->ptrs[i2] != nullptr) {
-      reinterpret_cast<Leaf *>(root_->ptrs[i1]->ptrs[i2])->sizeclass[i3] = 0;
-    }
-  }
-
-  /**
-   * @brief 只设置 sizeclass，不覆盖 value（用于已经设置过映射的情况）
-   * @param start 起始页号
-   * @param n 页数
-   * @param sc size class
-   */
-  void set_range_sizeclass_only(Number start, size_t n, uint8_t sc) {
-    if (n == 0) {
-      return;
-    }
-
-    const Number last = start + static_cast<Number>(n - 1);
-    for (Number k = start; k <= last; ++k) {
-      const Number i1 = k >> (LEAF_BITS + INTERIOR_BITS);
-      const Number i2 = (k >> LEAF_BITS) & (INTERIOR_LENGTH - 1);
-      const Number i3 = k & (LEAF_LENGTH - 1);
-
-      if (root_->ptrs[i1] != nullptr && root_->ptrs[i1]->ptrs[i2] != nullptr) {
-        reinterpret_cast<Leaf *>(root_->ptrs[i1]->ptrs[i2])->sizeclass[i3] = sc;
-      }
-    }
-  }
-
   bool ensure(Number start, size_t n) {
     if (n == 0) {
       return true;
@@ -361,7 +265,6 @@ private:
 
   struct Leaf {
     void *values[LEAF_LENGTH];
-    uint8_t sizeclass[LEAF_LENGTH]; // size class 快速查找表
   };
 
   Node *new_node() {
