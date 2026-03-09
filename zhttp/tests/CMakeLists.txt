@@ -5,6 +5,9 @@ set(UNIT_TESTS
     http_parser_test
     http_request_test
     http_response_test
+    multipart_test
+    session_test
+    rate_limiter_test
     router_test
     middleware_test
     http_parser_detailed_test
