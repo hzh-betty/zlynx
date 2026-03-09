@@ -1,5 +1,7 @@
 #include "http_request.h"
 
+#include "multipart.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
@@ -47,6 +49,47 @@ std::string url_decode(const std::string &str) {
   }
   return result;
 }
+
+static inline void trim(std::string &s) {
+  auto is_space = [](unsigned char c) { return std::isspace(c) != 0; };
+  while (!s.empty() && is_space(static_cast<unsigned char>(s.front()))) {
+    s.erase(s.begin());
+  }
+  while (!s.empty() && is_space(static_cast<unsigned char>(s.back()))) {
+    s.pop_back();
+  }
+}
+
+static void parse_cookie_header(const std::string &cookie_header,
+                                HttpRequest::Params &out) {
+  out.clear();
+  size_t pos = 0;
+  while (pos < cookie_header.size()) {
+    size_t end = cookie_header.find(';', pos);
+    if (end == std::string::npos) {
+      end = cookie_header.size();
+    }
+
+    std::string token = cookie_header.substr(pos, end - pos);
+    trim(token);
+    if (!token.empty()) {
+      size_t eq = token.find('=');
+      if (eq != std::string::npos) {
+        std::string key = token.substr(0, eq);
+        std::string value = token.substr(eq + 1);
+        trim(key);
+        trim(value);
+        if (!key.empty()) {
+          out[key] = value;
+        }
+      } else {
+        out[token] = "";
+      }
+    }
+
+    pos = end + 1;
+  }
+}
 } // namespace
 
 std::string HttpRequest::header(const std::string &key,
@@ -76,6 +119,36 @@ std::string HttpRequest::query_param(const std::string &key,
     return it->second;
   }
   return default_val;
+}
+
+void HttpRequest::parse_cookies_if_needed() const {
+  if (cookies_parsed_) {
+    return;
+  }
+
+  cookies_parsed_ = true;
+  std::string cookie_header = header("Cookie");
+  if (cookie_header.empty()) {
+    cookies_.clear();
+    return;
+  }
+
+  parse_cookie_header(cookie_header, cookies_);
+}
+
+std::string HttpRequest::cookie(const std::string &key,
+                                const std::string &default_val) const {
+  parse_cookies_if_needed();
+  auto it = cookies_.find(key);
+  if (it != cookies_.end()) {
+    return it->second;
+  }
+  return default_val;
+}
+
+const HttpRequest::Params &HttpRequest::cookies() const {
+  parse_cookies_if_needed();
+  return cookies_;
 }
 
 void HttpRequest::set_header(const std::string &key, const std::string &value) {
@@ -135,5 +208,37 @@ size_t HttpRequest::content_length() const {
 }
 
 std::string HttpRequest::content_type() const { return header("Content-Type"); }
+
+bool HttpRequest::is_multipart() const {
+  std::string ct = content_type();
+  return to_lower(ct).find("multipart/form-data") != std::string::npos;
+}
+
+bool HttpRequest::parse_multipart() {
+  if (multipart_parsed_) {
+    return multipart_ != nullptr;
+  }
+  multipart_parsed_ = true;
+  multipart_.reset();
+  multipart_error_.clear();
+
+  if (!is_multipart()) {
+    return true;
+  }
+
+  auto parsed = MultipartFormData::parse(*this, &multipart_error_);
+  if (!parsed) {
+    return false;
+  }
+  multipart_ = std::move(parsed);
+  return true;
+}
+
+const MultipartFormData *HttpRequest::multipart() const {
+  if (!multipart_parsed_) {
+    const_cast<HttpRequest *>(this)->parse_multipart();
+  }
+  return multipart_.get();
+}
 
 } // namespace zhttp

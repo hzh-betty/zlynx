@@ -14,6 +14,9 @@
 #include "http_request.h"
 #include "http_response.h"
 #include "middleware.h"
+#include "multipart.h"
+#include "rate_limiter.h"
+#include "session.h"
 #include "route_handler.h"
 #include "router.h"
 

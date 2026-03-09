@@ -49,6 +49,12 @@ struct ServerConfig {
   size_t max_body_size = 10 * 1024 * 1024; // 10MB
   size_t buffer_size = 8192;
 
+  // 限流配置
+  bool rate_limit_enabled = false;
+  std::string rate_limit_type = "token_bucket"; // fixed_window/sliding_window/token_bucket
+  size_t rate_limit_capacity = 10;              // capacity per time unit
+  std::string rate_limit_time_unit = "second"; // millisecond/second/minute/hour
+
   /**
    * @brief 从 TOML 文件加载配置
    * @param filepath TOML 配置文件路径

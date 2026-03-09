@@ -124,6 +124,24 @@ ServerConfig ServerConfig::from_toml(const std::string &filepath) {
       }
     }
 
+    // [rate_limit] 部分
+    if (data.contains("rate_limit")) {
+      auto &rl = toml::find(data, "rate_limit");
+      if (rl.contains("enabled")) {
+        config.rate_limit_enabled = toml::find<bool>(rl, "enabled");
+      }
+      if (rl.contains("type")) {
+        config.rate_limit_type = toml::find<std::string>(rl, "type");
+      }
+      if (rl.contains("capacity")) {
+        config.rate_limit_capacity =
+            static_cast<size_t>(toml::find<int64_t>(rl, "capacity"));
+      }
+      if (rl.contains("time_unit")) {
+        config.rate_limit_time_unit = toml::find<std::string>(rl, "time_unit");
+      }
+    }
+
     ZHTTP_LOG_INFO("Config loaded: {}:{}, threads={}, stack_mode={}",
                    config.host, config.port, config.num_threads,
                    stack_mode_to_string(config.stack_mode));
@@ -224,6 +242,23 @@ ServerConfig ServerConfig::from_toml_string(const std::string &toml_content) {
       }
     }
 
+    if (data.contains("rate_limit")) {
+      auto &rl = toml::find(data, "rate_limit");
+      if (rl.contains("enabled")) {
+        config.rate_limit_enabled = toml::find<bool>(rl, "enabled");
+      }
+      if (rl.contains("type")) {
+        config.rate_limit_type = toml::find<std::string>(rl, "type");
+      }
+      if (rl.contains("capacity")) {
+        config.rate_limit_capacity =
+            static_cast<size_t>(toml::find<int64_t>(rl, "capacity"));
+      }
+      if (rl.contains("time_unit")) {
+        config.rate_limit_time_unit = toml::find<std::string>(rl, "time_unit");
+      }
+    }
+
     return config;
   } catch (const std::exception &e) {
     throw std::runtime_error("Failed to parse TOML: " + std::string(e.what()));
@@ -295,6 +330,13 @@ std::string ServerConfig::to_toml_string() const {
   oss << "[buffer]\n";
   oss << "max_body_size = " << max_body_size << "\n";
   oss << "size = " << buffer_size << "\n";
+
+  oss << "\n";
+  oss << "[rate_limit]\n";
+  oss << "enabled = " << (rate_limit_enabled ? "true" : "false") << "\n";
+  oss << "type = \"" << rate_limit_type << "\"\n";
+  oss << "capacity = " << rate_limit_capacity << "\n";
+  oss << "time_unit = \"" << rate_limit_time_unit << "\"\n";
 
   return oss.str();
 }

@@ -9,6 +9,49 @@ HttpResponse::HttpResponse() {
   headers_["Server"] = "zhttp/1.0";
 }
 
+std::string HttpResponse::build_set_cookie_value(const std::string &name,
+                                                 const std::string &value,
+                                                 const CookieOptions &opt) {
+  std::ostringstream oss;
+  oss << name << "=" << value;
+
+  if (!opt.path.empty()) {
+    oss << "; Path=" << opt.path;
+  }
+
+  if (opt.max_age >= 0) {
+    oss << "; Max-Age=" << opt.max_age;
+  }
+
+  if (opt.http_only) {
+    oss << "; HttpOnly";
+  }
+  if (opt.secure) {
+    oss << "; Secure";
+  }
+
+  if (!opt.same_site.empty()) {
+    oss << "; SameSite=" << opt.same_site;
+  }
+
+  return oss.str();
+}
+
+HttpResponse &HttpResponse::set_cookie(const std::string &name,
+                                       const std::string &value,
+                                       const CookieOptions &opt) {
+  set_cookies_.push_back(build_set_cookie_value(name, value, opt));
+  return *this;
+}
+
+HttpResponse &HttpResponse::delete_cookie(const std::string &name,
+                                          const CookieOptions &opt) {
+  CookieOptions o = opt;
+  o.max_age = 0;
+  set_cookies_.push_back(build_set_cookie_value(name, "", o));
+  return *this;
+}
+
 HttpResponse &HttpResponse::status(HttpStatus status) {
   status_ = status;
   return *this;
@@ -76,6 +119,11 @@ std::string HttpResponse::serialize() const {
   // 响应头
   for (const auto &pair : headers_) {
     oss << pair.first << ": " << pair.second << "\r\n";
+  }
+
+  // Set-Cookie（允许多值）
+  for (const auto &val : set_cookies_) {
+    oss << "Set-Cookie: " << val << "\r\n";
   }
 
   // Content-Length（如果没有设置且有 body）

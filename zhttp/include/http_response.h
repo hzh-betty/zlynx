@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace zhttp {
 
@@ -109,6 +110,11 @@ public:
   const Headers &headers() const { return headers_; }
 
   /**
+   * @brief 获取所有 Set-Cookie 值（每个元素对应一个 Set-Cookie 头部的 value 部分）
+   */
+  const std::vector<std::string> &set_cookies() const { return set_cookies_; }
+
+  /**
    * @brief 获取响应体
    */
   const std::string &body_content() const { return body_; }
@@ -136,10 +142,45 @@ public:
    */
   std::string serialize() const;
 
+  // ===================== Cookie / Session Helper =====================
+
+  struct CookieOptions {
+    CookieOptions()
+        : path("/"), max_age(-1), http_only(true), secure(false),
+          same_site("Lax") {}
+    CookieOptions(std::string p, int maxAge, bool httpOnly, bool sec,
+                  std::string sameSite)
+        : path(std::move(p)), max_age(maxAge), http_only(httpOnly),
+          secure(sec), same_site(std::move(sameSite)) {}
+
+    std::string path;
+    int max_age; // 秒；<0 表示不设置 Max-Age
+    bool http_only;
+    bool secure;
+    std::string same_site; // Lax/Strict/None
+  };
+
+  /**
+   * @brief 追加一个 Set-Cookie 头
+   */
+  HttpResponse &set_cookie(const std::string &name, const std::string &value,
+                           const CookieOptions &opt = CookieOptions());
+
+  /**
+   * @brief 通过 Max-Age=0 删除 Cookie
+   */
+  HttpResponse &delete_cookie(const std::string &name,
+                              const CookieOptions &opt = CookieOptions());
+
 private:
+  static std::string build_set_cookie_value(const std::string &name,
+                                            const std::string &value,
+                                            const CookieOptions &opt);
+
   HttpStatus status_ = HttpStatus::OK;
   HttpVersion version_ = HttpVersion::HTTP_1_1;
   Headers headers_;
+  std::vector<std::string> set_cookies_;
   std::string body_;
   bool keep_alive_ = true;
 };

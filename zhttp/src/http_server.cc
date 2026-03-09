@@ -89,6 +89,10 @@ void HttpServer::handle_request(const znet::TcpConnectionPtr &conn,
   ZHTTP_LOG_DEBUG("{} {} {}", method_to_string(request->method()),
                   request->path(), version_to_string(request->version()));
 
+  if (conn && conn->peer_address()) {
+    request->set_remote_addr(conn->peer_address()->to_string());
+  }
+
   // 创建响应对象
   HttpResponse response;
   response.set_version(request->version());

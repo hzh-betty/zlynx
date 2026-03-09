@@ -82,6 +82,10 @@ void HttpsServer::handle_client(znet::TcpConnectionPtr conn) {
       ParseResult result = parser.parse(conn->input_buffer());
 
       if (result == ParseResult::COMPLETE) {
+        if (conn && conn->peer_address()) {
+          parser.request()->set_remote_addr(conn->peer_address()->to_string());
+        }
+
         // 创建响应
         HttpResponse response;
         response.set_version(parser.request()->version());

@@ -2,15 +2,57 @@
 #include "address.h"
 #include "daemon.h"
 #include "https_server.h"
+#include "rate_limiter.h"
 #include "zhttp_logger.h"
 
+#include <algorithm>
+#include <cctype>
+
 namespace zhttp {
+
+namespace {
+
+static RateLimiter::Type parse_rate_limiter_type(std::string s) {
+  // lower
+  std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
+
+  if (s == "fixed_window" || s == "fixed" || s == "fw") {
+    return RateLimiter::Type::FIXED_WINDOW;
+  }
+  if (s == "sliding_window" || s == "sliding" || s == "sw") {
+    return RateLimiter::Type::SLIDING_WINDOW;
+  }
+  return RateLimiter::Type::TOKEN_BUCKET;
+}
+
+static RateLimiter::TimeUnit parse_time_unit(std::string s) {
+  std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
+
+  if (s == "ms" || s == "millisecond" || s == "milliseconds") {
+    return RateLimiter::TimeUnit::MILLISECOND;
+  }
+  if (s == "s" || s == "sec" || s == "second" || s == "seconds") {
+    return RateLimiter::TimeUnit::SECOND;
+  }
+  if (s == "m" || s == "min" || s == "minute" || s == "minutes") {
+    return RateLimiter::TimeUnit::MINUTE;
+  }
+  if (s == "h" || s == "hour" || s == "hours") {
+    return RateLimiter::TimeUnit::HOUR;
+  }
+  return RateLimiter::TimeUnit::SECOND;
+}
+
+} // namespace
 
 HttpServerBuilder::HttpServerBuilder() {
   // 使用默认配置
 }
 
-// ========== 从配置初始化 ==========
 
 HttpServerBuilder &
 HttpServerBuilder::from_config(const std::string &config_path) {
@@ -23,7 +65,6 @@ HttpServerBuilder &HttpServerBuilder::from_config(const ServerConfig &config) {
   return *this;
 }
 
-// ========== 链式配置 API ==========
 
 HttpServerBuilder &HttpServerBuilder::listen(const std::string &host,
                                              uint16_t port) {
@@ -192,6 +233,22 @@ std::shared_ptr<HttpServer> HttpServerBuilder::build() {
 
   server->set_name(config_.server_name);
 
+  // 从配置自动启用限流
+  if (config_.rate_limit_enabled) {
+    auto type = parse_rate_limiter_type(config_.rate_limit_type);
+    auto unit = parse_time_unit(config_.rate_limit_time_unit);
+    auto limiter =
+        RateLimiter::newRateLimiter(type, config_.rate_limit_capacity, unit);
+
+    RateLimiterMiddleware::Options opt;
+    opt.limiter = std::move(limiter);
+    server->router().use(std::make_shared<RateLimiterMiddleware>(opt));
+
+    ZHTTP_LOG_INFO("Rate limit enabled: type={}, capacity={}, time_unit={}",
+                   config_.rate_limit_type, config_.rate_limit_capacity,
+                   config_.rate_limit_time_unit);
+  }
+
   // 注册中间件
   for (auto &mw : middlewares_) {
     server->router().use(mw);
@@ -242,8 +299,6 @@ void HttpServerBuilder::run() {
   // 开始接受连接
   server->start();
 
-  // 等待停止信号
-  // 这里简化处理，实际应该有信号处理
   while (true) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
   }
