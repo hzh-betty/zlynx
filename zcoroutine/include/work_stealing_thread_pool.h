@@ -11,7 +11,7 @@
 
 #include "processor.h"
 #include "stealable_queue_bitmap.h"
-#include "task_queue.h" // for Task
+#include "task_queue.h" 
 #include "zcoroutine_noncopyable.h"
 #include "zcoroutine_semaphore.h"
 

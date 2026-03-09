@@ -55,16 +55,6 @@ target_link_libraries(znet_static
     PUBLIC dl
 )
 
-# 安装规则（可选）
-install(TARGETS znet_shared znet_static
-    LIBRARY DESTINATION lib
-    ARCHIVE DESTINATION lib
-)
-
-install(FILES ${ZNET_HEADERS}
-    DESTINATION include/znet
-)
-
 message(STATUS "==============================")
 message(STATUS "znet configuration")
 message(STATUS "------------------------------")

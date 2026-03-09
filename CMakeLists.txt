@@ -31,6 +31,7 @@ find_package(Threads REQUIRED)
 # zcoroutine: 依赖 zlog
 # znet: 依赖 zcoroutine, zlog
 # zhttp: 依赖 znet, zcoroutine, zlog
+enable_testing()
 
 add_subdirectory(zmalloc)
 add_subdirectory(zlog)
