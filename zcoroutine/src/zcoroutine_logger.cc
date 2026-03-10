@@ -14,7 +14,14 @@ void init_logger(const zlog::LogLevel::value level) {
   builder->build();
 }
 zlog::Logger::ptr get_logger() {
-  static zlog::Logger::ptr logger = zlog::getLogger("zcoroutine_logger");
+  static zlog::Logger::ptr logger;
+  if (!logger) {
+    logger = zlog::getLogger("zcoroutine_logger");
+  }
+  if (!logger) {
+    init_logger(zlog::LogLevel::value::DEBUG);
+    logger = zlog::getLogger("zcoroutine_logger");
+  }
   return logger;
 }
 } // namespace zcoroutine

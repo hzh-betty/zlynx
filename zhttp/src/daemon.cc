@@ -45,72 +45,10 @@ std::string ProcessInfo::to_string() const {
   return ss.str();
 }
 
-// ========== Daemon 实现 ==========
-
-int Daemon::daemonize(const std::string &work_dir, bool close_std) {
-  // 1. 创建子进程，父进程退出
-  pid_t pid = fork();
-  if (pid < 0) {
-    ZHTTP_LOG_ERROR("Fork failed: {}", strerror(errno));
-    return -1;
-  }
-  if (pid > 0) {
-    // 父进程退出
-    _exit(0);
-  }
-
-  // 2. 子进程成为会话首进程
-  if (setsid() < 0) {
-    ZHTTP_LOG_ERROR("Setsid failed: {}", strerror(errno));
-    return -1;
-  }
-
-  // 3. 忽略SIGHUP信号
-  signal(SIGHUP, SIG_IGN);
-
-  // 4. 再次fork，确保进程不是会话首进程（防止获取控制终端）
-  pid = fork();
-  if (pid < 0) {
-    ZHTTP_LOG_ERROR("Second fork failed: {}", strerror(errno));
-    return -1;
-  }
-  if (pid > 0) {
-    _exit(0);
-  }
-
-  // 5. 改变工作目录
-  if (chdir(work_dir.c_str()) < 0) {
-    ZHTTP_LOG_ERROR("Chdir to {} failed: {}", work_dir, strerror(errno));
-    return -1;
-  }
-
-  // 6. 重设文件权限掩码
-  umask(0);
-
-  // 7. 关闭标准输入输出
-  if (close_std) {
-    close(STDIN_FILENO);
-    close(STDOUT_FILENO);
-    close(STDERR_FILENO);
-
-    // 重定向到/dev/null
-    int fd = open("/dev/null", O_RDWR);
-    if (fd >= 0) {
-      dup2(fd, STDIN_FILENO);
-      dup2(fd, STDOUT_FILENO);
-      dup2(fd, STDERR_FILENO);
-      if (fd > STDERR_FILENO) {
-        close(fd);
-      }
-    }
-  }
-
-  ZHTTP_LOG_INFO("Daemon process started, PID: {}", getpid());
-  return 0;
-}
-
 int Daemon::start_daemon(int argc, char **argv, MainCallback main_cb,
                          bool is_daemon, uint32_t restart_interval_sec) {
+  g_stop_flag.store(false, std::memory_order_release);
+
   if (!is_daemon) {
     return real_start(argc, argv, std::move(main_cb));
   }
@@ -126,8 +64,8 @@ int Daemon::real_start(int argc, char **argv, MainCallback main_cb) {
 
 int Daemon::real_daemon(int argc, char **argv, MainCallback main_cb,
                         uint32_t restart_interval_sec) {
-  // 先转为守护进程（但不关闭标准输出，方便日志）
-  if (daemon(1, 0) < 0) {
+  // 保留当前工作目录，并保留标准输出供日志系统使用。
+  if (daemon(1, 1) < 0) {
     ZHTTP_LOG_ERROR("daemon() failed: {}", strerror(errno));
     return -1;
   }
@@ -155,7 +93,20 @@ int Daemon::real_daemon(int argc, char **argv, MainCallback main_cb,
     } else {
       // 父进程：等待子进程
       int status = 0;
-      waitpid(pid, &status, 0);
+      pid_t wait_ret = 0;
+      do {
+        wait_ret = waitpid(pid, &status, 0);
+        if (wait_ret < 0 && errno == EINTR &&
+            g_stop_flag.load(std::memory_order_acquire)) {
+          kill(pid, SIGTERM);
+        }
+      } while (wait_ret < 0 && errno == EINTR);
+
+      if (wait_ret < 0) {
+        ZHTTP_LOG_ERROR("waitpid() failed: {} (errno={})", strerror(errno),
+                        errno);
+        return -1;
+      }
 
       if (g_stop_flag.load(std::memory_order_acquire)) {
         ZHTTP_LOG_INFO("Daemon received stop signal, exiting...");

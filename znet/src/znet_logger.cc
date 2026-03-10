@@ -19,7 +19,14 @@ void init_logger(const zlog::LogLevel::value level) {
   builder->build();
 }
 zlog::Logger *get_logger() {
-  static zlog::Logger::ptr logger = zlog::getLogger("znet_logger");
+  static zlog::Logger::ptr logger;
+  if (!logger) {
+    logger = zlog::getLogger("znet_logger");
+  }
+  if (!logger) {
+    init_logger(zlog::LogLevel::value::DEBUG);
+    logger = zlog::getLogger("znet_logger");
+  }
   return logger.get();
 }
 } // namespace znet

@@ -207,11 +207,6 @@ std::shared_ptr<HttpServer> HttpServerBuilder::build() {
     init_logger(zlog::LogLevel::value::ERROR);
   }
 
-  // 守护进程模式
-  if (config_.daemon) {
-    Daemon::daemonize();
-  }
-
   // 根据栈模式创建 IoScheduler
   bool use_shared = (config_.stack_mode == StackMode::SHARED);
   io_scheduler_ = std::make_shared<zcoroutine::IoScheduler>(
@@ -291,15 +286,38 @@ std::shared_ptr<HttpServer> HttpServerBuilder::build() {
 }
 
 void HttpServerBuilder::run() {
-  auto server = build();
+  auto run_server = [this](int /*argc*/, char ** /*argv*/) -> int {
+    try {
+      auto server = build();
+      ZHTTP_LOG_INFO("Server starting on {}:{}", config_.host, config_.port);
 
-  ZHTTP_LOG_INFO("Server starting on {}:{}", config_.host, config_.port);
+      if (!server->start()) {
+        ZHTTP_LOG_ERROR("Server failed to start on {}:{}", config_.host,
+                        config_.port);
+        return -1;
+      }
 
-  // 开始接受连接
-  server->start();
+      while (!Daemon::should_stop()) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+      }
 
-  while (true) {
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+      ZHTTP_LOG_INFO("Server stopping on {}:{}", config_.host, config_.port);
+      server->stop();
+      return 0;
+    } catch (const std::exception &ex) {
+      ZHTTP_LOG_ERROR("Server run failed: {}", ex.what());
+      return -1;
+    } catch (...) {
+      ZHTTP_LOG_ERROR("Server run failed: unknown exception");
+      return -1;
+    }
+  };
+
+  int rc = Daemon::start_daemon(0, nullptr, std::move(run_server),
+                                config_.daemon);
+  if (rc != 0) {
+    throw std::runtime_error("Server exited with code " +
+                             std::to_string(rc));
   }
 }
 

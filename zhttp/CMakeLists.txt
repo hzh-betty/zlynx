@@ -12,7 +12,6 @@ find_package(fmt REQUIRED)
 # zhttp 库源文件
 set(ZHTTP_SOURCES
     src/zhttp_logger.cc
-    src/allocator.cc
     src/http_common.cc
     src/http_request.cc
     src/http_response.cc

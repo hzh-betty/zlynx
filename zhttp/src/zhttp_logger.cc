@@ -10,7 +10,7 @@ void init_logger(zlog::LogLevel::value level) {
   znet::init_logger(level); // 同时初始化 znet 日志系统
 
   // 构建 zhttp 专属日志器
-  zlog::LocalLoggerBuilder builder;
+  zlog::GlobalLoggerBuilder builder;
   builder.buildLoggerName("zhttp_logger");
   builder.buildLoggerLevel(level);
   builder.buildLoggerType(zlog::LoggerType::LOGGER_SYNC);
@@ -20,7 +20,14 @@ void init_logger(zlog::LogLevel::value level) {
 }
 
 zlog::Logger *get_logger() {
- static zlog::Logger::ptr logger = zlog::getLogger("zhttp_logger");
+ static zlog::Logger::ptr logger;
+  if (!logger) {
+    logger = zlog::getLogger("zhttp_logger");
+  }
+  if (!logger) {
+    init_logger(zlog::LogLevel::value::DEBUG);
+    logger = zlog::getLogger("zhttp_logger");
+  }
   return logger.get();
 }
 

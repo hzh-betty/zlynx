@@ -151,6 +151,12 @@ void TcpConnection::handle_read() {
     if (saved_errno == EAGAIN || saved_errno == EWOULDBLOCK) {
       break;
     }
+    if (saved_errno == ECONNRESET || saved_errno == ECONNABORTED) {
+      ZNET_LOG_DEBUG("TcpConnection::handle_read [{}] peer reset, errno={} {}",
+                     name_, saved_errno, strerror(saved_errno));
+      handle_close();
+      return;
+    }
 
     errno = saved_errno;
     ZNET_LOG_ERROR("TcpConnection::handle_read [{}] error: {}", name_,

@@ -48,3 +48,17 @@ target_include_directories(http_server_test PRIVATE
     ${CMAKE_SOURCE_DIR}/zhttp/include
 )
 add_test(NAME http_server_test COMMAND http_server_test)
+
+add_executable(zhttp_benchmark benchmark/zhttp_benchmark.cc)
+
+target_link_libraries(zhttp_benchmark
+    zhttp
+    znet_static
+    zcoroutine_static
+    zlog_static
+    pthread
+)
+
+target_include_directories(zhttp_benchmark PRIVATE
+    ${CMAKE_SOURCE_DIR}/zhttp/include
+)

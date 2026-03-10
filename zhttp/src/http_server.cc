@@ -32,18 +32,6 @@ void HttpServer::handle_client(znet::TcpConnectionPtr conn) {
   conn->set_close_callback([](const znet::TcpConnectionPtr &c) {
     ZHTTP_LOG_DEBUG("HTTP connection closed: {}", c->name());
   });
-
-  // 连接建立
-  conn->connect_established();
-
-  // 主动读取数据（协程模式）
-  while (conn->connected()) {
-    conn->handle_read();
-
-    if (conn->input_buffer()->readable_bytes() > 0) {
-      on_message(conn, conn->input_buffer());
-    }
-  }
 }
 
 void HttpServer::on_message(const znet::TcpConnectionPtr &conn,

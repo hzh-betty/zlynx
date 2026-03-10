@@ -32,7 +32,7 @@ struct ProcessInfo {
 
 /**
  * @brief 守护进程工具类
- * 提供将进程转为守护进程的功能
+ * 提供守护进程启动、监控和单实例管理能力
  */
 class Daemon {
 public:
@@ -40,15 +40,6 @@ public:
    * @brief 主函数回调类型
    */
   using MainCallback = std::function<int(int argc, char **argv)>;
-
-  /**
-   * @brief 将当前进程转为守护进程
-   * @param work_dir 工作目录，默认为根目录
-   * @param close_std 是否关闭标准输入输出，默认true
-   * @return 成功返回0，失败返回-1
-   */
-  static int daemonize(const std::string &work_dir = "/",
-                       bool close_std = true);
 
   /**
    * @brief 启动守护进程（带子进程监控和自动重启）

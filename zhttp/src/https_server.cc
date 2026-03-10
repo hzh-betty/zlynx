@@ -56,7 +56,6 @@ void HttpsServer::handle_client(znet::TcpConnectionPtr conn) {
     ZHTTP_LOG_DEBUG("HTTPS connection closed: {}", c->name());
   });
 
-  // 连接建立
   conn->connect_established();
 
   // HTTP 解析和处理

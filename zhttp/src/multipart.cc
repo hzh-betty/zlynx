@@ -18,6 +18,7 @@ static inline std::string to_lower(std::string s) {
   return s;
 }
 
+// 就地裁剪首尾空白，便于解析头字段参数。
 static inline void trim(std::string &s) {
   auto is_space = [](unsigned char c) { return std::isspace(c) != 0; };
   while (!s.empty() && is_space(static_cast<unsigned char>(s.front()))) {
@@ -30,7 +31,7 @@ static inline void trim(std::string &s) {
 
 static bool extract_boundary(const std::string &content_type,
                              std::string &boundary) {
-  // Content-Type: multipart/form-data; boundary=----WebKitFormBoundary...
+  // 从 Content-Type 参数中提取 boundary，兼容带引号的写法。
   std::string ct = content_type;
   auto semi = ct.find(';');
   if (semi == std::string::npos) {
@@ -58,7 +59,7 @@ static bool extract_boundary(const std::string &content_type,
 static bool parse_content_disposition(const std::string &value,
                                       std::string &name,
                                       std::string &filename) {
-  // form-data; name="field"; filename="a.txt"
+  // 解析形如 form-data; name="field"; filename="a.txt" 的参数串。
   name.clear();
   filename.clear();
 
@@ -101,6 +102,7 @@ static bool parse_content_disposition(const std::string &value,
 static bool parse_part_headers(const std::string &headers_blob,
                                std::unordered_map<std::string, std::string>
                                    &headers_out) {
+  // multipart 每个 part 的头部仍是标准 HTTP 风格的 Key: Value 列表。
   headers_out.clear();
   size_t pos = 0;
   while (pos < headers_blob.size()) {
@@ -134,6 +136,7 @@ static bool parse_part_headers(const std::string &headers_blob,
 
 bool UploadedFile::save_to(const std::string &filepath,
                            std::string *error) const {
+  // 直接按二进制落盘，避免文本模式破坏上传内容。
   std::ofstream ofs(filepath.c_str(), std::ios::binary);
   if (!ofs) {
     if (error) {
@@ -153,6 +156,7 @@ bool UploadedFile::save_to(const std::string &filepath,
 
 std::string MultipartFormData::field(const std::string &key,
                                      const std::string &default_val) const {
+  // 表单字段按名字直接查找；未命中时返回调用方提供的默认值。
   auto it = fields_.find(key);
   if (it != fields_.end()) {
     return it->second;
@@ -161,6 +165,7 @@ std::string MultipartFormData::field(const std::string &key,
 }
 
 const UploadedFile *MultipartFormData::file(const std::string &field_name) const {
+  // 当前接口返回同名字段的第一个文件。
   for (const auto &f : files_) {
     if (f.field_name == field_name) {
       return &f;
@@ -175,6 +180,7 @@ MultipartFormData::ptr MultipartFormData::parse(const HttpRequest &request,
     error->clear();
   }
 
+  // 非 multipart 请求按“空结果”处理，调用方不需要区分异常和非该类型请求。
   std::string ct = request.content_type();
   if (to_lower(ct).find("multipart/form-data") == std::string::npos) {
     return std::make_shared<MultipartFormData>();
@@ -203,7 +209,7 @@ MultipartFormData::ptr MultipartFormData::parse(const HttpRequest &request,
   auto out = std::make_shared<MultipartFormData>();
 
   while (true) {
-    // 起始必须是 --boundary
+    // 每轮循环处理一个 part，当前位置应当落在 --boundary 上。
     if (body.compare(pos, dash_boundary.size(), dash_boundary) != 0) {
       break;
     }
@@ -262,7 +268,7 @@ MultipartFormData::ptr MultipartFormData::parse(const HttpRequest &request,
       part_ct = it_ct->second;
     }
 
-    // part body 直到 \r\n--boundary
+    // part 内容以“CRLF + 下一个 boundary”结束，正文本身允许包含任意二进制数据。
     std::string marker = "\r\n" + dash_boundary;
     size_t next = body.find(marker, pos);
     if (next == std::string::npos) {
@@ -277,6 +283,7 @@ MultipartFormData::ptr MultipartFormData::parse(const HttpRequest &request,
     pos = next + 2; // 指向 --boundary
 
     if (!filename.empty()) {
+      // 带 filename 的 part 视为文件上传。
       UploadedFile f;
       f.field_name = name;
       f.filename = filename;
@@ -284,6 +291,7 @@ MultipartFormData::ptr MultipartFormData::parse(const HttpRequest &request,
       f.data = std::move(part_data);
       out->files_.push_back(std::move(f));
     } else {
+      // 普通字段直接按 name 存储原始值。
       out->fields_[name] = std::move(part_data);
     }
 

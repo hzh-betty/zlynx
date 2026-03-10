@@ -105,9 +105,10 @@ void TcpServer::start_accept(Socket::ptr sock) {
           // 在 worker 线程中创建协程，使用 worker 线程的 SharedStack
           auto fiber = zcoroutine::FiberPool::get_instance().get_fiber(
               [self, conn = std::move(conn)]() mutable {
-                // 处理连接
                 self->handle_client(conn);
-                conn->connect_established();
+                if (conn->state() == TcpConnection::State::Connecting) {
+                  conn->connect_established();
+                }
               });
           fiber->resume();
           (void)zcoroutine::FiberPool::get_instance().return_fiber(fiber);
