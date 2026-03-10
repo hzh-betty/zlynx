@@ -183,6 +183,13 @@ public:
   HttpServerBuilder &daemon(bool enable = true);
 
   /**
+    * @brief 设置首页跳转目标
+    * @param path 首页目标路径或绝对 URL
+    * @return 当前 Builder 引用
+    */
+    HttpServerBuilder &homepage(const std::string &path);
+
+    /**
    * @brief 设置服务器名称
     * @param name Server 响应头里显示的名称
     * @return 当前 Builder 引用

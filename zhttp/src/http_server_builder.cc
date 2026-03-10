@@ -185,6 +185,11 @@ HttpServerBuilder &HttpServerBuilder::daemon(bool enable) {
   return *this;
 }
 
+HttpServerBuilder &HttpServerBuilder::homepage(const std::string &path) {
+  config_.homepage = path;
+  return *this;
+}
+
 HttpServerBuilder &HttpServerBuilder::server_name(const std::string &name) {
   config_.server_name = name;
   return *this;
@@ -227,6 +232,10 @@ std::shared_ptr<HttpServer> HttpServerBuilder::build() {
   }
 
   server->set_name(config_.server_name);
+
+  if (!config_.homepage.empty()) {
+    server->router().set_homepage(config_.homepage);
+  }
 
   // 从配置自动启用限流
   if (config_.rate_limit_enabled) {

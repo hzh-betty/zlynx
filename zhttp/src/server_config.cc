@@ -1,7 +1,6 @@
 #include "server_config.h"
 #include "zhttp_logger.h"
 
-#include <fstream>
 #include <sstream>
 #include <stdexcept>
 #include <toml.hpp>
@@ -45,6 +44,9 @@ ServerConfig ServerConfig::from_toml(const std::string &filepath) {
       }
       if (server.contains("name")) {
         config.server_name = toml::find<std::string>(server, "name");
+      }
+      if (server.contains("homepage")) {
+        config.homepage = toml::find<std::string>(server, "homepage");
       }
       if (server.contains("daemon")) {
         config.daemon = toml::find<bool>(server, "daemon");
@@ -174,6 +176,9 @@ ServerConfig ServerConfig::from_toml_string(const std::string &toml_content) {
       if (server.contains("name")) {
         config.server_name = toml::find<std::string>(server, "name");
       }
+      if (server.contains("homepage")) {
+        config.homepage = toml::find<std::string>(server, "homepage");
+      }
       if (server.contains("daemon")) {
         config.daemon = toml::find<bool>(server, "daemon");
       }
@@ -287,6 +292,12 @@ bool ServerConfig::validate() const {
     }
   }
 
+  if (homepage == "/" || homepage == "/home" || homepage == "home") {
+    ZHTTP_LOG_ERROR("Invalid homepage: {} would cause redirect loop",
+                    homepage);
+    return false;
+  }
+
   return true;
 }
 
@@ -299,6 +310,9 @@ std::string ServerConfig::to_toml_string() const {
   oss << "host = \"" << host << "\"\n";
   oss << "port = " << port << "\n";
   oss << "name = \"" << server_name << "\"\n";
+  if (!homepage.empty()) {
+    oss << "homepage = \"" << homepage << "\"\n";
+  }
   oss << "daemon = " << (daemon ? "true" : "false") << "\n\n";
 
   oss << "[threads]\n";

@@ -28,6 +28,21 @@ TEST_F(RouterComprehensiveTest, Static_RootPath) {
   EXPECT_EQ(resp.body_content(), "root");
 }
 
+TEST_F(RouterComprehensiveTest, Static_HomepageRedirect) {
+  router_.set_homepage("/landing");
+
+  HttpResponse root_resp;
+  EXPECT_TRUE(router_.route(make_request(HttpMethod::GET, "/"), root_resp));
+  EXPECT_EQ(root_resp.status_code(), HttpStatus::FOUND);
+  EXPECT_EQ(root_resp.headers().at("Location"), "/landing");
+
+  HttpResponse home_resp;
+  EXPECT_TRUE(
+      router_.route(make_request(HttpMethod::GET, "/home"), home_resp));
+  EXPECT_EQ(home_resp.status_code(), HttpStatus::FOUND);
+  EXPECT_EQ(home_resp.headers().at("Location"), "/landing");
+}
+
 TEST_F(RouterComprehensiveTest, Static_SimplePath) {
   router_.get("/api", [](const HttpRequest::ptr &, HttpResponse &resp) {
     resp.text("api");

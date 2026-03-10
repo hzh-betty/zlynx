@@ -30,6 +30,28 @@ TEST_F(RouterTest, StaticRouteMatch) {
   EXPECT_EQ(response.body_content(), "users");
 }
 
+TEST_F(RouterTest, HomepageRedirectsRootAndHome) {
+  router_.set_homepage("dashboard");
+
+  auto root_request = std::make_shared<HttpRequest>();
+  root_request->set_method(HttpMethod::GET);
+  root_request->set_path("/");
+
+  HttpResponse root_response;
+  EXPECT_TRUE(router_.route(root_request, root_response));
+  EXPECT_EQ(root_response.status_code(), HttpStatus::FOUND);
+  EXPECT_EQ(root_response.headers().at("Location"), "/dashboard");
+
+  auto home_request = std::make_shared<HttpRequest>();
+  home_request->set_method(HttpMethod::GET);
+  home_request->set_path("/home");
+
+  HttpResponse home_response;
+  EXPECT_TRUE(router_.route(home_request, home_response));
+  EXPECT_EQ(home_response.status_code(), HttpStatus::FOUND);
+  EXPECT_EQ(home_response.headers().at("Location"), "/dashboard");
+}
+
 TEST_F(RouterTest, ParamRouteMatch) {
   std::string captured_id;
   router_.get("/users/:id",

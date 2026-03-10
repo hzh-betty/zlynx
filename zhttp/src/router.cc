@@ -5,6 +5,14 @@
 
 namespace zhttp {
 
+namespace {
+
+bool is_homepage_alias(const std::string &path) {
+  return path == "/" || path == "/home" || path == "home";
+}
+
+} // namespace
+
 Router::Router() {
   // 默认 404 处理器保证即使用户没有显式配置，也能返回一个可读的兜底响应。
   RouterCallback default_404 = [](const HttpRequest::ptr & /*request*/,
@@ -110,6 +118,10 @@ void Router::del(const std::string &path, RouteHandler::ptr handler) {
   add_route(HttpMethod::DELETE, path, std::move(handler));
 }
 
+void Router::set_homepage(const std::string &homepage) {
+  homepage_ = normalize_homepage(homepage);
+}
+
 void Router::use(Middleware::ptr middleware) {
   if (middleware) {
     global_middlewares_.push_back(std::move(middleware));
@@ -206,10 +218,50 @@ Router::collect_group_middlewares(const std::string &path) const {
   return middlewares;
 }
 
+bool Router::should_redirect_to_homepage(const std::string &path,
+                                         HttpMethod method) const {
+  if (homepage_.empty()) {
+    return false;
+  }
+
+  if (method != HttpMethod::GET && method != HttpMethod::HEAD) {
+    return false;
+  }
+
+  if (!is_homepage_alias(path)) {
+    return false;
+  }
+
+  return !is_homepage_alias(homepage_);
+}
+
+std::string Router::normalize_homepage(const std::string &homepage) const {
+  if (homepage.empty()) {
+    return "";
+  }
+
+  if (homepage[0] == '/' || homepage.find("://") != std::string::npos) {
+    return homepage;
+  }
+
+  return "/" + homepage;
+}
+
 RouteContext Router::find_route(const std::string &path, HttpMethod method) {
   RouteContext ctx;
 
   ZHTTP_LOG_DEBUG("Router::find_route {} {}", method_to_string(method), path);
+
+  if (should_redirect_to_homepage(path, method)) {
+    ctx.found = true;
+    std::string target = homepage_;
+    ctx.handler = RouteHandlerWrapper(
+        [target](const HttpRequest::ptr &, HttpResponse &response) {
+          response.redirect(target);
+        });
+    ZHTTP_LOG_DEBUG("Homepage redirect {} -> {}", path, target);
+    return ctx;
+  }
 
   // 第一层先查静态路由。绝大多数高频接口通常都是固定路径，这里最省成本。
   auto static_it = static_routes_.find(path);

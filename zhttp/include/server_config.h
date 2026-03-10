@@ -3,7 +3,6 @@
 
 #include <cstdint>
 #include <string>
-#include <vector>
 
 namespace zhttp {
 
@@ -39,6 +38,7 @@ struct ServerConfig {
 
   // 服务器行为配置。
   std::string server_name = "zhttp/1.0";
+  std::string homepage;
   bool daemon = false;
 
   // 日志配置。

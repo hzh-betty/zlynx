@@ -147,6 +147,21 @@ public:
   void del(const std::string &path, RouteHandler::ptr handler);
 
   /**
+   * @brief 设置首页跳转目标
+   * @param homepage 首页目标路径或绝对 URL
+   * @details
+   * 设置后，访问 /、/home 或 home 的 GET/HEAD 请求会自动重定向到该目标。
+   * 若传入的是不带前导 / 的站内路径，例如 dashboard，会自动规范化为 /dashboard。
+   */
+  void set_homepage(const std::string &homepage);
+
+  /**
+   * @brief 获取当前首页跳转目标
+   * @return 当前已配置的目标；空串表示未启用
+   */
+  const std::string &homepage() const { return homepage_; }
+
+  /**
    * @brief 添加全局中间件
     * @param middleware 中间件对象
    */
@@ -266,6 +281,17 @@ private:
   std::vector<Middleware::ptr>
   collect_group_middlewares(const std::string &path) const;
 
+  /**
+   * @brief 判断当前请求是否应该触发首页跳转
+   */
+  bool should_redirect_to_homepage(const std::string &path,
+                                   HttpMethod method) const;
+
+  /**
+   * @brief 规范化首页跳转目标
+   */
+  std::string normalize_homepage(const std::string &homepage) const;
+
 private:
   // 静态路由：路径完全匹配时直接命中哈希表。
   std::unordered_map<std::string, StaticRouteEntry> static_routes_;
@@ -287,6 +313,9 @@ private:
 
   // 路由未命中时使用的兜底处理器。
   RouteHandlerWrapper not_found_handler_;
+
+  // 访问 / 或 /home 时的跳转目标；空串表示关闭该功能。
+  std::string homepage_;
 };
 
 } // namespace zhttp
