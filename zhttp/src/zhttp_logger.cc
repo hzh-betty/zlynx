@@ -2,32 +2,26 @@
 
 #include "logger.h"
 #include "sink.h"
+#include "znet_logger.h"
 
 namespace zhttp {
 
-namespace {
-// 静态日志器指针，延迟初始化
-zlog::Logger::ptr g_logger;
-} // namespace
-
 void init_logger(zlog::LogLevel::value level) {
+  znet::init_logger(level); // 同时初始化 znet 日志系统
+
   // 构建 zhttp 专属日志器
   zlog::LocalLoggerBuilder builder;
-  builder.buildLoggerName("zhttp");
+  builder.buildLoggerName("zhttp_logger");
   builder.buildLoggerLevel(level);
   builder.buildLoggerType(zlog::LoggerType::LOGGER_SYNC);
   builder.buildLoggerFormatter("[%d{%H:%M:%S}][%c][%p]%T%m%n");
   builder.buildLoggerSink<zlog::StdOutSink>();
-
-  g_logger = builder.build();
+  builder.build();
 }
 
 zlog::Logger *get_logger() {
-  // 如果未初始化，使用默认配置初始化
-  if (!g_logger) {
-    init_logger();
-  }
-  return g_logger.get();
+ static zlog::Logger::ptr logger = zlog::getLogger("zhttp_logger");
+  return logger.get();
 }
 
 } // namespace zhttp

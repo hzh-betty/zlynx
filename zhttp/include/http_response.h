@@ -20,8 +20,6 @@ public:
 
   HttpResponse();
 
-  // ===================== 链式调用设置方法 =====================
-
   /**
    * @brief 设置状态码
    * @param status HTTP 状态码
@@ -65,8 +63,6 @@ public:
    */
   HttpResponse &body(std::string &&body);
 
-  // ===================== 便捷方法 =====================
-
   /**
    * @brief 返回 JSON 响应
    * @param json_str JSON 字符串
@@ -97,8 +93,6 @@ public:
   HttpResponse &redirect(const std::string &url,
                          HttpStatus redirect_status = HttpStatus::FOUND);
 
-  // ===================== Getters =====================
-
   /**
    * @brief 获取状态码
    */
@@ -124,8 +118,6 @@ public:
    */
   bool is_keep_alive() const { return keep_alive_; }
 
-  // ===================== 其他方法 =====================
-
   /**
    * @brief 设置 Keep-Alive
    */
@@ -142,7 +134,6 @@ public:
    */
   std::string serialize() const;
 
-  // ===================== Cookie / Session Helper =====================
 
   struct CookieOptions {
     CookieOptions()

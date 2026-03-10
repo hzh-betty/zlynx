@@ -278,12 +278,14 @@ std::shared_ptr<HttpServer> HttpServerBuilder::build() {
   }
 
   // 绑定地址并开始监听
-  auto addrs =
-      znet::Address::lookup(config_.host + ":" + std::to_string(config_.port));
+  auto addrs = znet::Address::lookup(config_.host, config_.port);
   if (addrs.empty()) {
-    throw std::runtime_error("Failed to resolve address: " + config_.host);
+    throw std::runtime_error("Failed to resolve address: " + config_.host +
+                             ":" + std::to_string(config_.port));
   }
-  server->bind(addrs[0]);
+  if (!server->bind(addrs[0])) {
+    throw std::runtime_error("Failed to bind: " + addrs[0]->to_string());
+  }
 
   return server;
 }
@@ -292,9 +294,6 @@ void HttpServerBuilder::run() {
   auto server = build();
 
   ZHTTP_LOG_INFO("Server starting on {}:{}", config_.host, config_.port);
-
-  // 启动 IO 调度器
-  io_scheduler_->start();
 
   // 开始接受连接
   server->start();
