@@ -60,8 +60,18 @@ HttpServerBuilder::from_config(const std::string &config_path) {
   return *this;
 }
 
-HttpServerBuilder &HttpServerBuilder::from_config(const ServerConfig &config) {
-  config_ = config;
+HttpServerBuilder &HttpServerBuilder::read_timeout(uint64_t timeout_ms) {
+  config_.read_timeout = timeout_ms;
+  return *this;
+}
+
+HttpServerBuilder &HttpServerBuilder::write_timeout(uint64_t timeout_ms) {
+  config_.write_timeout = timeout_ms;
+  return *this;
+}
+
+HttpServerBuilder &HttpServerBuilder::keepalive_timeout(uint64_t timeout_ms) {
+  config_.keepalive_timeout = timeout_ms;
   return *this;
 }
 
@@ -232,6 +242,9 @@ std::shared_ptr<HttpServer> HttpServerBuilder::build() {
   }
 
   server->set_name(config_.server_name);
+  server->set_recv_timeout(config_.read_timeout);
+  server->set_write_timeout(config_.write_timeout);
+  server->set_keepalive_timeout(config_.keepalive_timeout);
 
   if (!config_.homepage.empty()) {
     server->router().set_homepage(config_.homepage);

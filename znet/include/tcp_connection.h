@@ -5,6 +5,7 @@
 #include "buff.h"
 #include "noncopyable.h"
 #include "socket.h"
+#include "timer.h"
 #include <atomic>
 #include <functional>
 #include <memory>
@@ -153,6 +154,27 @@ public:
   void set_keep_alive(bool on);
 
   /**
+   * @brief 设置读取超时时间（毫秒）
+   */
+  void set_read_timeout(uint64_t timeout_ms);
+
+  /**
+   * @brief 设置写超时时间（毫秒）
+   */
+  void set_write_timeout(uint64_t timeout_ms);
+
+  /**
+   * @brief 设置 Keep-Alive 空闲超时时间（毫秒）
+   */
+  void set_keepalive_timeout(uint64_t timeout_ms);
+
+  /**
+   * @brief 在一轮响应准备完成后切换连接等待策略
+   * @param keep_alive 是否继续等待下一次请求
+   */
+  void finish_response(bool keep_alive);
+
+  /**
    * @brief 可读事件处理
    */
   void handle_read();
@@ -218,6 +240,14 @@ private:
    */
   void force_close_in_loop();
 
+  void refresh_read_timer();
+  void arm_write_timer();
+  void cancel_read_timer();
+  void cancel_write_timer();
+  void cancel_keepalive_timer();
+  void arm_keepalive_timer_if_needed();
+  void close_for_timeout(const char *reason);
+
 private:
   std::string name_;         // 连接名称
   std::atomic<State> state_; // 连接状态（原子变量保证线程安全）
@@ -230,6 +260,15 @@ private:
   Buffer input_buffer_;                             // 输入缓冲区
   Buffer output_buffer_;                            // 输出缓冲区
   mutable zcoroutine::Spinlock output_buffer_lock_; // 输出缓冲区锁
+  mutable zcoroutine::Spinlock timeout_lock_;       // timeout 状态锁
+
+  uint64_t read_timeout_ms_ = 0;
+  uint64_t write_timeout_ms_ = 0;
+  uint64_t keepalive_timeout_ms_ = 0;
+  bool keepalive_waiting_ = false;
+  zcoroutine::Timer::ptr read_timer_;
+  zcoroutine::Timer::ptr write_timer_;
+  zcoroutine::Timer::ptr keepalive_timer_;
 
   // 回调函数
   ConnectionCallback connection_callback_;

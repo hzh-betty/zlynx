@@ -67,6 +67,16 @@ public:
   uint64_t recv_timeout() const { return recv_timeout_; }
 
   /**
+   * @brief 返回写超时时间(毫秒)
+   */
+  uint64_t write_timeout() const { return write_timeout_; }
+
+  /**
+   * @brief 返回 Keep-Alive 空闲超时时间(毫秒)
+   */
+  uint64_t keepalive_timeout() const { return keepalive_timeout_; }
+
+  /**
    * @brief 返回服务器名称
    */
   std::string name() const { return name_; }
@@ -75,6 +85,16 @@ public:
    * @brief 设置读取超时时间(毫秒)
    */
   void set_recv_timeout(uint64_t v) { recv_timeout_ = v; }
+
+  /**
+   * @brief 设置写超时时间(毫秒)
+   */
+  void set_write_timeout(uint64_t v) { write_timeout_ = v; }
+
+  /**
+   * @brief 设置 Keep-Alive 空闲超时时间(毫秒)
+   */
+  void set_keepalive_timeout(uint64_t v) { keepalive_timeout_ = v; }
 
   /**
    * @brief 设置服务器名称
@@ -110,6 +130,8 @@ protected:
   zcoroutine::IoScheduler::ptr
       accept_worker_; // 服务器 Socket 接收连接的调度器（默认单线程）
   uint64_t recv_timeout_;     // 接收超时时间(毫秒)
+  uint64_t write_timeout_;    // 发送超时时间(毫秒)
+  uint64_t keepalive_timeout_; // Keep-Alive 空闲超时时间(毫秒)
   std::string name_;          // 服务器名称
   std::string type_;          // 服务器类型
   std::atomic<bool> is_stop_; // 服务是否停止

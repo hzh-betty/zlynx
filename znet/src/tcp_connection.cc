@@ -3,7 +3,6 @@
 #include "scheduler.h"
 #include "znet_logger.h"
 #include <errno.h>
-#include <mutex>
 #include <string.h>
 
 namespace znet {
@@ -51,9 +50,14 @@ void TcpConnection::connect_established() {
   set_state(State::Connected);
 
   // 设置Socket为非阻塞模式
+  // 连接对象一旦进入 Connected，后续所有收发都遵循“非阻塞 + epoll 驱动”模型。
+  // 即使底层 hook 能帮我们处理部分阻塞语义，这里仍然明确设置为 non-blocking，
+  // 以保证 ET 模式下 read/write 循环的行为可预测。
   socket_->set_non_blocking(true);
 
   // 注册读事件到IoScheduler
+  // 这里只注册“首次读事件”。后续每次 handle_read() 处理完一轮事件后，
+  // 都会手动 re-arm 下一次读事件。这是当前 ET 模式下的固定套路。
   if (io_scheduler_) {
     auto self = shared_from_this();
     io_scheduler_->add_event(socket_->fd(), zcoroutine::Channel::kRead,
@@ -76,6 +80,10 @@ void TcpConnection::connect_established() {
 
   ZNET_LOG_INFO("TcpConnection::connect_established [{}] fd={}", name_,
                 socket_->fd());
+
+  // 连接刚建立时，还没有任何请求字节进来。
+  // 因此 read_timeout 的第一段语义是：客户端在建连后多久必须开始说话。
+  refresh_read_timer();
 }
 
 void TcpConnection::send(const void *data, size_t len) {
@@ -116,6 +124,52 @@ void TcpConnection::force_close() {
 void TcpConnection::set_tcp_no_delay(bool on) { socket_->set_tcp_nodelay(on); }
 
 void TcpConnection::set_keep_alive(bool on) { socket_->set_keep_alive(on); }
+
+void TcpConnection::set_read_timeout(uint64_t timeout_ms) {
+  read_timeout_ms_ = timeout_ms;
+  if (timeout_ms == 0) {
+    cancel_read_timer();
+  }
+}
+
+void TcpConnection::set_write_timeout(uint64_t timeout_ms) {
+  write_timeout_ms_ = timeout_ms;
+  if (timeout_ms == 0) {
+    cancel_write_timer();
+  }
+}
+
+void TcpConnection::set_keepalive_timeout(uint64_t timeout_ms) {
+  keepalive_timeout_ms_ = timeout_ms;
+  if (timeout_ms == 0) {
+    cancel_keepalive_timer();
+  }
+}
+
+void TcpConnection::finish_response(bool keep_alive) {
+  // finish_response() 是协议层对连接层的一个“状态切换通知”：
+  // 当前这一轮请求已经处理完，连接接下来要么关闭，要么进入 keep-alive 空闲期。
+  // 这里不负责真正 send 响应数据，send 已经先做了；这里负责的是 timeout 状态机切换。
+
+  // 一轮请求已经完成，因此本次请求对应的 read_timeout 计时结束。
+  cancel_read_timer();
+
+  {
+    std::lock_guard<zcoroutine::Spinlock> lock(timeout_lock_);
+    keepalive_waiting_ = keep_alive;
+  }
+
+  if (!keep_alive) {
+    // 响应声明不再保持连接，则也不需要 keepalive 空闲计时器。
+    cancel_keepalive_timer();
+    return;
+  }
+
+  // keep_alive=true 时，并不是立即“重新进入 read timeout”，而是先进入
+  // keepalive 空闲期：等待下一个请求到达；若一直没有新请求，则按
+  // keepalive_timeout 主动回收连接。
+  arm_keepalive_timer_if_needed();
+}
 
 void TcpConnection::handle_read() {
   if (!connected()) {
@@ -166,6 +220,19 @@ void TcpConnection::handle_read() {
   }
 
   if (total > 0 && message_callback_) {
+    // 一旦读到了新数据，说明连接已经离开 keep-alive idle 状态。
+    // 因此要先取消 keepalive timer，并把状态切回“正在处理请求”。
+    cancel_keepalive_timer();
+    {
+      std::lock_guard<zcoroutine::Spinlock> lock(timeout_lock_);
+      keepalive_waiting_ = false;
+    }
+
+    // 读取阶段有进展，重新刷新 read timeout。
+    // 对 HTTP 来说，这里的语义是：当前请求还在持续到达，就继续给它时间；
+    // 如果后续长时间没有任何新字节，则判定请求读取超时。
+    refresh_read_timer();
+
     // 直接在当前事件回调里执行，避免额外调度/锁竞争/动态分配。
     auto self = shared_from_this();
     message_callback_(self, &input_buffer_);
@@ -204,6 +271,9 @@ void TcpConnection::handle_write() {
     }
 
     if (remaining == 0) {
+      // 输出缓冲区已经刷空，说明本轮 write timeout 风险解除。
+      cancel_write_timer();
+
       // 数据全部发送完成，取消写事件
       if (io_scheduler_) {
         io_scheduler_->del_event(socket_->fd(), zcoroutine::Channel::kWrite);
@@ -223,12 +293,20 @@ void TcpConnection::handle_write() {
 
       if (state_.load(std::memory_order_acquire) == State::Disconnecting) {
         shutdown_in_loop();
+      } else {
+        // 响应真正发完后，连接才可能进入 keep-alive idle 状态。
+        // 如果缓冲区还有待写数据，就不能算“空闲”。
+        arm_keepalive_timer_if_needed();
       }
       return;
     }
 
     if (n > 0) {
       wrote_any = true;
+      // 有写进展就继续续命 write timer。
+      // write_timeout 的语义不是“整个响应总耗时”，而是“输出缓冲区长时间
+      // 没有刷空/没有进展”。
+      arm_write_timer();
       continue;
     }
 
@@ -266,6 +344,9 @@ void TcpConnection::handle_close() {
                 state_to_string(current));
 
   set_state(State::Disconnected);
+  cancel_read_timer();
+  cancel_write_timer();
+  cancel_keepalive_timer();
 
   // 关闭 socket
   socket_->close();
@@ -326,7 +407,10 @@ void TcpConnection::send_in_loop(const void *data, size_t len) {
 
   // 如果还有数据未发送完，写入输出缓冲区
   if (!fault_error && remaining > 0) {
+    // 进入 output_buffer 说明这次 send 已经从“同步立即写完”退化成
+    // “等待后续可写事件慢慢刷出”。从这里开始 write timeout 才有意义。
     output_buffer_.append(static_cast<const char *>(data) + n_wrote, remaining);
+    arm_write_timer();
 
     // 注册写事件
     if (io_scheduler_) {
@@ -354,6 +438,139 @@ void TcpConnection::force_close_in_loop() {
   if (current == State::Connected || current == State::Disconnecting) {
     handle_close();
   }
+}
+
+void TcpConnection::refresh_read_timer() {
+  if (!io_scheduler_ || read_timeout_ms_ == 0 || !connected()) {
+    return;
+  }
+
+  // 连接层的 timer 统一挂在所属 io_scheduler_ 上，这样回调会回到正确的
+  // 事件线程里执行，不需要额外跨线程同步。
+  std::lock_guard<zcoroutine::Spinlock> lock(timeout_lock_);
+  if (read_timer_) {
+    // 已存在 timer 时直接 reset，相当于“读取还有进展，延后超时点”。
+    read_timer_->reset(read_timeout_ms_);
+    return;
+  }
+
+  std::weak_ptr<TcpConnection> weak_self = shared_from_this();
+  read_timer_ = io_scheduler_->add_timer(read_timeout_ms_, [weak_self]() {
+    if (auto self = weak_self.lock()) {
+      self->close_for_timeout("read");
+    }
+  });
+}
+
+void TcpConnection::arm_write_timer() {
+  if (!io_scheduler_ || write_timeout_ms_ == 0 || !connected()) {
+    return;
+  }
+
+  // write timeout 只在“已经存在待发送输出数据”时才会被 arm。
+  // 如果一个响应可以一次 send 完，根本不会走到这里。
+  std::lock_guard<zcoroutine::Spinlock> lock(timeout_lock_);
+  if (write_timer_) {
+    write_timer_->reset(write_timeout_ms_);
+    return;
+  }
+
+  std::weak_ptr<TcpConnection> weak_self = shared_from_this();
+  write_timer_ = io_scheduler_->add_timer(write_timeout_ms_, [weak_self]() {
+    if (auto self = weak_self.lock()) {
+      self->close_for_timeout("write");
+    }
+  });
+}
+
+void TcpConnection::cancel_read_timer() {
+  std::lock_guard<zcoroutine::Spinlock> lock(timeout_lock_);
+  if (!read_timer_) {
+    return;
+  }
+  read_timer_->cancel();
+  read_timer_.reset();
+}
+
+void TcpConnection::cancel_write_timer() {
+  std::lock_guard<zcoroutine::Spinlock> lock(timeout_lock_);
+  if (!write_timer_) {
+    return;
+  }
+  write_timer_->cancel();
+  write_timer_.reset();
+}
+
+void TcpConnection::cancel_keepalive_timer() {
+  std::lock_guard<zcoroutine::Spinlock> lock(timeout_lock_);
+  if (!keepalive_timer_) {
+    return;
+  }
+  keepalive_timer_->cancel();
+  keepalive_timer_.reset();
+}
+
+void TcpConnection::arm_keepalive_timer_if_needed() {
+  if (!io_scheduler_ || keepalive_timeout_ms_ == 0 || !connected()) {
+    return;
+  }
+
+  {
+    std::lock_guard<zcoroutine::Spinlock> buffer_lock(output_buffer_lock_);
+    if (output_buffer_.readable_bytes() > 0) {
+      // 仍有待发送数据时，连接处于“写出中”而不是“keep-alive idle”。
+      return;
+    }
+  }
+
+  std::lock_guard<zcoroutine::Spinlock> lock(timeout_lock_);
+  if (!keepalive_waiting_) {
+    // 只有协议层明确把连接切到 keep-alive waiting 状态，这个计时器才允许启动。
+    return;
+  }
+
+  if (keepalive_timer_) {
+    keepalive_timer_->reset(keepalive_timeout_ms_);
+    return;
+  }
+
+  std::weak_ptr<TcpConnection> weak_self = shared_from_this();
+  keepalive_timer_ =
+      io_scheduler_->add_timer(keepalive_timeout_ms_, [weak_self]() {
+        if (auto self = weak_self.lock()) {
+          self->close_for_timeout("keepalive");
+        }
+      });
+}
+
+void TcpConnection::close_for_timeout(const char *reason) {
+  if (!connected()) {
+    return;
+  }
+
+  // timeout 回调真正执行时，连接状态可能已经发生变化。
+  // 因此这里要做“二次确认”，避免 timer 触发瞬间误关一个其实已经恢复正常的连接。
+  bool should_close = true;
+  if (strcmp(reason, "write") == 0) {
+    std::lock_guard<zcoroutine::Spinlock> buffer_lock(output_buffer_lock_);
+    if (output_buffer_.readable_bytes() == 0) {
+      // 写缓冲区已经清空，说明 write timeout 条件已经自然消失。
+      return;
+    }
+  } else if (strcmp(reason, "keepalive") == 0) {
+    std::lock_guard<zcoroutine::Spinlock> lock(timeout_lock_);
+    if (!keepalive_waiting_) {
+      // 连接已经重新进入请求处理态，不应该再按 keepalive timeout 关闭。
+      should_close = false;
+    }
+  }
+
+  if (!should_close) {
+    return;
+  }
+
+  ZNET_LOG_WARN("TcpConnection [{}] closed by {} timeout", name_, reason);
+  force_close();
 }
 
 } // namespace znet

@@ -32,13 +32,27 @@ public:
   HttpServerBuilder &from_config(const std::string &config_path);
 
   /**
-   * @brief 从 ServerConfig 对象初始化
-    * @param config 已准备好的配置对象
+    * @brief 设置读取超时
+    * @param timeout_ms 读取超时时间，单位毫秒；0 表示关闭
     * @return 当前 Builder 引用
-   */
-  HttpServerBuilder &from_config(const ServerConfig &config);
+    */
+    HttpServerBuilder &read_timeout(uint64_t timeout_ms);
 
-  // ========== 链式配置 API ==========
+    /**
+    * @brief 设置写出超时
+    * @param timeout_ms 写出超时时间，单位毫秒；0 表示关闭
+    * @return 当前 Builder 引用
+    */
+    HttpServerBuilder &write_timeout(uint64_t timeout_ms);
+
+    /**
+    * @brief 设置 Keep-Alive 空闲超时
+    * @param timeout_ms 空闲超时时间，单位毫秒；0 表示关闭
+    * @return 当前 Builder 引用
+    */
+    HttpServerBuilder &keepalive_timeout(uint64_t timeout_ms);
+
+    // ========== 链式配置 API ==========
 
   /**
    * @brief 设置监听地址

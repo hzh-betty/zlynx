@@ -51,12 +51,17 @@ void HttpServer::on_message(const znet::TcpConnectionPtr &conn,
 
     if (result == ParseResult::COMPLETE) {
       // 一条完整请求已经拿到，可以交给业务层处理。
-      handle_request(conn, parser.request());
+      const bool keep_alive = handle_request(conn, parser.request());
 
       // 客户端如果不希望保持连接，就在当前响应发完后主动关闭。
-      if (!parser.request()->is_keep_alive()) {
+      if (!keep_alive) {
+        conn->finish_response(false);
         conn->shutdown();
         return;
+      }
+
+      if (buffer->readable_bytes() == 0) {
+        conn->finish_response(true);
       }
 
       // 连接仍然保持时，继续尝试解析缓冲区里后续可能已经到达的请求。
@@ -79,7 +84,7 @@ void HttpServer::on_message(const znet::TcpConnectionPtr &conn,
   }
 }
 
-void HttpServer::handle_request(const znet::TcpConnectionPtr &conn,
+bool HttpServer::handle_request(const znet::TcpConnectionPtr &conn,
                                 const HttpRequest::ptr &request) {
   ZHTTP_LOG_DEBUG("{} {} {}", method_to_string(request->method()),
                   request->path(), version_to_string(request->version()));
@@ -104,6 +109,8 @@ void HttpServer::handle_request(const znet::TcpConnectionPtr &conn,
 
   ZHTTP_LOG_DEBUG("Response: {} {}", static_cast<int>(response.status_code()),
                   status_to_string(response.status_code()));
+
+  return response.is_keep_alive();
 }
 
 } // namespace zhttp

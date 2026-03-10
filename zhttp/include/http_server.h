@@ -71,7 +71,7 @@ private:
    * @details
    * 该阶段会补全请求上下文、构造响应对象、调用路由器，然后把序列化后的响应发送回客户端。
    */
-  void handle_request(const znet::TcpConnectionPtr &conn,
+  bool handle_request(const znet::TcpConnectionPtr &conn,
                       const HttpRequest::ptr &request);
 
 private:

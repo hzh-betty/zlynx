@@ -1,11 +1,164 @@
 #include "server_config.h"
 #include "zhttp_logger.h"
 
-#include <sstream>
 #include <stdexcept>
 #include <toml.hpp>
 
 namespace zhttp {
+
+namespace {
+
+uint16_t parse_port(const toml::value &table, const char *key) {
+  const auto value = toml::find<int64_t>(table, key);
+  if (value < 0 || value > 65535) {
+    throw std::runtime_error(std::string(key) + " must be in range [0, 65535]");
+  }
+  return static_cast<uint16_t>(value);
+}
+
+size_t parse_size(const toml::value &table, const char *key) {
+  const auto value = toml::find<int64_t>(table, key);
+  if (value < 0) {
+    throw std::runtime_error(std::string(key) + " must be >= 0");
+  }
+  return static_cast<size_t>(value);
+}
+
+uint64_t parse_timeout_ms(const toml::value &table, const char *key) {
+  const auto value = toml::find<int64_t>(table, key);
+  if (value < 0) {
+    throw std::runtime_error(std::string(key) + " must be >= 0");
+  }
+  return static_cast<uint64_t>(value);
+}
+
+void parse_server_section(const toml::value &data, ServerConfig &config) {
+  if (!data.contains("server")) {
+    return;
+  }
+
+  auto &server = toml::find(data, "server");
+  if (server.contains("host")) {
+    config.host = toml::find<std::string>(server, "host");
+  }
+  if (server.contains("port")) {
+    config.port = parse_port(server, "port");
+  }
+  if (server.contains("name")) {
+    config.server_name = toml::find<std::string>(server, "name");
+  }
+  if (server.contains("homepage")) {
+    config.homepage = toml::find<std::string>(server, "homepage");
+  }
+  if (server.contains("daemon")) {
+    config.daemon = toml::find<bool>(server, "daemon");
+  }
+}
+
+void parse_threads_section(const toml::value &data, ServerConfig &config) {
+  if (!data.contains("threads")) {
+    return;
+  }
+
+  auto &threads = toml::find(data, "threads");
+  if (threads.contains("count")) {
+    config.num_threads = parse_size(threads, "count");
+  }
+  if (threads.contains("stack_mode")) {
+    std::string mode = toml::find<std::string>(threads, "stack_mode");
+    config.stack_mode = string_to_stack_mode(mode);
+  }
+}
+
+void parse_ssl_section(const toml::value &data, ServerConfig &config) {
+  if (!data.contains("ssl")) {
+    return;
+  }
+
+  auto &ssl = toml::find(data, "ssl");
+  if (ssl.contains("enabled")) {
+    config.enable_https = toml::find<bool>(ssl, "enabled");
+  }
+  if (ssl.contains("cert_file")) {
+    config.cert_file = toml::find<std::string>(ssl, "cert_file");
+  }
+  if (ssl.contains("key_file")) {
+    config.key_file = toml::find<std::string>(ssl, "key_file");
+  }
+}
+
+void parse_logging_section(const toml::value &data, ServerConfig &config) {
+  if (!data.contains("logging")) {
+    return;
+  }
+
+  auto &logging = toml::find(data, "logging");
+  if (logging.contains("level")) {
+    config.log_level = toml::find<std::string>(logging, "level");
+  }
+  if (logging.contains("file")) {
+    config.log_file = toml::find<std::string>(logging, "file");
+  }
+}
+
+void parse_timeout_section(const toml::value &data, ServerConfig &config) {
+  if (!data.contains("timeout")) {
+    return;
+  }
+
+  auto &timeout = toml::find(data, "timeout");
+  if (timeout.contains("read")) {
+    config.read_timeout = parse_timeout_ms(timeout, "read");
+  }
+  if (timeout.contains("write")) {
+    config.write_timeout = parse_timeout_ms(timeout, "write");
+  }
+  if (timeout.contains("keepalive")) {
+    config.keepalive_timeout = parse_timeout_ms(timeout, "keepalive");
+  }
+}
+
+void reject_unsupported_sections(const toml::value &data) {
+  if (data.contains("buffer")) {
+    throw std::runtime_error(
+        "[buffer] section is no longer supported; remove it from the TOML "
+        "configuration");
+  }
+}
+
+void parse_rate_limit_section(const toml::value &data, ServerConfig &config) {
+  if (!data.contains("rate_limit")) {
+    return;
+  }
+
+  auto &rl = toml::find(data, "rate_limit");
+  if (rl.contains("enabled")) {
+    config.rate_limit_enabled = toml::find<bool>(rl, "enabled");
+  }
+  if (rl.contains("type")) {
+    config.rate_limit_type = toml::find<std::string>(rl, "type");
+  }
+  if (rl.contains("capacity")) {
+    config.rate_limit_capacity = parse_size(rl, "capacity");
+  }
+  if (rl.contains("time_unit") ) {
+    config.rate_limit_time_unit = toml::find<std::string>(rl, "time_unit");
+  }
+}
+
+ServerConfig parse_server_config(const toml::value &data) {
+  ServerConfig config;
+  parse_server_section(data, config);
+  parse_threads_section(data, config);
+  parse_ssl_section(data, config);
+  parse_logging_section(data, config);
+  parse_timeout_section(data, config);
+  reject_unsupported_sections(data);
+  parse_rate_limit_section(data, config);
+  return config;
+}
+
+} // namespace
 
 StackMode string_to_stack_mode(const std::string &str) {
   if (str == "shared" || str == "SHARED") {
@@ -29,120 +182,7 @@ ServerConfig ServerConfig::from_toml(const std::string &filepath) {
 
   try {
     auto data = toml::parse(filepath);
-    ServerConfig config;
-
-    // [server] 部分
-    if (data.contains("server")) {
-      auto &server = toml::find(data, "server");
-
-      if (server.contains("host")) {
-        config.host = toml::find<std::string>(server, "host");
-      }
-      if (server.contains("port")) {
-        config.port =
-            static_cast<uint16_t>(toml::find<int64_t>(server, "port"));
-      }
-      if (server.contains("name")) {
-        config.server_name = toml::find<std::string>(server, "name");
-      }
-      if (server.contains("homepage")) {
-        config.homepage = toml::find<std::string>(server, "homepage");
-      }
-      if (server.contains("daemon")) {
-        config.daemon = toml::find<bool>(server, "daemon");
-      }
-    }
-
-    // [threads] 部分
-    if (data.contains("threads")) {
-      auto &threads = toml::find(data, "threads");
-
-      if (threads.contains("count")) {
-        config.num_threads =
-            static_cast<size_t>(toml::find<int64_t>(threads, "count"));
-      }
-      if (threads.contains("stack_mode")) {
-        std::string mode = toml::find<std::string>(threads, "stack_mode");
-        config.stack_mode = string_to_stack_mode(mode);
-      }
-    }
-
-    // [ssl] 部分
-    if (data.contains("ssl")) {
-      auto &ssl = toml::find(data, "ssl");
-
-      if (ssl.contains("enabled")) {
-        config.enable_https = toml::find<bool>(ssl, "enabled");
-      }
-      if (ssl.contains("cert_file")) {
-        config.cert_file = toml::find<std::string>(ssl, "cert_file");
-      }
-      if (ssl.contains("key_file")) {
-        config.key_file = toml::find<std::string>(ssl, "key_file");
-      }
-    }
-
-    // [logging] 部分
-    if (data.contains("logging")) {
-      auto &logging = toml::find(data, "logging");
-
-      if (logging.contains("level")) {
-        config.log_level = toml::find<std::string>(logging, "level");
-      }
-      if (logging.contains("file")) {
-        config.log_file = toml::find<std::string>(logging, "file");
-      }
-    }
-
-    // [timeout] 部分
-    if (data.contains("timeout")) {
-      auto &timeout = toml::find(data, "timeout");
-
-      if (timeout.contains("read")) {
-        config.read_timeout =
-            static_cast<uint64_t>(toml::find<int64_t>(timeout, "read"));
-      }
-      if (timeout.contains("write")) {
-        config.write_timeout =
-            static_cast<uint64_t>(toml::find<int64_t>(timeout, "write"));
-      }
-      if (timeout.contains("keepalive")) {
-        config.keepalive_timeout =
-            static_cast<uint64_t>(toml::find<int64_t>(timeout, "keepalive"));
-      }
-    }
-
-    // [buffer] 部分
-    if (data.contains("buffer")) {
-      auto &buffer = toml::find(data, "buffer");
-
-      if (buffer.contains("max_body_size")) {
-        config.max_body_size =
-            static_cast<size_t>(toml::find<int64_t>(buffer, "max_body_size"));
-      }
-      if (buffer.contains("size")) {
-        config.buffer_size =
-            static_cast<size_t>(toml::find<int64_t>(buffer, "size"));
-      }
-    }
-
-    // [rate_limit] 部分
-    if (data.contains("rate_limit")) {
-      auto &rl = toml::find(data, "rate_limit");
-      if (rl.contains("enabled")) {
-        config.rate_limit_enabled = toml::find<bool>(rl, "enabled");
-      }
-      if (rl.contains("type")) {
-        config.rate_limit_type = toml::find<std::string>(rl, "type");
-      }
-      if (rl.contains("capacity")) {
-        config.rate_limit_capacity =
-            static_cast<size_t>(toml::find<int64_t>(rl, "capacity"));
-      }
-      if (rl.contains("time_unit")) {
-        config.rate_limit_time_unit = toml::find<std::string>(rl, "time_unit");
-      }
-    }
+    ServerConfig config = parse_server_config(data);
 
     ZHTTP_LOG_INFO("Config loaded: {}:{}, threads={}, stack_mode={}",
                    config.host, config.port, config.num_threads,
@@ -154,119 +194,6 @@ ServerConfig ServerConfig::from_toml(const std::string &filepath) {
     throw std::runtime_error("TOML syntax error: " + std::string(e.what()));
   } catch (const std::exception &e) {
     throw std::runtime_error("Failed to load config: " + std::string(e.what()));
-  }
-}
-
-ServerConfig ServerConfig::from_toml_string(const std::string &toml_content) {
-  try {
-    std::istringstream iss(toml_content);
-    auto data = toml::parse(iss);
-    ServerConfig config;
-
-    // 复用相同的解析逻辑
-    if (data.contains("server")) {
-      auto &server = toml::find(data, "server");
-      if (server.contains("host")) {
-        config.host = toml::find<std::string>(server, "host");
-      }
-      if (server.contains("port")) {
-        config.port =
-            static_cast<uint16_t>(toml::find<int64_t>(server, "port"));
-      }
-      if (server.contains("name")) {
-        config.server_name = toml::find<std::string>(server, "name");
-      }
-      if (server.contains("homepage")) {
-        config.homepage = toml::find<std::string>(server, "homepage");
-      }
-      if (server.contains("daemon")) {
-        config.daemon = toml::find<bool>(server, "daemon");
-      }
-    }
-
-    if (data.contains("threads")) {
-      auto &threads = toml::find(data, "threads");
-      if (threads.contains("count")) {
-        config.num_threads =
-            static_cast<size_t>(toml::find<int64_t>(threads, "count"));
-      }
-      if (threads.contains("stack_mode")) {
-        std::string mode = toml::find<std::string>(threads, "stack_mode");
-        config.stack_mode = string_to_stack_mode(mode);
-      }
-    }
-
-    if (data.contains("ssl")) {
-      auto &ssl = toml::find(data, "ssl");
-      if (ssl.contains("enabled")) {
-        config.enable_https = toml::find<bool>(ssl, "enabled");
-      }
-      if (ssl.contains("cert_file")) {
-        config.cert_file = toml::find<std::string>(ssl, "cert_file");
-      }
-      if (ssl.contains("key_file")) {
-        config.key_file = toml::find<std::string>(ssl, "key_file");
-      }
-    }
-
-    if (data.contains("logging")) {
-      auto &logging = toml::find(data, "logging");
-      if (logging.contains("level")) {
-        config.log_level = toml::find<std::string>(logging, "level");
-      }
-      if (logging.contains("file")) {
-        config.log_file = toml::find<std::string>(logging, "file");
-      }
-    }
-
-    if (data.contains("timeout")) {
-      auto &timeout = toml::find(data, "timeout");
-      if (timeout.contains("read")) {
-        config.read_timeout =
-            static_cast<uint64_t>(toml::find<int64_t>(timeout, "read"));
-      }
-      if (timeout.contains("write")) {
-        config.write_timeout =
-            static_cast<uint64_t>(toml::find<int64_t>(timeout, "write"));
-      }
-      if (timeout.contains("keepalive")) {
-        config.keepalive_timeout =
-            static_cast<uint64_t>(toml::find<int64_t>(timeout, "keepalive"));
-      }
-    }
-
-    if (data.contains("buffer")) {
-      auto &buffer = toml::find(data, "buffer");
-      if (buffer.contains("max_body_size")) {
-        config.max_body_size =
-            static_cast<size_t>(toml::find<int64_t>(buffer, "max_body_size"));
-      }
-      if (buffer.contains("size")) {
-        config.buffer_size =
-            static_cast<size_t>(toml::find<int64_t>(buffer, "size"));
-      }
-    }
-
-    if (data.contains("rate_limit")) {
-      auto &rl = toml::find(data, "rate_limit");
-      if (rl.contains("enabled")) {
-        config.rate_limit_enabled = toml::find<bool>(rl, "enabled");
-      }
-      if (rl.contains("type")) {
-        config.rate_limit_type = toml::find<std::string>(rl, "type");
-      }
-      if (rl.contains("capacity")) {
-        config.rate_limit_capacity =
-            static_cast<size_t>(toml::find<int64_t>(rl, "capacity"));
-      }
-      if (rl.contains("time_unit")) {
-        config.rate_limit_time_unit = toml::find<std::string>(rl, "time_unit");
-      }
-    }
-
-    return config;
-  } catch (const std::exception &e) {
-    throw std::runtime_error("Failed to parse TOML: " + std::string(e.what()));
   }
 }
 
@@ -300,59 +227,4 @@ bool ServerConfig::validate() const {
 
   return true;
 }
-
-std::string ServerConfig::to_toml_string() const {
-  std::ostringstream oss;
-
-  oss << "# zhttp server configuration\n\n";
-
-  oss << "[server]\n";
-  oss << "host = \"" << host << "\"\n";
-  oss << "port = " << port << "\n";
-  oss << "name = \"" << server_name << "\"\n";
-  if (!homepage.empty()) {
-    oss << "homepage = \"" << homepage << "\"\n";
-  }
-  oss << "daemon = " << (daemon ? "true" : "false") << "\n\n";
-
-  oss << "[threads]\n";
-  oss << "count = " << num_threads << "\n";
-  oss << "stack_mode = \"" << stack_mode_to_string(stack_mode) << "\"\n\n";
-
-  oss << "[ssl]\n";
-  oss << "enabled = " << (enable_https ? "true" : "false") << "\n";
-  if (!cert_file.empty()) {
-    oss << "cert_file = \"" << cert_file << "\"\n";
-  }
-  if (!key_file.empty()) {
-    oss << "key_file = \"" << key_file << "\"\n";
-  }
-  oss << "\n";
-
-  oss << "[logging]\n";
-  oss << "level = \"" << log_level << "\"\n";
-  if (!log_file.empty()) {
-    oss << "file = \"" << log_file << "\"\n";
-  }
-  oss << "\n";
-
-  oss << "[timeout]\n";
-  oss << "read = " << read_timeout << "\n";
-  oss << "write = " << write_timeout << "\n";
-  oss << "keepalive = " << keepalive_timeout << "\n\n";
-
-  oss << "[buffer]\n";
-  oss << "max_body_size = " << max_body_size << "\n";
-  oss << "size = " << buffer_size << "\n";
-
-  oss << "\n";
-  oss << "[rate_limit]\n";
-  oss << "enabled = " << (rate_limit_enabled ? "true" : "false") << "\n";
-  oss << "type = \"" << rate_limit_type << "\"\n";
-  oss << "capacity = " << rate_limit_capacity << "\n";
-  oss << "time_unit = \"" << rate_limit_time_unit << "\"\n";
-
-  return oss.str();
-}
-
 } // namespace zhttp

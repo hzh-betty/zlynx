@@ -6,6 +6,7 @@ set(UNIT_TESTS
     http_request_test
     http_response_test
     multipart_test
+    server_config_test
     session_test
     rate_limiter_test
     router_test
@@ -48,6 +49,20 @@ target_include_directories(http_server_test PRIVATE
     ${CMAKE_SOURCE_DIR}/zhttp/include
 )
 add_test(NAME http_server_test COMMAND http_server_test)
+
+add_executable(http_server_timeout_test integration/http_server_timeout_test.cc)
+target_link_libraries(http_server_timeout_test
+    zhttp
+    znet_static
+    zcoroutine_static
+    zlog_static
+    GTest::gtest
+    pthread
+)
+target_include_directories(http_server_timeout_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/zhttp/include
+)
+add_test(NAME http_server_timeout_test COMMAND http_server_timeout_test)
 
 add_executable(zhttp_benchmark benchmark/zhttp_benchmark.cc)
 

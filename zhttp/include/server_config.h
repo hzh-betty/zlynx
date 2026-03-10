@@ -1,6 +1,7 @@
 #ifndef ZHTTP_SERVER_CONFIG_H_
 #define ZHTTP_SERVER_CONFIG_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 
@@ -19,8 +20,8 @@ enum class StackMode {
 /**
  * @brief HTTP 服务器配置
  * @details
- * 该结构汇总了服务器运行时常见的所有可调参数，既可由代码直接填写，
- * 也可通过 TOML 配置文件加载。Builder 和服务器启动流程都会消费它。
+ * 该结构汇总了服务器运行时常见的所有可调参数，主要作为 Builder 和
+ * 配置加载流程之间的内部承载对象。
  */
 struct ServerConfig {
   // 网络配置。
@@ -50,10 +51,6 @@ struct ServerConfig {
   uint64_t write_timeout = 30000;
   uint64_t keepalive_timeout = 60000;
 
-  // 缓冲区和请求体大小限制，单位字节。
-  size_t max_body_size = 10 * 1024 * 1024; // 10MB
-  size_t buffer_size = 8192;
-
   // 限流配置。
   bool rate_limit_enabled = false;
   std::string rate_limit_type = "token_bucket"; // fixed_window/sliding_window/token_bucket
@@ -69,23 +66,10 @@ struct ServerConfig {
   static ServerConfig from_toml(const std::string &filepath);
 
   /**
-   * @brief 从 TOML 字符串加载配置
-   * @param toml_content TOML 内容字符串
-   * @return 加载的配置
-   */
-  static ServerConfig from_toml_string(const std::string &toml_content);
-
-  /**
    * @brief 验证配置有效性
    * @return true 表示配置组合可用于启动服务
    */
   bool validate() const;
-
-  /**
-   * @brief 导出为 TOML 字符串
-   * @return 当前配置对应的 TOML 文本
-   */
-  std::string to_toml_string() const;
 };
 
 /**
