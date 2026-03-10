@@ -49,8 +49,6 @@ class Router {
 public:
   Router();
 
-  // ========== 路由注册 ==========
-
   /**
    * @brief 注册路由（回调函数方式）
     * @param method HTTP 方法
@@ -91,8 +89,6 @@ public:
   void add_regex_route(HttpMethod method, const std::string &regex_pattern,
                        const std::vector<std::string> &param_names,
                        RouteHandler::ptr handler);
-
-  // ========== 便捷方法 ==========
 
   /**
    * @brief 注册 GET 路由（回调函数）
@@ -150,8 +146,6 @@ public:
    */
   void del(const std::string &path, RouteHandler::ptr handler);
 
-  // ========== 中间件 ==========
-
   /**
    * @brief 添加全局中间件
     * @param middleware 中间件对象
@@ -165,7 +159,19 @@ public:
    */
   void use(const std::string &path, Middleware::ptr middleware);
 
-  // ========== 路由匹配 ==========
+  /**
+   * @brief 为特定前缀路由组添加中间件
+    * @param prefix 路由组前缀，例如 /api
+    * @param middleware 中间件对象
+    * @details
+    * 这是“路由组”语义，而不是精确路径语义：
+    * 1. 只匹配 prefix 的子路由，例如 /api 会作用于 /api/users
+    * 2. 不作用于 prefix 自身，例如 /api 不会作用于 /api
+    * 3. 只按目录边界匹配，避免 /api 误命中 /apiv1
+    * 4. 仅在请求最终命中业务路由时执行，404 不会触发该组中间件
+   */
+  void use_group(const std::string &prefix, Middleware::ptr middleware);
+
 
   /**
     * @brief 路由请求并执行中间件链
@@ -227,6 +233,39 @@ private:
                                 const std::vector<std::string> &param_names,
                                 RouteHandlerWrapper wrapper);
 
+  /**
+   * @brief 规范化路由组前缀
+   * @param prefix 原始前缀
+    * @return 规范化后的前缀；若为空或等价于根路径则返回空字符串
+    * @details
+    * 当前实现把空串和 / 都视为“无效组前缀”，避免和全局中间件语义重叠。
+    * 同时会移除末尾多余的 /，让 /api 和 /api/ 归一到同一组。
+   */
+  std::string normalize_group_prefix(const std::string &prefix) const;
+
+  /**
+   * @brief 判断前缀是否严格匹配某个子路由路径
+   * @param prefix 组前缀
+   * @param path 请求路径
+    * @return true 表示 prefix 仅作为 path 的父级前缀命中
+    * @details
+    * 这里要求 path 比 prefix 更长，且 prefix 后面紧跟目录分隔符 /。
+    * 因此 /api 可以匹配 /api/users，但不会匹配 /api 或 /apiv1/users。
+   */
+  bool is_group_prefix_match(const std::string &prefix,
+                             const std::string &path) const;
+
+  /**
+   * @brief 收集请求路径对应的组中间件
+   * @param path 请求路径
+   * @return 按前缀深度从浅到深排列的中间件列表
+    * @details
+    * 例如请求 /api/v1/users 时，会依次尝试 /api 和 /api/v1。
+    * 返回结果保持“浅层组在前、深层组在后”，这样 after 阶段会自然按深到浅回退。
+   */
+  std::vector<Middleware::ptr>
+  collect_group_middlewares(const std::string &path) const;
+
 private:
   // 静态路由：路径完全匹配时直接命中哈希表。
   std::unordered_map<std::string, StaticRouteEntry> static_routes_;
@@ -237,6 +276,11 @@ private:
   // 路由级中间件映射，key 是注册时的原始路径。
   std::unordered_map<std::string, std::vector<Middleware::ptr>>
       route_middlewares_;
+
+  // 前缀路由组中间件，key 是规范化后的静态前缀。
+  // 这里不存动态模式或正则，避免把“组匹配”和“路由匹配”耦合到一起。
+  std::unordered_map<std::string, std::vector<Middleware::ptr>>
+      group_middlewares_;
 
   // 全局中间件，对每个请求都生效。
   std::vector<Middleware::ptr> global_middlewares_;

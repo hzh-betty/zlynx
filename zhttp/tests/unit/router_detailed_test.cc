@@ -10,6 +10,25 @@ protected:
   Router router_;
 };
 
+class TraceMiddleware : public Middleware {
+public:
+  TraceMiddleware(std::vector<std::string> &trace, const std::string &name)
+      : trace_(trace), name_(name) {}
+
+  bool before(const HttpRequest::ptr &, HttpResponse &) override {
+    trace_.push_back(name_ + "_before");
+    return true;
+  }
+
+  void after(const HttpRequest::ptr &, HttpResponse &) override {
+    trace_.push_back(name_ + "_after");
+  }
+
+private:
+  std::vector<std::string> &trace_;
+  std::string name_;
+};
+
 // ========== 路由优先级测试 ==========
 
 TEST_F(RouterDetailedTest, StaticVsParamPriority) {
@@ -227,6 +246,163 @@ TEST_F(RouterDetailedTest, MiddlewareInterruption) {
   EXPECT_FALSE(handler_called);
   EXPECT_TRUE(after_called); // after 仍然被调用
   EXPECT_EQ(response.status_code(), HttpStatus::UNAUTHORIZED);
+}
+
+TEST_F(RouterDetailedTest, GroupMiddlewareAppliesToChildRoutesOnly) {
+  std::vector<std::string> trace;
+
+  router_.use_group("/api", std::make_shared<TraceMiddleware>(trace, "group"));
+  router_.get("/api/users", [&](const HttpRequest::ptr &, HttpResponse &) {
+    trace.push_back("handler");
+  });
+
+  auto request = std::make_shared<HttpRequest>();
+  request->set_method(HttpMethod::GET);
+  request->set_path("/api/users");
+  HttpResponse response;
+
+  bool found = router_.route(request, response);
+
+  EXPECT_TRUE(found);
+  ASSERT_EQ(trace.size(), 3u);
+  EXPECT_EQ(trace[0], "group_before");
+  EXPECT_EQ(trace[1], "handler");
+  EXPECT_EQ(trace[2], "group_after");
+}
+
+TEST_F(RouterDetailedTest, GroupMiddlewareDoesNotApplyToGroupRoot) {
+  std::vector<std::string> trace;
+
+  router_.use_group("/api", std::make_shared<TraceMiddleware>(trace, "group"));
+  router_.get("/api", [&](const HttpRequest::ptr &, HttpResponse &) {
+    trace.push_back("handler");
+  });
+
+  auto request = std::make_shared<HttpRequest>();
+  request->set_method(HttpMethod::GET);
+  request->set_path("/api");
+  HttpResponse response;
+
+  bool found = router_.route(request, response);
+
+  EXPECT_TRUE(found);
+  ASSERT_EQ(trace.size(), 1u);
+  EXPECT_EQ(trace[0], "handler");
+}
+
+TEST_F(RouterDetailedTest, GroupMiddlewareRespectsPathBoundary) {
+  std::vector<std::string> trace;
+
+  router_.use_group("/api", std::make_shared<TraceMiddleware>(trace, "group"));
+  router_.get("/apiv1/users", [&](const HttpRequest::ptr &, HttpResponse &) {
+    trace.push_back("handler");
+  });
+
+  auto request = std::make_shared<HttpRequest>();
+  request->set_method(HttpMethod::GET);
+  request->set_path("/apiv1/users");
+  HttpResponse response;
+
+  bool found = router_.route(request, response);
+
+  EXPECT_TRUE(found);
+  ASSERT_EQ(trace.size(), 1u);
+  EXPECT_EQ(trace[0], "handler");
+}
+
+TEST_F(RouterDetailedTest, GroupMiddlewareOrderWithGlobalAndExactPath) {
+  std::vector<std::string> trace;
+
+  router_.use(std::make_shared<TraceMiddleware>(trace, "global"));
+  router_.use_group("/api", std::make_shared<TraceMiddleware>(trace, "group_api"));
+  router_.use_group("/api/v1",
+                    std::make_shared<TraceMiddleware>(trace, "group_v1"));
+  router_.use("/api/v1/users",
+              std::make_shared<TraceMiddleware>(trace, "exact"));
+  router_.get("/api/v1/users", [&](const HttpRequest::ptr &, HttpResponse &) {
+    trace.push_back("handler");
+  });
+
+  auto request = std::make_shared<HttpRequest>();
+  request->set_method(HttpMethod::GET);
+  request->set_path("/api/v1/users");
+  HttpResponse response;
+
+  bool found = router_.route(request, response);
+
+  EXPECT_TRUE(found);
+  ASSERT_EQ(trace.size(), 9u);
+  EXPECT_EQ(trace[0], "global_before");
+  EXPECT_EQ(trace[1], "group_api_before");
+  EXPECT_EQ(trace[2], "group_v1_before");
+  EXPECT_EQ(trace[3], "exact_before");
+  EXPECT_EQ(trace[4], "handler");
+  EXPECT_EQ(trace[5], "exact_after");
+  EXPECT_EQ(trace[6], "group_v1_after");
+  EXPECT_EQ(trace[7], "group_api_after");
+  EXPECT_EQ(trace[8], "global_after");
+}
+
+TEST_F(RouterDetailedTest, GroupMiddlewareDoesNotRunFor404) {
+  std::vector<std::string> trace;
+
+  router_.use_group("/api", std::make_shared<TraceMiddleware>(trace, "group"));
+
+  auto request = std::make_shared<HttpRequest>();
+  request->set_method(HttpMethod::GET);
+  request->set_path("/api/missing");
+  HttpResponse response;
+
+  bool found = router_.route(request, response);
+
+  EXPECT_FALSE(found);
+  EXPECT_TRUE(trace.empty());
+  EXPECT_EQ(response.status_code(), HttpStatus::NOT_FOUND);
+}
+
+TEST_F(RouterDetailedTest, GroupMiddlewareAppliesToDynamicAndRegexRoutes) {
+  std::vector<std::string> dynamic_trace;
+  std::vector<std::string> regex_trace;
+
+  router_.use_group("/api", std::make_shared<TraceMiddleware>(dynamic_trace, "group"));
+  router_.get("/api/users/:id",
+              [&](const HttpRequest::ptr &req, HttpResponse &) {
+                dynamic_trace.push_back("dynamic_" + req->path_param("id"));
+              });
+
+  auto dynamic_request = std::make_shared<HttpRequest>();
+  dynamic_request->set_method(HttpMethod::GET);
+  dynamic_request->set_path("/api/users/42");
+  HttpResponse dynamic_response;
+
+  bool dynamic_found = router_.route(dynamic_request, dynamic_response);
+
+  EXPECT_TRUE(dynamic_found);
+  ASSERT_EQ(dynamic_trace.size(), 3u);
+  EXPECT_EQ(dynamic_trace[0], "group_before");
+  EXPECT_EQ(dynamic_trace[1], "dynamic_42");
+  EXPECT_EQ(dynamic_trace[2], "group_after");
+
+  Router regex_router;
+  regex_router.use_group("/api", std::make_shared<TraceMiddleware>(regex_trace, "group"));
+  regex_router.add_regex_route(
+      HttpMethod::GET, "^/api/v(\\d+)/users$", {"version"},
+      [&](const HttpRequest::ptr &req, HttpResponse &) {
+        regex_trace.push_back("regex_" + req->path_param("version"));
+      });
+
+  auto regex_request = std::make_shared<HttpRequest>();
+  regex_request->set_method(HttpMethod::GET);
+  regex_request->set_path("/api/v2/users");
+  HttpResponse regex_response;
+
+  bool regex_found = regex_router.route(regex_request, regex_response);
+
+  EXPECT_TRUE(regex_found);
+  ASSERT_EQ(regex_trace.size(), 3u);
+  EXPECT_EQ(regex_trace[0], "group_before");
+  EXPECT_EQ(regex_trace[1], "regex_2");
+  EXPECT_EQ(regex_trace[2], "group_after");
 }
 
 // ========== HTTP方法路由测试 ==========

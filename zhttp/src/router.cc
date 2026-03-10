@@ -1,6 +1,8 @@
 #include "router.h"
 #include "zhttp_logger.h"
 
+#include <utility>
+
 namespace zhttp {
 
 Router::Router() {
@@ -108,8 +110,6 @@ void Router::del(const std::string &path, RouteHandler::ptr handler) {
   add_route(HttpMethod::DELETE, path, std::move(handler));
 }
 
-// ========== 中间件 ==========
-
 void Router::use(Middleware::ptr middleware) {
   if (middleware) {
     global_middlewares_.push_back(std::move(middleware));
@@ -122,7 +122,89 @@ void Router::use(const std::string &path, Middleware::ptr middleware) {
   }
 }
 
-// ========== 路由匹配 ==========
+void Router::use_group(const std::string &prefix, Middleware::ptr middleware) {
+  if (!middleware) {
+    return;
+  }
+
+  // 组前缀会先做归一化，确保 /api 和 /api/ 注册到同一个桶里。
+  std::string normalized_prefix = normalize_group_prefix(prefix);
+  if (normalized_prefix.empty()) {
+    // 根路径组会和全局中间件语义冲突，因此直接忽略，让调用方改用 use(mw)。
+    return;
+  }
+
+  group_middlewares_[normalized_prefix].push_back(std::move(middleware));
+}
+
+std::string Router::normalize_group_prefix(const std::string &prefix) const {
+  if (prefix.empty()) {
+    return "";
+  }
+
+  std::string normalized = prefix;
+  // 统一裁掉尾随 /，避免同一个组前缀出现多份注册入口。
+  while (normalized.size() > 1 && normalized.back() == '/') {
+    normalized.pop_back();
+  }
+
+  if (normalized == "/") {
+    return "";
+  }
+
+  return normalized;
+}
+
+bool Router::is_group_prefix_match(const std::string &prefix,
+                                   const std::string &path) const {
+  // path 必须严格位于 prefix 之下，因此至少要多一个 "/segment"。
+  if (prefix.empty() || path.size() <= prefix.size()) {
+    return false;
+  }
+
+  if (path.compare(0, prefix.size(), prefix) != 0) {
+    return false;
+  }
+
+  // 目录边界校验，防止 /api 误匹配 /apiv1。
+  return path[prefix.size()] == '/';
+}
+
+std::vector<Middleware::ptr>
+Router::collect_group_middlewares(const std::string &path) const {
+  std::vector<Middleware::ptr> middlewares;
+  std::string normalized_path = path;
+
+  // 请求路径同样做尾随 / 归一化，和注册侧保持一致。
+  while (normalized_path.size() > 1 && normalized_path.back() == '/') {
+    normalized_path.pop_back();
+  }
+
+  if (normalized_path.empty() || normalized_path == "/") {
+    return middlewares;
+  }
+
+  for (size_t pos = 1; pos < normalized_path.size(); ++pos) {
+    if (normalized_path[pos] != '/') {
+      continue;
+    }
+
+    // 逐层提取候选前缀：/api/v1/users 会依次检查 /api、/api/v1。
+    std::string prefix = normalized_path.substr(0, pos);
+    auto it = group_middlewares_.find(prefix);
+    if (it == group_middlewares_.end()) {
+      continue;
+    }
+
+    if (!is_group_prefix_match(prefix, normalized_path)) {
+      continue;
+    }
+
+    middlewares.insert(middlewares.end(), it->second.begin(), it->second.end());
+  }
+
+  return middlewares;
+}
 
 RouteContext Router::find_route(const std::string &path, HttpMethod method) {
   RouteContext ctx;
@@ -163,18 +245,29 @@ bool Router::route(const HttpRequest::ptr &request, HttpResponse &response) {
   // 先匹配路由，得到处理器、路径参数和路由级中间件信息。
   RouteContext ctx = find_route(request->path(), request->method());
 
-  // 把匹配阶段提取出的参数回填到请求对象，后续业务代码可直接 request->path_param() 读取。
+  // 把匹配阶段提取出的参数回填到请求对象，后续业务代码可直接
+  // request->path_param() 读取。
   for (const auto &pair : ctx.params) {
     const_cast<HttpRequest *>(request.get())
         ->set_path_param(pair.first, pair.second);
   }
 
-  // 中间件执行顺序是：全局 -> 路由级 -> 匹配结果附带中间件。
+  // 中间件执行顺序是：全局 -> 组前缀 -> 精确路径 -> 匹配结果附带中间件。
   MiddlewareChain chain;
 
   // 先追加全局中间件。
   for (const auto &mw : global_middlewares_) {
     chain.add(mw);
+  }
+
+  // 命中业务路由后，再按请求路径收集组中间件（浅层前缀优先）。
+  if (ctx.found) {
+    // 组中间件不参与 404 流程，这样“某前缀下的一组业务路由”语义更明确。
+    std::vector<Middleware::ptr> group_middlewares =
+        collect_group_middlewares(request->path());
+    for (const auto &mw : group_middlewares) {
+      chain.add(mw);
+    }
   }
 
   // 再追加按路径注册的中间件。
