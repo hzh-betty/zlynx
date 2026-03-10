@@ -8,7 +8,9 @@ namespace zhttp {
 
 /**
  * @brief HTTPS 服务器
- * 继承 HttpServer，增加 SSL/TLS 支持
+ * @details
+ * HttpsServer 在 HttpServer 的 HTTP 处理流程之上增加 TLS 握手和加密传输，
+ * 业务层仍然按普通 HttpServer 的方式注册路由和处理中间件。
  */
 class HttpsServer : public HttpServer {
 public:
@@ -37,10 +39,13 @@ protected:
   /**
    * @brief 处理新连接（带 SSL 握手）
    * @param conn TCP 连接对象
+   * @details
+   * 新连接建立后需要先完成 TLS 握手，握手成功后才会进入上层 HTTP 解析流程。
    */
   void handle_client(znet::TcpConnectionPtr conn) override;
 
 private:
+  // 共享的服务端 SSL 上下文，持有证书和 TLS 配置。
   SslContext::ptr ssl_ctx_;
 };
 

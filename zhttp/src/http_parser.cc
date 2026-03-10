@@ -8,8 +8,10 @@
 
 namespace zhttp {
 
+// 构造时就准备一个空请求对象，后续解析过程中逐步填充字段。
 HttpParser::HttpParser() : request_(std::make_shared<HttpRequest>()) {}
 
+// 把解析器恢复到初始状态，便于在同一连接上继续解析下一条请求。
 void HttpParser::reset() {
   state_ = ParseState::REQUEST_LINE;
   request_ = std::make_shared<HttpRequest>();
@@ -17,13 +19,21 @@ void HttpParser::reset() {
   content_length_ = 0;
 }
 
+/**
+ * parse() 是整个 HTTP 解析流程的入口。
+ *
+ * 这里按状态机循环推进：
+ * 1. REQUEST_LINE / HEADERS 阶段按行读取，依赖 CRLF 定位一整行。
+ * 2. BODY 阶段按 Content-Length 读取定长数据。
+ * 3. 数据不足时立即返回 NEED_MORE，等待网络层继续投喂。
+ */
 ParseResult HttpParser::parse(znet::Buffer *buffer) {
   ZHTTP_LOG_DEBUG("Parsing HTTP request, buffer size: {}",
                   buffer->readable_bytes());
 
   while (state_ != ParseState::COMPLETE && state_ != ParseState::ERROR) {
     if (state_ == ParseState::REQUEST_LINE || state_ == ParseState::HEADERS) {
-      // 查找 CRLF
+      // 请求行和头部都是逐行解析，所以先找一行结尾。
       const char *crlf = buffer->find_crlf();
       if (crlf == nullptr) {
         ZHTTP_LOG_DEBUG("Need more data, current state: {}",
@@ -49,11 +59,13 @@ ParseResult HttpParser::parse(znet::Buffer *buffer) {
         return result;
       }
 
-      // 消费已解析的数据（包括 CRLF）
+      // 当前这一行已经处理完，把它连同末尾的 CRLF 一起从缓冲区移走。
       buffer->retrieve(static_cast<size_t>(end - begin + 2));
     } else if (state_ == ParseState::BODY) {
       ZHTTP_LOG_DEBUG("Parsing body, expected length: {}, available: {}",
                       content_length_, buffer->readable_bytes());
+
+      // Body 阶段不再按行处理，而是一次读取 Content-Length 指定的字节数。
       ParseResult result = parse_body(buffer);
       if (result != ParseResult::COMPLETE) {
         return result;
@@ -70,7 +82,7 @@ ParseResult HttpParser::parse(znet::Buffer *buffer) {
 }
 
 ParseResult HttpParser::parse_request_line(const char *begin, const char *end) {
-  // 请求行格式: METHOD SP REQUEST-URI SP HTTP-VERSION
+  // 请求行格式固定为：METHOD SP REQUEST-URI SP HTTP-VERSION
   const char *space1 = std::find(begin, end, ' ');
   if (space1 == end) {
     error_ = "Invalid request line: no method";
@@ -88,7 +100,7 @@ ParseResult HttpParser::parse_request_line(const char *begin, const char *end) {
   }
   request_->set_method(method);
 
-  // 解析 URI
+  // 第二个空格前是 URI，里面可能同时包含 path 和 query。
   const char *space2 = std::find(space1 + 1, end, ' ');
   if (space2 == end) {
     error_ = "Invalid request line: no URI";
@@ -98,7 +110,7 @@ ParseResult HttpParser::parse_request_line(const char *begin, const char *end) {
 
   std::string uri(space1 + 1, space2);
 
-  // 分离路径和查询字符串
+  // path 和 query 分离后，请求对象后续访问参数会更方便。
   size_t query_pos = uri.find('?');
   if (query_pos != std::string::npos) {
     request_->set_path(uri.substr(0, query_pos));
@@ -118,14 +130,15 @@ ParseResult HttpParser::parse_request_line(const char *begin, const char *end) {
   }
   request_->set_version(version);
 
+  // 请求行成功后，下一阶段开始逐行解析头部。
   state_ = ParseState::HEADERS;
   return ParseResult::OK;
 }
 
 ParseResult HttpParser::parse_headers(const char *begin, const char *end) {
-  // 空行表示头部结束
+  // 空行表示头部结束，后面不是 Body 就是整个请求结束。
   if (begin == end) {
-    // 检查是否有 body
+    // 当前实现依据 Content-Length 判断是否存在定长 Body。
     content_length_ = request_->content_length();
     if (content_length_ > 0) {
       state_ = ParseState::BODY;
@@ -135,7 +148,7 @@ ParseResult HttpParser::parse_headers(const char *begin, const char *end) {
     return ParseResult::OK;
   }
 
-  // 头部格式: Header-Name: Header-Value
+  // 标准头部格式为 Key: Value。
   const char *colon = std::find(begin, end, ':');
   if (colon == end) {
     error_ = "Invalid header line: no colon";
@@ -145,13 +158,13 @@ ParseResult HttpParser::parse_headers(const char *begin, const char *end) {
 
   std::string key(begin, colon);
 
-  // 跳过冒号后的空格
+  // 冒号后允许出现一个或多个空格，这里统一跳过。
   const char *value_start = colon + 1;
   while (value_start < end && *value_start == ' ') {
     ++value_start;
   }
 
-  // 去除尾部空格
+  // 某些客户端会在值末尾带空格，这里顺手裁掉。
   const char *value_end = end;
   while (value_end > value_start && *(value_end - 1) == ' ') {
     --value_end;
@@ -164,10 +177,12 @@ ParseResult HttpParser::parse_headers(const char *begin, const char *end) {
 }
 
 ParseResult HttpParser::parse_body(znet::Buffer *buffer) {
+  // Body 没收全之前不能继续向下走，避免拿到半包内容。
   if (buffer->readable_bytes() < content_length_) {
     return ParseResult::NEED_MORE;
   }
 
+  // 一次性读取完整 Body，读取后缓冲区里的对应字节会被消费掉。
   std::string body = buffer->read_string(content_length_);
   request_->set_body(std::move(body));
 

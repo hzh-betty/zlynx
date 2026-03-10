@@ -12,6 +12,9 @@ namespace zhttp {
 
 /**
  * @brief HTTP 响应对象
+ * @details
+ * 业务处理器通常通过链式调用构造响应，例如先设置状态码，再补头部，最后写入
+ * Body。所有字段最终会由 serialize() 组装成标准 HTTP 响应报文。
  */
 class HttpResponse {
 public:
@@ -95,11 +98,13 @@ public:
 
   /**
    * @brief 获取状态码
+    * @return 当前响应状态码
    */
   HttpStatus status_code() const { return status_; }
 
   /**
    * @brief 获取所有响应头
+    * @return 普通响应头映射表，不包含 Set-Cookie 列表
    */
   const Headers &headers() const { return headers_; }
 
@@ -110,21 +115,25 @@ public:
 
   /**
    * @brief 获取响应体
+    * @return 当前响应体内容
    */
   const std::string &body_content() const { return body_; }
 
   /**
    * @brief 是否 Keep-Alive
+    * @return 当前响应是否期望保持连接
    */
   bool is_keep_alive() const { return keep_alive_; }
 
   /**
    * @brief 设置 Keep-Alive
+    * @param keep_alive 是否保持连接
    */
   void set_keep_alive(bool keep_alive) { keep_alive_ = keep_alive; }
 
   /**
    * @brief 设置 HTTP 版本
+    * @param version 要用于序列化响应行的版本
    */
   void set_version(HttpVersion version) { version_ = version; }
 
@@ -135,6 +144,11 @@ public:
   std::string serialize() const;
 
 
+  /**
+   * @brief Cookie 附加选项
+   * @details
+   * 这些选项会被拼接到 Set-Cookie 响应头中，用于控制 Cookie 的作用域和安全属性。
+   */
   struct CookieOptions {
     CookieOptions()
         : path("/"), max_age(-1), http_only(true), secure(false),
@@ -164,13 +178,23 @@ public:
                               const CookieOptions &opt = CookieOptions());
 
 private:
+  /**
+   * @brief 构造单条 Set-Cookie 头部的 value 部分
+   * @param name Cookie 名称
+   * @param value Cookie 值
+   * @param opt Cookie 附加属性
+   * @return 组装完成的 Set-Cookie value
+   */
   static std::string build_set_cookie_value(const std::string &name,
                                             const std::string &value,
                                             const CookieOptions &opt);
 
+  // 响应的基础元数据和内容。
   HttpStatus status_ = HttpStatus::OK;
   HttpVersion version_ = HttpVersion::HTTP_1_1;
   Headers headers_;
+
+  // Set-Cookie 允许重复出现，因此单独保存，序列化时逐条输出。
   std::vector<std::string> set_cookies_;
   std::string body_;
   bool keep_alive_ = true;

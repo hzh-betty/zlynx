@@ -11,7 +11,10 @@ namespace zhttp {
 
 /**
  * @brief 中间件抽象基类
- * 用户通过继承此类实现自定义中间件
+ * @details
+ * 中间件位于“请求进入路由前”和“响应返回前”两个阶段之间，适合处理：
+ * 日志、鉴权、限流、Session 注入、统一异常处理等横切逻辑。
+ * 用户可以继承该类并实现 before/after 两个钩子。
  */
 class Middleware {
 public:
@@ -40,6 +43,10 @@ public:
 
 /**
  * @brief 中间件链执行器
+ * @details
+ * 该类不关心中间件的具体业务，只负责维护执行顺序：
+ * before 按注册顺序执行，after 按已经成功执行过 before 的逆序执行。
+ * 这样可以形成类似栈展开的效果，便于资源申请与回收配对。
  */
 class MiddlewareChain {
 public:
@@ -51,11 +58,13 @@ public:
 
   /**
    * @brief 获取中间件数量
+    * @return 当前链中已注册的中间件个数
    */
   size_t size() const { return middlewares_.size(); }
 
   /**
    * @brief 是否为空
+    * @return true 表示当前没有任何中间件
    */
   bool empty() const { return middlewares_.empty(); }
 
@@ -76,13 +85,17 @@ public:
 
   /**
    * @brief 获取中间件列表
+   * @return 当前维护的中间件顺序表
    */
   const std::vector<Middleware::ptr> &middlewares() const {
     return middlewares_;
   }
 
 private:
+  // 按注册顺序保存中间件。
   std::vector<Middleware::ptr> middlewares_;
+
+  // 记录 before 已经成功执行到第几个，用于 after 逆序回调。
   size_t executed_count_ = 0; // 记录 before 执行到的位置，用于 after 逆序
 };
 

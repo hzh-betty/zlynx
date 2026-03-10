@@ -39,6 +39,11 @@ public:
     TOKEN_BUCKET,  // 以恒定速率补充令牌，允许短时突发
   };
 
+  /**
+   * @brief 时间单位枚举
+   * @details
+   * 不同算法都会把容量和时间单位组合起来解释为“单位时间内允许多少请求”。
+   */
   enum class TimeUnit {
     MILLISECOND,
     SECOND,
@@ -98,10 +103,27 @@ public:
  */
 class TokenBucketRateLimiter : public RateLimiter {
 public:
+  /**
+   * @brief 构造令牌桶限流器
+   * @param capacity 桶容量，同时也是每个时间单位内的补充量
+   * @param unit 时间单位
+   * @param now_func 可选时钟函数，主要用于测试
+   */
   TokenBucketRateLimiter(size_t capacity, TimeUnit unit,
                          NowFunc now_func = NowFunc());
 
+  /**
+   * @brief 判断当前 key 是否还有可用令牌
+   * @param key 限流维度 key
+   * @return true 表示放行并消耗 1 个令牌
+   */
   bool isAllowed(const std::string &key) override;
+
+  /**
+   * @brief 估算下次至少多久后才能再放行
+   * @param key 限流维度 key
+   * @return 建议等待时间
+   */
   std::chrono::milliseconds retryAfter(const std::string &key) const override;
 
 private:
@@ -120,6 +142,7 @@ private:
     bool initialized = false;
   };
 
+  // buckets_ 可能被多个请求并发访问，因此用互斥锁保护。
   mutable std::mutex mutex_;
   std::unordered_map<std::string, Bucket> buckets_;
 };
@@ -136,6 +159,9 @@ class RateLimiterMiddleware : public Middleware {
 public:
   using KeyFunc = std::function<std::string(const HttpRequest::ptr &)>;
 
+  /**
+   * @brief 限流中间件配置项
+   */
   struct Options {
     Options() : limiter(), key_func(), retry_after_header("Retry-After") {}
 
@@ -144,9 +170,25 @@ public:
     std::string retry_after_header; // 被限流时写回的重试头名
   };
 
+  /**
+   * @brief 构造限流中间件
+   * @param opt 限流器、中间件 key 提取规则等配置
+   */
   explicit RateLimiterMiddleware(Options opt = Options());
 
+  /**
+   * @brief 在请求进入业务前执行限流判断
+   * @param request HTTP 请求对象
+   * @param response HTTP 响应对象
+   * @return true 表示放行，false 表示已被限流并写好响应
+   */
   bool before(const HttpRequest::ptr &request, HttpResponse &response) override;
+
+  /**
+   * @brief after 钩子，当前实现不做额外处理
+   * @param request HTTP 请求对象
+   * @param response HTTP 响应对象
+   */
   void after(const HttpRequest::ptr &request, HttpResponse &response) override;
 
 private:

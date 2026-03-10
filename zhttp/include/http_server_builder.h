@@ -12,8 +12,11 @@
 namespace zhttp {
 
 /**
- * @brief HTTP服务器建造者
- * 提供链式调用API和TOML配置两种初始化方式
+ * @brief HTTP 服务器建造者
+ * @details
+ * Builder 负责把“配置项、中间件、路由、日志等级”等离散信息收集起来，
+ * 最终一次性构造出可运行的 HttpServer。这样可以避免调用方手工拼装对象时
+ * 到处分散配置，也更适合从配置文件启动服务。
  */
 class HttpServerBuilder {
 public:
@@ -24,11 +27,14 @@ public:
   /**
    * @brief 从 TOML 配置文件加载
    * @param config_path TOML 配置文件路径
+    * @return 当前 Builder 引用，便于继续链式配置
    */
   HttpServerBuilder &from_config(const std::string &config_path);
 
   /**
    * @brief 从 ServerConfig 对象初始化
+    * @param config 已准备好的配置对象
+    * @return 当前 Builder 引用
    */
   HttpServerBuilder &from_config(const ServerConfig &config);
 
@@ -36,129 +42,185 @@ public:
 
   /**
    * @brief 设置监听地址
+    * @param host 监听地址，例如 0.0.0.0
+    * @param port 监听端口
+    * @return 当前 Builder 引用
    */
   HttpServerBuilder &listen(const std::string &host, uint16_t port);
 
   /**
    * @brief 设置线程数
+    * @param num_threads IO/工作线程数量
+    * @return 当前 Builder 引用
    */
   HttpServerBuilder &threads(size_t num_threads);
 
   /**
    * @brief 设置协程栈模式
    * @param mode 栈模式 (INDEPENDENT 或 SHARED)
+    * @return 当前 Builder 引用
    */
   HttpServerBuilder &stack_mode(StackMode mode);
 
   /**
    * @brief 使用共享栈模式
+    * @return 当前 Builder 引用
    */
   HttpServerBuilder &use_shared_stack();
 
   /**
    * @brief 使用独立栈模式（默认）
+    * @return 当前 Builder 引用
    */
   HttpServerBuilder &use_independent_stack();
 
   /**
    * @brief 启用HTTPS
+    * @param cert_file 证书文件路径
+    * @param key_file 私钥文件路径
+    * @return 当前 Builder 引用
    */
   HttpServerBuilder &enable_https(const std::string &cert_file,
                                   const std::string &key_file);
 
   /**
    * @brief 添加全局中间件
+    * @param middleware 中间件对象
+    * @return 当前 Builder 引用
    */
   HttpServerBuilder &use(Middleware::ptr middleware);
 
   /**
    * @brief 注册GET路由（回调方式）
+    * @param path 路由路径
+    * @param callback 处理回调
+    * @return 当前 Builder 引用
    */
   HttpServerBuilder &get(const std::string &path, RouterCallback callback);
 
   /**
    * @brief 注册GET路由（处理器方式）
+    * @param path 路由路径
+    * @param handler 处理器对象
+    * @return 当前 Builder 引用
    */
   HttpServerBuilder &get(const std::string &path, RouteHandler::ptr handler);
 
   /**
    * @brief 注册POST路由（回调方式）
+    * @param path 路由路径
+    * @param callback 处理回调
+    * @return 当前 Builder 引用
    */
   HttpServerBuilder &post(const std::string &path, RouterCallback callback);
 
   /**
    * @brief 注册POST路由（处理器方式）
+    * @param path 路由路径
+    * @param handler 处理器对象
+    * @return 当前 Builder 引用
    */
   HttpServerBuilder &post(const std::string &path, RouteHandler::ptr handler);
 
   /**
    * @brief 注册PUT路由（回调方式）
+    * @param path 路由路径
+    * @param callback 处理回调
+    * @return 当前 Builder 引用
    */
   HttpServerBuilder &put(const std::string &path, RouterCallback callback);
 
   /**
    * @brief 注册PUT路由（处理器方式）
+    * @param path 路由路径
+    * @param handler 处理器对象
+    * @return 当前 Builder 引用
    */
   HttpServerBuilder &put(const std::string &path, RouteHandler::ptr handler);
 
   /**
    * @brief 注册DELETE路由（回调方式）
+    * @param path 路由路径
+    * @param callback 处理回调
+    * @return 当前 Builder 引用
    */
   HttpServerBuilder &del(const std::string &path, RouterCallback callback);
 
   /**
    * @brief 注册DELETE路由（处理器方式）
+    * @param path 路由路径
+    * @param handler 处理器对象
+    * @return 当前 Builder 引用
    */
   HttpServerBuilder &del(const std::string &path, RouteHandler::ptr handler);
 
   /**
    * @brief 设置404处理器（回调方式）
+    * @param callback 404 回调
+    * @return 当前 Builder 引用
    */
   HttpServerBuilder &not_found(RouterCallback callback);
 
   /**
    * @brief 设置404处理器（处理器方式）
+    * @param handler 404 处理器对象
+    * @return 当前 Builder 引用
    */
   HttpServerBuilder &not_found(RouteHandler::ptr handler);
 
   /**
    * @brief 设置日志级别
+    * @param level 日志级别字符串，例如 info、debug
+    * @return 当前 Builder 引用
    */
   HttpServerBuilder &log_level(const std::string &level);
 
   /**
    * @brief 启用守护进程模式
+    * @param enable 是否启用
+    * @return 当前 Builder 引用
    */
   HttpServerBuilder &daemon(bool enable = true);
 
   /**
    * @brief 设置服务器名称
+    * @param name Server 响应头里显示的名称
+    * @return 当前 Builder 引用
    */
   HttpServerBuilder &server_name(const std::string &name);
 
   /**
    * @brief 构建并启动服务器
-   * @return 服务器对象
+   * @return 构建完成的服务器对象
+   * @details
+   * 该函数只负责完成对象构建和必要初始化，是否进入阻塞事件循环取决于调用方。
    */
   std::shared_ptr<HttpServer> build();
 
   /**
    * @brief 构建并运行服务器（阻塞）
+   * @details 适合 main 函数里直接调用的场景。
    */
   void run();
 
   /**
    * @brief 获取当前配置
+   * @return 当前已累积的配置快照
    */
   const ServerConfig &config() const { return config_; }
 
 private:
+  // 当前构建中的服务器配置。
   ServerConfig config_;
 
+  // 待注册到服务器上的全局中间件和路由。
   std::vector<Middleware::ptr> middlewares_;
   std::vector<std::tuple<HttpMethod, std::string, RouteHandlerWrapper>> routes_;
+
+  // 可选的自定义 404 处理器。
   RouteHandlerWrapper not_found_handler_;
 
+  // Builder 内部持有的调度器实例。
   zcoroutine::IoScheduler::ptr io_scheduler_;
 };
 

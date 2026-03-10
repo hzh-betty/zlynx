@@ -11,6 +11,7 @@ namespace zhttp {
 
 namespace {
 
+// multipart 参数名比较时通常不区分大小写，统一转成小写便于处理。
 static inline std::string to_lower(std::string s) {
   std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
     return static_cast<char>(std::tolower(c));
@@ -31,7 +32,7 @@ static inline void trim(std::string &s) {
 
 static bool extract_boundary(const std::string &content_type,
                              std::string &boundary) {
-  // 从 Content-Type 参数中提取 boundary，兼容带引号的写法。
+  // 从 Content-Type 参数中提取 boundary，兼容 boundary="xxx" 这种带引号写法。
   std::string ct = content_type;
   auto semi = ct.find(';');
   if (semi == std::string::npos) {
@@ -102,7 +103,7 @@ static bool parse_content_disposition(const std::string &value,
 static bool parse_part_headers(const std::string &headers_blob,
                                std::unordered_map<std::string, std::string>
                                    &headers_out) {
-  // multipart 每个 part 的头部仍是标准 HTTP 风格的 Key: Value 列表。
+  // multipart 的每个 part 也有自己的一组头部，格式和普通 HTTP 头部类似。
   headers_out.clear();
   size_t pos = 0;
   while (pos < headers_blob.size()) {
@@ -180,7 +181,7 @@ MultipartFormData::ptr MultipartFormData::parse(const HttpRequest &request,
     error->clear();
   }
 
-  // 非 multipart 请求按“空结果”处理，调用方不需要区分异常和非该类型请求。
+  // 非 multipart 请求按“空结果”处理，调用方无需把它视为异常。
   std::string ct = request.content_type();
   if (to_lower(ct).find("multipart/form-data") == std::string::npos) {
     return std::make_shared<MultipartFormData>();
@@ -197,7 +198,7 @@ MultipartFormData::ptr MultipartFormData::parse(const HttpRequest &request,
   const std::string &body = request.body();
   const std::string dash_boundary = "--" + boundary;
 
-  // 找到第一个 boundary
+  // multipart Body 由多个 --boundary 包围的 part 组成，先定位起始 boundary。
   size_t pos = body.find(dash_boundary);
   if (pos == std::string::npos) {
     if (error) {
@@ -209,28 +210,28 @@ MultipartFormData::ptr MultipartFormData::parse(const HttpRequest &request,
   auto out = std::make_shared<MultipartFormData>();
 
   while (true) {
-    // 每轮循环处理一个 part，当前位置应当落在 --boundary 上。
+    // 每轮循环处理一个 part，当前位置应当正好落在 --boundary 上。
     if (body.compare(pos, dash_boundary.size(), dash_boundary) != 0) {
       break;
     }
     pos += dash_boundary.size();
 
-    // 结束标记 --boundary--
+    // 遇到 --boundary-- 说明所有 part 都解析完了。
     if (pos + 2 <= body.size() && body.compare(pos, 2, "--") == 0) {
       break;
     }
 
-    // boundary 后应接 CRLF
+    // 标准写法里 boundary 后面紧跟 CRLF，再开始 part 头部。
     if (pos + 2 <= body.size() && body.compare(pos, 2, "\r\n") == 0) {
       pos += 2;
     } else {
-      // 宽容：允许只有 \n
+      // 为了兼容非标准输入，这里宽容接受单个换行符。
       if (pos + 1 <= body.size() && body[pos] == '\n') {
         pos += 1;
       }
     }
 
-    // 解析 part headers，直到 \r\n\r\n
+    // part 头部和正文之间同样用空行分隔。
     size_t headers_end = body.find("\r\n\r\n", pos);
     if (headers_end == std::string::npos) {
       if (error) {
@@ -268,11 +269,11 @@ MultipartFormData::ptr MultipartFormData::parse(const HttpRequest &request,
       part_ct = it_ct->second;
     }
 
-    // part 内容以“CRLF + 下一个 boundary”结束，正文本身允许包含任意二进制数据。
+    // 当前 part 的正文以“CRLF + 下一个 boundary”为结束标记。
     std::string marker = "\r\n" + dash_boundary;
     size_t next = body.find(marker, pos);
     if (next == std::string::npos) {
-      // 最后一个 part 也应该有 marker
+      // 即使是最后一个 part，后面也应当还能看到结束 boundary。
       if (error) {
         *error = "Invalid multipart: missing next boundary";
       }
@@ -283,7 +284,7 @@ MultipartFormData::ptr MultipartFormData::parse(const HttpRequest &request,
     pos = next + 2; // 指向 --boundary
 
     if (!filename.empty()) {
-      // 带 filename 的 part 视为文件上传。
+      // 只要带 filename，就按文件上传处理。
       UploadedFile f;
       f.field_name = name;
       f.filename = filename;
@@ -291,11 +292,11 @@ MultipartFormData::ptr MultipartFormData::parse(const HttpRequest &request,
       f.data = std::move(part_data);
       out->files_.push_back(std::move(f));
     } else {
-      // 普通字段直接按 name 存储原始值。
+      // 否则当作普通文本字段处理。
       out->fields_[name] = std::move(part_data);
     }
 
-    // pos 当前应该是 --boundary
+    // 跳到下一个 boundary，继续处理下一个 part。
     size_t bpos = body.find(dash_boundary, pos);
     if (bpos == std::string::npos) {
       break;

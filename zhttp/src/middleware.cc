@@ -3,6 +3,7 @@
 namespace zhttp {
 
 void MiddlewareChain::add(Middleware::ptr middleware) {
+  // 忽略空指针，避免后续执行阶段反复判空。
   if (middleware) {
     middlewares_.push_back(std::move(middleware));
   }
@@ -10,10 +11,11 @@ void MiddlewareChain::add(Middleware::ptr middleware) {
 
 bool MiddlewareChain::execute_before(const HttpRequest::ptr &request,
                                      HttpResponse &response) {
+  // 每次执行前都从头计数，确保链对象复用时不会带上旧状态。
   executed_count_ = 0;
   for (size_t i = 0; i < middlewares_.size(); ++i) {
     if (!middlewares_[i]->before(request, response)) {
-      // 中间件中断了请求，记录执行位置
+      // 记录已经成功执行到哪里，便于 execute_after 只回调这部分中间件。
       executed_count_ = i + 1;
       return false;
     }
@@ -24,7 +26,7 @@ bool MiddlewareChain::execute_before(const HttpRequest::ptr &request,
 
 void MiddlewareChain::execute_after(const HttpRequest::ptr &request,
                                     HttpResponse &response) {
-  // 逆序执行已执行过 before 的中间件的 after 方法
+  // 逆序执行 after，和 before 形成栈式结构，更适合资源回收和收尾逻辑。
   for (size_t i = executed_count_; i > 0; --i) {
     middlewares_[i - 1]->after(request, response);
   }

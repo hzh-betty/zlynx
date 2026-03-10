@@ -28,8 +28,22 @@ public:
 
   Session(std::string id, bool is_new) : id_(std::move(id)), is_new_(is_new) {}
 
+  /**
+   * @brief 获取会话 ID
+   * @return 当前会话唯一标识
+   */
   const std::string &id() const { return id_; }
+
+  /**
+   * @brief 判断是否为本次请求中新建的会话
+   * @return true 表示该会话此前不存在于存储中
+   */
   bool is_new() const { return is_new_; }
+
+  /**
+   * @brief 判断会话数据是否被修改过
+   * @return true 表示需要在响应阶段写回存储
+   */
   bool modified() const { return modified_; }
 
   /**
@@ -53,7 +67,16 @@ public:
    */
   void clear();
 
+  /**
+   * @brief 获取全部会话键值
+   * @return 当前数据快照
+   */
   const Data &data() const { return data_; }
+
+  /**
+   * @brief 整体替换会话数据
+   * @param data 新的数据快照
+   */
   void set_data(Data data) { data_ = std::move(data); }
 
   // 在会话成功写回存储或刚从存储恢复后调用，重置脏标记。
@@ -85,6 +108,9 @@ class SessionManager {
 public:
   using ptr = std::shared_ptr<SessionManager>;
 
+  /**
+   * @brief Session 存储配置
+   */
   struct Options {
     Options() : ttl(std::chrono::seconds(1800)), cleanup_every(128) {}
     Options(std::chrono::seconds t, size_t cleanupEvery)
@@ -94,6 +120,10 @@ public:
     size_t cleanup_every;     // 每执行多少次操作触发一次过期清理
   };
 
+  /**
+   * @brief 构造内存 Session 管理器
+   * @param opt 会话过期时间和清理策略配置
+   */
   explicit SessionManager(Options opt = Options());
 
   /**
@@ -114,9 +144,14 @@ public:
 
   /**
    * @brief 删除指定会话
+    * @param session_id 要删除的会话 ID
    */
   void destroy(const std::string &session_id);
 
+    /**
+    * @brief 获取当前管理器配置
+    * @return 配置对象引用
+    */
   const Options &options() const { return options_; }
 
 private:
@@ -154,6 +189,9 @@ private:
  */
 class SessionMiddleware : public Middleware {
 public:
+  /**
+   * @brief Session 中间件配置项
+   */
   struct Options {
     Options() : cookie_name("ZHTTPSESSID"), cookie(), create_if_missing(true) {}
 
@@ -162,10 +200,27 @@ public:
     bool create_if_missing;           // 请求未携带会话时是否自动创建新会话
   };
 
+  /**
+   * @brief 构造 Session 中间件
+   * @param manager 会话管理器
+   * @param opt Cookie 名称和自动创建策略等配置
+   */
   explicit SessionMiddleware(SessionManager::ptr manager,
                              Options opt = Options());
 
+  /**
+   * @brief 在请求进入业务前加载或创建 Session
+   * @param request HTTP 请求对象
+   * @param response HTTP 响应对象
+   * @return true 始终允许继续执行后续链路
+   */
   bool before(const HttpRequest::ptr &request, HttpResponse &response) override;
+
+  /**
+   * @brief 在响应返回前决定是否写回 Session 和 Cookie
+   * @param request HTTP 请求对象
+   * @param response HTTP 响应对象
+   */
   void after(const HttpRequest::ptr &request, HttpResponse &response) override;
 
 private:

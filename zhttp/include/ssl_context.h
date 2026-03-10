@@ -12,7 +12,9 @@ namespace zhttp {
 
 /**
  * @brief SSL 上下文管理
- * 封装 OpenSSL 的 SSL_CTX
+ * @details
+ * SslContext 负责管理 OpenSSL 的 SSL_CTX 生命周期，以及证书、私钥等全局 TLS
+ * 配置。通常一个服务端只需要一个共享的 SslContext 实例。
  */
 class SslContext {
 public:
@@ -37,6 +39,7 @@ public:
 
   /**
    * @brief 获取底层 SSL_CTX 指针
+    * @return OpenSSL 原生 SSL_CTX 指针
    */
   SSL_CTX *native_handle() const { return ctx_; }
 
@@ -48,16 +51,21 @@ public:
   SSL *create_ssl(int fd);
 
 private:
+  // 构造函数私有化，强制通过 create_server/create_client 创建实例。
   SslContext();
   bool init_server(const std::string &cert_file, const std::string &key_file);
   bool init_client();
 
 private:
+  // OpenSSL 原生上下文句柄，由析构函数负责释放。
   SSL_CTX *ctx_ = nullptr;
 };
 
 /**
  * @brief SSL 会话 RAII 包装
+ * @details
+ * SslSession 包装单条连接上的 SSL 对象，负责握手、读写和关闭，
+ * 避免调用方直接操作裸指针并手工释放资源。
  */
 class SslSession {
 public:
@@ -112,15 +120,18 @@ public:
 
   /**
    * @brief 获取底层 SSL 指针
+   * @return OpenSSL 原生 SSL 指针
    */
   SSL *native_handle() const { return ssl_; }
 
   /**
    * @brief 是否有效
+   * @return true 表示内部持有有效的 SSL 对象
    */
   bool is_valid() const { return ssl_ != nullptr; }
 
 private:
+  // 单连接级别的 SSL 句柄。
   SSL *ssl_ = nullptr;
 };
 

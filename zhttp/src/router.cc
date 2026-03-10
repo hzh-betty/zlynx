@@ -4,7 +4,7 @@
 namespace zhttp {
 
 Router::Router() {
-  // 默认 404 处理器
+  // 默认 404 处理器保证即使用户没有显式配置，也能返回一个可读的兜底响应。
   RouterCallback default_404 = [](const HttpRequest::ptr & /*request*/,
                                   HttpResponse &response) {
     response.status(HttpStatus::NOT_FOUND)
@@ -15,6 +15,7 @@ Router::Router() {
 }
 
 bool Router::is_dynamic_path(const std::string &path) const {
+  // :id 和 *path 这两类语法都需要走动态匹配，而不是直接哈希命中。
   return path.find(':') != std::string::npos ||
          path.find('*') != std::string::npos;
 }
@@ -26,11 +27,11 @@ void Router::add_route_internal(HttpMethod method, const std::string &path,
   ZHTTP_LOG_DEBUG("Router::add_route {} {}", method_to_string(method), path);
 
   if (is_dynamic_path(path)) {
-    // 动态路由 -> 基数树
+    // 动态路由无法直接哈希命中，统一进入基数树做结构化匹配。
     radix_tree_.insert(method, path, std::move(wrapper));
     ZHTTP_LOG_DEBUG("Added to radix tree (dynamic): {}", path);
   } else {
-    // 静态路由 -> 哈希表
+    // 纯静态路径直接走哈希表，查询成本最低。
     static_routes_[path].handlers[method] = std::move(wrapper);
     ZHTTP_LOG_DEBUG("Added to hash map (static): {}", path);
   }
@@ -52,7 +53,7 @@ void Router::add_regex_route_internal(
   ZHTTP_LOG_DEBUG("Router::add_regex_route {} {}", method_to_string(method),
                   regex_pattern);
 
-  // 正则路由存入基数树（按前缀分桶）
+  // 正则路由虽然最终仍要做正则匹配，但先按前缀分桶可以减少候选数量。
   radix_tree_.insert_regex(method, regex_pattern, param_names,
                            std::move(wrapper));
 }
@@ -128,7 +129,7 @@ RouteContext Router::find_route(const std::string &path, HttpMethod method) {
 
   ZHTTP_LOG_DEBUG("Router::find_route {} {}", method_to_string(method), path);
 
-  // 第一层: 静态路由哈希表查找 O(1)
+  // 第一层先查静态路由。绝大多数高频接口通常都是固定路径，这里最省成本。
   auto static_it = static_routes_.find(path);
   if (static_it != static_routes_.end()) {
     auto handler_it = static_it->second.handlers.find(method);
@@ -141,7 +142,7 @@ RouteContext Router::find_route(const std::string &path, HttpMethod method) {
     }
   }
 
-  // 第二层: 基数树查找（动态路由 + 正则路由）
+  // 第二层交给基数树处理动态段和正则规则。
   RouteMatchContext match = radix_tree_.find(path, method);
   if (match.found) {
     ctx.found = true;
@@ -159,24 +160,24 @@ RouteContext Router::find_route(const std::string &path, HttpMethod method) {
 }
 
 bool Router::route(const HttpRequest::ptr &request, HttpResponse &response) {
-  // 查找路由
+  // 先匹配路由，得到处理器、路径参数和路由级中间件信息。
   RouteContext ctx = find_route(request->path(), request->method());
 
-  // 设置路径参数
+  // 把匹配阶段提取出的参数回填到请求对象，后续业务代码可直接 request->path_param() 读取。
   for (const auto &pair : ctx.params) {
     const_cast<HttpRequest *>(request.get())
         ->set_path_param(pair.first, pair.second);
   }
 
-  // 构建中间件链
+  // 中间件执行顺序是：全局 -> 路由级 -> 匹配结果附带中间件。
   MiddlewareChain chain;
 
-  // 添加全局中间件
+  // 先追加全局中间件。
   for (const auto &mw : global_middlewares_) {
     chain.add(mw);
   }
 
-  // 添加路由级中间件
+  // 再追加按路径注册的中间件。
   auto mw_it = route_middlewares_.find(request->path());
   if (mw_it != route_middlewares_.end()) {
     for (const auto &mw : mw_it->second) {
@@ -184,25 +185,25 @@ bool Router::route(const HttpRequest::ptr &request, HttpResponse &response) {
     }
   }
 
-  // 添加匹配到的路由中间件
+  // 最后追加路由匹配结果里自带的中间件。
   for (const auto &mw : ctx.middlewares) {
     chain.add(mw);
   }
 
-  // 执行 before 中间件
+  // before 返回 false 表示提前中断，不再进入业务处理器。
   bool should_continue = chain.execute_before(request, response);
 
   if (should_continue) {
     if (ctx.found) {
-      // 执行处理器
+      // 命中路由则执行对应处理器。
       ctx.handler(request, response);
     } else {
-      // 404 处理
+      // 未命中则走统一的 404 处理器。
       not_found_handler_(request, response);
     }
   }
 
-  // 执行 after 中间件（逆序）
+  // after 总是逆序执行，和 before 形成对称结构。
   chain.execute_after(request, response);
 
   return ctx.found;

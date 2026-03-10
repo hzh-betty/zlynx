@@ -14,10 +14,15 @@ class MultipartFormData;
 
 /**
  * @brief HTTP 请求对象
+ * @details
+ * 该对象表示一条已经被解析出来的 HTTP 请求。它既保存原始请求的核心字段，
+ * 也承载路由、中间件等后续阶段附加的数据，例如路径参数、Session、
+ * multipart 解析结果等。
  */
 class HttpRequest {
 public:
   using ptr = std::shared_ptr<HttpRequest>;
+  // Headers 保存请求头，Params 用于查询参数、路径参数、Cookie 等键值数据。
   using Headers = std::unordered_map<std::string, std::string>;
   using Params = std::unordered_map<std::string, std::string>;
 
@@ -25,31 +30,37 @@ public:
 
   /**
    * @brief 获取 HTTP 方法
+    * @return 解析后的请求方法枚举
    */
   HttpMethod method() const { return method_; }
 
   /**
    * @brief 获取请求路径
+    * @return 不含查询字符串的路径部分，例如 /users/42
    */
   const std::string &path() const { return path_; }
 
   /**
    * @brief 获取查询字符串
+    * @return ? 后面的原始字符串，不含问号本身
    */
   const std::string &query() const { return query_; }
 
   /**
    * @brief 获取 HTTP 版本
+    * @return 请求行中声明的协议版本
    */
   HttpVersion version() const { return version_; }
 
   /**
    * @brief 获取所有请求头
+    * @return 头字段映射表；key 按原始形式存储
    */
   const Headers &headers() const { return headers_; }
 
   /**
    * @brief 获取请求体
+    * @return 原始 Body 内容
    */
   const std::string &body() const { return body_; }
 
@@ -61,11 +72,13 @@ public:
 
   /**
    * @brief 获取所有路径参数
+    * @return 路由匹配后提取出的参数表
    */
   const Params &path_params() const { return path_params_; }
 
   /**
    * @brief 获取所有查询参数
+    * @return 从 query 字符串解析出的参数表
    */
   const Params &query_params() const { return query_params_; }
 
@@ -96,74 +109,83 @@ public:
   std::string query_param(const std::string &key,
                           const std::string &default_val = "") const;
 
-  // ===================== Cookie =====================
-
   /**
    * @brief 获取 Cookie
+    * @param key Cookie 名称
+    * @param default_val 未命中时返回的默认值
+    * @return Cookie 值
    */
   std::string cookie(const std::string &key,
                      const std::string &default_val = "") const;
 
   /**
    * @brief 获取所有 Cookie（惰性解析）
+    * @return Cookie 键值表
    */
   const Params &cookies() const;
 
-  // ===================== Session =====================
 
   /**
    * @brief 获取会话对象（通常由 SessionMiddleware 注入）
+    * @return 当前请求关联的 Session；未启用会话时可能为空
    */
   std::shared_ptr<Session> session() const { return session_; }
 
   /**
    * @brief 设置会话对象（中间件使用）
+   * @param session 要绑定到请求上的会话对象
    */
   void set_session(std::shared_ptr<Session> session) {
     session_ = std::move(session);
   }
 
-  // ===================== Multipart (File Upload) =====================
 
   /**
    * @brief 是否为 multipart/form-data
+    * @return true 表示 Content-Type 看起来是 multipart/form-data
    */
   bool is_multipart() const;
 
   /**
    * @brief 解析 multipart/form-data（惰性解析，重复调用无副作用）
+    * @return true 表示成功，或者当前请求本来就不是 multipart 请求
    */
   bool parse_multipart();
 
   /**
    * @brief 获取解析后的 multipart 数据；未解析/失败返回 nullptr
+    * @return multipart 解析结果指针
    */
   const MultipartFormData *multipart() const;
 
   /**
    * @brief 获取 multipart 解析错误（若有）
+    * @return 最近一次 multipart 解析失败的错误说明
    */
   const std::string &multipart_error() const { return multipart_error_; }
 
-  // ===================== Setters =====================
 
   /**
    * @brief 设置 HTTP 方法
+    * @param method 请求方法
    */
   void set_method(HttpMethod method) { method_ = method; }
 
   /**
    * @brief 设置请求路径
+    * @param path 不带 query 的路径部分
    */
   void set_path(const std::string &path) { path_ = path; }
 
   /**
    * @brief 设置查询字符串
+    * @param query 不带问号的原始查询串
    */
   void set_query(const std::string &query) { query_ = query; }
 
   /**
    * @brief 设置 HTTP 版本
+    * @param version 协议版本
    */
   void set_version(HttpVersion version) { version_ = version; }
 
@@ -176,21 +198,25 @@ public:
 
   /**
    * @brief 设置请求体
+    * @param body 请求体内容
    */
   void set_body(const std::string &body) { body_ = body; }
 
   /**
    * @brief 设置请求体（移动语义）
+    * @param body 请求体内容
    */
   void set_body(std::string &&body) { body_ = std::move(body); }
 
   /**
    * @brief 设置远端地址（服务器使用）
+    * @param addr 远端地址字符串
    */
   void set_remote_addr(const std::string &addr) { remote_addr_ = addr; }
 
   /**
    * @brief 设置远端地址（移动语义）
+    * @param addr 远端地址字符串
    */
   void set_remote_addr(std::string &&addr) { remote_addr_ = std::move(addr); }
 
@@ -203,13 +229,16 @@ public:
 
   /**
    * @brief 解析查询字符串为参数
+    * @details
+    * 该函数会把 query_ 拆成 query_params_。通常由解析器在解析请求行后调用，
+    * 如果业务代码手动修改了 query_，也可以再次调用重新生成参数表。
    */
   void parse_query_params();
 
-  // ===================== 便捷方法 =====================
 
   /**
    * @brief 是否为 Keep-Alive 连接
+    * @return 是否应在当前请求处理后保持连接不断开
    */
   bool is_keep_alive() const;
 
@@ -221,12 +250,15 @@ public:
 
   /**
    * @brief 获取 Content-Type
+   * @return Content-Type 请求头的值；缺失时返回空字符串
    */
   std::string content_type() const;
 
 private:
+  // 按需解析 Cookie，避免不访问 Cookie 的请求也付出额外开销。
   void parse_cookies_if_needed() const;
 
+  // 解析自请求行和请求头的基础字段。
   HttpMethod method_ = HttpMethod::UNKNOWN;
   std::string path_;
   std::string query_;
@@ -234,17 +266,19 @@ private:
   Headers headers_;
   std::string body_;
   std::string remote_addr_;
+
+  // 路由和查询参数解析结果。
   Params path_params_;  // 路径参数
   Params query_params_; // 查询参数
 
-  // Cookie
+  // Cookie 缓存。只有真正访问 cookie()/cookies() 时才解析。
   mutable bool cookies_parsed_ = false;
   mutable Params cookies_;
 
-  // Session
+  // 当前请求关联的 Session，由中间件或上层框架注入。
   std::shared_ptr<Session> session_;
 
-  // Multipart
+  // multipart/form-data 的惰性解析缓存。
   mutable bool multipart_parsed_ = false;
   mutable std::shared_ptr<MultipartFormData> multipart_;
   mutable std::string multipart_error_;

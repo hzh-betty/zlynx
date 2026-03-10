@@ -9,6 +9,7 @@ namespace zhttp {
 HttpServer::HttpServer(zcoroutine::IoScheduler::ptr io_worker,
                        zcoroutine::IoScheduler::ptr accept_worker)
     : TcpServer(std::move(io_worker), std::move(accept_worker)) {
+  // 默认把 Server 响应头和底层服务名都设置成统一值。
   set_name("zhttp/1.0");
 }
 
@@ -22,13 +23,13 @@ void HttpServer::set_name(const std::string &name) {
 void HttpServer::handle_client(znet::TcpConnectionPtr conn) {
   ZHTTP_LOG_DEBUG("New HTTP connection: {}", conn->name());
 
-  // 设置消息回调
+  // 消息回调负责把收到的字节流交给 HTTP 解析流程。
   conn->set_message_callback(
       [this](const znet::TcpConnectionPtr &c, znet::Buffer *buffer) {
         on_message(c, buffer);
       });
 
-  // 设置关闭回调
+  // 关闭回调这里只做日志记录，资源释放交给连接对象自身生命周期管理。
   conn->set_close_callback([](const znet::TcpConnectionPtr &c) {
     ZHTTP_LOG_DEBUG("HTTP connection closed: {}", c->name());
   });
@@ -36,29 +37,35 @@ void HttpServer::handle_client(znet::TcpConnectionPtr conn) {
 
 void HttpServer::on_message(const znet::TcpConnectionPtr &conn,
                             znet::Buffer *buffer) {
-  // 创建解析器（每个请求独立）
+  /**
+   * 这里的循环有两个目的：
+   * 1. 处理一个缓冲区里可能连续到达的多个请求。
+   * 2. 在请求不完整时尽早返回，等下次网络数据到来后继续。
+   */
+
+  // 当前实现为每次消息回调创建一个解析器，并在本次缓冲区上顺序解析请求。
   HttpParser parser;
 
   while (buffer->readable_bytes() > 0) {
     ParseResult result = parser.parse(buffer);
 
     if (result == ParseResult::COMPLETE) {
-      // 请求解析完成，处理请求
+      // 一条完整请求已经拿到，可以交给业务层处理。
       handle_request(conn, parser.request());
 
-      // 检查 Keep-Alive
+      // 客户端如果不希望保持连接，就在当前响应发完后主动关闭。
       if (!parser.request()->is_keep_alive()) {
         conn->shutdown();
         return;
       }
 
-      // 重置解析器，准备下一个请求
+      // 连接仍然保持时，继续尝试解析缓冲区里后续可能已经到达的请求。
       parser.reset();
     } else if (result == ParseResult::NEED_MORE) {
-      // 需要更多数据，等待下次读取
+      // 半包场景，等待下一次 on_message 再继续解析。
       return;
     } else if (result == ParseResult::ERROR) {
-      // 解析错误
+      // 请求报文不合法时直接返回 400，并关闭连接，避免后续状态混乱。
       ZHTTP_LOG_WARN("HTTP parse error: {}", parser.error());
       HttpResponse response;
       response.status(HttpStatus::BAD_REQUEST)
@@ -77,20 +84,21 @@ void HttpServer::handle_request(const znet::TcpConnectionPtr &conn,
   ZHTTP_LOG_DEBUG("{} {} {}", method_to_string(request->method()),
                   request->path(), version_to_string(request->version()));
 
+  // 把对端地址补进请求对象，便于日志、鉴权、限流等上层逻辑直接读取。
   if (conn && conn->peer_address()) {
     request->set_remote_addr(conn->peer_address()->to_string());
   }
 
-  // 创建响应对象
+  // 响应对象的协议版本和 Keep-Alive 策略通常跟随请求。
   HttpResponse response;
   response.set_version(request->version());
   response.set_keep_alive(request->is_keep_alive());
   response.header("Server", server_name_);
 
-  // 路由处理
+  // 路由器内部会完成匹配、中间件执行和业务处理器调用。
   router_.route(request, response);
 
-  // 发送响应
+  // 最终把响应序列化成标准 HTTP 报文并发回客户端。
   std::string response_str = response.serialize();
   conn->send(response_str);
 

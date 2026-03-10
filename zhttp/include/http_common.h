@@ -6,7 +6,10 @@
 namespace zhttp {
 
 /**
- * @brief HTTP 方法枚举
+ * @brief HTTP 请求方法枚举
+ *
+ * 这些值对应请求行里的 METHOD 部分，例如 GET /users HTTP/1.1 中的 GET。
+ * 解析器会把原始字符串转成该枚举，路由器再基于该枚举做分发。
  */
 enum class HttpMethod {
   GET,
@@ -22,7 +25,10 @@ enum class HttpMethod {
 };
 
 /**
- * @brief HTTP 状态码
+ * @brief HTTP 状态码枚举
+ *
+ * 这里只收录框架内常用的一部分状态码，足够覆盖大多数 Web 服务场景。
+ * 响应对象内部统一使用该枚举，最终序列化时再转成数字和状态短语。
  */
 enum class HttpStatus {
   // 1xx Informational
@@ -67,49 +73,52 @@ enum class HttpStatus {
 };
 
 /**
- * @brief HTTP 版本
+ * @brief HTTP 协议版本
+ *
+ * 当前主要支持 HTTP/1.0 和 HTTP/1.1。UNKNOWN 用于表示解析失败
+ * 或者遇到了当前实现尚未支持的版本字符串。
  */
 enum class HttpVersion { HTTP_1_0, HTTP_1_1, UNKNOWN };
 
 /**
  * @brief 将 HttpMethod 转换为字符串
  * @param method HTTP 方法
- * @return 方法名称字符串
+ * @return 方法名称字符串，例如 "GET"
  */
 const char *method_to_string(HttpMethod method);
 
 /**
  * @brief 将字符串转换为 HttpMethod
- * @param str 方法名称字符串
- * @return HTTP 方法枚举值
+ * @param str 方法名称字符串，例如 "POST"
+ * @return HTTP 方法枚举值；无法识别时返回 HttpMethod::UNKNOWN
  */
 HttpMethod string_to_method(const std::string &str);
 
 /**
  * @brief 将 HttpStatus 转换为描述字符串
  * @param status HTTP 状态码
- * @return 状态描述字符串
+ * @return 状态描述字符串，例如 "OK"、"Not Found"
  */
 const char *status_to_string(HttpStatus status);
 
 /**
  * @brief 获取文件扩展名对应的 MIME 类型
- * @param extension 文件扩展名（不带点）
- * @return MIME 类型字符串
+ * @param extension 文件扩展名（不带点），例如 "html"、"png"
+ * @return MIME 类型字符串；未知扩展名通常会回退到通用类型
  */
 const char *get_mime_type(const std::string &extension);
 
 /**
  * @brief 将 HttpVersion 转换为字符串
  * @param version HTTP 版本
- * @return 版本字符串 (如 "HTTP/1.1")
+ * @return 版本字符串，例如 "HTTP/1.1"
  */
 const char *version_to_string(HttpVersion version);
 
 /**
  * @brief 将字符串转换为 HttpVersion
- * @param str 版本字符串
- * @return HTTP 版本枚举值
+ * @param str 版本字符串，例如 "HTTP/1.1"
+ * @return HTTP 版本枚举值；无法识别时返回 HttpVersion::UNKNOWN
  */
 HttpVersion string_to_version(const std::string &str);
 

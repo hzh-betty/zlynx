@@ -8,18 +8,19 @@ namespace zhttp {
 /**
  * @brief 初始化 zhttp 专属日志器
  * @param level 日志级别，默认为 DEBUG
+ * @details 通常在服务启动阶段调用一次即可。
  */
 void init_logger(zlog::LogLevel::value level = zlog::LogLevel::value::DEBUG);
 
 /**
  * @brief 获取 zhttp 日志器
- * @return 日志器指针
+ * @return 全局日志器指针
  */
 zlog::Logger *get_logger();
 
 } // namespace zhttp
 
-// 便利的日志宏定义
+// 便捷日志宏，统一走 zhttp 自己的日志器实例。
 #define ZHTTP_LOG_DEBUG(fmt, ...)                                              \
   zhttp::get_logger()->ZLOG_DEBUG(fmt, ##__VA_ARGS__)
 #define ZHTTP_LOG_INFO(fmt, ...)                                               \

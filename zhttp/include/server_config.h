@@ -9,6 +9,8 @@ namespace zhttp {
 
 /**
  * @brief 协程栈模式
+ * @details
+ * 独立栈模式更直观；共享栈模式通常更省内存，但对运行时切换策略有额外要求。
  */
 enum class StackMode {
   INDEPENDENT, // 独立栈模式（默认）
@@ -17,39 +19,42 @@ enum class StackMode {
 
 /**
  * @brief HTTP 服务器配置
+ * @details
+ * 该结构汇总了服务器运行时常见的所有可调参数，既可由代码直接填写，
+ * 也可通过 TOML 配置文件加载。Builder 和服务器启动流程都会消费它。
  */
 struct ServerConfig {
-  // 网络配置
+  // 网络配置。
   std::string host = "0.0.0.0";
   uint16_t port = 8080;
 
-  // 线程配置
+  // 线程与协程配置。
   size_t num_threads = 4;
   StackMode stack_mode = StackMode::INDEPENDENT;
 
-  // SSL/TLS 配置
+  // SSL/TLS 配置。
   bool enable_https = false;
   std::string cert_file;
   std::string key_file;
 
-  // 服务器配置
+  // 服务器行为配置。
   std::string server_name = "zhttp/1.0";
   bool daemon = false;
 
-  // 日志配置
+  // 日志配置。
   std::string log_level = "info";
   std::string log_file;
 
-  // 超时配置 (毫秒)
+  // 超时配置，单位毫秒。
   uint64_t read_timeout = 30000;
   uint64_t write_timeout = 30000;
   uint64_t keepalive_timeout = 60000;
 
-  // 缓冲区配置 (字节)
+  // 缓冲区和请求体大小限制，单位字节。
   size_t max_body_size = 10 * 1024 * 1024; // 10MB
   size_t buffer_size = 8192;
 
-  // 限流配置
+  // 限流配置。
   bool rate_limit_enabled = false;
   std::string rate_limit_type = "token_bucket"; // fixed_window/sliding_window/token_bucket
   size_t rate_limit_capacity = 10;              // capacity per time unit
@@ -72,23 +77,28 @@ struct ServerConfig {
 
   /**
    * @brief 验证配置有效性
-   * @return 是否有效
+   * @return true 表示配置组合可用于启动服务
    */
   bool validate() const;
 
   /**
    * @brief 导出为 TOML 字符串
+   * @return 当前配置对应的 TOML 文本
    */
   std::string to_toml_string() const;
 };
 
 /**
  * @brief 将字符串转换为 StackMode
+ * @param str 字符串形式的栈模式
+ * @return 对应的枚举值
  */
 StackMode string_to_stack_mode(const std::string &str);
 
 /**
  * @brief 将 StackMode 转换为字符串
+ * @param mode 栈模式枚举
+ * @return 字符串形式的模式名
  */
 std::string stack_mode_to_string(StackMode mode);
 

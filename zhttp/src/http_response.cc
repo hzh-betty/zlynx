@@ -5,13 +5,14 @@
 namespace zhttp {
 
 HttpResponse::HttpResponse() {
-  // 设置默认响应头
+  // 提供一个默认 Server 头，业务层如果需要可以再覆盖。
   headers_["Server"] = "zhttp/1.0";
 }
 
 std::string HttpResponse::build_set_cookie_value(const std::string &name,
                                                  const std::string &value,
                                                  const CookieOptions &opt) {
+  // 按 Set-Cookie 语法把主值和可选属性顺序拼接起来。
   std::ostringstream oss;
   oss << name << "=" << value;
 
@@ -40,12 +41,14 @@ std::string HttpResponse::build_set_cookie_value(const std::string &name,
 HttpResponse &HttpResponse::set_cookie(const std::string &name,
                                        const std::string &value,
                                        const CookieOptions &opt) {
+  // Set-Cookie 允许重复出现，所以不能简单塞进普通 headers_ 覆盖旧值。
   set_cookies_.push_back(build_set_cookie_value(name, value, opt));
   return *this;
 }
 
 HttpResponse &HttpResponse::delete_cookie(const std::string &name,
                                           const CookieOptions &opt) {
+  // 通过 Max-Age=0 告诉浏览器立即删除该 Cookie。
   CookieOptions o = opt;
   o.max_age = 0;
   set_cookies_.push_back(build_set_cookie_value(name, "", o));
@@ -110,36 +113,37 @@ HttpResponse &HttpResponse::redirect(const std::string &url,
 }
 
 std::string HttpResponse::serialize() const {
+  // HTTP 响应最终就是一段按协议格式拼好的纯文本字节流。
   std::ostringstream oss;
 
-  // 状态行
+  // 第一行是状态行：版本 + 数字状态码 + 状态短语。
   oss << version_to_string(version_) << " " << static_cast<int>(status_) << " "
       << status_to_string(status_) << "\r\n";
 
-  // 响应头
+  // 普通响应头逐项输出。
   for (const auto &pair : headers_) {
     oss << pair.first << ": " << pair.second << "\r\n";
   }
 
-  // Set-Cookie（允许多值）
+  // Set-Cookie 允许重复多次，所以单独输出每一条。
   for (const auto &val : set_cookies_) {
     oss << "Set-Cookie: " << val << "\r\n";
   }
 
-  // Content-Length（如果没有设置且有 body）
+  // 如果业务层没手动设置 Content-Length，这里自动补齐，避免客户端无法判断 Body 边界。
   if (headers_.find("Content-Length") == headers_.end()) {
     oss << "Content-Length: " << body_.size() << "\r\n";
   }
 
-  // Connection
+  // Connection 头用于告诉客户端当前连接是否还会继续复用。
   if (headers_.find("Connection") == headers_.end()) {
     oss << "Connection: " << (keep_alive_ ? "keep-alive" : "close") << "\r\n";
   }
 
-  // 空行
+  // 头部结束后必须有一个空行，再接 Body。
   oss << "\r\n";
 
-  // 响应体
+  // 最后直接拼接响应体原始内容。
   oss << body_;
 
   return oss.str();
