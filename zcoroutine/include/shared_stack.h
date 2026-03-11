@@ -19,7 +19,7 @@ class Context;
  */
 enum class StackMode {
   kIndependent, // 独立栈模式（默认）：每个协程拥有独立的栈空间
-  kShared // 共享栈模式：多个协程共享同一个栈空间，切换时保存/恢复栈内容
+  kShared       // 共享栈模式：多个协程共享同一个栈空间，切换时保存/恢复栈内容
 };
 
 /**
@@ -74,9 +74,9 @@ public:
   void set_occupy_fiber(Fiber *fiber) { occupy_fiber_ = fiber; }
 
 private:
-  char *stack_buffer_ = nullptr; // 栈缓冲区起始地址（低地址）
-  char *stack_bp_ = nullptr; // 栈顶地址（高地址，栈从高往低增长）
-  size_t stack_size_ = 0;    // 栈大小
+  char *stack_buffer_ = nullptr;  // 栈缓冲区起始地址（低地址）
+  char *stack_bp_ = nullptr;      // 栈顶地址（高地址，栈从高往低增长）
+  size_t stack_size_ = 0;         // 栈大小
   Fiber *occupy_fiber_ = nullptr; // 当前占用此栈的协程（原始指针避免循环引用）
 };
 
@@ -132,15 +132,19 @@ public:
 
 private:
   std::vector<std::unique_ptr<SharedStackBuffer>> stack_array_; // 栈缓冲区数组
-  size_t stack_size_ = 0; // 每个栈的大小
-  int count_ = 0;         // 栈缓冲区数量
-  size_t index_ = 0;      // 轮询下标
+  size_t stack_size_ = 0;                                       // 每个栈的大小
+  int count_ = 0;                                               // 栈缓冲区数量
+  size_t index_ = 0;                                            // 轮询下标
 };
 
 /**
  * @brief 专用切换栈类
  * 用于协程切换时作为临时栈使用，避免共享栈切换时的栈覆盖问题
  * 每个线程拥有独立的SwitchStack
+ * @note 如果协程 A 和协程 B 共用同一块栈，那么从 A 切到 B 时，
+ * 必须先把 A 当前仍然活着的栈内容拷出去，等以后再切回 A 时再拷回来。问题在于，
+ * 如果这个“拷出去/拷回来”的逻辑本身也运行在那块共享栈上，
+ * 它自己的函数栈帧也在被复制或覆盖的区域里，等于一边站在地板上，一边把地板拆掉。
  */
 class SwitchStack : public NonCopyable {
 public:
@@ -195,8 +199,8 @@ public:
 
 private:
   char *stack_buffer_ = nullptr; // 栈缓冲区起始地址（低地址）
-  char *stack_bp_ = nullptr; // 栈顶地址（高地址，栈从高往低增长）
-  size_t stack_size_ = 0;    // 栈大小
+  char *stack_bp_ = nullptr;     // 栈顶地址（高地址，栈从高往低增长）
+  size_t stack_size_ = 0;        // 栈大小
 };
 
 /**
@@ -268,11 +272,9 @@ public:
   void *saved_stack_sp() const { return saved_stack_sp_; }
 
 private:
-  // 缓存优化：热数据（频繁访问）放在一起，对齐到缓存行
-  // 第一缓存行：高频访问的状态和指针
-  alignas(64) char *save_buffer_ = nullptr; // 栈内容保存缓冲区 - 每次切换都访问
-  void *saved_stack_sp_ = nullptr; // 保存时的栈指针 - 每次切换都访问
-  size_t save_size_ = 0;           // 保存的栈大小 - 每次切换都访问
+  alignas(64) char *save_buffer_ = nullptr;          // 栈内容保存缓冲区
+  void *saved_stack_sp_ = nullptr;                   // 保存时的栈指针
+  size_t save_size_ = 0;                             // 保存的栈大小
   size_t save_buffer_capacity_ = 0;                  // 缓冲区容量
   SharedStackBuffer *shared_stack_buffer_ = nullptr; // 共享栈缓冲区
   bool is_shared_stack_ = false;                     // 是否使用共享栈

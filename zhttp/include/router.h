@@ -34,7 +34,7 @@ struct RouteContext {
   bool found = false;
   RouteHandlerWrapper handler;
   std::vector<Middleware::ptr> middlewares;
-  std::unordered_map<std::string, std::string> params;
+  std::unordered_map<std::string, std::string> params; // 
 };
 
 /**

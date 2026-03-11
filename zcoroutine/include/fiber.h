@@ -200,7 +200,7 @@ private:
   void confirm_switch_target();
 
   /**
-   * @brief 统一的协程切换函数（类似libco的co_swap）
+   * @brief 统一的协程切换函数
    * 使用专用切换栈（switch stack）执行上下文切换
    * @param curr 当前协程
    * @param target 目标协程
