@@ -22,191 +22,187 @@ class HttpServerBuilder {
 public:
   HttpServerBuilder();
 
-  // ========== 从配置初始化 ==========
-
   /**
    * @brief 从 TOML 配置文件加载
    * @param config_path TOML 配置文件路径
-    * @return 当前 Builder 引用，便于继续链式配置
+   * @return 当前 Builder 引用，便于继续链式配置
    */
   HttpServerBuilder &from_config(const std::string &config_path);
 
   /**
-    * @brief 设置读取超时
-    * @param timeout_ms 读取超时时间，单位毫秒；0 表示关闭
-    * @return 当前 Builder 引用
-    */
-    HttpServerBuilder &read_timeout(uint64_t timeout_ms);
+   * @brief 设置读取超时
+   * @param timeout_ms 读取超时时间，单位毫秒；0 表示关闭
+   * @return 当前 Builder 引用
+   */
+  HttpServerBuilder &read_timeout(uint64_t timeout_ms);
 
-    /**
-    * @brief 设置写出超时
-    * @param timeout_ms 写出超时时间，单位毫秒；0 表示关闭
-    * @return 当前 Builder 引用
-    */
-    HttpServerBuilder &write_timeout(uint64_t timeout_ms);
+  /**
+   * @brief 设置写出超时
+   * @param timeout_ms 写出超时时间，单位毫秒；0 表示关闭
+   * @return 当前 Builder 引用
+   */
+  HttpServerBuilder &write_timeout(uint64_t timeout_ms);
 
-    /**
-    * @brief 设置 Keep-Alive 空闲超时
-    * @param timeout_ms 空闲超时时间，单位毫秒；0 表示关闭
-    * @return 当前 Builder 引用
-    */
-    HttpServerBuilder &keepalive_timeout(uint64_t timeout_ms);
-
-    // ========== 链式配置 API ==========
+  /**
+   * @brief 设置 Keep-Alive 空闲超时
+   * @param timeout_ms 空闲超时时间，单位毫秒；0 表示关闭
+   * @return 当前 Builder 引用
+   */
+  HttpServerBuilder &keepalive_timeout(uint64_t timeout_ms);
 
   /**
    * @brief 设置监听地址
-    * @param host 监听地址，例如 0.0.0.0
-    * @param port 监听端口
-    * @return 当前 Builder 引用
+   * @param host 监听地址，例如 0.0.0.0
+   * @param port 监听端口
+   * @return 当前 Builder 引用
    */
   HttpServerBuilder &listen(const std::string &host, uint16_t port);
 
   /**
    * @brief 设置线程数
-    * @param num_threads IO/工作线程数量
-    * @return 当前 Builder 引用
+   * @param num_threads IO/工作线程数量
+   * @return 当前 Builder 引用
    */
   HttpServerBuilder &threads(size_t num_threads);
 
   /**
    * @brief 设置协程栈模式
    * @param mode 栈模式 (INDEPENDENT 或 SHARED)
-    * @return 当前 Builder 引用
+   * @return 当前 Builder 引用
    */
   HttpServerBuilder &stack_mode(StackMode mode);
 
   /**
    * @brief 使用共享栈模式
-    * @return 当前 Builder 引用
+   * @return 当前 Builder 引用
    */
   HttpServerBuilder &use_shared_stack();
 
   /**
    * @brief 使用独立栈模式（默认）
-    * @return 当前 Builder 引用
+   * @return 当前 Builder 引用
    */
   HttpServerBuilder &use_independent_stack();
 
   /**
    * @brief 启用HTTPS
-    * @param cert_file 证书文件路径
-    * @param key_file 私钥文件路径
-    * @return 当前 Builder 引用
+   * @param cert_file 证书文件路径
+   * @param key_file 私钥文件路径
+   * @return 当前 Builder 引用
    */
   HttpServerBuilder &enable_https(const std::string &cert_file,
                                   const std::string &key_file);
 
   /**
    * @brief 添加全局中间件
-    * @param middleware 中间件对象
-    * @return 当前 Builder 引用
+   * @param middleware 中间件对象
+   * @return 当前 Builder 引用
    */
   HttpServerBuilder &use(Middleware::ptr middleware);
 
   /**
    * @brief 注册GET路由（回调方式）
-    * @param path 路由路径
-    * @param callback 处理回调
-    * @return 当前 Builder 引用
+   * @param path 路由路径
+   * @param callback 处理回调
+   * @return 当前 Builder 引用
    */
   HttpServerBuilder &get(const std::string &path, RouterCallback callback);
 
   /**
    * @brief 注册GET路由（处理器方式）
-    * @param path 路由路径
-    * @param handler 处理器对象
-    * @return 当前 Builder 引用
+   * @param path 路由路径
+   * @param handler 处理器对象
+   * @return 当前 Builder 引用
    */
   HttpServerBuilder &get(const std::string &path, RouteHandler::ptr handler);
 
   /**
    * @brief 注册POST路由（回调方式）
-    * @param path 路由路径
-    * @param callback 处理回调
-    * @return 当前 Builder 引用
+   * @param path 路由路径
+   * @param callback 处理回调
+   * @return 当前 Builder 引用
    */
   HttpServerBuilder &post(const std::string &path, RouterCallback callback);
 
   /**
    * @brief 注册POST路由（处理器方式）
-    * @param path 路由路径
-    * @param handler 处理器对象
-    * @return 当前 Builder 引用
+   * @param path 路由路径
+   * @param handler 处理器对象
+   * @return 当前 Builder 引用
    */
   HttpServerBuilder &post(const std::string &path, RouteHandler::ptr handler);
 
   /**
    * @brief 注册PUT路由（回调方式）
-    * @param path 路由路径
-    * @param callback 处理回调
-    * @return 当前 Builder 引用
+   * @param path 路由路径
+   * @param callback 处理回调
+   * @return 当前 Builder 引用
    */
   HttpServerBuilder &put(const std::string &path, RouterCallback callback);
 
   /**
    * @brief 注册PUT路由（处理器方式）
-    * @param path 路由路径
-    * @param handler 处理器对象
-    * @return 当前 Builder 引用
+   * @param path 路由路径
+   * @param handler 处理器对象
+   * @return 当前 Builder 引用
    */
   HttpServerBuilder &put(const std::string &path, RouteHandler::ptr handler);
 
   /**
    * @brief 注册DELETE路由（回调方式）
-    * @param path 路由路径
-    * @param callback 处理回调
-    * @return 当前 Builder 引用
+   * @param path 路由路径
+   * @param callback 处理回调
+   * @return 当前 Builder 引用
    */
   HttpServerBuilder &del(const std::string &path, RouterCallback callback);
 
   /**
    * @brief 注册DELETE路由（处理器方式）
-    * @param path 路由路径
-    * @param handler 处理器对象
-    * @return 当前 Builder 引用
+   * @param path 路由路径
+   * @param handler 处理器对象
+   * @return 当前 Builder 引用
    */
   HttpServerBuilder &del(const std::string &path, RouteHandler::ptr handler);
 
   /**
    * @brief 设置404处理器（回调方式）
-    * @param callback 404 回调
-    * @return 当前 Builder 引用
+   * @param callback 404 回调
+   * @return 当前 Builder 引用
    */
   HttpServerBuilder &not_found(RouterCallback callback);
 
   /**
    * @brief 设置404处理器（处理器方式）
-    * @param handler 404 处理器对象
-    * @return 当前 Builder 引用
+   * @param handler 404 处理器对象
+   * @return 当前 Builder 引用
    */
   HttpServerBuilder &not_found(RouteHandler::ptr handler);
 
   /**
    * @brief 设置日志级别
-    * @param level 日志级别字符串，例如 info、debug
-    * @return 当前 Builder 引用
+   * @param level 日志级别字符串，例如 info、debug
+   * @return 当前 Builder 引用
    */
   HttpServerBuilder &log_level(const std::string &level);
 
   /**
    * @brief 启用守护进程模式
-    * @param enable 是否启用
-    * @return 当前 Builder 引用
+   * @param enable 是否启用
+   * @return 当前 Builder 引用
    */
   HttpServerBuilder &daemon(bool enable = true);
 
   /**
-    * @brief 设置首页跳转目标
-    * @param path 首页目标路径或绝对 URL
-    * @return 当前 Builder 引用
-    */
-    HttpServerBuilder &homepage(const std::string &path);
+   * @brief 设置首页跳转目标
+   * @param path 首页目标路径或绝对 URL
+   * @return 当前 Builder 引用
+   */
+  HttpServerBuilder &homepage(const std::string &path);
 
-    /**
+  /**
    * @brief 设置服务器名称
-    * @param name Server 响应头里显示的名称
-    * @return 当前 Builder 引用
+   * @param name Server 响应头里显示的名称
+   * @return 当前 Builder 引用
    */
   HttpServerBuilder &server_name(const std::string &name);
 

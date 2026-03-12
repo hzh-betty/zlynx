@@ -19,6 +19,7 @@
 #include "middleware.h"
 #include "multipart.h"
 #include "rate_limiter.h"
+#include "static_file_middleware.h"
 #include "session.h"
 #include "route_handler.h"
 #include "router.h"

@@ -21,6 +21,7 @@ set(ZHTTP_SOURCES
     src/radix_tree.cc
     src/router.cc
     src/rate_limiter.cc
+    src/static_file_middleware.cc
     src/http_server.cc
     src/session.cc
     src/ssl_context.cc
