@@ -33,44 +33,46 @@ enum class HttpMethod {
  */
 enum class HttpStatus {
   // 1xx Informational
-  CONTINUE = 100,
-  SWITCHING_PROTOCOLS = 101,
+  CONTINUE = 100, // 继续，表示客户端应继续发送请求的剩余部分；常见于 Expect: 100-continue 场景
+  SWITCHING_PROTOCOLS = 101, // 切换协议，例如升级到 WebSocket
 
   // 2xx Success
-  OK = 200,
-  CREATED = 201,
-  ACCEPTED = 202,
-  NO_CONTENT = 204,
+  OK = 200, // 请求成功，响应体包含请求的资源或处理结果
+  PARTIAL_CONTENT = 206, // 部分内容，表示响应体只包含请求范围内的一部分；常见于 Range 请求
+  CREATED = 201, // 已创建，表示请求已成功处理并创建了新的资源
+  ACCEPTED = 202, // 已接受，表示请求已被接受但尚未处理完成
+  NO_CONTENT = 204, // 无内容，表示响应体中不包含任何内容
 
   // 3xx Redirection
-  MOVED_PERMANENTLY = 301,
-  FOUND = 302,
-  SEE_OTHER = 303,
-  NOT_MODIFIED = 304,
-  TEMPORARY_REDIRECT = 307,
-  PERMANENT_REDIRECT = 308,
+  MOVED_PERMANENTLY = 301, // 永久移动，表示请求的资源已被永久移动到新 URL，响应中会包含 Location 头指向新地址
+  FOUND = 302, // 临时移动，表示请求的资源临时移动到了新 URL，响应中会包含 Location 头指向新地址
+  SEE_OTHER = 303, // See Other，表示请求的资源在另一个 URL，响应中会包含 Location 头指向新地址
+  NOT_MODIFIED = 304, // 未修改，表示客户端的缓存副本仍然有效，可以继续使用
+  TEMPORARY_REDIRECT = 307, // 临时重定向，表示请求的资源临时移动到了新 URL，响应中会包含 Location 头指向新地址
+  PERMANENT_REDIRECT = 308, // 永久重定向，表示请求的资源永久移动到了新 URL，响应中会包含 Location 头指向新地址
 
   // 4xx Client Error
-  BAD_REQUEST = 400,
-  UNAUTHORIZED = 401,
-  FORBIDDEN = 403,
-  NOT_FOUND = 404,
-  METHOD_NOT_ALLOWED = 405,
-  REQUEST_TIMEOUT = 408,
-  CONFLICT = 409,
-  LENGTH_REQUIRED = 411,
-  PAYLOAD_TOO_LARGE = 413,
-  URI_TOO_LONG = 414,
-  UNSUPPORTED_MEDIA_TYPE = 415,
-  TOO_MANY_REQUESTS = 429,
+  BAD_REQUEST = 400, // 错误请求，表示请求语法错误或参数不合法
+  UNAUTHORIZED = 401, // 未授权，表示请求需要用户认证
+  FORBIDDEN = 403, // 禁止，表示服务器理解请求，但拒绝执行
+  NOT_FOUND = 404, // 未找到，表示请求的资源不存在
+  METHOD_NOT_ALLOWED = 405, // 方法不允许，表示请求方法不被允许
+  REQUEST_TIMEOUT = 408, // 请求超时，表示服务器等待请求时超时
+  CONFLICT = 409, // 冲突，表示请求与服务器当前状态冲突
+  LENGTH_REQUIRED = 411, // 长度要求，表示请求需要 Content-Length 头
+  PAYLOAD_TOO_LARGE = 413, // 负载过大，表示请求体过大
+  URI_TOO_LONG = 414, // URI 过长，表示请求的 URI 过长
+  UNSUPPORTED_MEDIA_TYPE = 415, // 不支持的媒体类型，表示请求的 Content-Type 不被支持
+  REQUESTED_RANGE_NOT_SATISFIABLE = 416, // 请求范围不满足，表示请求的 Range 头无效
+  TOO_MANY_REQUESTS = 429, // 请求过多，表示客户端发送了过多请求
 
   // 5xx Server Error
-  INTERNAL_SERVER_ERROR = 500,
-  NOT_IMPLEMENTED = 501,
-  BAD_GATEWAY = 502,
-  SERVICE_UNAVAILABLE = 503,
-  GATEWAY_TIMEOUT = 504,
-  HTTP_VERSION_NOT_SUPPORTED = 505,
+  INTERNAL_SERVER_ERROR = 500, // 内部服务器错误，表示服务器在处理请求时发生了错误
+  NOT_IMPLEMENTED = 501, // 未实现，表示服务器不支持当前请求的方法
+  BAD_GATEWAY = 502, // 错误网关，表示服务器作为网关或代理时收到了无效响应
+  SERVICE_UNAVAILABLE = 503, // 服务不可用，表示服务器暂时无法处理请求
+  GATEWAY_TIMEOUT = 504, // 网关超时，表示服务器作为网关或代理时等待响应超时
+  HTTP_VERSION_NOT_SUPPORTED = 505, // 不支持的 HTTP 版本，表示服务器不支持请求中使用的 HTTP 版本
 };
 
 /**

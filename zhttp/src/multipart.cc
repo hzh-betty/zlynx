@@ -2,8 +2,8 @@
 
 #include "http_common.h"
 #include "http_request.h"
+#include "http_utils.h"
 
-#include <fstream>
 #include <sstream>
 
 namespace zhttp {
@@ -116,16 +116,7 @@ static bool parse_part_headers(const std::string &headers_blob,
 
 bool UploadedFile::save_to(const std::string &filepath,
                            std::string *error) const {
-  // 直接按二进制落盘，避免文本模式破坏上传内容。
-  std::ofstream ofs(filepath.c_str(), std::ios::binary);
-  if (!ofs) {
-    if (error) {
-      *error = "Failed to open file for write: " + filepath;
-    }
-    return false;
-  }
-  ofs.write(data.data(), static_cast<std::streamsize>(data.size()));
-  if (!ofs) {
+  if (!FileOperator::write_file_binary(filepath, data)) {
     if (error) {
       *error = "Failed to write file: " + filepath;
     }

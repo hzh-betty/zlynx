@@ -69,6 +69,8 @@ const char *status_to_string(HttpStatus status) {
   // 2xx
   case HttpStatus::OK:
     return "OK";
+  case HttpStatus::PARTIAL_CONTENT:
+    return "Partial Content";
   case HttpStatus::CREATED:
     return "Created";
   case HttpStatus::ACCEPTED:
@@ -111,6 +113,8 @@ const char *status_to_string(HttpStatus status) {
     return "URI Too Long";
   case HttpStatus::UNSUPPORTED_MEDIA_TYPE:
     return "Unsupported Media Type";
+  case HttpStatus::REQUESTED_RANGE_NOT_SATISFIABLE:
+    return "Requested Range Not Satisfiable";
   case HttpStatus::TOO_MANY_REQUESTS:
     return "Too Many Requests";
   // 5xx

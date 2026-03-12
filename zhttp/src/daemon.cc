@@ -1,4 +1,5 @@
 #include "daemon.h"
+#include "http_utils.h"
 #include "zhttp_logger.h"
 
 #include <fcntl.h>
@@ -14,7 +15,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
-#include <fstream>
 #include <sstream>
 
 namespace zhttp {
@@ -157,15 +157,8 @@ bool Daemon::should_stop() {
 }
 
 int Daemon::write_pid_file(const std::string &pid_file) {
-  std::ofstream ofs(pid_file);
-  if (!ofs) {
+  if (!FileOperator::write_int_to_file(pid_file, getpid())) {
     ZHTTP_LOG_ERROR("Failed to open PID file: {}", pid_file);
-    return -1;
-  }
-
-  ofs << getpid() << std::endl;
-  if (!ofs) {
-    ZHTTP_LOG_ERROR("Failed to write PID file: {}", pid_file);
     return -1;
   }
 
@@ -185,14 +178,8 @@ int Daemon::remove_pid_file(const std::string &pid_file) {
 }
 
 int Daemon::read_pid_file(const std::string &pid_file) {
-  std::ifstream ifs(pid_file);
-  if (!ifs) {
-    return -1;
-  }
-
-  int pid;
-  ifs >> pid;
-  if (!ifs) {
+  int pid = -1;
+  if (!FileOperator::read_int_from_file(pid_file, pid)) {
     return -1;
   }
 
