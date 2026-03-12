@@ -1,6 +1,7 @@
 #ifndef ZHTTP_HTTP_COMMON_H_
 #define ZHTTP_HTTP_COMMON_H_
 
+#include <ctime>
 #include <string>
 
 namespace zhttp {
@@ -121,6 +122,43 @@ const char *version_to_string(HttpVersion version);
  * @return HTTP 版本枚举值；无法识别时返回 HttpVersion::UNKNOWN
  */
 HttpVersion string_to_version(const std::string &str);
+
+/**
+ * @brief 将字符串拷贝为小写版本
+ * @param str 输入字符串
+ * @return 转换后的新字符串，不会修改入参
+ * @details
+ * 常用于 HTTP 头字段名、MIME 参数等大小写不敏感场景。
+ */
+std::string to_lower(const std::string &str);
+
+/**
+ * @brief 就地去除字符串首尾空白字符
+ * @param str 待处理字符串（会被原地修改）
+ * @details
+ * 这里的空白字符判定遵循 `std::isspace`，包括空格、制表符、回车等。
+ */
+void trim(std::string &str);
+
+/**
+ * @brief URL 解码（百分号编码）
+ * @param str 输入字符串
+ * @return 解码后的字符串
+ * @details
+ * - 支持 `%XX` 十六进制编码；
+ * - 支持把 `+` 还原为空格（兼容 `application/x-www-form-urlencoded`）；
+ * - 非法 `%` 序列保持原样，不抛异常。
+ */
+std::string url_decode(const std::string &str);
+
+/**
+ * @brief 将 Unix 时间戳格式化为 HTTP GMT 时间字符串
+ * @param timestamp 秒级 Unix 时间戳
+ * @return 形如 `Wed, 21 Oct 2015 07:28:00 GMT` 的字符串
+ * @details
+ * 主要用于 `Last-Modified`、`If-Modified-Since` 等 HTTP 缓存头。
+ */
+std::string format_http_date_gmt(std::time_t timestamp);
 
 } // namespace zhttp
 

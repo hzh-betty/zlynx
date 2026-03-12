@@ -1,35 +1,14 @@
 #include "multipart.h"
 
+#include "http_common.h"
 #include "http_request.h"
 
-#include <algorithm>
-#include <cctype>
 #include <fstream>
 #include <sstream>
 
 namespace zhttp {
 
 namespace {
-
-// multipart 参数名比较时通常不区分大小写，统一转成小写便于处理。
-static inline std::string to_lower(std::string s) {
-  std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
-    return static_cast<char>(std::tolower(c));
-  });
-  return s;
-}
-
-// 就地裁剪首尾空白，便于解析头字段参数。
-static inline void trim(std::string &s) {
-  auto is_space = [](unsigned char c) { return std::isspace(c) != 0; };
-  while (!s.empty() && is_space(static_cast<unsigned char>(s.front()))) {
-    s.erase(s.begin());
-  }
-  while (!s.empty() && is_space(static_cast<unsigned char>(s.back()))) {
-    s.pop_back();
-  }
-}
-
 static bool extract_boundary(const std::string &content_type,
                              std::string &boundary) {
   // 从 Content-Type 参数中提取 boundary，兼容 boundary="xxx" 这种带引号写法。

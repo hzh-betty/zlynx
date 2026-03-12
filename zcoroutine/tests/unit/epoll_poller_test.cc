@@ -24,7 +24,7 @@ TEST_F(EpollPollerTest, ModInvalidFd) {
 
 TEST_F(EpollPollerTest, DelInvalidFd) {
   EpollPoller poller(10);
-  EXPECT_EQ(poller.del_event(-1), 0);
+  EXPECT_EQ(poller.del_event(-1), -1);
 }
 
 int main(int argc, char **argv) {

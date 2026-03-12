@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <ctime>
 #include <unordered_map>
 
 namespace zhttp {
@@ -195,6 +196,83 @@ HttpVersion string_to_version(const std::string &str) {
     return HttpVersion::HTTP_1_1;
   }
   return HttpVersion::UNKNOWN;
+}
+
+std::string to_lower(const std::string &str) {
+  std::string lower = str;
+  std::transform(lower.begin(), lower.end(), lower.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return lower;
+}
+
+void trim(std::string &str) {
+  auto is_space = [](unsigned char c) { return std::isspace(c) != 0; };
+
+  while (!str.empty() && is_space(static_cast<unsigned char>(str.front()))) {
+    str.erase(str.begin());
+  }
+  while (!str.empty() && is_space(static_cast<unsigned char>(str.back()))) {
+    str.pop_back();
+  }
+}
+
+std::string url_decode(const std::string &str) {
+  // URL 解码整体策略：
+  // 1) 顺序扫描输入字符串；
+  // 2) 遇到合法 "%HH"（十六进制）则还原为单字节；
+  // 3) 遇到 '+' 还原为空格（application/x-www-form-urlencoded 语义）；
+  // 4) 其他字符原样保留。
+  // 说明：非法或不完整的 '%' 序列不会报错，会按原字符输出。
+  std::string output;
+  // 解码后长度不会超过原串，先预留可减少扩容。
+  output.reserve(str.size());
+
+  // 将单个十六进制字符转为数值（0~15），非法返回 -1。
+  auto hex_to_int = [](char c) -> int {
+    if (c >= '0' && c <= '9') {
+      return c - '0';
+    }
+    if (c >= 'A' && c <= 'F') {
+      return c - 'A' + 10;
+    }
+    if (c >= 'a' && c <= 'f') {
+      return c - 'a' + 10;
+    }
+    return -1;
+  };
+
+  // 主循环：按字符推进；当成功消费 "%HH" 时会额外跳过 2 个字符。
+  for (size_t i = 0; i < str.size(); ++i) {
+    // 分支 A：尝试解析百分号编码（例如 "%2F" -> '/').
+    if (str[i] == '%' && i + 2 < str.size()) {
+      int hi = hex_to_int(str[i + 1]);
+      int lo = hex_to_int(str[i + 2]);
+      if (hi >= 0 && lo >= 0) {
+        // 两位十六进制都合法：合并为一个字节写入输出。
+        output.push_back(static_cast<char>(hi * 16 + lo));
+        // 已消费当前位置和后两位，for 迭代再 +1 后刚好指向下一个未处理字符。
+        i += 2;
+        continue;
+      }
+      // 非法 "%" 序列：降级为普通字符路径，保持输入可逆。
+    } else if (str[i] == '+') {
+      // 分支 B：'+' 按表单编码规则映射为空格。
+      output.push_back(' ');
+      continue;
+    }
+    // 分支 C：普通字符直接透传。
+    output.push_back(str[i]);
+  }
+
+  return output;
+}
+
+std::string format_http_date_gmt(std::time_t timestamp) {
+  struct tm tm_value;
+  char buffer[64];
+  gmtime_r(&timestamp, &tm_value);
+  std::strftime(buffer, sizeof(buffer), "%a, %d %b %Y %H:%M:%S GMT", &tm_value);
+  return buffer;
 }
 
 } // namespace zhttp

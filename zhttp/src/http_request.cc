@@ -1,82 +1,13 @@
 #include "http_request.h"
 
+#include "http_common.h"
 #include "multipart.h"
 
-#include <algorithm>
-#include <cctype>
 #include <cstdlib>
 
 namespace zhttp {
 
 namespace {
-/**
- * HTTP 头字段名、Connection 等协议字段通常需要大小写不敏感比较。
- * 这里不直接修改原始字符串，而是复制一份再统一转成小写，方便后续比较。
- */
-std::string to_lower(const std::string &str) {
-  std::string result = str;
-  std::transform(result.begin(), result.end(), result.begin(),
-                 [](unsigned char c) { return std::tolower(c); });
-  return result;
-}
-
-/**
- * 对 URL 编码字符串做解码。
- *
- * 这里主要处理两类常见编码：
- * 1. %XX 形式的十六进制转义，例如 %20 -> 空格。
- * 2. 查询字符串中的 +，按 application/x-www-form-urlencoded 语义解码为空格。
- *
- * 如果遇到非法的 % 编码，例如后面不足两个字符，或者不是十六进制字符，
- * 当前实现会保留原字符，不会抛异常，这样可以避免把一条坏请求放大成崩溃。
- */
-std::string url_decode(const std::string &str) {
-  std::string result;
-  result.reserve(str.size());
-
-  for (size_t i = 0; i < str.size(); ++i) {
-    // 处理 %XX 形式的编码。
-    if (str[i] == '%' && i + 2 < str.size()) {
-      int high = std::isxdigit(str[i + 1]) ? str[i + 1] : 0;
-      int low = std::isxdigit(str[i + 2]) ? str[i + 2] : 0;
-      if (high && low) {
-        // 把单个十六进制字符转成整数值。
-        auto hex_to_int = [](char c) -> int {
-          if (c >= '0' && c <= '9')
-            return c - '0';
-          if (c >= 'A' && c <= 'F')
-            return c - 'A' + 10;
-          if (c >= 'a' && c <= 'f')
-            return c - 'a' + 10;
-          return 0;
-        };
-        result += static_cast<char>(hex_to_int(str[i + 1]) * 16 +
-                                    hex_to_int(str[i + 2]));
-        i += 2;
-        continue;
-      }
-    } else if (str[i] == '+') {
-      // 表单编码里 + 表示空格。
-      result += ' ';
-      continue;
-    }
-    // 其他字符原样拷贝。
-    result += str[i];
-  }
-  return result;
-}
-
-// 去掉字符串首尾空白，便于解析 header/cookie 中的 token。
-static inline void trim(std::string &s) {
-  auto is_space = [](unsigned char c) { return std::isspace(c) != 0; };
-  while (!s.empty() && is_space(static_cast<unsigned char>(s.front()))) {
-    s.erase(s.begin());
-  }
-  while (!s.empty() && is_space(static_cast<unsigned char>(s.back()))) {
-    s.pop_back();
-  }
-}
-
 /**
  * 解析 Cookie 请求头。
  *
