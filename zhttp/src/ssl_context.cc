@@ -27,7 +27,6 @@ std::string get_ssl_error() {
 }
 } // namespace
 
-// ===================== SslContext =====================
 
 SslContext::SslContext() = default;
 

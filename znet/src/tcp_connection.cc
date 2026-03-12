@@ -49,10 +49,10 @@ TcpConnection::~TcpConnection() {
 void TcpConnection::connect_established() {
   set_state(State::Connected);
 
-  // 设置Socket为非阻塞模式
-  // 连接对象一旦进入 Connected，后续所有收发都遵循“非阻塞 + epoll 驱动”模型。
-  // 即使底层 hook 能帮我们处理部分阻塞语义，这里仍然明确设置为 non-blocking，
-  // 以保证 ET 模式下 read/write 循环的行为可预测。
+  // ET 读循环里，EAGAIN 本来应该是“这一轮读完了，赶紧退出并重新注册读事件（re-arm）”。
+  // 但 hook 把它改成了“当前协程挂起，等下次可读再回来”。里面也有个 while，
+  // 可能导致add_event不及时，错过数据到达的时机，导致连接上数据长期滞留在内核缓冲区里。
+  // 因此这里必须设置非阻塞，确保 ET 模式下的正确行为。
   socket_->set_non_blocking(true);
 
   // 注册读事件到IoScheduler
@@ -68,13 +68,12 @@ void TcpConnection::connect_established() {
   if (connection_callback_) {
     auto self = shared_from_this();
     auto cb = connection_callback_;
-    if (zcoroutine::Scheduler::get_this() == io_scheduler_) {
-      cb(self);
-    } else if (io_scheduler_) {
+    if (io_scheduler_) {
       io_scheduler_->schedule(
           [self, cb = std::move(cb)]() mutable { cb(self); });
     } else {
-      cb(self);
+      ZNET_LOG_FATAL("TcpConnection::connect_established no IoScheduler for "
+                     "connection callback");
     }
   }
 
@@ -84,6 +83,14 @@ void TcpConnection::connect_established() {
   // 连接刚建立时，还没有任何请求字节进来。
   // 因此 read_timeout 的第一段语义是：客户端在建连后多久必须开始说话。
   refresh_read_timer();
+
+  // EPOLLET 下存在一个经典竞态：客户端可能在服务端把新连接 fd 注册进 epoll
+  // 之前就已经发送了首包数据。
+  // 这种情况下，如果我们只依赖“下一次边沿触发”，可能永远等不到 READ 事件，
+  // 导致连接上的数据长期滞留在内核缓冲区里。
+  // 因此在连接建立完成后主动尝试读一轮（非阻塞读到 EAGAIN 即停），把
+  // 已经到达的数据及时交给上层协议解析。
+  handle_read();
 }
 
 void TcpConnection::send(const void *data, size_t len) {
@@ -149,7 +156,8 @@ void TcpConnection::set_keepalive_timeout(uint64_t timeout_ms) {
 void TcpConnection::finish_response(bool keep_alive) {
   // finish_response() 是协议层对连接层的一个“状态切换通知”：
   // 当前这一轮请求已经处理完，连接接下来要么关闭，要么进入 keep-alive 空闲期。
-  // 这里不负责真正 send 响应数据，send 已经先做了；这里负责的是 timeout 状态机切换。
+  // 这里不负责真正 send 响应数据，send 已经先做了；这里负责的是 timeout
+  // 状态机切换。
 
   // 一轮请求已经完成，因此本次请求对应的 read_timeout 计时结束。
   cancel_read_timer();
@@ -229,8 +237,6 @@ void TcpConnection::handle_read() {
     }
 
     // 读取阶段有进展，重新刷新 read timeout。
-    // 对 HTTP 来说，这里的语义是：当前请求还在持续到达，就继续给它时间；
-    // 如果后续长时间没有任何新字节，则判定请求读取超时。
     refresh_read_timer();
 
     // 直接在当前事件回调里执行，避免额外调度/锁竞争/动态分配。
@@ -283,12 +289,8 @@ void TcpConnection::handle_write() {
       if (wrote_any && write_complete_callback_ && io_scheduler_) {
         auto self = shared_from_this();
         auto cb = write_complete_callback_;
-        if (zcoroutine::Scheduler::get_this() == io_scheduler_) {
-          cb(self);
-        } else {
-          io_scheduler_->schedule(
-              [self, cb = std::move(cb)]() mutable { cb(self); });
-        }
+        io_scheduler_->schedule(
+            [self, cb = std::move(cb)]() mutable { cb(self); });
       }
 
       if (state_.load(std::memory_order_acquire) == State::Disconnecting) {
@@ -355,11 +357,7 @@ void TcpConnection::handle_close() {
   if (close_callback_ && io_scheduler_) {
     auto self = shared_from_this();
     auto cb = close_callback_;
-    if (zcoroutine::Scheduler::get_this() == io_scheduler_) {
-      cb(self);
-    } else {
-      io_scheduler_->schedule([self, cb]() { cb(self); });
-    }
+    io_scheduler_->schedule([self, cb]() { cb(self); });
   }
 }
 
@@ -387,11 +385,7 @@ void TcpConnection::send_in_loop(const void *data, size_t len) {
         // 数据全部发送完成：若已在调度线程则直接调用，避免额外调度开销
         auto self = shared_from_this();
         auto cb = write_complete_callback_;
-        if (zcoroutine::Scheduler::get_this() == io_scheduler_) {
-          cb(self);
-        } else {
-          io_scheduler_->schedule([self, cb]() { cb(self); });
-        }
+        io_scheduler_->schedule([self, cb]() { cb(self); });
       }
     } else {
       n_wrote = 0;

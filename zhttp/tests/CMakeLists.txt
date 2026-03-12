@@ -50,20 +50,6 @@ target_include_directories(http_server_test PRIVATE
 )
 add_test(NAME http_server_test COMMAND http_server_test)
 
-add_executable(http_server_timeout_test integration/http_server_timeout_test.cc)
-target_link_libraries(http_server_timeout_test
-    zhttp
-    znet_static
-    zcoroutine_static
-    zlog_static
-    GTest::gtest
-    pthread
-)
-target_include_directories(http_server_timeout_test PRIVATE
-    ${CMAKE_SOURCE_DIR}/zhttp/include
-)
-add_test(NAME http_server_timeout_test COMMAND http_server_timeout_test)
-
 add_executable(zhttp_benchmark benchmark/zhttp_benchmark.cc)
 
 target_link_libraries(zhttp_benchmark

@@ -848,7 +848,6 @@ int ioctl(int fd, unsigned long request, ...) {
   return ioctl_f(fd, request, arg);
 }
 
-// ==================== setsockopt/getsockopt ====================
 
 int setsockopt(int sockfd, int level, int optname, const void *optval,
                socklen_t optlen) {

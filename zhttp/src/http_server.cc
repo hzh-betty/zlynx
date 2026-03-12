@@ -4,7 +4,22 @@
 #include "tcp_connection.h"
 #include "zhttp_logger.h"
 
+#include <memory>
+
 namespace zhttp {
+
+namespace {
+
+std::shared_ptr<HttpParser> ensure_parser(const znet::TcpConnectionPtr &conn) {
+  auto parser = conn->get_context<HttpParser>();
+  if (!parser) {
+    parser = std::make_shared<HttpParser>();
+    conn->set_context(parser);
+  }
+  return parser;
+}
+
+} // namespace
 
 HttpServer::HttpServer(zcoroutine::IoScheduler::ptr io_worker,
                        zcoroutine::IoScheduler::ptr accept_worker)
@@ -23,6 +38,9 @@ void HttpServer::set_name(const std::string &name) {
 void HttpServer::handle_client(znet::TcpConnectionPtr conn) {
   ZHTTP_LOG_DEBUG("New HTTP connection: {}", conn->name());
 
+  // 解析器状态跟随连接生命周期，避免请求拆包时在下一次回调里丢失状态。
+  conn->set_context(std::make_shared<HttpParser>());
+
   // 消息回调负责把收到的字节流交给 HTTP 解析流程。
   conn->set_message_callback(
       [this](const znet::TcpConnectionPtr &c, znet::Buffer *buffer) {
@@ -31,6 +49,7 @@ void HttpServer::handle_client(znet::TcpConnectionPtr conn) {
 
   // 关闭回调这里只做日志记录，资源释放交给连接对象自身生命周期管理。
   conn->set_close_callback([](const znet::TcpConnectionPtr &c) {
+    c->clear_context();
     ZHTTP_LOG_DEBUG("HTTP connection closed: {}", c->name());
   });
 }
@@ -43,15 +62,15 @@ void HttpServer::on_message(const znet::TcpConnectionPtr &conn,
    * 2. 在请求不完整时尽早返回，等下次网络数据到来后继续。
    */
 
-  // 当前实现为每次消息回调创建一个解析器，并在本次缓冲区上顺序解析请求。
-  HttpParser parser;
+  // 解析器挂在连接上下文里，拆包时可以跨多次 on_message 持续推进状态机。
+  auto parser = ensure_parser(conn);
 
   while (buffer->readable_bytes() > 0) {
-    ParseResult result = parser.parse(buffer);
+    ParseResult result = parser->parse(buffer);
 
     if (result == ParseResult::COMPLETE) {
       // 一条完整请求已经拿到，可以交给业务层处理。
-      const bool keep_alive = handle_request(conn, parser.request());
+      const bool keep_alive = handle_request(conn, parser->request());
 
       // 客户端如果不希望保持连接，就在当前响应发完后主动关闭。
       if (!keep_alive) {
@@ -65,17 +84,17 @@ void HttpServer::on_message(const znet::TcpConnectionPtr &conn,
       }
 
       // 连接仍然保持时，继续尝试解析缓冲区里后续可能已经到达的请求。
-      parser.reset();
+      parser->reset();
     } else if (result == ParseResult::NEED_MORE) {
       // 半包场景，等待下一次 on_message 再继续解析。
       return;
     } else if (result == ParseResult::ERROR) {
       // 请求报文不合法时直接返回 400，并关闭连接，避免后续状态混乱。
-      ZHTTP_LOG_WARN("HTTP parse error: {}", parser.error());
+      ZHTTP_LOG_WARN("HTTP parse error: {}", parser->error());
       HttpResponse response;
       response.status(HttpStatus::BAD_REQUEST)
           .content_type("text/plain")
-          .body("Bad Request: " + parser.error());
+          .body("Bad Request: " + parser->error());
       response.set_keep_alive(false);
       conn->send(response.serialize());
       conn->shutdown();

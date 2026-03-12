@@ -3,12 +3,14 @@
 namespace zcoroutine {
 
 StealableQueueBitmap::StealableQueueBitmap(size_t worker_count)
+    // 以 64bit 为一个 word 存储，便于直接做原子位运算和按 word 扫描。
     : worker_count_(worker_count), words_((worker_count + 63) / 64) {}
 
 void StealableQueueBitmap::set(size_t worker_id) {
   if (worker_id >= worker_count_) {
     return;
   }
+  // 每个 worker 映射到一个 64bit word 中的某一位。
   const size_t word = worker_id / 64;
   const uint64_t mask = (uint64_t{1} << (worker_id % 64));
   words_[word].v.fetch_or(mask, std::memory_order_relaxed);
@@ -20,6 +22,7 @@ void StealableQueueBitmap::clear(size_t worker_id) {
   }
   const size_t word = worker_id / 64;
   const uint64_t mask = (uint64_t{1} << (worker_id % 64));
+  // 位图只提供启发式提示，这里使用 relaxed 即可。
   words_[word].v.fetch_and(~mask, std::memory_order_relaxed);
 }
 
@@ -33,6 +36,7 @@ bool StealableQueueBitmap::test(size_t worker_id) const {
 }
 
 bool StealableQueueBitmap::any() const {
+  // 粗粒度地按 word 判断，只要任一段非零即存在可窃取 worker。
   for (const auto &w : words_) {
     if (w.v.load(std::memory_order_relaxed) != 0) {
       return true;
@@ -77,6 +81,7 @@ int StealableQueueBitmap::find_in_range(size_t from, size_t to,
     return -1;
   }
 
+  // 从 from 开始逐个 64bit word 扫描，避免逐 bit 线性遍历。
   size_t i = from;
   while (i < to) {
     const size_t word_index = i / 64;
@@ -124,6 +129,7 @@ int StealableQueueBitmap::find_zero_in_range(size_t from, size_t to) const {
     return -1;
   }
 
+  // 与 find_in_range 类似，只是对当前 word 取反后查找首个 0 bit。
   size_t i = from;
   while (i < to) {
     const size_t word_index = i / 64;

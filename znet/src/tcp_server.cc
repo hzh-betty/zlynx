@@ -9,15 +9,21 @@
 
 namespace znet {
 
+namespace {
+constexpr int kDefaultRecvTimeout = 60 * 1000 * 2;  // 2分钟
+constexpr int kDefaultWriteTimeout = 60 * 1000;     // 1分钟
+constexpr int kDefaultKeepAliveTimeout = 60 * 1000; // 1分钟
+} // namespace
+
 TcpServer::TcpServer(zcoroutine::IoScheduler::ptr io_worker,
                      zcoroutine::IoScheduler::ptr accept_worker)
     : io_worker_(io_worker),
       accept_worker_(accept_worker ? accept_worker
                                    : std::make_shared<zcoroutine::IoScheduler>(
                                          1, "TcpServer-Accept", false)),
-      recv_timeout_(60 * 1000 * 2), // 默认 2 分钟
-      write_timeout_(0), keepalive_timeout_(0),
-      name_("znet/1.0.0"), type_("tcp"), is_stop_(true) {
+      recv_timeout_(kDefaultRecvTimeout), write_timeout_(kDefaultWriteTimeout),
+      keepalive_timeout_(kDefaultKeepAliveTimeout), name_("znet/1.0.0"),
+      type_("tcp"), is_stop_(true) {
   zcoroutine::FiberPool::get_instance().init();
 }
 
@@ -92,14 +98,6 @@ void TcpServer::start_accept(Socket::ptr sock) {
   while (!is_stop_.load(std::memory_order_acquire)) {
     Socket::ptr client = sock->accept();
     if (client) {
-      // 设置接收超时
-      // 这里设置的是 socket 层/ hook 层的读超时基础值。
-      // 后面我们还会把 read/write/keepalive 三种 timeout 配置继续传给
-      // TcpConnection，让连接对象在“协议级生命周期”里做更细的控制。
-      if (recv_timeout_ > 0) {
-        client->set_recv_timeout(recv_timeout_);
-      }
-
       // 创建TcpConnection，转移 Socket 所有权
       auto local_addr = client->get_local_address();
       auto peer_addr = client->get_remote_address();
@@ -162,23 +160,21 @@ void TcpServer::start_accept(Socket::ptr sock) {
 }
 
 bool TcpServer::start() {
-  // is_stop_ 既是“是否停止”的状态位，也是 start/stop 的幂等保护。
-  // compare_exchange 成功说明这次调用真正完成了从 stopped -> running 的切换；
-  // 如果失败，表示服务已经启动过，直接返回 true，避免重复启动线程池。
-  bool expected = true;
-  if (!is_stop_.compare_exchange_strong(expected, false,
-                                        std::memory_order_acq_rel)) {
-    return true; // 已经启动
+  // 判断是否已经在运行，避免重复调用 start()。
+  if(!is_stop_.load(std::memory_order_acquire)) {
+    ZNET_LOG_WARN("TcpServer::start already started");
+    return true;
+  }
+  is_stop_.store(false, std::memory_order_release);
+
+  // 启动 accept_worker_
+  if (accept_worker_) {
+    accept_worker_->start();
   }
 
   // 启动 io_worker_
   if (io_worker_) {
     io_worker_->start();
-  }
-
-  // 启动 accept_worker_
-  if (accept_worker_) {
-    accept_worker_->start();
   }
 
   zcoroutine::RWMutex::ReadLock lock(socks_mutex_);
@@ -198,13 +194,12 @@ bool TcpServer::start() {
 }
 
 void TcpServer::stop() {
-  // 与 start() 对称，stop() 也做幂等保护。
-  // 只有 running -> stopped 这一次切换真正执行清理逻辑。
-  bool expected = false;
-  if (!is_stop_.compare_exchange_strong(expected, true,
-                                        std::memory_order_acq_rel)) {
-    return; // 已经停止
+  // 判断是否已经停止，避免重复调用 stop()。
+  if (is_stop_.load(std::memory_order_acquire)) {
+    ZNET_LOG_WARN("TcpServer::stop already stopped");
+    return;
   }
+  is_stop_.store(true, std::memory_order_release);
 
   // 将关闭操作调度到 accept_worker_ 执行，确保线程安全
   auto self = shared_from_this();
@@ -254,9 +249,8 @@ void TcpServer::handle_client(TcpConnectionPtr conn) {
 std::string TcpServer::to_string(const std::string &prefix) {
   std::stringstream ss;
   ss << prefix << "[type=" << type_ << " name=" << name_
-  << " recv_timeout=" << recv_timeout_
-  << " write_timeout=" << write_timeout_
-  << " keepalive_timeout=" << keepalive_timeout_ << "]" << std::endl;
+     << " recv_timeout=" << recv_timeout_ << " write_timeout=" << write_timeout_
+     << " keepalive_timeout=" << keepalive_timeout_ << "]" << std::endl;
   std::string pfx = prefix.empty() ? "    " : prefix;
 
   zcoroutine::RWMutex::ReadLock lock(socks_mutex_);

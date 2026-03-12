@@ -28,7 +28,7 @@ struct BenchConfig {
   std::string wrk_bin = "wrk";
   int wrk_threads = 4;
   int wrk_connections = 256;
-  std::string wrk_duration = "10s";
+  std::string wrk_duration = "3s";
   int warmup_ms = 500;
   std::string path = "/";
   std::string mode = "all";

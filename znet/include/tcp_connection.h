@@ -111,6 +111,28 @@ public:
 
   void set_close_callback(CloseCallback cb) { close_callback_ = std::move(cb); }
 
+  void set_context(const std::shared_ptr<void> &context) {
+    context_ = context;
+  }
+
+  void set_context(std::shared_ptr<void> &&context) {
+    context_ = std::move(context);
+  }
+
+  template <typename T>
+  std::shared_ptr<T> get_context() const {
+    return std::static_pointer_cast<T>(context_);
+  }
+
+  template <typename T>
+  T &get_context_ref() const {
+    return *(static_cast<T *>(context_.get()));
+  }
+
+  bool has_context() const { return static_cast<bool>(context_); }
+
+  void clear_context() { context_.reset(); }
+
   /**
    * @brief 连接建立时调用（由 TcpServer 调用）
    */
@@ -275,6 +297,9 @@ private:
   MessageCallback message_callback_;
   WriteCompleteCallback write_complete_callback_;
   CloseCallback close_callback_;
+
+  // 记录连接的上下文信息，供业务层使用（如 HTTP 解析多次数据，但是相同请求）
+  std::shared_ptr<void> context_;
 };
 
 } // namespace znet
