@@ -1,5 +1,5 @@
-#ifndef ZHTTP_STATIC_FILE_MIDDLEWARE_H_
-#define ZHTTP_STATIC_FILE_MIDDLEWARE_H_
+#ifndef ZHHTP_STATIC_OPT_H_
+#define ZHHTP_STATIC_OPT_H_
 
 #include "middleware.h"
 
@@ -119,4 +119,4 @@ private:
 
 } // namespace zhttp
 
-#endif // ZHTTP_STATIC_FILE_MIDDLEWARE_H_
+#endif // ZHHTP_STATIC_OPT_H_

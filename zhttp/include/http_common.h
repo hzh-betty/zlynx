@@ -3,6 +3,7 @@
 
 #include <ctime>
 #include <string>
+#include <vector>
 
 namespace zhttp {
 
@@ -141,6 +142,16 @@ std::string to_lower(const std::string &str);
  * 这里的空白字符判定遵循 `std::isspace`，包括空格、制表符、回车等。
  */
 void trim(std::string &str);
+
+/**
+ * @brief 按指定分隔符切分字符串
+ * @param str 输入字符串
+ * @param delimiter 分隔符
+ * @return 切分结果（保留空片段）
+ * @details
+ * 例如：split_string("a,,b", ',') -> {"a", "", "b"}
+ */
+std::vector<std::string> split_string(const std::string &str, char delimiter);
 
 /**
  * @brief URL 解码（百分号编码）

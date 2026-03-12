@@ -11,6 +11,7 @@ set(UNIT_TESTS
     rate_limiter_test
     router_test
     middleware_test
+    auth_middleware_test
     static_file_opt_test
     http_parser_detailed_test
     router_detailed_test

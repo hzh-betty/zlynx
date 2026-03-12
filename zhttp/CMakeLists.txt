@@ -24,6 +24,7 @@ set(ZHTTP_SOURCES
     src/http_utils.cc
     src/range_parse.cc
     src/static_file_opt.cc
+    src/auth_middleware.cc
     src/http_server.cc
     src/session.cc
     src/ssl_context.cc

@@ -14,7 +14,6 @@ protected:
   znet::Buffer buffer_;
 };
 
-// ========== 边界测试 ==========
 
 TEST_F(HttpParserDetailedTest, EmptyBuffer) {
   ParseResult result = parser_->parse(&buffer_);
@@ -82,7 +81,6 @@ TEST_F(HttpParserDetailedTest, LargeBody) {
   EXPECT_EQ(parser_->request()->body().size(), 10000u);
 }
 
-// ========== 错误处理测试 ==========
 
 TEST_F(HttpParserDetailedTest, InvalidHttpVersion) {
   const char *request = "GET / HTTP/2.0\r\n\r\n";
@@ -130,7 +128,6 @@ TEST_F(HttpParserDetailedTest, ContentLengthMismatch) {
   EXPECT_EQ(result, ParseResult::NEED_MORE); // 需要更多数据
 }
 
-// ========== 特殊字符测试 ==========
 
 TEST_F(HttpParserDetailedTest, PathWithSpecialChars) {
   const char *request =
@@ -166,8 +163,6 @@ TEST_F(HttpParserDetailedTest, MultipleQueryParams) {
   EXPECT_EQ(parser_->request()->query_param("filter"), "active");
 }
 
-// ========== 流式解析测试 ==========
-
 TEST_F(HttpParserDetailedTest, IncrementalParsing) {
   const char *part1 = "GET /";
   const char *part2 = "index.html HTTP/";
@@ -194,7 +189,6 @@ TEST_F(HttpParserDetailedTest, IncrementalParsing) {
   EXPECT_EQ(parser_->request()->header("Host"), "localhost");
 }
 
-// ========== HTTP方法测试 ==========
 
 TEST_F(HttpParserDetailedTest, AllHttpMethods) {
   std::vector<std::string> methods = {"GET",    "POST",    "PUT",
@@ -214,7 +208,6 @@ TEST_F(HttpParserDetailedTest, AllHttpMethods) {
   }
 }
 
-// ========== Keep-Alive测试 ==========
 
 TEST_F(HttpParserDetailedTest, MultipleRequestsKeepAlive) {
   const char *request1 =

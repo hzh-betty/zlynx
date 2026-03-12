@@ -220,6 +220,27 @@ void trim(std::string &str) {
   }
 }
 
+std::vector<std::string> split_string(const std::string &str, char delimiter) {
+  std::vector<std::string> parts;
+
+  size_t start = 0;
+  while (start <= str.size()) {
+    size_t pos = str.find(delimiter, start);
+    if (pos == std::string::npos) {
+      pos = str.size();
+    }
+
+    parts.push_back(str.substr(start, pos - start));
+
+    if (pos == str.size()) {
+      break;
+    }
+    start = pos + 1;
+  }
+
+  return parts;
+}
+
 std::string url_decode(const std::string &str) {
   // URL 解码整体策略：
   // 1) 顺序扫描输入字符串；
