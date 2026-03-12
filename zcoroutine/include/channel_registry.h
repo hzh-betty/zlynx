@@ -44,6 +44,13 @@ public:
    */
   size_t size() const;
 
+  /**
+   * @brief 删除fd对应的Channel映射
+   * @param fd 文件描述符
+   * @return 若存在并删除成功返回true，否则返回false
+   */
+  bool remove(int fd);
+
 private:
   /**
    * @brief 扩容并创建FdContext（需持有写锁）

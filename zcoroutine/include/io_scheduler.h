@@ -77,6 +77,13 @@ public:
   int cancel_all(int fd);
 
   /**
+   * @brief 释放fd在IoScheduler中的所有状态（事件 + Channel映射）
+   * @param fd 文件描述符
+   * @return 成功返回0，失败返回-1
+   */
+  int release_fd(int fd);
+
+  /**
    * @brief 触发IO事件（先触发回调再删除事件）
    * @param fd 文件描述符
    * @param event 事件类型

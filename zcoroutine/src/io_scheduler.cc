@@ -286,6 +286,27 @@ int IoScheduler::cancel_all(int fd) {
   return 0;
 }
 
+int IoScheduler::release_fd(int fd) {
+  if (fd < 0) {
+    ZCOROUTINE_LOG_WARN("IoScheduler::release_fd invalid fd={}", fd);
+    return -1;
+  }
+
+  int ret = cancel_all(fd);
+  if (ret < 0) {
+    ZCOROUTINE_LOG_WARN(
+        "IoScheduler::release_fd cancel_all failed, fd={}, ret={}", fd, ret);
+  }
+
+  if (channels_) {
+    (void)channels_->remove(fd);
+  }
+
+  ZCOROUTINE_LOG_DEBUG("IoScheduler::release_fd done, fd={}, ret={}", fd,
+                       ret);
+  return ret;
+}
+
 Timer::ptr IoScheduler::add_timer(uint64_t timeout,
                                   std::function<void()> callback,
                                   bool recurring) {

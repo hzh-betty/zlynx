@@ -622,7 +622,6 @@ ssize_t recvmsg(int sockfd, struct msghdr *msg, int flags) {
                     SO_RCVTIMEO, msg, flags);
 }
 
-// ==================== Write系列 ====================
 
 ssize_t write(int fd, const void *buf, size_t count) {
   return do_io_hook(fd, write_f, "write", zcoroutine::Channel::kWrite,
@@ -650,32 +649,24 @@ ssize_t sendmsg(int sockfd, const struct msghdr *msg, int flags) {
                     SO_SNDTIMEO, msg, flags);
 }
 
-// ==================== close ====================
 
 int close(int fd) {
-  if (!zcoroutine::is_hook_enabled()) {
-    return close_f(fd);
+  // 无论 hook 状态和 StatusTable 命中情况，都尽力做一次调度侧清理。
+  // 避免 fd 已被内核从 epoll 移除，但 Channel.events_ 仍残留导致后续 fd 复用误走 MOD。
+  zcoroutine::IoScheduler *iom = zcoroutine::IoScheduler::get_this();
+  if (iom && zcoroutine::is_hook_enabled()) {
+    ZCOROUTINE_LOG_DEBUG("hook close fd={}", fd);
+  }
+  if (iom) {
+    (void)iom->release_fd(fd);
   }
 
-  ZCOROUTINE_LOG_DEBUG("hook close fd={}", fd);
-
-  // 获取文件描述符上下文
-  zcoroutine::SocketStatus::ptr ctx =
-      zcoroutine::StatusTable::GetInstance()->get(fd);
-  if (ctx) {
-    zcoroutine::IoScheduler *iom = zcoroutine::IoScheduler::get_this();
-    if (iom) {
-      // 取消该fd上的所有事件
-      iom->cancel_all(fd);
-    }
-    // 从 StatusTable 中删除
-    zcoroutine::StatusTable::GetInstance()->del(fd);
-  }
+  // 幂等删除状态记录（不存在也安全）。
+  zcoroutine::StatusTable::GetInstance()->del(fd);
 
   return close_f(fd);
 }
 
-// ==================== shutdown ====================
 
 int shutdown(int sockfd, int how) {
   if (!zcoroutine::is_hook_enabled()) {
@@ -717,7 +708,6 @@ int shutdown(int sockfd, int how) {
   return ret;
 }
 
-// ==================== fcntl ====================
 
 /**
  * @brief fcntl hook
@@ -826,7 +816,6 @@ int fcntl(int fd, int cmd, ... /* arg */) {
   }
 }
 
-// ==================== ioctl ====================
 
 int ioctl(int fd, unsigned long request, ...) {
   va_list va;

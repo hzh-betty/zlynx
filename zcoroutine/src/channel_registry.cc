@@ -53,6 +53,21 @@ size_t ChannelRegistry::size() const {
   return contexts_.size();
 }
 
+bool ChannelRegistry::remove(int fd) {
+  if (fd < 0) {
+    return false;
+  }
+
+  RWMutex::WriteLock lock(mutex_);
+  if (static_cast<size_t>(fd) >= contexts_.size() || !contexts_[fd]) {
+    return false;
+  }
+
+  contexts_[fd].reset();
+  ZCOROUTINE_LOG_DEBUG("ChannelRegistry removed Channel for fd={}", fd);
+  return true;
+}
+
 Channel::ptr ChannelRegistry::expand_and_create(int fd) {
   // 扩容（如果需要）
   if (static_cast<size_t>(fd) >= contexts_.size()) {
