@@ -2,6 +2,7 @@
 #include "address.h"
 #include "daemon.h"
 #include "https_server.h"
+#include "request_body_middleware.h"
 #include "rate_limiter.h"
 #include "zhttp_logger.h"
 
@@ -271,6 +272,9 @@ std::shared_ptr<HttpServer> HttpServerBuilder::build() {
                    config_.rate_limit_type, config_.rate_limit_capacity,
                    config_.rate_limit_time_unit);
   }
+
+  // 默认启用请求体解析：JSON / x-www-form-urlencoded / multipart。
+  server->router().use(std::make_shared<RequestBodyMiddleware>());
 
   // 注册中间件
   for (auto &mw : middlewares_) {

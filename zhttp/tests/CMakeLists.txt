@@ -15,6 +15,7 @@ set(UNIT_TESTS
     auth_middleware_test
     cors_middleware_test
     compression_middleware_test
+    request_body_middleware_test
     timeout_middleware_test
     security_middleware_test
     static_file_opt_test

@@ -9,6 +9,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package(OpenSSL REQUIRED)
 find_package(fmt REQUIRED)
 find_package(ZLIB REQUIRED)
+find_package(nlohmann_json REQUIRED)
 
 find_library(BROTLI_ENC_LIBRARY NAMES brotlienc)
 
@@ -31,6 +32,7 @@ set(ZHTTP_SOURCES
     src/cors_middleware.cc
     src/compression_middleware.cc
     src/error_middleware.cc
+    src/request_body_middleware.cc
     src/timeout_middleware.cc
     src/security_middleware.cc
     src/http_server.cc
@@ -62,6 +64,7 @@ target_link_libraries(zhttp PUBLIC
     OpenSSL::Crypto
     fmt::fmt
     ZLIB::ZLIB
+    nlohmann_json::nlohmann_json
     pthread
 )
 

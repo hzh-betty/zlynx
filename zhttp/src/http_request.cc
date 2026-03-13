@@ -8,6 +8,16 @@
 namespace zhttp {
 
 namespace {
+static std::string normalize_mime_type(const std::string &content_type) {
+  std::string mime = content_type;
+  size_t semi = mime.find(';');
+  if (semi != std::string::npos) {
+    mime = mime.substr(0, semi);
+  }
+  trim(mime);
+  return to_lower(mime);
+}
+
 /**
  * 解析 Cookie 请求头。
  *
@@ -137,6 +147,11 @@ const HttpRequest::Params &HttpRequest::cookies() const {
 // 头字段按原始 key 保存，读取时再做大小写不敏感匹配。
 void HttpRequest::set_header(const std::string &key, const std::string &value) {
   headers_[key] = value;
+
+  // 影响请求体解析语义的头变化后，清理缓存，避免旧结果污染。
+  if (to_lower(key) == "content-type") {
+    invalidate_body_cache();
+  }
 }
 
 // 路径参数通常由路由器写入，这里只是简单落盘。
@@ -216,10 +231,141 @@ size_t HttpRequest::content_length() const {
 // 直接返回原始 Content-Type 字段，便于上层自己决定是否进一步解析参数。
 std::string HttpRequest::content_type() const { return header("Content-Type"); }
 
+// 仅判断主 MIME 是否为 application/json，忽略 charset 等附加参数。
+bool HttpRequest::is_json() const {
+  return normalize_mime_type(content_type()) == "application/json";
+}
+
+/**
+ * 解析 JSON 请求体。
+ *
+ * 语义约定：
+ * - 非 JSON 请求直接返回 true（表示“无需解析”，不是错误）；
+ * - 空 JSON Body 视为错误，返回 false 并记录 json_error_；
+ * - 非法 JSON 文本返回 false 并记录 json_error_；
+ * - 成功时缓存结果，后续重复调用不重复解析。
+ */
+bool HttpRequest::parse_json() {
+  // 已经解析过则直接复用缓存结果。
+  if (json_parsed_) {
+    return json_ != nullptr;
+  }
+
+  // 标记已解析并清理旧状态，开始新一轮解析。
+  json_parsed_ = true;
+  json_.reset();
+  json_error_.clear();
+
+  // 不是 JSON 请求：按“无需解析”处理。
+  if (!is_json()) {
+    return true;
+  }
+
+  // JSON 请求但 body 为空，显式给出错误。
+  if (body_.empty()) {
+    json_error_ = "Empty JSON body";
+    return false;
+  }
+
+  // 使用 nlohmann::json 非异常模式解析，失败时通过 is_discarded() 判断。
+  Json parsed = Json::parse(body_, nullptr, false);
+  if (parsed.is_discarded()) {
+    json_error_ = "Invalid JSON body";
+    return false;
+  }
+
+  json_ = std::make_shared<Json>(std::move(parsed));
+  return true;
+}
+
+// const 场景下也允许触发惰性解析，因此通过 const_cast 复用实现。
+const HttpRequest::Json *HttpRequest::json() const {
+  if (!json_parsed_) {
+    const_cast<HttpRequest *>(this)->parse_json();
+  }
+  return json_.get();
+}
+
+// 判断是否为 URL 编码表单请求体。
+bool HttpRequest::is_form_urlencoded() const {
+  return normalize_mime_type(content_type()) ==
+         "application/x-www-form-urlencoded";
+}
+
+/**
+ * 解析 application/x-www-form-urlencoded 请求体。
+ *
+ * 语义约定：
+ * - 非该类型请求返回 true（无需解析）；
+ * - 空 body 返回 true（结果为空表）；
+ * - 同名 key 采用“后写覆盖前写”；
+ * - 无等号片段记为空字符串，例如 "flag" -> flag=""。
+ */
+bool HttpRequest::parse_form_urlencoded() {
+  // 表单解析结果无失败分支，解析过后直接复用。
+  if (form_parsed_) {
+    return true;
+  }
+
+  form_parsed_ = true;
+  form_params_.clear();
+
+  if (!is_form_urlencoded()) {
+    return true;
+  }
+
+  if (body_.empty()) {
+    return true;
+  }
+
+  size_t pos = 0;
+  while (pos < body_.size()) {
+    // 每个片段以 '&' 分隔。
+    size_t end = body_.find('&', pos);
+    if (end == std::string::npos) {
+      end = body_.size();
+    }
+
+    std::string pair = body_.substr(pos, end - pos);
+    size_t eq = pair.find('=');
+    if (eq != std::string::npos) {
+      // key/value 均执行 URL 解码（包含 '+' -> 空格）。
+      std::string key = url_decode(pair.substr(0, eq));
+      std::string value = url_decode(pair.substr(eq + 1));
+      form_params_[key] = value;
+    } else if (!pair.empty()) {
+      // 仅 key 无 value 的场景，统一记为空字符串。
+      form_params_[url_decode(pair)] = "";
+    }
+
+    pos = end + 1;
+  }
+
+  return true;
+}
+
+// 惰性读取表单字段，首次访问时自动触发解析。
+const HttpRequest::Params &HttpRequest::form_params() const {
+  if (!form_parsed_) {
+    const_cast<HttpRequest *>(this)->parse_form_urlencoded();
+  }
+  return form_params_;
+}
+
+// 按 key 读取表单字段，未命中返回默认值。
+std::string HttpRequest::form_param(const std::string &key,
+                                    const std::string &default_val) const {
+  const auto &fields = form_params();
+  auto it = fields.find(key);
+  if (it != fields.end()) {
+    return it->second;
+  }
+  return default_val;
+}
+
 // multipart/form-data 常用于文件上传，这里只做快速识别，不负责真正解析。
 bool HttpRequest::is_multipart() const {
-  std::string ct = content_type();
-  return to_lower(ct).find("multipart/form-data") != std::string::npos;
+  return normalize_mime_type(content_type()) == "multipart/form-data";
 }
 
 /**
@@ -258,6 +404,19 @@ const MultipartFormData *HttpRequest::multipart() const {
     const_cast<HttpRequest *>(this)->parse_multipart();
   }
   return multipart_.get();
+}
+
+void HttpRequest::invalidate_body_cache() {
+  multipart_parsed_ = false;
+  multipart_.reset();
+  multipart_error_.clear();
+
+  json_parsed_ = false;
+  json_.reset();
+  json_error_.clear();
+
+  form_parsed_ = false;
+  form_params_.clear();
 }
 
 } // namespace zhttp

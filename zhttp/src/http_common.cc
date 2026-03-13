@@ -169,11 +169,7 @@ const char *get_mime_type(const std::string &extension) {
       {"wasm", "application/wasm"},
   };
 
-  // 转换为小写
-  std::string lower = extension;
-  std::transform(lower.begin(), lower.end(), lower.begin(),
-                 [](unsigned char c) { return std::tolower(c); });
-
+  std::string lower = to_lower(extension);
   auto it = mime_types.find(lower);
   if (it != mime_types.end()) {
     return it->second;

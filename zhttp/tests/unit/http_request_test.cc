@@ -94,6 +94,56 @@ TEST(HttpRequestTest, ContentLength) {
   EXPECT_EQ(req.content_length(), 1024u);
 }
 
+TEST(HttpRequestTest, ParseJsonBodySuccess) {
+  HttpRequest req;
+  req.set_header("Content-Type", "application/json; charset=utf-8");
+  req.set_body("{\"name\":\"betty\",\"age\":18}");
+
+  EXPECT_TRUE(req.is_json());
+  EXPECT_TRUE(req.parse_json());
+
+  const HttpRequest::Json *json = req.json();
+  ASSERT_NE(json, nullptr);
+  EXPECT_EQ((*json)["name"], "betty");
+  EXPECT_EQ((*json)["age"], 18);
+}
+
+TEST(HttpRequestTest, ParseJsonBodyInvalid) {
+  HttpRequest req;
+  req.set_header("Content-Type", "application/json");
+  req.set_body("{\"name\":\"broken\"");
+
+  EXPECT_FALSE(req.parse_json());
+  EXPECT_EQ(req.json(), nullptr);
+  EXPECT_FALSE(req.json_error().empty());
+}
+
+TEST(HttpRequestTest, ParseFormUrlencodedBody) {
+  HttpRequest req;
+  req.set_header("Content-Type", "application/x-www-form-urlencoded");
+  req.set_body("name=John+Doe&city=ShenZhen&flag");
+
+  EXPECT_TRUE(req.is_form_urlencoded());
+  EXPECT_TRUE(req.parse_form_urlencoded());
+  EXPECT_EQ(req.form_param("name"), "John Doe");
+  EXPECT_EQ(req.form_param("city"), "ShenZhen");
+  EXPECT_EQ(req.form_param("flag"), "");
+  EXPECT_EQ(req.form_param("missing", "default"), "default");
+}
+
+TEST(HttpRequestTest, ResetBodyInvalidatesBodyParseCache) {
+  HttpRequest req;
+  req.set_header("Content-Type", "application/json");
+  req.set_body("{\"v\":1}");
+  ASSERT_TRUE(req.parse_json());
+  ASSERT_NE(req.json(), nullptr);
+
+  req.set_body("{\"v\":2}");
+  ASSERT_TRUE(req.parse_json());
+  ASSERT_NE(req.json(), nullptr);
+  EXPECT_EQ((*req.json())["v"], 2);
+}
+
 int main(int argc, char **argv) {
   zhttp::init_logger();
   ::testing::InitGoogleTest(&argc, argv);

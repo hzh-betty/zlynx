@@ -3,6 +3,8 @@
 
 #include "http_common.h"
 
+#include <nlohmann/json.hpp>
+
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -25,6 +27,7 @@ public:
   // Headers 保存请求头，Params 用于查询参数、路径参数、Cookie 等键值数据。
   using Headers = std::unordered_map<std::string, std::string>;
   using Params = std::unordered_map<std::string, std::string>;
+  using Json = nlohmann::json;
 
   HttpRequest() = default;
 
@@ -200,13 +203,19 @@ public:
    * @brief 设置请求体
     * @param body 请求体内容
    */
-  void set_body(const std::string &body) { body_ = body; }
+  void set_body(const std::string &body) {
+    body_ = body;
+    invalidate_body_cache();
+  }
 
   /**
    * @brief 设置请求体（移动语义）
     * @param body 请求体内容
    */
-  void set_body(std::string &&body) { body_ = std::move(body); }
+  void set_body(std::string &&body) {
+    body_ = std::move(body);
+    invalidate_body_cache();
+  }
 
   /**
    * @brief 设置远端地址（服务器使用）
@@ -235,7 +244,6 @@ public:
    */
   void parse_query_params();
 
-
   /**
    * @brief 是否为 Keep-Alive 连接
     * @return 是否应在当前请求处理后保持连接不断开
@@ -254,9 +262,63 @@ public:
    */
   std::string content_type() const;
 
+  /**
+   * @brief 是否为 JSON 请求体
+   * @return true 表示 Content-Type 为 application/json（忽略参数和大小写）
+   */
+  bool is_json() const;
+
+  /**
+   * @brief 解析 JSON 请求体（惰性解析）
+   * @return true 表示成功，或者当前请求本来就不是 JSON 请求
+   */
+  bool parse_json();
+
+  /**
+   * @brief 获取解析后的 JSON 对象；未解析/失败返回 nullptr
+   * @return JSON 对象指针
+   */
+  const Json *json() const;
+
+  /**
+   * @brief 获取 JSON 解析错误（若有）
+   * @return 最近一次 JSON 解析失败的错误说明
+   */
+  const std::string &json_error() const { return json_error_; }
+
+  /**
+   * @brief 是否为 application/x-www-form-urlencoded
+   * @return true 表示 Content-Type 是 URL 编码表单
+   */
+  bool is_form_urlencoded() const;
+
+  /**
+   * @brief 解析 URL 编码表单请求体（惰性解析）
+   * @return true 表示成功，或者当前请求本来就不是 URL 编码表单
+   */
+  bool parse_form_urlencoded();
+
+  /**
+   * @brief 获取解析后的 URL 编码表单字段
+   * @return 表单字段映射
+   */
+  const Params &form_params() const;
+
+  /**
+   * @brief 获取指定 URL 编码表单字段
+   * @param key 字段名
+   * @param default_val 默认值
+   * @return 字段值
+   */
+  std::string form_param(const std::string &key,
+                         const std::string &default_val = "") const;
+
 private:
   // 按需解析 Cookie，避免不访问 Cookie 的请求也付出额外开销。
   void parse_cookies_if_needed() const;
+
+  // 请求体相关解析缓存失效。
+  void invalidate_body_cache();
 
   // 解析自请求行和请求头的基础字段。
   HttpMethod method_ = HttpMethod::UNKNOWN;
@@ -282,6 +344,15 @@ private:
   mutable bool multipart_parsed_ = false;
   mutable std::shared_ptr<MultipartFormData> multipart_;
   mutable std::string multipart_error_;
+
+  // JSON 请求体的惰性解析缓存。
+  mutable bool json_parsed_ = false;
+  mutable std::shared_ptr<Json> json_;
+  mutable std::string json_error_;
+
+  // URL 编码表单的惰性解析缓存。
+  mutable bool form_parsed_ = false;
+  mutable Params form_params_;
 };
 
 } // namespace zhttp
