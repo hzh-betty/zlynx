@@ -7,6 +7,8 @@
 #include "radix_tree.h"
 #include "route_handler.h"
 
+#include <exception>
+#include <functional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -47,6 +49,10 @@ struct RouteContext {
  */
 class Router {
 public:
+  using ExceptionHandler = std::function<void(const HttpRequest::ptr &request,
+                                              HttpResponse &response,
+                                              std::exception_ptr exception)>;
+
   Router();
 
   /**
@@ -208,6 +214,18 @@ public:
     */
   void set_not_found_handler(RouteHandler::ptr handler);
 
+  /**
+   * @brief 设置异常处理回调
+   * @param handler 自定义异常处理回调；若为空则恢复默认处理逻辑
+   */
+  void set_exception_handler(ExceptionHandler handler);
+
+  /**
+   * @brief 获取当前异常处理回调
+   * @return 当前生效的异常处理回调
+   */
+  const ExceptionHandler &exception_handler() const { return exception_handler_; }
+
 private:
   /**
    * @brief 判断路径是否包含动态参数
@@ -313,6 +331,9 @@ private:
 
   // 路由未命中时使用的兜底处理器。
   RouteHandlerWrapper not_found_handler_;
+
+  // 捕获到未处理异常后的统一回调。
+  ExceptionHandler exception_handler_;
 
   // 访问 / 或 /home 时的跳转目标；空串表示关闭该功能。
   std::string homepage_;

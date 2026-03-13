@@ -185,6 +185,12 @@ HttpServerBuilder &HttpServerBuilder::not_found(RouteHandler::ptr handler) {
   return *this;
 }
 
+HttpServerBuilder &
+HttpServerBuilder::exception_handler(Router::ExceptionHandler handler) {
+  exception_handler_ = std::move(handler);
+  return *this;
+}
+
 HttpServerBuilder &HttpServerBuilder::log_level(const std::string &level) {
   config_.log_level = level;
   return *this;
@@ -292,6 +298,11 @@ std::shared_ptr<HttpServer> HttpServerBuilder::build() {
                                        HttpResponse &resp) {
           handler(req, resp);
         });
+  }
+
+  // 设置异常处理器
+  if (exception_handler_) {
+    server->router().set_exception_handler(exception_handler_);
   }
 
   // 绑定地址并开始监听

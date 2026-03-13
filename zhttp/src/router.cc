@@ -1,6 +1,7 @@
 #include "router.h"
 #include "zhttp_logger.h"
 
+#include <exception>
 #include <utility>
 
 namespace zhttp {
@@ -9,6 +10,49 @@ namespace {
 
 bool is_homepage_alias(const std::string &path) {
   return path == "/" || path == "/home" || path == "home";
+}
+
+void set_internal_server_error(HttpResponse &response) {
+  response.status(HttpStatus::INTERNAL_SERVER_ERROR)
+      .content_type("text/plain; charset=utf-8")
+      .body("Internal Server Error");
+}
+
+void default_exception_handler(const HttpRequest::ptr &request,
+                               HttpResponse &response,
+                               std::exception_ptr exception) {
+  try {
+    if (exception) {
+      std::rethrow_exception(exception);
+    }
+  } catch (const std::exception &ex) {
+    ZHTTP_LOG_ERROR("Unhandled exception in {} {}: {}",
+                    method_to_string(request->method()), request->path(),
+                    ex.what());
+  } catch (...) {
+    ZHTTP_LOG_ERROR("Unhandled non-std exception in {} {}",
+                    method_to_string(request->method()), request->path());
+  }
+
+  set_internal_server_error(response);
+}
+
+void invoke_exception_handler(const Router::ExceptionHandler &handler,
+                              const HttpRequest::ptr &request,
+                              HttpResponse &response,
+                              std::exception_ptr exception) {
+  try {
+    handler(request, response, exception);
+  } catch (const std::exception &ex) {
+    ZHTTP_LOG_ERROR("Exception handler threw in {} {}: {}",
+                    method_to_string(request->method()), request->path(),
+                    ex.what());
+    set_internal_server_error(response);
+  } catch (...) {
+    ZHTTP_LOG_ERROR("Exception handler threw non-std exception in {} {}",
+                    method_to_string(request->method()), request->path());
+    set_internal_server_error(response);
+  }
 }
 
 } // namespace
@@ -22,6 +66,7 @@ Router::Router() {
         .body("<html><body><h1>404 Not Found</h1></body></html>");
   };
   not_found_handler_ = RouteHandlerWrapper(std::move(default_404));
+  exception_handler_ = default_exception_handler;
 }
 
 bool Router::is_dynamic_path(const std::string &path) const {
@@ -30,7 +75,6 @@ bool Router::is_dynamic_path(const std::string &path) const {
          path.find('*') != std::string::npos;
 }
 
-// ========== 路由注册 ==========
 
 void Router::add_route_internal(HttpMethod method, const std::string &path,
                                 RouteHandlerWrapper wrapper) {
@@ -84,7 +128,6 @@ void Router::add_regex_route(HttpMethod method,
                            RouteHandlerWrapper(std::move(handler)));
 }
 
-// ========== 便捷方法 ==========
 
 void Router::get(const std::string &path, RouterCallback callback) {
   add_route(HttpMethod::GET, path, std::move(callback));
@@ -336,20 +379,40 @@ bool Router::route(const HttpRequest::ptr &request, HttpResponse &response) {
   }
 
   // before 返回 false 表示提前中断，不再进入业务处理器。
-  bool should_continue = chain.execute_before(request, response);
+  bool should_continue = false;
+  bool has_exception = false;
 
-  if (should_continue) {
-    if (ctx.found) {
-      // 命中路由则执行对应处理器。
-      ctx.handler(request, response);
-    } else {
-      // 未命中则走统一的 404 处理器。
-      not_found_handler_(request, response);
+  try {
+    should_continue = chain.execute_before(request, response);
+  } catch (...) {
+    has_exception = true;
+    invoke_exception_handler(exception_handler_, request, response,
+                             std::current_exception());
+  }
+
+  if (!has_exception && should_continue) {
+    try {
+      if (ctx.found) {
+        // 命中路由则执行对应处理器。
+        ctx.handler(request, response);
+      } else {
+        // 未命中则走统一的 404 处理器。
+        not_found_handler_(request, response);
+      }
+    } catch (...) {
+      has_exception = true;
+      invoke_exception_handler(exception_handler_, request, response,
+                               std::current_exception());
     }
   }
 
   // after 总是逆序执行，和 before 形成对称结构。
-  chain.execute_after(request, response);
+  try {
+    chain.execute_after(request, response);
+  } catch (...) {
+    invoke_exception_handler(exception_handler_, request, response,
+                             std::current_exception());
+  }
 
   return ctx.found;
 }
@@ -360,6 +423,14 @@ void Router::set_not_found_handler(RouterCallback callback) {
 
 void Router::set_not_found_handler(RouteHandler::ptr handler) {
   not_found_handler_ = RouteHandlerWrapper(std::move(handler));
+}
+
+void Router::set_exception_handler(ExceptionHandler handler) {
+  if (handler) {
+    exception_handler_ = std::move(handler);
+  } else {
+    exception_handler_ = default_exception_handler;
+  }
 }
 
 } // namespace zhttp

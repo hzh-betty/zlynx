@@ -179,6 +179,13 @@ public:
   HttpServerBuilder &not_found(RouteHandler::ptr handler);
 
   /**
+   * @brief 设置异常处理回调
+   * @param handler 异常处理回调
+   * @return 当前 Builder 引用
+   */
+  HttpServerBuilder &exception_handler(Router::ExceptionHandler handler);
+
+  /**
    * @brief 设置日志级别
    * @param level 日志级别字符串，例如 info、debug
    * @return 当前 Builder 引用
@@ -236,6 +243,9 @@ private:
 
   // 可选的自定义 404 处理器。
   RouteHandlerWrapper not_found_handler_;
+
+  // 可选的自定义异常处理器。
+  Router::ExceptionHandler exception_handler_;
 
   // Builder 内部持有的调度器实例。
   zcoroutine::IoScheduler::ptr io_scheduler_;

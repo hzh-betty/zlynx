@@ -2,6 +2,7 @@
 #include "zhttp_logger.h"
 
 #include <gtest/gtest.h>
+#include <stdexcept>
 
 using namespace zhttp;
 
@@ -178,6 +179,112 @@ TEST_F(RouterTest, StaticRoutePriorityOverParam) {
   request->set_path("/users/123");
   router_.route(request, response);
   EXPECT_EQ(matched, "param");
+}
+
+TEST_F(RouterTest, HandlerExceptionReturnsInternalServerError) {
+  router_.get("/panic", [](const HttpRequest::ptr &, HttpResponse &) {
+    throw std::runtime_error("handler boom");
+  });
+
+  auto request = std::make_shared<HttpRequest>();
+  request->set_method(HttpMethod::GET);
+  request->set_path("/panic");
+
+  HttpResponse response;
+  bool found = router_.route(request, response);
+
+  EXPECT_TRUE(found);
+  EXPECT_EQ(response.status_code(), HttpStatus::INTERNAL_SERVER_ERROR);
+  EXPECT_EQ(response.body_content(), "Internal Server Error");
+}
+
+TEST_F(RouterTest, MiddlewareBeforeExceptionReturnsInternalServerError) {
+  class ThrowBeforeMiddleware : public Middleware {
+  public:
+    bool before(const HttpRequest::ptr &, HttpResponse &) override {
+      throw std::runtime_error("before boom");
+    }
+
+    void after(const HttpRequest::ptr &, HttpResponse &) override {}
+  };
+
+  bool handler_called = false;
+  router_.use(std::make_shared<ThrowBeforeMiddleware>());
+  router_.get("/mw-before", [&handler_called](const HttpRequest::ptr &,
+                                               HttpResponse &resp) {
+    handler_called = true;
+    resp.status(HttpStatus::OK).text("ok");
+  });
+
+  auto request = std::make_shared<HttpRequest>();
+  request->set_method(HttpMethod::GET);
+  request->set_path("/mw-before");
+
+  HttpResponse response;
+  bool found = router_.route(request, response);
+
+  EXPECT_TRUE(found);
+  EXPECT_FALSE(handler_called);
+  EXPECT_EQ(response.status_code(), HttpStatus::INTERNAL_SERVER_ERROR);
+}
+
+TEST_F(RouterTest, MiddlewareAfterExceptionReturnsInternalServerError) {
+  class ThrowAfterMiddleware : public Middleware {
+  public:
+    bool before(const HttpRequest::ptr &, HttpResponse &) override {
+      return true;
+    }
+
+    void after(const HttpRequest::ptr &, HttpResponse &) override {
+      throw std::runtime_error("after boom");
+    }
+  };
+
+  router_.use(std::make_shared<ThrowAfterMiddleware>());
+  router_.get("/mw-after", [](const HttpRequest::ptr &, HttpResponse &resp) {
+    resp.status(HttpStatus::OK).text("ok");
+  });
+
+  auto request = std::make_shared<HttpRequest>();
+  request->set_method(HttpMethod::GET);
+  request->set_path("/mw-after");
+
+  HttpResponse response;
+  bool found = router_.route(request, response);
+
+  EXPECT_TRUE(found);
+  EXPECT_EQ(response.status_code(), HttpStatus::INTERNAL_SERVER_ERROR);
+}
+
+TEST_F(RouterTest, CustomExceptionHandlerOverridesDefaultResponse) {
+  bool exception_handler_called = false;
+  std::string captured_path;
+
+  router_.set_exception_handler(
+      [&exception_handler_called,
+       &captured_path](const HttpRequest::ptr &req, HttpResponse &resp,
+                       std::exception_ptr) {
+        exception_handler_called = true;
+        captured_path = req->path();
+        resp.status(HttpStatus::BAD_GATEWAY).json("{\"error\":\"custom\"}");
+      });
+
+  router_.get("/custom-ex", [](const HttpRequest::ptr &, HttpResponse &) {
+    throw std::runtime_error("boom");
+  });
+
+  auto request = std::make_shared<HttpRequest>();
+  request->set_method(HttpMethod::GET);
+  request->set_path("/custom-ex");
+
+  HttpResponse response;
+  const bool found = router_.route(request, response);
+
+  EXPECT_TRUE(found);
+  EXPECT_TRUE(exception_handler_called);
+  EXPECT_EQ(captured_path, "/custom-ex");
+  EXPECT_EQ(response.status_code(), HttpStatus::BAD_GATEWAY);
+  EXPECT_EQ(response.body_content(), "{\"error\":\"custom\"}");
 }
 
 int main(int argc, char **argv) {

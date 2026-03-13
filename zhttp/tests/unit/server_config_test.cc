@@ -112,6 +112,19 @@ TEST(ServerConfigTest, BuilderSupportsTimeoutChaining) {
   EXPECT_EQ(builder.config().keepalive_timeout, 300U);
 }
 
+TEST(ServerConfigTest, BuilderSupportsExceptionHandlerChaining) {
+  zhttp::HttpServerBuilder builder;
+
+  auto &ref = builder.exception_handler(
+      [](const zhttp::HttpRequest::ptr &, zhttp::HttpResponse &resp,
+         std::exception_ptr) {
+        resp.status(zhttp::HttpStatus::INTERNAL_SERVER_ERROR)
+            .text("builder-custom");
+      });
+
+  EXPECT_EQ(&ref, &builder);
+}
+
 int main(int argc, char **argv) {
   zhttp::init_logger();
   ::testing::InitGoogleTest(&argc, argv);
