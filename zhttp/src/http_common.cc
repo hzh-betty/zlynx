@@ -241,6 +241,22 @@ std::vector<std::string> split_string(const std::string &str, char delimiter) {
   return parts;
 }
 
+std::string join_string(const std::vector<std::string> &values,
+                        const std::string &delimiter) {
+  if (values.empty()) {
+    return {};
+  }
+
+  std::string output;
+  for (size_t i = 0; i < values.size(); ++i) {
+    if (i > 0) {
+      output += delimiter;
+    }
+    output += values[i];
+  }
+  return output;
+}
+
 std::string url_decode(const std::string &str) {
   // URL 解码整体策略：
   // 1) 顺序扫描输入字符串；

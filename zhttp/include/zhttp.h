@@ -22,6 +22,8 @@
 #include "static_file_opt.h"
 #include "session.h"
 #include "auth_middleware.h"
+#include "cors_middleware.h"
+#include "compression_middleware.h"
 #include "route_handler.h"
 #include "router.h"
 

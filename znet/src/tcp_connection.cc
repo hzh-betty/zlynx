@@ -1,6 +1,5 @@
 #include "tcp_connection.h"
 #include "io_scheduler.h"
-#include "scheduler.h"
 #include "znet_logger.h"
 #include <errno.h>
 #include <string.h>

@@ -8,6 +8,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # 查找依赖
 find_package(OpenSSL REQUIRED)
 find_package(fmt REQUIRED)
+find_package(ZLIB REQUIRED)
+
+find_library(BROTLI_ENC_LIBRARY NAMES brotlienc)
 
 # zhttp 库源文件
 set(ZHTTP_SOURCES
@@ -25,6 +28,8 @@ set(ZHTTP_SOURCES
     src/range_parse.cc
     src/static_file_opt.cc
     src/auth_middleware.cc
+    src/cors_middleware.cc
+    src/compression_middleware.cc
     src/http_server.cc
     src/session.cc
     src/ssl_context.cc
@@ -53,8 +58,14 @@ target_link_libraries(zhttp PUBLIC
     OpenSSL::SSL
     OpenSSL::Crypto
     fmt::fmt
+    ZLIB::ZLIB
     pthread
 )
+
+if(BROTLI_ENC_LIBRARY)
+    target_link_libraries(zhttp PUBLIC ${BROTLI_ENC_LIBRARY})
+    target_compile_definitions(zhttp PUBLIC ZHTTP_USE_BROTLI=1)
+endif()
 
 # 测试选项
 option(BUILD_ZHTTP_TESTS "Build zhttp tests" ON)

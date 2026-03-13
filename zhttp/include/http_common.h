@@ -154,6 +154,20 @@ void trim(std::string &str);
 std::vector<std::string> split_string(const std::string &str, char delimiter);
 
 /**
+ * @brief 将字符串数组拼接为单个字符串
+ * @param values 待拼接的字符串列表
+ * @param delimiter 分隔符（可为多字符），例如 ", " 或 "|"
+ * @return 拼接结果
+ * @details
+ * 行为约定：
+ * - 空数组返回空字符串；
+ * - 不会对元素做 trim/过滤；
+ * - 不会在首尾额外添加分隔符。
+ */
+std::string join_string(const std::vector<std::string> &values,
+                        const std::string &delimiter);
+
+/**
  * @brief URL 解码（百分号编码）
  * @param str 输入字符串
  * @return 解码后的字符串

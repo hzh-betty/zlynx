@@ -12,6 +12,8 @@ set(UNIT_TESTS
     router_test
     middleware_test
     auth_middleware_test
+    cors_middleware_test
+    compression_middleware_test
     static_file_opt_test
     http_parser_detailed_test
     router_detailed_test
