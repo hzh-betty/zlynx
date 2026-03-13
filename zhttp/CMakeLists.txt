@@ -31,6 +31,8 @@ set(ZHTTP_SOURCES
     src/cors_middleware.cc
     src/compression_middleware.cc
     src/error_middleware.cc
+    src/timeout_middleware.cc
+    src/security_middleware.cc
     src/http_server.cc
     src/session.cc
     src/ssl_context.cc

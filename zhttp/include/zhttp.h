@@ -25,6 +25,8 @@
 #include "cors_middleware.h"
 #include "compression_middleware.h"
 #include "error_middleware.h"
+#include "timeout_middleware.h"
+#include "security_middleware.h"
 #include "route_handler.h"
 #include "router.h"
 
