@@ -49,7 +49,7 @@ Session::ptr SessionManager::load(const std::string &session_id) {
     return nullptr;
   }
 
-  auto now = std::chrono::steady_clock::now();
+  auto now = TimerHelper::steady_now();
   std::lock_guard<std::mutex> lock(mutex_);
 
   ++op_count_;
@@ -79,7 +79,7 @@ Session::ptr SessionManager::load(const std::string &session_id) {
 }
 
 Session::ptr SessionManager::create() {
-  auto now = std::chrono::steady_clock::now();
+  auto now = TimerHelper::steady_now();
   std::string id = new_session_id();
 
   // 先创建逻辑会话对象，再把空记录放入存储中等待后续写入。
@@ -97,7 +97,7 @@ Session::ptr SessionManager::create() {
 }
 
 void SessionManager::save(const Session &session) {
-  auto now = std::chrono::steady_clock::now();
+  auto now = TimerHelper::steady_now();
   std::lock_guard<std::mutex> lock(mutex_);
 
   ++op_count_;
@@ -139,7 +139,7 @@ std::string SessionManager::new_session_id() {
 }
 
 void SessionManager::cleanup_expired_locked(
-    std::chrono::steady_clock::time_point now) {
+  TimerHelper::SteadyTimePoint now) {
   // 原地擦除已过期记录，避免额外拷贝。
   for (auto it = store_.begin(); it != store_.end();) {
     if (it->second.expires_at <= now) {

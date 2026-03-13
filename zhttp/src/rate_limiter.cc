@@ -11,18 +11,18 @@ namespace zhttp {
 namespace {
 
 // 将配置的时间单位换算成毫秒窗口，供固定窗口和滑动窗口算法使用。
-static inline std::chrono::milliseconds unit_to_ms(RateLimiter::TimeUnit unit) {
+static inline RateLimiter::Milliseconds unit_to_ms(RateLimiter::TimeUnit unit) {
   switch (unit) {
   case RateLimiter::TimeUnit::MILLISECOND:
-    return std::chrono::milliseconds(1);
+    return TimerHelper::milliseconds(1);
   case RateLimiter::TimeUnit::SECOND:
-    return std::chrono::seconds(1);
+    return TimerHelper::seconds(1);
   case RateLimiter::TimeUnit::MINUTE:
-    return std::chrono::minutes(1);
+    return TimerHelper::seconds(60);
   case RateLimiter::TimeUnit::HOUR:
-    return std::chrono::hours(1);
+    return TimerHelper::seconds(3600);
   }
-  return std::chrono::seconds(1);
+  return TimerHelper::seconds(1);
 }
 
 // 测试可传入自定义时间函数；生产环境默认使用 steady_clock。
@@ -30,7 +30,7 @@ static inline RateLimiter::NowFunc default_now(RateLimiter::NowFunc f) {
   if (f) {
     return f;
   }
-  return [] { return RateLimiter::Clock::now(); };
+  return [] { return TimerHelper::steady_now(); };
 }
 
 class FixedWindowRateLimiter final : public RateLimiter {
@@ -71,20 +71,19 @@ public:
     return false;
   }
 
-  std::chrono::milliseconds retryAfter(const std::string &key) const override {
+  Milliseconds retryAfter(const std::string &key) const override {
     const auto t = now_func_();
     const auto win = unit_to_ms(unit_);
 
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = states_.find(key);
     if (it == states_.end() || !it->second.initialized) {
-      return std::chrono::milliseconds(0);
+      return TimerHelper::milliseconds(0);
     }
 
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-        t - it->second.window_start);
+    auto elapsed = TimerHelper::to_milliseconds(t - it->second.window_start);
     if (elapsed >= win) {
-      return std::chrono::milliseconds(0);
+      return TimerHelper::milliseconds(0);
     }
     return win - elapsed;
   }
@@ -139,20 +138,20 @@ public:
     return false;
   }
 
-  std::chrono::milliseconds retryAfter(const std::string &key) const override {
+  Milliseconds retryAfter(const std::string &key) const override {
     const auto t = now_func_();
     const auto win = unit_to_ms(unit_);
 
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = queues_.find(key);
     if (it == queues_.end() || it->second.empty()) {
-      return std::chrono::milliseconds(0);
+      return TimerHelper::milliseconds(0);
     }
 
     // 最早一条记录过期后，窗口内会释放出一个可用名额。
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(t - it->second.front());
+    auto elapsed = TimerHelper::to_milliseconds(t - it->second.front());
     if (elapsed >= win) {
-      return std::chrono::milliseconds(0);
+      return TimerHelper::milliseconds(0);
     }
     return win - elapsed;
   }
@@ -165,7 +164,7 @@ private:
   NowFunc now_func_;
 };
 
-static inline int ceil_div_ms_to_s(std::chrono::milliseconds ms) {
+static inline int ceil_div_ms_to_s(TimerHelper::Milliseconds ms) {
   // HTTP Retry-After 通常使用“秒”为单位的整数；这里做向上取整。
   if (ms.count() <= 0) {
     return 0;
@@ -245,7 +244,7 @@ bool TokenBucketRateLimiter::isAllowed(const std::string &key) {
   return allowed;
 }
 
-std::chrono::milliseconds TokenBucketRateLimiter::retryAfter(
+RateLimiter::Milliseconds TokenBucketRateLimiter::retryAfter(
     const std::string &key) const {
   // 注意：此处为了只读估算，不会推进 b.last / b.tokens（不引入副作用）。
   // 因此在低频访问下，该估算可能偏保守（等待时间略大）。
@@ -256,13 +255,13 @@ std::chrono::milliseconds TokenBucketRateLimiter::retryAfter(
   std::lock_guard<std::mutex> lock(mutex_);
   auto it = buckets_.find(key);
   if (it == buckets_.end() || !it->second.initialized) {
-    return std::chrono::milliseconds(0);
+    return TimerHelper::milliseconds(0);
   }
 
   const Bucket &b = it->second;
   // 以当前剩余令牌推算距离下一个完整令牌还需等待多久。
   if (b.tokens >= 1.0) {
-    return std::chrono::milliseconds(0);
+    return TimerHelper::milliseconds(0);
   }
 
   double deficit = 1.0 - b.tokens;
@@ -275,7 +274,7 @@ std::chrono::milliseconds TokenBucketRateLimiter::retryAfter(
   if (ms < 0) {
     ms = 0;
   }
-  return std::chrono::milliseconds(ms);
+  return TimerHelper::milliseconds(ms);
 }
 
 RateLimiterMiddleware::RateLimiterMiddleware(RateLimiterMiddleware::Options opt)

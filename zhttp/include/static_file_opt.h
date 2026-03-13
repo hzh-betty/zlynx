@@ -1,9 +1,9 @@
 #ifndef ZHHTP_STATIC_OPT_H_
 #define ZHHTP_STATIC_OPT_H_
 
+#include "http_utils.h"
 #include "middleware.h"
 
-#include <chrono>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -26,7 +26,7 @@ namespace zhttp {
  */
 class StaticFileMiddleware : public Middleware {
 public:
-  using Clock = std::chrono::steady_clock;
+  using Clock = TimerHelper::SteadyClock;
 
   /**
    * @brief 静态文件中间件配置项

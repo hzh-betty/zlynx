@@ -1,9 +1,9 @@
 #ifndef ZHTTP_RATE_LIMITER_H_
 #define ZHTTP_RATE_LIMITER_H_
 
+#include "http_utils.h"
 #include "middleware.h"
 
-#include <chrono>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -29,8 +29,9 @@ namespace zhttp {
 class RateLimiter {
 public:
   using ptr = std::shared_ptr<RateLimiter>;
-  using Clock = std::chrono::steady_clock;
-  using TimePoint = Clock::time_point;
+  using Clock = TimerHelper::SteadyClock;
+  using TimePoint = TimerHelper::SteadyTimePoint;
+  using Milliseconds = TimerHelper::Milliseconds;
   using NowFunc = std::function<TimePoint()>;
 
   enum class Type {
@@ -71,9 +72,9 @@ public:
     * @note 该值是“建议等待时间”，并不保证严格准确（例如实现可能不会在此处推进内部时间状态）。
     *       中间件通常会将其向上取整到秒，写入 Retry-After 响应头。
    */
-  virtual std::chrono::milliseconds retryAfter(const std::string &key) const {
+  virtual Milliseconds retryAfter(const std::string &key) const {
     (void)key;
-    return std::chrono::milliseconds(0);
+    return TimerHelper::milliseconds(0);
   }
 
   /**
@@ -124,7 +125,7 @@ public:
    * @param key 限流维度 key
    * @return 建议等待时间
    */
-  std::chrono::milliseconds retryAfter(const std::string &key) const override;
+  Milliseconds retryAfter(const std::string &key) const override;
 
 private:
   // 统一获取当前时间，便于测试注入自定义时钟。

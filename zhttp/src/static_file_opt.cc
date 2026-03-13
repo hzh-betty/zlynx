@@ -237,7 +237,7 @@ bool StaticFileMiddleware::before(const HttpRequest::ptr &request,
         continue;
       }
 
-      if (Clock::now() <= it->second.expires_at) {
+      if (TimerHelper::steady_now() <= it->second.expires_at) {
         // 命中未过期缓存：优先走内存返回，不触发磁盘 stat/read。
         if (try_handle_conditional_not_modified(request,
                                                 response,
@@ -357,7 +357,7 @@ bool StaticFileMiddleware::before(const HttpRequest::ptr &request,
     entry.etag = etag;
     entry.content_length = entry.body.size();
     entry.expires_at =
-        Clock::now() + std::chrono::seconds(options_.memory_cache_time);
+      TimerHelper::steady_now() + TimerHelper::seconds(options_.memory_cache_time);
     std::lock_guard<std::mutex> lock(cache_mutex_);
     cache_[path + "|" + content_encoding] = std::move(entry);
   }

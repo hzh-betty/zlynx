@@ -22,6 +22,10 @@ namespace zhttp {
  */
 class AuthenticationMiddleware : public Middleware {
 public:
+  using TokenValidator =
+      std::function<bool(const std::string &token, const HttpRequest::ptr &)>;
+  using UnauthorizedHandler = std::function<void(HttpResponse &)>;
+
   /**
    * @brief 认证中间件配置
    */
@@ -37,11 +41,10 @@ public:
     std::string bearer_prefix;     // Authorization 头中 token 前缀，默认 "Bearer "
 
     // 返回 true 表示 token 有效
-    std::function<bool(const std::string &, const HttpRequest::ptr &)>
-        token_validator;
+    TokenValidator token_validator;
 
     // 自定义未认证响应；不设置时默认返回 401 + 文本
-    std::function<void(HttpResponse &)> unauthorized_handler;
+    UnauthorizedHandler unauthorized_handler;
   };
 
   explicit AuthenticationMiddleware(Options options = Options());
@@ -76,6 +79,9 @@ private:
  */
 class RoleAuthorizationMiddleware : public Middleware {
 public:
+  using RoleResolver = std::function<std::vector<std::string>(const HttpRequest::ptr &)>;
+  using ForbiddenHandler = std::function<void(HttpResponse &)>;
+
   /**
    * @brief 授权中间件配置
    */
@@ -89,11 +95,10 @@ public:
     bool case_sensitive;           // 角色匹配是否区分大小写
 
     // 自定义角色解析器；返回当前请求拥有的角色集合
-    std::function<std::vector<std::string>(const HttpRequest::ptr &)>
-        role_resolver;
+    RoleResolver role_resolver;
 
     // 自定义无权限响应；不设置时默认返回 403 + 文本
-    std::function<void(HttpResponse &)> forbidden_handler;
+    ForbiddenHandler forbidden_handler;
   };
 
   RoleAuthorizationMiddleware(std::vector<std::string> required_roles,

@@ -1,7 +1,6 @@
 #ifndef ZHTTP_HTTP_COMMON_H_
 #define ZHTTP_HTTP_COMMON_H_
 
-#include <ctime>
 #include <string>
 #include <vector>
 
@@ -177,15 +176,6 @@ std::string join_string(const std::vector<std::string> &values,
  * - 非法 `%` 序列保持原样，不抛异常。
  */
 std::string url_decode(const std::string &str);
-
-/**
- * @brief 将 Unix 时间戳格式化为 HTTP GMT 时间字符串
- * @param timestamp 秒级 Unix 时间戳
- * @return 形如 `Wed, 21 Oct 2015 07:28:00 GMT` 的字符串
- * @details
- * 主要用于 `Last-Modified`、`If-Modified-Since` 等 HTTP 缓存头。
- */
-std::string format_http_date_gmt(std::time_t timestamp);
 
 } // namespace zhttp
 

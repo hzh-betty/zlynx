@@ -10,6 +10,26 @@
 
 namespace zhttp {
 
+std::string TimerHelper::format_http_date_gmt(std::time_t timestamp) {
+  struct tm tm_value;
+  char buffer[64];
+  gmtime_r(&timestamp, &tm_value);
+  std::strftime(buffer, sizeof(buffer), "%a, %d %b %Y %H:%M:%S GMT", &tm_value);
+  return buffer;
+}
+
+TimerHelper::SteadyTimePoint TimerHelper::steady_now() {
+  return SteadyClock::now();
+}
+
+TimerHelper::Milliseconds TimerHelper::milliseconds(int64_t value) {
+  return Milliseconds(value);
+}
+
+TimerHelper::Seconds TimerHelper::seconds(int64_t value) {
+  return Seconds(value);
+}
+
 std::string PathOperator::normalize_prefix(const std::string &prefix) {
   // 统一前缀格式，减少调用方分支判断复杂度。
   if (prefix.empty() || prefix == "/") {
@@ -165,7 +185,7 @@ bool FileOperator::get_last_modified(const std::string &path,
   if (::stat(path.c_str(), &st) != 0) {
     return false;
   }
-  last_modified = format_http_date_gmt(st.st_mtime);
+  last_modified = TimerHelper::format_http_date_gmt(st.st_mtime);
   return true;
 }
 

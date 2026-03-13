@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <ctime>
 #include <unordered_map>
 
 namespace zhttp {
@@ -302,14 +301,6 @@ std::string url_decode(const std::string &str) {
   }
 
   return output;
-}
-
-std::string format_http_date_gmt(std::time_t timestamp) {
-  struct tm tm_value;
-  char buffer[64];
-  gmtime_r(&timestamp, &tm_value);
-  std::strftime(buffer, sizeof(buffer), "%a, %d %b %Y %H:%M:%S GMT", &tm_value);
-  return buffer;
 }
 
 } // namespace zhttp

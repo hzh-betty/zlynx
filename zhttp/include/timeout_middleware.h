@@ -1,9 +1,9 @@
 #ifndef ZHTTP_TIMEOUT_MIDDLEWARE_H_
 #define ZHTTP_TIMEOUT_MIDDLEWARE_H_
 
+#include "http_utils.h"
 #include "middleware.h"
 
-#include <chrono>
 #include <functional>
 #include <mutex>
 #include <unordered_map>
@@ -18,11 +18,11 @@ namespace zhttp {
  */
 class TimeoutMiddleware : public Middleware {
 public:
-  using Clock = std::chrono::steady_clock;
-  using TimePoint = Clock::time_point;
+  using TimePoint = TimerHelper::SteadyTimePoint;
+  using Milliseconds = TimerHelper::Milliseconds;
   using TimeoutHandler =
       std::function<void(const HttpRequest::ptr &, HttpResponse &,
-                         std::chrono::milliseconds elapsed)>;
+                         Milliseconds elapsed)>;
 
   struct Options {
     Options()

@@ -1,9 +1,44 @@
 #ifndef ZHTTP_HTTP_UTILS_H_
 #define ZHTTP_HTTP_UTILS_H_
 
+#include <chrono>
+#include <cstdint>
+#include <ctime>
 #include <string>
 
 namespace zhttp {
+
+/**
+ * @brief 日期时间公共操作集合
+ * @details
+ * 统一管理 HTTP 场景中的时间类型与常用时间工具函数。
+ */
+class TimerHelper {
+public:
+  using SteadyClock = std::chrono::steady_clock;
+  using SteadyTimePoint = SteadyClock::time_point;
+  using Milliseconds = std::chrono::milliseconds;
+  using Seconds = std::chrono::seconds;
+
+  /**
+   * @brief 将 Unix 时间戳格式化为 HTTP GMT 时间字符串
+   * @param timestamp 秒级 Unix 时间戳
+   * @return 形如 `Wed, 21 Oct 2015 07:28:00 GMT` 的字符串
+   */
+  static std::string format_http_date_gmt(std::time_t timestamp);
+
+  static SteadyTimePoint steady_now();
+
+  static Milliseconds milliseconds(int64_t value);
+
+  static Seconds seconds(int64_t value);
+
+  template <typename Rep, typename Period>
+  static Milliseconds to_milliseconds(
+      const std::chrono::duration<Rep, Period> &duration) {
+    return std::chrono::duration_cast<Milliseconds>(duration);
+  }
+};
 
 /**
  * @brief 路径相关公共操作集合
