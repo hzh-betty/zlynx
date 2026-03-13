@@ -11,6 +11,7 @@ set(UNIT_TESTS
     rate_limiter_test
     router_test
     middleware_test
+    error_middleware_test
     auth_middleware_test
     cors_middleware_test
     compression_middleware_test
