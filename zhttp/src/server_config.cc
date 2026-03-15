@@ -85,6 +85,15 @@ void parse_ssl_section(const toml::value &data, ServerConfig &config) {
   if (ssl.contains("key_file")) {
     config.key_file = toml::find<std::string>(ssl, "key_file");
   }
+  if (ssl.contains("force_http_to_https")) {
+    config.force_http_to_https = toml::find<bool>(ssl, "force_http_to_https");
+  }
+  if (ssl.contains("force_redirect")) {
+    config.force_http_to_https = toml::find<bool>(ssl, "force_redirect");
+  }
+  if (ssl.contains("redirect_http_port")) {
+    config.redirect_http_port = parse_port(ssl, "redirect_http_port");
+  }
 }
 
 void parse_logging_section(const toml::value &data, ServerConfig &config) {
@@ -215,6 +224,23 @@ bool ServerConfig::validate() const {
     }
     if (key_file.empty()) {
       ZHTTP_LOG_ERROR("HTTPS enabled but key_file is empty");
+      return false;
+    }
+  }
+
+  if (force_http_to_https && !enable_https) {
+    ZHTTP_LOG_ERROR("force_http_to_https requires HTTPS enabled");
+    return false;
+  }
+
+  if (force_http_to_https) {
+    if (redirect_http_port == 0) {
+      ZHTTP_LOG_ERROR("redirect_http_port must not be 0 when force_http_to_https is enabled");
+      return false;
+    }
+    if (redirect_http_port == port) {
+      ZHTTP_LOG_ERROR("redirect_http_port ({}) must be different from HTTPS listen port ({})",
+                      redirect_http_port, port);
       return false;
     }
   }

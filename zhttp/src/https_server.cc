@@ -6,8 +6,15 @@
 #include "zhttp_logger.h"
 
 #include <openssl/ssl.h>
+#include <vector>
 
 namespace zhttp {
+
+namespace {
+
+constexpr size_t kHttpsReadBufferSize = 8192;
+
+} // namespace
 
 HttpsServer::HttpsServer(zcoroutine::IoScheduler::ptr io_worker,
                          zcoroutine::IoScheduler::ptr accept_worker)
@@ -51,82 +58,114 @@ void HttpsServer::handle_client(znet::TcpConnectionPtr conn) {
 
   ZHTTP_LOG_DEBUG("SSL handshake successful: {}", conn->name());
 
-  // 设置关闭回调
-  conn->set_close_callback([](const znet::TcpConnectionPtr &c) {
-    ZHTTP_LOG_DEBUG("HTTPS connection closed: {}", c->name());
-  });
-
-  conn->connect_established();
-
-  // HTTP 解析和处理
   HttpParser parser;
-  std::vector<char> read_buffer(8192);
+  std::vector<char> read_buffer(kHttpsReadBufferSize);
 
-  while (conn->connected()) {
-    // 通过 SSL 读取数据
+  // 这里不依赖 TcpConnection 的 message_callback 读流程，而是由 TLS 会话驱动。
+  // 原因是 TLS 需要先解密后再交给 HTTP 解析器，明文/密文读取路径不能混用。
+  while (!conn->disconnected()) {
     ssize_t n = session.read(read_buffer.data(), read_buffer.size());
     if (n < 0) {
       ZHTTP_LOG_WARN("SSL read error");
       break;
     } else if (n == 0) {
-      // 需要重试或连接关闭
       continue;
     }
 
-    // 将数据写入解析缓冲区
     conn->input_buffer()->append(read_buffer.data(), static_cast<size_t>(n));
-
-    // 解析请求
-    while (conn->input_buffer()->readable_bytes() > 0) {
-      ParseResult result = parser.parse(conn->input_buffer());
-
-      if (result == ParseResult::COMPLETE) {
-        if (conn && conn->peer_address()) {
-          parser.request()->set_remote_addr(conn->peer_address()->to_string());
-        }
-
-        // 创建响应
-        HttpResponse response;
-        response.set_version(parser.request()->version());
-        response.set_keep_alive(parser.request()->is_keep_alive());
-        response.header("Server", "zhttp/1.0 (HTTPS)");
-
-        // 路由处理
-        router().route(parser.request(), response);
-
-        // 通过 SSL 发送响应
-        std::string response_str = response.serialize();
-        session.write(response_str.data(), response_str.size());
-
-        ZHTTP_LOG_DEBUG(
-            "HTTPS {} {} -> {}", method_to_string(parser.request()->method()),
-            parser.request()->path(), static_cast<int>(response.status_code()));
-
-        // 检查 Keep-Alive
-        if (!parser.request()->is_keep_alive()) {
-          session.shutdown();
-          return;
-        }
-
-        parser.reset();
-      } else if (result == ParseResult::NEED_MORE) {
-        break;
-      } else if (result == ParseResult::ERROR) {
-        ZHTTP_LOG_WARN("HTTPS parse error: {}", parser.error());
-        HttpResponse response;
-        response.status(HttpStatus::BAD_REQUEST)
-            .content_type("text/plain")
-            .body("Bad Request");
-        response.set_keep_alive(false);
-        std::string response_str = response.serialize();
-        session.write(response_str.data(), response_str.size());
-        session.shutdown();
-        return;
-      }
+    if (!on_message(conn, parser, session, conn->input_buffer())) {
+      ZHTTP_LOG_DEBUG("HTTPS connection closed: {}", conn->name());
+      return;
     }
   }
 
   session.shutdown();
+  conn->force_close();
+  ZHTTP_LOG_DEBUG("HTTPS connection closed: {}", conn->name());
+}
+
+bool HttpsServer::on_message(const znet::TcpConnectionPtr &conn,
+                             HttpParser &parser, SslSession &session,
+                             znet::Buffer *buffer) {
+  while (buffer->readable_bytes() > 0) {
+    ParseResult result = parser.parse(buffer);
+
+    if (result == ParseResult::COMPLETE) {
+      const bool keep_alive = handle_request(conn, parser.request(), session);
+
+      if (!keep_alive) {
+        session.shutdown();
+        conn->force_close();
+        return false;
+      }
+
+      parser.reset();
+    } else if (result == ParseResult::NEED_MORE) {
+      return true;
+    } else if (result == ParseResult::ERROR) {
+      ZHTTP_LOG_WARN("HTTPS parse error: {}", parser.error());
+      HttpResponse response;
+      response.status(HttpStatus::BAD_REQUEST)
+          .content_type("text/plain")
+          .body("Bad Request: " + parser.error());
+      response.set_keep_alive(false);
+
+      const std::string response_str = response.serialize();
+      write_all(session, response_str.data(), response_str.size());
+      session.shutdown();
+      conn->force_close();
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool HttpsServer::handle_request(const znet::TcpConnectionPtr &conn,
+                                 const HttpRequest::ptr &request,
+                                 SslSession &session) {
+  ZHTTP_LOG_DEBUG("{} {} {}", method_to_string(request->method()),
+                  request->path(), version_to_string(request->version()));
+
+  if (conn && conn->peer_address()) {
+    request->set_remote_addr(conn->peer_address()->to_string());
+  }
+
+  HttpResponse response;
+  response.set_version(request->version());
+  response.set_keep_alive(request->is_keep_alive());
+  response.header("Server", name());
+
+  router().route(request, response);
+
+  const std::string response_str = response.serialize();
+  if (!write_all(session, response_str.data(), response_str.size())) {
+    ZHTTP_LOG_WARN("HTTPS write error: {} {}", method_to_string(request->method()),
+                   request->path());
+    return false;
+  }
+
+  ZHTTP_LOG_DEBUG("Response: {} {}", static_cast<int>(response.status_code()),
+                  status_to_string(response.status_code()));
+
+  return response.is_keep_alive();
+}
+
+bool HttpsServer::write_all(SslSession &session, const char *data,
+                            size_t size) {
+  size_t sent = 0;
+  while (sent < size) {
+    const ssize_t n =
+        session.write(data + sent, static_cast<size_t>(size - sent));
+    if (n < 0) {
+      return false;
+    }
+    if (n == 0) {
+      continue;
+    }
+    sent += static_cast<size_t>(n);
+  }
+  return true;
 }
 
 } // namespace zhttp

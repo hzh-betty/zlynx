@@ -4,6 +4,8 @@
 #include "http_server.h"
 #include "ssl_context.h"
 
+#include <cstddef>
+
 namespace zhttp {
 
 /**
@@ -43,6 +45,36 @@ protected:
    * 新连接建立后需要先完成 TLS 握手，握手成功后才会进入上层 HTTP 解析流程。
    */
   void handle_client(znet::TcpConnectionPtr conn) override;
+
+private:
+  /**
+   * @brief 处理一批已解密的 HTTP 字节流
+   * @param conn TCP 连接对象
+   * @param parser HTTP 解析器
+   * @param session SSL 会话
+   * @param buffer 网络缓冲区
+   */
+  bool on_message(const znet::TcpConnectionPtr &conn, HttpParser &parser,
+                  SslSession &session, znet::Buffer *buffer);
+
+  /**
+   * @brief 处理单个 HTTPS 请求
+   * @param conn TCP 连接对象
+   * @param request HTTP 请求对象
+   * @param session SSL 会话
+   * @return true 表示保持连接
+   */
+  bool handle_request(const znet::TcpConnectionPtr &conn,
+                      const HttpRequest::ptr &request, SslSession &session);
+
+  /**
+   * @brief 通过 SSL 完整发送一段数据
+   * @param session SSL 会话
+   * @param data 数据指针
+   * @param size 数据长度
+   * @return 是否发送成功
+   */
+  bool write_all(SslSession &session, const char *data, size_t size);
 
 private:
   // 共享的服务端 SSL 上下文，持有证书和 TLS 配置。

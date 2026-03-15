@@ -38,10 +38,10 @@ enum class HttpStatus {
 
   // 2xx Success
   OK = 200, // 请求成功，响应体包含请求的资源或处理结果
-  PARTIAL_CONTENT = 206, // 部分内容，表示响应体只包含请求范围内的一部分；常见于 Range 请求
   CREATED = 201, // 已创建，表示请求已成功处理并创建了新的资源
   ACCEPTED = 202, // 已接受，表示请求已被接受但尚未处理完成
   NO_CONTENT = 204, // 无内容，表示响应体中不包含任何内容
+  PARTIAL_CONTENT = 206, // 部分内容，表示响应体只包含请求范围内的一部分；常见于 Range 请求
 
   // 3xx Redirection
   MOVED_PERMANENTLY = 301, // 永久移动，表示请求的资源已被永久移动到新 URL，响应中会包含 Location 头指向新地址

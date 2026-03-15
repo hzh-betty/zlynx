@@ -125,6 +125,49 @@ TEST(ServerConfigTest, BuilderSupportsExceptionHandlerChaining) {
   EXPECT_EQ(&ref, &builder);
 }
 
+TEST(ServerConfigTest, LoadsHttpsRedirectOptionsFromTomlFile) {
+  TempTomlFile config_file(R"(
+[server]
+host = "127.0.0.1"
+port = 18443
+
+[threads]
+count = 1
+
+[ssl]
+enabled = true
+cert_file = "/tmp/server.crt"
+key_file = "/tmp/server.key"
+force_http_to_https = true
+redirect_http_port = 18080
+)");
+
+  const zhttp::ServerConfig config =
+      zhttp::ServerConfig::from_toml(config_file.path());
+
+  EXPECT_TRUE(config.enable_https);
+  EXPECT_TRUE(config.force_http_to_https);
+  EXPECT_EQ(config.redirect_http_port, 18080);
+}
+
+TEST(ServerConfigTest, RejectsHttpsRedirectWhenHttpsIsDisabled) {
+  zhttp::ServerConfig config;
+  config.enable_https = false;
+  config.force_http_to_https = true;
+  config.redirect_http_port = 8080;
+
+  EXPECT_FALSE(config.validate());
+}
+
+TEST(ServerConfigTest, BuilderSupportsHttpsRedirectChaining) {
+  zhttp::HttpServerBuilder builder;
+
+  builder.force_https_redirect(true, 18080);
+
+  EXPECT_TRUE(builder.config().force_http_to_https);
+  EXPECT_EQ(builder.config().redirect_http_port, 18080);
+}
+
 int main(int argc, char **argv) {
   zhttp::init_logger();
   ::testing::InitGoogleTest(&argc, argv);

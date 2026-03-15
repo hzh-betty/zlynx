@@ -158,7 +158,7 @@ public:
 struct RouteMatchContext {
   bool found = false;
   RouteHandlerWrapper handler;
-  std::unordered_map<std::string, std::string> params;
+  std::unordered_map<std::string, std::string> params; // 参数名 -> 值
 
   enum class MatchType { NONE, DYNAMIC, REGEX } match_type = MatchType::NONE;
 };

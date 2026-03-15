@@ -36,6 +36,8 @@ struct ServerConfig {
   bool enable_https = false;
   std::string cert_file;
   std::string key_file;
+  bool force_http_to_https = false;
+  uint16_t redirect_http_port = 80;
 
   // 服务器行为配置。
   std::string server_name = "zhttp/1.0";

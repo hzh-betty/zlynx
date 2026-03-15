@@ -94,6 +94,18 @@ public:
                                   const std::string &key_file);
 
   /**
+   * @brief 启用 HTTP -> HTTPS 强制重定向
+   * @param enable 是否启用
+   * @param http_port 重定向 HTTP 监听端口（默认 80）
+   * @return 当前 Builder 引用
+   * @details
+   * 该选项仅在启用 HTTPS 时生效。启用后会额外创建一个 HTTP 监听器，
+   * 将所有请求以 308 状态码跳转到对应的 HTTPS 地址。
+   */
+  HttpServerBuilder &force_https_redirect(bool enable = true,
+                                          uint16_t http_port = 80);
+
+  /**
    * @brief 添加全局中间件
    * @param middleware 中间件对象
    * @return 当前 Builder 引用
@@ -233,6 +245,14 @@ public:
    */
   const ServerConfig &config() const { return config_; }
 
+  /**
+   * @brief 获取 HTTP -> HTTPS 重定向服务实例
+   * @return 若未启用重定向则返回空指针
+   */
+  std::shared_ptr<HttpServer> redirect_server() const {
+    return redirect_server_;
+  }
+
 private:
   // 当前构建中的服务器配置。
   ServerConfig config_;
@@ -249,6 +269,9 @@ private:
 
   // Builder 内部持有的调度器实例。
   zcoroutine::IoScheduler::ptr io_scheduler_;
+
+  // 可选的 HTTP -> HTTPS 重定向服务器。
+  std::shared_ptr<HttpServer> redirect_server_;
 };
 
 } // namespace zhttp

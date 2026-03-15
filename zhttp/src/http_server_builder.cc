@@ -7,6 +7,7 @@
 #include "zhttp_logger.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 
 namespace zhttp {
@@ -46,6 +47,84 @@ static RateLimiter::TimeUnit parse_time_unit(std::string s) {
     return RateLimiter::TimeUnit::HOUR;
   }
   return RateLimiter::TimeUnit::SECOND;
+}
+
+static bool is_any_address_host(const std::string &host) {
+  return host == "0.0.0.0" || host == "::" || host == "[::]";
+}
+
+static std::string strip_host_port(const std::string &host_header) {
+  if (host_header.empty()) {
+    return "";
+  }
+
+  // IPv6: [::1]:8080 -> [::1]
+  if (host_header.front() == '[') {
+    const std::size_t end = host_header.find(']');
+    if (end != std::string::npos) {
+      return host_header.substr(0, end + 1);
+    }
+    return host_header;
+  }
+
+  const std::size_t first_colon = host_header.find(':');
+  if (first_colon == std::string::npos) {
+    return host_header;
+  }
+
+  // 没有 [] 包裹但出现多个冒号，通常是 IPv6 字面量，保持原值。
+  if (host_header.find(':', first_colon + 1) != std::string::npos) {
+    return host_header;
+  }
+
+  return host_header.substr(0, first_colon);
+}
+
+static std::string make_https_location(const HttpRequest::ptr &request,
+                                       const ServerConfig &config) {
+  std::string host = strip_host_port(request->header("Host"));
+  if (host.empty()) {
+    host = config.host;
+    if (is_any_address_host(host)) {
+      host = "localhost";
+    }
+  }
+
+  std::string target = "https://" + host;
+  if (config.port != 443) {
+    target += ":" + std::to_string(config.port);
+  }
+
+  const std::string &path = request->path();
+  target += path.empty() ? "/" : path;
+
+  const std::string &query = request->query();
+  if (!query.empty()) {
+    target += "?";
+    target += query;
+  }
+
+  return target;
+}
+
+static void install_force_https_redirect_routes(HttpServer &redirect_server,
+                                                const ServerConfig &config) {
+  static const std::array<HttpMethod, 9> kMethods = {
+      HttpMethod::GET,     HttpMethod::POST,   HttpMethod::PUT,
+      HttpMethod::DELETE,  HttpMethod::HEAD,   HttpMethod::OPTIONS,
+      HttpMethod::PATCH,   HttpMethod::CONNECT, HttpMethod::TRACE};
+
+  auto redirect_handler =
+      [config](const HttpRequest::ptr &req, HttpResponse &resp) {
+        resp.redirect(make_https_location(req, config),
+                      HttpStatus::PERMANENT_REDIRECT);
+      };
+
+  // 同时兜底根路径和任意子路径。
+  for (HttpMethod method : kMethods) {
+    redirect_server.router().add_route(method, "/", redirect_handler);
+    redirect_server.router().add_route(method, "/*path", redirect_handler);
+  }
 }
 
 } // namespace
@@ -110,6 +189,13 @@ HttpServerBuilder::enable_https(const std::string &cert_file,
   config_.enable_https = true;
   config_.cert_file = cert_file;
   config_.key_file = key_file;
+  return *this;
+}
+
+HttpServerBuilder &HttpServerBuilder::force_https_redirect(bool enable,
+                                                           uint16_t http_port) {
+  config_.force_http_to_https = enable;
+  config_.redirect_http_port = http_port;
   return *this;
 }
 
@@ -213,6 +299,8 @@ HttpServerBuilder &HttpServerBuilder::server_name(const std::string &name) {
 }
 
 std::shared_ptr<HttpServer> HttpServerBuilder::build() {
+  redirect_server_.reset();
+
   // 验证配置
   if (!config_.validate()) {
     throw std::runtime_error("Invalid server configuration");
@@ -319,6 +407,32 @@ std::shared_ptr<HttpServer> HttpServerBuilder::build() {
     throw std::runtime_error("Failed to bind: " + addrs[0]->to_string());
   }
 
+  if (config_.enable_https && config_.force_http_to_https) {
+    bool use_shared = (config_.stack_mode == StackMode::SHARED);
+    auto redirect_scheduler = std::make_shared<zcoroutine::IoScheduler>(
+        1, "zhttp-redirect-io", use_shared);
+
+    redirect_server_ = std::make_shared<HttpServer>(redirect_scheduler, nullptr);
+    redirect_server_->set_name(config_.server_name + " (redirect)");
+    redirect_server_->set_recv_timeout(config_.read_timeout);
+    redirect_server_->set_write_timeout(config_.write_timeout);
+    redirect_server_->set_keepalive_timeout(config_.keepalive_timeout);
+
+    install_force_https_redirect_routes(*redirect_server_, config_);
+
+    auto redirect_addrs =
+        znet::Address::lookup(config_.host, config_.redirect_http_port);
+    if (redirect_addrs.empty()) {
+      throw std::runtime_error("Failed to resolve redirect address: " +
+                               config_.host + ":" +
+                               std::to_string(config_.redirect_http_port));
+    }
+    if (!redirect_server_->bind(redirect_addrs[0])) {
+      throw std::runtime_error("Failed to bind redirect server: " +
+                               redirect_addrs[0]->to_string());
+    }
+  }
+
   return server;
 }
 
@@ -326,11 +440,25 @@ void HttpServerBuilder::run() {
   auto run_server = [this](int /*argc*/, char ** /*argv*/) -> int {
     try {
       auto server = build();
+      auto redirect_server = redirect_server_;
       ZHTTP_LOG_INFO("Server starting on {}:{}", config_.host, config_.port);
+
+      if (redirect_server) {
+        ZHTTP_LOG_INFO("Redirect server starting on {}:{} (http -> https)",
+                       config_.host, config_.redirect_http_port);
+        if (!redirect_server->start()) {
+          ZHTTP_LOG_ERROR("Redirect server failed to start on {}:{}",
+                          config_.host, config_.redirect_http_port);
+          return -1;
+        }
+      }
 
       if (!server->start()) {
         ZHTTP_LOG_ERROR("Server failed to start on {}:{}", config_.host,
                         config_.port);
+        if (redirect_server) {
+          redirect_server->stop();
+        }
         return -1;
       }
 
@@ -340,6 +468,11 @@ void HttpServerBuilder::run() {
 
       ZHTTP_LOG_INFO("Server stopping on {}:{}", config_.host, config_.port);
       server->stop();
+      if (redirect_server) {
+        ZHTTP_LOG_INFO("Redirect server stopping on {}:{}", config_.host,
+                       config_.redirect_http_port);
+        redirect_server->stop();
+      }
       return 0;
     } catch (const std::exception &ex) {
       ZHTTP_LOG_ERROR("Server run failed: {}", ex.what());
