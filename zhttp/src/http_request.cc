@@ -111,28 +111,28 @@ std::string HttpRequest::query_param(const std::string &key,
  * 只有第一次调用 cookie()/cookies() 时才真正解析请求头。
  * 这样可以减少不必要的字符串处理开销。
  */
-void HttpRequest::parse_cookies_if_needed() const {
-  if (cookies_parsed_) {
+void HttpRequest::parse_cookies_if_needed() {
+  if (runtime_.cookies_parsed) {
     return;
   }
 
   // 先置位，保证即使头不存在也不会重复进入解析流程。
-  cookies_parsed_ = true;
+  runtime_.cookies_parsed = true;
   std::string cookie_header = header("Cookie");
   if (cookie_header.empty()) {
-    cookies_.clear();
+    runtime_.cookies.clear();
     return;
   }
 
-  parse_cookie_header(cookie_header, cookies_);
+  parse_cookie_header(cookie_header, runtime_.cookies);
 }
 
 // 读取单个 Cookie，未命中时返回调用方给定的默认值。
 std::string HttpRequest::cookie(const std::string &key,
                                 const std::string &default_val) const {
-  parse_cookies_if_needed();
-  auto it = cookies_.find(key);
-  if (it != cookies_.end()) {
+  const_cast<HttpRequest *>(this)->parse_cookies_if_needed();
+  auto it = runtime_.cookies.find(key);
+  if (it != runtime_.cookies.end()) {
     return it->second;
   }
   return default_val;
@@ -140,8 +140,8 @@ std::string HttpRequest::cookie(const std::string &key,
 
 // 返回全部 Cookie；这里同样依赖延迟解析。
 const HttpRequest::Params &HttpRequest::cookies() const {
-  parse_cookies_if_needed();
-  return cookies_;
+  const_cast<HttpRequest *>(this)->parse_cookies_if_needed();
+  return runtime_.cookies;
 }
 
 // 头字段按原始 key 保存，读取时再做大小写不敏感匹配。
@@ -247,14 +247,14 @@ bool HttpRequest::is_json() const {
  */
 bool HttpRequest::parse_json() {
   // 已经解析过则直接复用缓存结果。
-  if (json_parsed_) {
-    return json_ != nullptr;
+  if (runtime_.json_parsed) {
+    return runtime_.json != nullptr;
   }
 
   // 标记已解析并清理旧状态，开始新一轮解析。
-  json_parsed_ = true;
-  json_.reset();
-  json_error_.clear();
+  runtime_.json_parsed = true;
+  runtime_.json.reset();
+  runtime_.json_error.clear();
 
   // 不是 JSON 请求：按“无需解析”处理。
   if (!is_json()) {
@@ -263,27 +263,27 @@ bool HttpRequest::parse_json() {
 
   // JSON 请求但 body 为空，显式给出错误。
   if (body_.empty()) {
-    json_error_ = "Empty JSON body";
+    runtime_.json_error = "Empty JSON body";
     return false;
   }
 
   // 使用 nlohmann::json 非异常模式解析，失败时通过 is_discarded() 判断。
   Json parsed = Json::parse(body_, nullptr, false);
   if (parsed.is_discarded()) {
-    json_error_ = "Invalid JSON body";
+    runtime_.json_error = "Invalid JSON body";
     return false;
   }
 
-  json_ = std::make_shared<Json>(std::move(parsed));
+  runtime_.json = std::make_shared<Json>(std::move(parsed));
   return true;
 }
 
 // const 场景下也允许触发惰性解析，因此通过 const_cast 复用实现。
 const HttpRequest::Json *HttpRequest::json() const {
-  if (!json_parsed_) {
+  if (!runtime_.json_parsed) {
     const_cast<HttpRequest *>(this)->parse_json();
   }
-  return json_.get();
+  return runtime_.json.get();
 }
 
 // 判断是否为 URL 编码表单请求体。
@@ -303,12 +303,12 @@ bool HttpRequest::is_form_urlencoded() const {
  */
 bool HttpRequest::parse_form_urlencoded() {
   // 表单解析结果无失败分支，解析过后直接复用。
-  if (form_parsed_) {
+  if (runtime_.form_parsed) {
     return true;
   }
 
-  form_parsed_ = true;
-  form_params_.clear();
+  runtime_.form_parsed = true;
+  runtime_.form_params.clear();
 
   if (!is_form_urlencoded()) {
     return true;
@@ -332,10 +332,10 @@ bool HttpRequest::parse_form_urlencoded() {
       // key/value 均执行 URL 解码（包含 '+' -> 空格）。
       std::string key = url_decode(pair.substr(0, eq));
       std::string value = url_decode(pair.substr(eq + 1));
-      form_params_[key] = value;
+      runtime_.form_params[key] = value;
     } else if (!pair.empty()) {
       // 仅 key 无 value 的场景，统一记为空字符串。
-      form_params_[url_decode(pair)] = "";
+      runtime_.form_params[url_decode(pair)] = "";
     }
 
     pos = end + 1;
@@ -346,10 +346,10 @@ bool HttpRequest::parse_form_urlencoded() {
 
 // 惰性读取表单字段，首次访问时自动触发解析。
 const HttpRequest::Params &HttpRequest::form_params() const {
-  if (!form_parsed_) {
+  if (!runtime_.form_parsed) {
     const_cast<HttpRequest *>(this)->parse_form_urlencoded();
   }
-  return form_params_;
+  return runtime_.form_params;
 }
 
 // 按 key 读取表单字段，未命中返回默认值。
@@ -377,46 +377,46 @@ bool HttpRequest::is_multipart() const {
  * - 真正的边界解析逻辑交给 MultipartFormData::parse
  */
 bool HttpRequest::parse_multipart() {
-  if (multipart_parsed_) {
-    return multipart_ != nullptr;
+  if (runtime_.multipart_parsed) {
+    return runtime_.multipart != nullptr;
   }
 
   // 先清理旧状态，再开始新一轮解析。
-  multipart_parsed_ = true;
-  multipart_.reset();
-  multipart_error_.clear();
+  runtime_.multipart_parsed = true;
+  runtime_.multipart.reset();
+  runtime_.multipart_error.clear();
 
   if (!is_multipart()) {
     return true;
   }
 
-  auto parsed = MultipartFormData::parse(*this, &multipart_error_);
+  auto parsed = MultipartFormData::parse(*this, &runtime_.multipart_error);
   if (!parsed) {
     return false;
   }
-  multipart_ = std::move(parsed);
+  runtime_.multipart = std::move(parsed);
   return true;
 }
 
 // const 接口也允许触发懒解析，因此这里通过 const_cast 复用已有实现。
 const MultipartFormData *HttpRequest::multipart() const {
-  if (!multipart_parsed_) {
+  if (!runtime_.multipart_parsed) {
     const_cast<HttpRequest *>(this)->parse_multipart();
   }
-  return multipart_.get();
+  return runtime_.multipart.get();
 }
 
 void HttpRequest::invalidate_body_cache() {
-  multipart_parsed_ = false;
-  multipart_.reset();
-  multipart_error_.clear();
+  runtime_.multipart_parsed = false;
+  runtime_.multipart.reset();
+  runtime_.multipart_error.clear();
 
-  json_parsed_ = false;
-  json_.reset();
-  json_error_.clear();
+  runtime_.json_parsed = false;
+  runtime_.json.reset();
+  runtime_.json_error.clear();
 
-  form_parsed_ = false;
-  form_params_.clear();
+  runtime_.form_parsed = false;
+  runtime_.form_params.clear();
 }
 
 } // namespace zhttp

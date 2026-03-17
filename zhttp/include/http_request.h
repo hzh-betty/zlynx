@@ -132,14 +132,14 @@ public:
    * @brief 获取会话对象（通常由 SessionMiddleware 注入）
     * @return 当前请求关联的 Session；未启用会话时可能为空
    */
-  std::shared_ptr<Session> session() const { return session_; }
+  std::shared_ptr<Session> session() const { return runtime_.session; }
 
   /**
    * @brief 设置会话对象（中间件使用）
    * @param session 要绑定到请求上的会话对象
    */
   void set_session(std::shared_ptr<Session> session) {
-    session_ = std::move(session);
+    runtime_.session = std::move(session);
   }
 
 
@@ -165,7 +165,7 @@ public:
    * @brief 获取 multipart 解析错误（若有）
     * @return 最近一次 multipart 解析失败的错误说明
    */
-  const std::string &multipart_error() const { return multipart_error_; }
+  const std::string &multipart_error() const { return runtime_.multipart_error; }
 
 
   /**
@@ -284,7 +284,7 @@ public:
    * @brief 获取 JSON 解析错误（若有）
    * @return 最近一次 JSON 解析失败的错误说明
    */
-  const std::string &json_error() const { return json_error_; }
+  const std::string &json_error() const { return runtime_.json_error; }
 
   /**
    * @brief 是否为 application/x-www-form-urlencoded
@@ -314,8 +314,26 @@ public:
                          const std::string &default_val = "") const;
 
 private:
+  struct RuntimeData {
+    std::shared_ptr<Session> session; // 会话对象，通常由 SessionMiddleware 注入
+
+    bool cookies_parsed = false; // Cookie 是否已经解析过
+    Params cookies; // 解析后的 Cookie 键值表
+
+    bool multipart_parsed = false; // multipart 是否已经解析过
+    std::shared_ptr<MultipartFormData> multipart; // 解析后的 multipart 数据
+    std::string multipart_error; // 最近一次 multipart 解析失败的错误说明
+
+    bool json_parsed = false; // JSON 是否已经解析过
+    std::shared_ptr<Json> json; // 解析后的 JSON 对象
+    std::string json_error; // 最近一次 JSON 解析失败的错误说明
+
+    bool form_parsed = false; // URL 编码表单是否已经解析过
+    Params form_params; // 解析后的 URL 编码表单字段
+  };
+
   // 按需解析 Cookie，避免不访问 Cookie 的请求也付出额外开销。
-  void parse_cookies_if_needed() const;
+  void parse_cookies_if_needed();
 
   // 请求体相关解析缓存失效。
   void invalidate_body_cache();
@@ -333,26 +351,8 @@ private:
   Params path_params_;  // 路径参数
   Params query_params_; // 查询参数
 
-  // Cookie 缓存。只有真正访问 cookie()/cookies() 时才解析。
-  mutable bool cookies_parsed_ = false;
-  mutable Params cookies_;
-
-  // 当前请求关联的 Session，由中间件或上层框架注入。
-  std::shared_ptr<Session> session_;
-
-  // multipart/form-data 的惰性解析缓存。
-  mutable bool multipart_parsed_ = false;
-  mutable std::shared_ptr<MultipartFormData> multipart_;
-  mutable std::string multipart_error_;
-
-  // JSON 请求体的惰性解析缓存。
-  mutable bool json_parsed_ = false;
-  mutable std::shared_ptr<Json> json_;
-  mutable std::string json_error_;
-
-  // URL 编码表单的惰性解析缓存。
-  mutable bool form_parsed_ = false;
-  mutable Params form_params_;
+  // 运行期会话与惰性解析缓存（cookie/multipart/json/form）。
+  RuntimeData runtime_;
 };
 
 } // namespace zhttp
