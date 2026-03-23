@@ -7,6 +7,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <deque>
 #include <string>
 #include <unordered_map>
 
@@ -146,6 +147,101 @@ private:
   // buckets_ 可能被多个请求并发访问，因此用互斥锁保护。
   mutable std::mutex mutex_;
   std::unordered_map<std::string, Bucket> buckets_;
+};
+
+/**
+ * @brief Fixed Window 固定窗口限流器实现
+ *
+ * 行为要点：
+ * - 每个 key 维护一个固定长度时间窗口（大小为 1 * unit）。
+ * - 在同一窗口内最多允许 capacity 次请求。
+ * - 窗口切换时计数清零并重新开始。
+ *
+ * @note 该算法实现简单、开销低，但在窗口边界可能出现突刺流量。
+ */
+class FixedWindowRateLimiter final : public RateLimiter {
+public:
+  /**
+   * @brief 构造固定窗口限流器
+   * @param capacity 每个窗口允许的最大请求数
+   * @param unit 窗口时间单位（窗口大小固定为 1 个单位）
+   * @param now_func 可选时钟函数，主要用于测试
+   */
+  FixedWindowRateLimiter(size_t capacity, TimeUnit unit,
+                         NowFunc now_func = NowFunc());
+
+  /**
+   * @brief 判断当前 key 在当前窗口内是否仍可放行
+   * @param key 限流维度 key
+   * @return true 表示放行并消耗当前窗口内一个配额
+   */
+  bool isAllowed(const std::string &key) override;
+
+  /**
+   * @brief 估算距离当前窗口结束还需等待多久
+   * @param key 限流维度 key
+   * @return 建议等待时间
+   */
+  Milliseconds retryAfter(const std::string &key) const override;
+
+private:
+  struct State {
+    TimePoint window_start; // 当前固定窗口起点
+    size_t count = 0;       // 当前窗口内已通过请求数
+    bool initialized = false;
+  };
+
+  // states_ 可能被多个请求并发访问，因此用互斥锁保护。
+  mutable std::mutex mutex_;
+  mutable std::unordered_map<std::string, State> states_;
+  size_t capacity_;
+  TimeUnit unit_;
+  NowFunc now_func_;
+};
+
+/**
+ * @brief Sliding Window 滑动窗口限流器实现
+ *
+ * 行为要点：
+ * - 每个 key 维护窗口内请求时间点序列。
+ * - 每次请求前先清理滑出窗口的旧时间点，再判断当前数量是否小于 capacity。
+ * - 相比固定窗口，限流结果更平滑。
+ *
+ * @note 该算法按请求时间点存储状态，内存占用与窗口内请求数量相关。
+ */
+class SlidingWindowRateLimiter final : public RateLimiter {
+public:
+  /**
+   * @brief 构造滑动窗口限流器
+   * @param capacity 窗口内允许的最大请求数
+   * @param unit 窗口时间单位（窗口大小固定为 1 个单位）
+   * @param now_func 可选时钟函数，主要用于测试
+   */
+  SlidingWindowRateLimiter(size_t capacity, TimeUnit unit,
+                           NowFunc now_func = NowFunc());
+
+  /**
+   * @brief 判断当前 key 在滑动窗口内是否仍可放行
+   * @param key 限流维度 key
+   * @return true 表示放行并记录当前请求时间点
+   */
+  bool isAllowed(const std::string &key) override;
+
+  /**
+   * @brief 估算距离释放下一个可用配额还需等待多久
+   * @param key 限流维度 key
+   * @return 建议等待时间
+   */
+  Milliseconds retryAfter(const std::string &key) const override;
+
+private:
+  // queues_ 可能被多个请求并发访问，因此用互斥锁保护。
+  mutable std::mutex mutex_;
+  // 每个 key 对应一个时间点队列，仅保留窗口范围内的请求时间。
+  mutable std::unordered_map<std::string, std::deque<TimePoint>> queues_;
+  size_t capacity_;
+  TimeUnit unit_;
+  NowFunc now_func_;
 };
 
 /**

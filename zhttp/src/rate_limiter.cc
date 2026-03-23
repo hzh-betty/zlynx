@@ -33,137 +33,6 @@ static inline RateLimiter::NowFunc default_now(RateLimiter::NowFunc f) {
   return [] { return TimerHelper::steady_now(); };
 }
 
-class FixedWindowRateLimiter final : public RateLimiter {
-public:
-  FixedWindowRateLimiter(size_t capacity, TimeUnit unit, NowFunc now_func)
-      : capacity_(capacity), unit_(unit), now_func_(default_now(now_func)) {
-    if (capacity_ == 0) {
-      capacity_ = 1;
-    }
-  }
-
-  bool isAllowed(const std::string &key) override {
-    // 固定窗口：每个 key 维护一个窗口起点与计数。
-    // 优点：实现简单；缺点：窗口边界处可能产生“突刺”（例如两端各打满 capacity）。
-    // 复杂度：摊还 O(1)，内存约为 O(key 基数)。
-    const auto t = now_func_();
-    const auto win = unit_to_ms(unit_);
-
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto &s = states_[key];
-
-    if (!s.initialized) {
-      s.initialized = true;
-      s.window_start = t;
-      s.count = 0;
-    }
-
-    // 固定窗口按整块时间段计数，窗口一过立即清零重新开始。
-    if (t - s.window_start >= win) {
-      s.window_start = t;
-      s.count = 0;
-    }
-
-    if (s.count < capacity_) {
-      ++s.count;
-      return true;
-    }
-    return false;
-  }
-
-  Milliseconds retryAfter(const std::string &key) const override {
-    const auto t = now_func_();
-    const auto win = unit_to_ms(unit_);
-
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = states_.find(key);
-    if (it == states_.end() || !it->second.initialized) {
-      return TimerHelper::milliseconds(0);
-    }
-
-    auto elapsed = TimerHelper::to_milliseconds(t - it->second.window_start);
-    if (elapsed >= win) {
-      return TimerHelper::milliseconds(0);
-    }
-    return win - elapsed;
-  }
-
-private:
-  struct State {
-    TimePoint window_start;
-    size_t count = 0;
-    bool initialized = false;
-  };
-
-  mutable std::mutex mutex_;
-  mutable std::unordered_map<std::string, State> states_;
-  size_t capacity_;
-  TimeUnit unit_;
-  NowFunc now_func_;
-};
-
-class SlidingWindowRateLimiter final : public RateLimiter {
-public:
-  SlidingWindowRateLimiter(size_t capacity, TimeUnit unit, NowFunc now_func)
-      : capacity_(capacity), unit_(unit), now_func_(default_now(now_func)) {
-    if (capacity_ == 0) {
-      capacity_ = 1;
-    }
-  }
-
-  bool isAllowed(const std::string &key) override {
-    // 滑动窗口：每个 key 维护一个时间点队列，仅保留最近一个窗口内的请求时间。
-    // 优点：限流更平滑；缺点：内存与窗口内请求数相关（最坏 O(capacity) / key）。
-    const auto t = now_func_();
-    const auto win = unit_to_ms(unit_);
-
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto &q = queues_[key];
-
-    // 通过不断弹出队首，移除已滑出窗口的旧请求。
-    while (!q.empty()) {
-      auto age = std::chrono::duration_cast<std::chrono::milliseconds>(t - q.front());
-      if (age >= win) {
-        q.pop_front();
-      } else {
-        break;
-      }
-    }
-
-    if (q.size() < capacity_) {
-      q.push_back(t);
-      return true;
-    }
-
-    return false;
-  }
-
-  Milliseconds retryAfter(const std::string &key) const override {
-    const auto t = now_func_();
-    const auto win = unit_to_ms(unit_);
-
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = queues_.find(key);
-    if (it == queues_.end() || it->second.empty()) {
-      return TimerHelper::milliseconds(0);
-    }
-
-    // 最早一条记录过期后，窗口内会释放出一个可用名额。
-    auto elapsed = TimerHelper::to_milliseconds(t - it->second.front());
-    if (elapsed >= win) {
-      return TimerHelper::milliseconds(0);
-    }
-    return win - elapsed;
-  }
-
-private:
-  mutable std::mutex mutex_;
-  mutable std::unordered_map<std::string, std::deque<TimePoint>> queues_;
-  size_t capacity_;
-  TimeUnit unit_;
-  NowFunc now_func_;
-};
-
 static inline int ceil_div_ms_to_s(TimerHelper::Milliseconds ms) {
   // HTTP Retry-After 通常使用“秒”为单位的整数；这里做向上取整。
   if (ms.count() <= 0) {
@@ -173,6 +42,116 @@ static inline int ceil_div_ms_to_s(TimerHelper::Milliseconds ms) {
 }
 
 } // namespace
+
+FixedWindowRateLimiter::FixedWindowRateLimiter(size_t capacity, TimeUnit unit,
+                                               NowFunc now_func)
+    : capacity_(capacity), unit_(unit), now_func_(default_now(now_func)) {
+  if (capacity_ == 0) {
+    capacity_ = 1;
+  }
+}
+
+bool FixedWindowRateLimiter::isAllowed(const std::string &key) {
+  // 固定窗口：每个 key 维护一个窗口起点与计数。
+  // 优点：实现简单；缺点：窗口边界处可能产生“突刺”（例如两端各打满 capacity）。
+  // 复杂度：摊还 O(1)，内存约为 O(key 基数)。
+  const auto t = now_func_();
+  const auto win = unit_to_ms(unit_);
+
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto &s = states_[key];
+
+  if (!s.initialized) {
+    s.initialized = true;
+    s.window_start = t;
+    s.count = 0;
+  }
+
+  // 固定窗口按整块时间段计数，窗口一过立即清零重新开始。
+  if (t - s.window_start >= win) {
+    s.window_start = t;
+    s.count = 0;
+  }
+
+  if (s.count < capacity_) {
+    ++s.count;
+    return true;
+  }
+  return false;
+}
+
+RateLimiter::Milliseconds
+FixedWindowRateLimiter::retryAfter(const std::string &key) const {
+  const auto t = now_func_();
+  const auto win = unit_to_ms(unit_);
+
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto it = states_.find(key);
+  if (it == states_.end() || !it->second.initialized) {
+    return TimerHelper::milliseconds(0);
+  }
+
+  auto elapsed = TimerHelper::to_milliseconds(t - it->second.window_start);
+  if (elapsed >= win) {
+    return TimerHelper::milliseconds(0);
+  }
+  return win - elapsed;
+}
+
+SlidingWindowRateLimiter::SlidingWindowRateLimiter(size_t capacity,
+                                                   TimeUnit unit,
+                                                   NowFunc now_func)
+    : capacity_(capacity), unit_(unit), now_func_(default_now(now_func)) {
+  if (capacity_ == 0) {
+    capacity_ = 1;
+  }
+}
+
+bool SlidingWindowRateLimiter::isAllowed(const std::string &key) {
+  // 滑动窗口：每个 key 维护一个时间点队列，仅保留最近一个窗口内的请求时间。
+  // 优点：限流更平滑；缺点：内存与窗口内请求数相关（最坏 O(capacity) / key）。
+  const auto t = now_func_();
+  const auto win = unit_to_ms(unit_);
+
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto &q = queues_[key];
+
+  // 通过不断弹出队首，移除已滑出窗口的旧请求。
+  while (!q.empty()) {
+    auto age = std::chrono::duration_cast<std::chrono::milliseconds>(t - q.front());
+    if (age >= win) {
+      q.pop_front();
+    } else {
+      break;
+    }
+  }
+
+  if (q.size() < capacity_) {
+    q.push_back(t);
+    return true;
+  }
+
+  return false;
+}
+
+RateLimiter::Milliseconds
+SlidingWindowRateLimiter::retryAfter(const std::string &key) const {
+  const auto t = now_func_();
+  const auto win = unit_to_ms(unit_);
+
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto it = queues_.find(key);
+  if (it == queues_.end() || it->second.empty()) {
+    return TimerHelper::milliseconds(0);
+  }
+
+  // 最早一条记录过期后，窗口内会释放出一个可用名额。
+  auto elapsed = TimerHelper::to_milliseconds(t - it->second.front());
+  if (elapsed >= win) {
+    return TimerHelper::milliseconds(0);
+  }
+  return win - elapsed;
+}
 
 RateLimiter::ptr RateLimiter::newRateLimiter(Type type, size_t capacity,
                                              TimeUnit unit, NowFunc now_func) {
