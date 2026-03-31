@@ -1,68 +1,51 @@
 cmake_minimum_required(VERSION 3.18)
-
 project(znet LANGUAGES CXX)
 
-# 继承父项目的C++标准
+if(NOT UNIX OR APPLE)
+  message(FATAL_ERROR "znet currently supports Linux only.")
+endif()
+
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# 查找依赖
-find_package(Threads REQUIRED)
+option(ZNET_BUILD_TESTS "Build znet tests" ON)
 
-# 收集源文件
-file(GLOB ZNET_SOURCES
-    ${PROJECT_SOURCE_DIR}/src/*.cc
+if(NOT TARGET zcoroutine)
+  set(ZCOROUTINE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  set(ZCOROUTINE_ENABLE_LOGGING ON CACHE BOOL "" FORCE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../zcoroutine ${CMAKE_BINARY_DIR}/zcoroutine)
+endif()
+
+add_library(znet STATIC
+  src/address.cc
+  src/acceptor.cc
+  src/buffer.cc
+  src/server.cc
+  src/session.cc
+  src/socket.cc
+  src/tcp_connection.cc
+  src/tcp_server.cc
+  src/znet_logger.cc
 )
 
-# 收集头文件
-file(GLOB ZNET_HEADERS
-    ${PROJECT_SOURCE_DIR}/include/*.h
+target_include_directories(znet
+  PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-# 创建共享库和静态库
-add_library(znet_shared SHARED ${ZNET_SOURCES})
-add_library(znet_static STATIC ${ZNET_SOURCES})
-
-# 设置库的输出名称（去掉_shared/_static后缀）
-set_target_properties(znet_shared PROPERTIES OUTPUT_NAME znet)
-set_target_properties(znet_static PROPERTIES OUTPUT_NAME znet)
-
-# 公共头文件目录
-target_include_directories(znet_shared
-    PUBLIC ${PROJECT_SOURCE_DIR}/include
-    PUBLIC ${CMAKE_SOURCE_DIR}/zcoroutine/include
-    PUBLIC ${CMAKE_SOURCE_DIR}/zlog/include
+target_link_libraries(znet
+  PUBLIC
+    zcoroutine
 )
 
-target_include_directories(znet_static
-    PUBLIC ${PROJECT_SOURCE_DIR}/include
-    PUBLIC ${CMAKE_SOURCE_DIR}/zcoroutine/include
-    PUBLIC ${CMAKE_SOURCE_DIR}/zlog/include
+target_compile_options(znet PRIVATE
+  -Wall
+  -Wextra
+  -Wpedantic
 )
 
-# 链接依赖库
-target_link_libraries(znet_shared
-    PUBLIC zcoroutine_shared
-    PUBLIC zlog_shared
-    PUBLIC Threads::Threads
-    PUBLIC dl
-)
-
-target_link_libraries(znet_static
-    PUBLIC zcoroutine_static
-    PUBLIC zlog_static
-    PUBLIC Threads::Threads
-    PUBLIC dl
-)
-
-message(STATUS "==============================")
-message(STATUS "znet configuration")
-message(STATUS "------------------------------")
-message(STATUS "C++ Standard      : ${CMAKE_CXX_STANDARD}")
-message(STATUS "Source files      : ${ZNET_SOURCES}")
-message(STATUS "Shared Library    : znet_shared")
-message(STATUS "Static Library    : znet_static")
-message(STATUS "==============================")
-
-# 添加测试子目录
-add_subdirectory(tests)
+if(ZNET_BUILD_TESTS)
+  enable_testing()
+  add_subdirectory(tests)
+endif()

@@ -1,62 +1,69 @@
 cmake_minimum_required(VERSION 3.18)
-
 project(zcoroutine LANGUAGES CXX)
+
+if(NOT UNIX OR APPLE)
+	message(FATAL_ERROR "zcoroutine currently supports Linux only.")
+endif()
 
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# 单配置生成器（Makefile / Ninja）下，未指定时默认 Debug
-if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
-    set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
+option(ZCOROUTINE_BUILD_TESTS "Build zcoroutine tests" ON)
+option(ZCOROUTINE_ENABLE_LOGGING "Enable zlog based logging" ON)
+
+set(ZCOROUTINE_SOURCES
+		src/sched.cc
+		src/context.cc
+		src/steal_queue.cc
+		src/fiber_pool.cc
+		src/shared_stack_buffer.cc
+		src/snapshot_buffer_pool.cc
+		src/fiber_handle_registry.cc
+		src/runtime_manager.cc
+		src/fiber.cc
+		src/timer.cc
+		src/epoller.cc
+		src/processor.cc
+		src/event.cc
+		src/mutex.cc
+		src/wait_group.cc
+		src/pool.cc
+		src/io_event.cc
+		src/hook.cc
+)
+
+add_library(zcoroutine STATIC ${ZCOROUTINE_SOURCES})
+
+target_include_directories(zcoroutine
+		PUBLIC ${PROJECT_SOURCE_DIR}/include
+)
+
+find_package(Threads REQUIRED)
+target_link_libraries(zcoroutine PUBLIC Threads::Threads)
+
+if(ZCOROUTINE_ENABLE_LOGGING)
+	set(ZCOROUTINE_ZLOG_DIR "${PROJECT_SOURCE_DIR}/../zlog")
+	if(NOT EXISTS "${ZCOROUTINE_ZLOG_DIR}/CMakeLists.txt")
+		message(FATAL_ERROR "ZCOROUTINE_ENABLE_LOGGING=ON but zlog is not found at ${ZCOROUTINE_ZLOG_DIR}")
+	endif()
+
+	if(NOT TARGET zlog_static)
+		add_subdirectory(${ZCOROUTINE_ZLOG_DIR} ${CMAKE_BINARY_DIR}/zlog)
+	endif()
+
+	target_include_directories(zcoroutine PUBLIC ${ZCOROUTINE_ZLOG_DIR}/include)
+	target_link_libraries(zcoroutine PUBLIC zlog_static)
+	target_compile_definitions(zcoroutine PUBLIC ZCOROUTINE_WITH_ZLOG=1)
 endif()
 
-# Debug 默认开启 tests，其它默认关闭
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(ENABLE_TESTS_DEFAULT ON)
-else()
-    set(ENABLE_TESTS_DEFAULT OFF)
+target_compile_options(zcoroutine PRIVATE
+		-Wall
+		-Wextra
+		-Wpedantic
+)
+
+if(ZCOROUTINE_BUILD_TESTS)
+	enable_testing()
+	add_subdirectory(tests)
 endif()
-
-option(ENABLE_TESTS "Enable building tests" ${ENABLE_TESTS_DEFAULT})
-
-file(GLOB ZCOROUTINE_SRCS CONFIGURE_DEPENDS
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cc
-)
-
-add_library(zcoroutine_shared SHARED ${ZCOROUTINE_SRCS})
-add_library(zcoroutine_static STATIC ${ZCOROUTINE_SRCS})
-
-target_include_directories(zcoroutine_shared
-    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-target_include_directories(zcoroutine_static
-    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-target_link_libraries(zcoroutine_shared
-        PUBLIC zlog_shared dl
-)
-
-target_link_libraries(zcoroutine_static
-        PUBLIC zlog_static dl
-)
-
-if(ENABLE_TESTS)
-    if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests)
-        enable_testing()
-        add_subdirectory(tests)
-    else()
-        message(STATUS "Tests directory not found, skipping tests")
-    endif()
-endif()
-
-message(STATUS "==============================")
-message(STATUS "zcoroutine build configuration")
-message(STATUS "------------------------------")
-message(STATUS "C++ Standard      : ${CMAKE_CXX_STANDARD}")
-message(STATUS "Build Type        : ${CMAKE_BUILD_TYPE}")
-message(STATUS "ENABLE_TESTS      : ${ENABLE_TESTS}")
-message(STATUS "Shared Library    : zcoroutine_shared")
-message(STATUS "Static Library    : zcoroutine_static")
-message(STATUS "==============================")

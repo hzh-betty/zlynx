@@ -1,55 +1,157 @@
-#include "socket.h"
-#include "hook.h"
-#include "io_scheduler.h"
-#include "znet_logger.h"
+#include "znet/socket.h"
+
+#include <chrono>
 #include <errno.h>
+#include <cstring>
 #include <fcntl.h>
 #include <netinet/tcp.h>
-#include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "zcoroutine/hook.h"
+#include "zcoroutine/io_event.h"
+#include "zcoroutine/sched.h"
+#include "znet/znet_logger.h"
+
+namespace {
+
+constexpr int kCoroutineRequiredErrno = EOPNOTSUPP;
+
+// 统一检查：I/O 接口必须在协程上下文内调用。
+bool require_coroutine_context(const char* func_name) {
+  if (zcoroutine::in_coroutine()) {
+    return true;
+  }
+
+  errno = kCoroutineRequiredErrno;
+  ZNET_LOG_ERROR("{} must be called inside zcoroutine::go context", func_name);
+  return false;
+}
+
+// 用户传 0 表示无限等待；超大值钳制到框架支持范围内。
+uint32_t normalize_timeout_ms(uint64_t timeout_ms) {
+  if (timeout_ms == 0) {
+    return zcoroutine::kInfiniteTimeoutMs;
+  }
+  if (timeout_ms >= static_cast<uint64_t>(zcoroutine::kInfiniteTimeoutMs)) {
+    return zcoroutine::kInfiniteTimeoutMs - 1;
+  }
+  return static_cast<uint32_t>(timeout_ms);
+}
+
+// 对 accept 回来的 fd 尽量补上 CLOEXEC，避免子进程继承。
+void set_close_on_exec_if_supported(int fd) {
+#if defined(FD_CLOEXEC)
+  const int flags = ::fcntl(fd, F_GETFD, 0);
+  if (flags == -1) {
+    return;
+  }
+  (void)::fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
+#else
+  (void)fd;
+#endif
+}
+
+// 可重试 I/O 错误：等待事件后继续调用即可。
+bool is_retryable_io_errno(int err) {
+  return err == EAGAIN || err == EWOULDBLOCK;
+}
+
+// 统一事件等待包装：超时时补齐 ETIMEDOUT，便于上层判断。
+bool wait_for_io_event(int fd, zcoroutine::IoEventType event_type,
+                       uint32_t timeout_ms) {
+  zcoroutine::IoEvent io_event(fd, event_type);
+  if (io_event.wait(timeout_ms)) {
+    return true;
+  }
+
+  if (errno == 0) {
+    errno = ETIMEDOUT;
+  }
+  return false;
+}
+
+// 计算 connect 重试时剩余超时，避免每轮都使用原始超时值。
+uint32_t remaining_timeout_ms(
+    uint32_t total_timeout_ms,
+    const std::chrono::steady_clock::time_point& started_at) {
+  if (total_timeout_ms == zcoroutine::kInfiniteTimeoutMs) {
+    return zcoroutine::kInfiniteTimeoutMs;
+  }
+
+  const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now() - started_at);
+  if (elapsed.count() >= static_cast<int64_t>(total_timeout_ms)) {
+    errno = ETIMEDOUT;
+    return 0;
+  }
+
+  return static_cast<uint32_t>(
+      total_timeout_ms - static_cast<uint32_t>(elapsed.count()));
+}
+
+}  // namespace
+
 namespace znet {
 
+// 按 family/type/protocol 创建新 socket 并执行基础初始化。
 Socket::Socket(int family, int type, int protocol)
     : sockfd_(-1), family_(family), type_(type), protocol_(protocol),
       is_connected_(false) {
   new_sock();
 }
 
+// 基于已有 fd 包装：探测属性并补齐统一初始化逻辑。
 Socket::Socket(int sockfd) : sockfd_(sockfd), is_connected_(false) {
-  // 获取 socket 信息
   socklen_t len = sizeof(family_);
-  getsockopt(sockfd_, SOL_SOCKET, SO_DOMAIN, &family_, &len);
+  if (::getsockopt(sockfd_, SOL_SOCKET, SO_DOMAIN, &family_, &len) != 0) {
+    family_ = AF_INET;
+  }
   len = sizeof(type_);
-  getsockopt(sockfd_, SOL_SOCKET, SO_TYPE, &type_, &len);
+  if (::getsockopt(sockfd_, SOL_SOCKET, SO_TYPE, &type_, &len) != 0) {
+    type_ = SOCK_STREAM;
+  }
   protocol_ = 0;
-  init_sock();
+
+  if (!init_sock()) {
+    const int fd = sockfd_;
+    (void)::close(sockfd_);
+    sockfd_ = -1;
+    ZNET_LOG_ERROR(
+        "Socket::Socket existing fd init failed: fd={}, errno={}, error={}",
+        fd, errno, strerror(errno));
+  }
 }
 
 Socket::~Socket() { close(); }
 
+// 便捷工厂：IPv4 TCP。
 Socket::ptr Socket::create_tcp() {
   return std::make_shared<Socket>(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 }
 
+// 便捷工厂：根据地址族创建 TCP。
 Socket::ptr Socket::create_tcp(Address::ptr address) {
   return std::make_shared<Socket>(address->family(), SOCK_STREAM, IPPROTO_TCP);
 }
 
+// 便捷工厂：IPv6 TCP。
 Socket::ptr Socket::create_tcp_v6() {
   return std::make_shared<Socket>(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
 }
 
+// 便捷工厂：IPv4 UDP。
 Socket::ptr Socket::create_udp() {
   return std::make_shared<Socket>(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 }
 
+// 便捷工厂：IPv6 UDP。
 Socket::ptr Socket::create_udp_v6() {
   return std::make_shared<Socket>(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
 }
 
+// 绑定本地地址，并缓存本端地址用于后续日志和查询。
 bool Socket::bind(const Address::ptr addr) {
   if (!is_valid()) {
     ZNET_LOG_ERROR("Socket::bind invalid socket");
@@ -74,6 +176,7 @@ bool Socket::bind(const Address::ptr addr) {
   return true;
 }
 
+// 进入监听态，适用于 TCP 服务端 socket。
 bool Socket::listen(int backlog) {
   if (!is_valid()) {
     ZNET_LOG_ERROR("Socket::listen invalid socket");
@@ -90,7 +193,12 @@ bool Socket::listen(int backlog) {
   return true;
 }
 
+// 协程版 accept：对 EINTR/EAGAIN 做重试，对 EBADF 直接退出。
 Socket::ptr Socket::accept() {
+  if (!require_coroutine_context("Socket::accept")) {
+    return nullptr;
+  }
+
   if (!is_valid()) {
     ZNET_LOG_ERROR("Socket::accept invalid socket");
     return nullptr;
@@ -98,40 +206,66 @@ Socket::ptr Socket::accept() {
 
   sockaddr_storage addr;
   socklen_t len = sizeof(addr);
-  const int fd = sockfd_;
+  while (true) {
+    int clientfd = -1;
 
-  // 优先使用 accept4：一次 syscall 同时设置
-  // NONBLOCK/CLOEXEC，减少用户态/内核态切换。
-  int clientfd = -1;
 #if defined(SOCK_NONBLOCK) && defined(SOCK_CLOEXEC)
-  clientfd = ::accept4(fd, reinterpret_cast<sockaddr *>(&addr), &len,
-                       SOCK_NONBLOCK | SOCK_CLOEXEC);
-  if (clientfd == -1 && errno == ENOSYS) {
-    clientfd = ::accept(fd, reinterpret_cast<sockaddr *>(&addr), &len);
-  }
+    // 优先 accept4 一步设置 NONBLOCK/CLOEXEC，减少额外系统调用。
+    clientfd = zcoroutine::co_accept4(sockfd_, reinterpret_cast<sockaddr*>(&addr),
+                                      &len, SOCK_NONBLOCK | SOCK_CLOEXEC,
+                                      zcoroutine::kInfiniteTimeoutMs);
+    if (clientfd == -1 && errno == ENOSYS) {
+      // 老内核不支持 accept4 时回退到 accept + fcntl。
+      clientfd = zcoroutine::co_accept(sockfd_, reinterpret_cast<sockaddr*>(&addr),
+                                       &len, zcoroutine::kInfiniteTimeoutMs);
+      if (clientfd >= 0) {
+        set_close_on_exec_if_supported(clientfd);
+      }
+    }
 #else
-  clientfd = ::accept(fd, reinterpret_cast<sockaddr *>(&addr), &len);
+    clientfd = zcoroutine::co_accept(sockfd_, reinterpret_cast<sockaddr*>(&addr),
+                                     &len, zcoroutine::kInfiniteTimeoutMs);
+    if (clientfd >= 0) {
+      set_close_on_exec_if_supported(clientfd);
+    }
 #endif
 
-  if (clientfd == -1) {
-    // EAGAIN/EWOULDBLOCK: 非阻塞或 hook 场景下正常重试
-    // EINTR: 被信号中断，正常重试
-    // EBADF: socket 被关闭（常见于 stop/shutdown 过程），无需报错
-    if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR &&
-        errno != EBADF) {
-      ZNET_LOG_ERROR("Socket::accept failed: fd={}, errno={}, error={}", fd,
-                     errno, strerror(errno));
+    if (clientfd >= 0) {
+      Socket::ptr client_sock = std::make_shared<Socket>(clientfd);
+      ZNET_LOG_INFO("Socket::accept success: fd={}, client_fd={}", sockfd_,
+                    clientfd);
+      return client_sock;
     }
+
+    if (errno == EINTR) {
+      continue;
+    }
+
+    // 暂不可读时等待读事件后重试。
+    if (is_retryable_io_errno(errno)) {
+      if (!wait_for_io_event(sockfd_, zcoroutine::IoEventType::kRead,
+                             zcoroutine::kInfiniteTimeoutMs)) {
+        return nullptr;
+      }
+      continue;
+    }
+
+    if (errno == EBADF) {
+      return nullptr;
+    }
+
+    ZNET_LOG_ERROR("Socket::accept failed: fd={}, errno={}, error={}", sockfd_,
+                   errno, strerror(errno));
     return nullptr;
   }
-
-  Socket::ptr client_sock = std::make_shared<Socket>(clientfd);
-  ZNET_LOG_INFO("Socket::accept success: fd={}, client_fd={}", sockfd_,
-                clientfd);
-  return client_sock;
 }
 
+// 协程版 connect：支持超时、EINPROGRESS 轮询及 SO_ERROR 二次确认。
 bool Socket::connect(const Address::ptr addr, uint64_t timeout_ms) {
+  if (!require_coroutine_context("Socket::connect")) {
+    return false;
+  }
+
   if (!is_valid()) {
     ZNET_LOG_ERROR("Socket::connect invalid socket");
     return false;
@@ -145,12 +279,54 @@ bool Socket::connect(const Address::ptr addr, uint64_t timeout_ms) {
   }
 
   remote_address_ = addr;
+  const uint32_t effective_timeout_ms = normalize_timeout_ms(timeout_ms);
+  const auto started_at = std::chrono::steady_clock::now();
 
-  // 0 表示阻塞：转换为 hook 约定的 -1（不设置超时）
-  const uint64_t hook_timeout =
-      (timeout_ms == 0) ? static_cast<uint64_t>(-1) : timeout_ms;
-  if (::connect_with_timeout(sockfd_, addr->sockaddr_ptr(),
-                             addr->sockaddr_len(), hook_timeout) != 0) {
+  while (true) {
+    // co_connect 内部已做非阻塞接入；失败后根据 errno 判定是否可重试。
+    if (zcoroutine::co_connect(sockfd_, addr->sockaddr_ptr(), addr->sockaddr_len(),
+                               effective_timeout_ms) == 0) {
+      break;
+    }
+
+    if (errno == EINTR) {
+      continue;
+    }
+
+    if (errno == EISCONN) {
+      break;
+    }
+
+    if (errno == EINPROGRESS || errno == EALREADY || is_retryable_io_errno(errno)) {
+      const uint32_t wait_timeout_ms =
+          remaining_timeout_ms(effective_timeout_ms, started_at);
+      if (wait_timeout_ms == 0) {
+        return false;
+      }
+      if (!wait_for_io_event(sockfd_, zcoroutine::IoEventType::kWrite,
+                             wait_timeout_ms)) {
+        return false;
+      }
+
+      int socket_error = 0;
+      socklen_t socket_error_len = sizeof(socket_error);
+      if (::getsockopt(sockfd_, SOL_SOCKET, SO_ERROR, &socket_error,
+                       &socket_error_len) != 0) {
+        return false;
+      }
+
+      // 可写不代表连接成功，必须检查 SO_ERROR。
+      if (socket_error == 0 || socket_error == EISCONN) {
+        break;
+      }
+
+      errno = socket_error;
+      if (errno == EINPROGRESS || errno == EALREADY ||
+          is_retryable_io_errno(errno)) {
+        continue;
+      }
+    }
+
     ZNET_LOG_ERROR("Socket::connect failed: fd={}, addr={}, errno={}, error={}",
                    sockfd_, addr->to_string(), errno, strerror(errno));
     return false;
@@ -163,6 +339,7 @@ bool Socket::connect(const Address::ptr addr, uint64_t timeout_ms) {
   return true;
 }
 
+// 复用最近一次 connect 的远端地址执行重连。
 bool Socket::reconnect(uint64_t timeout_ms) {
   if (!remote_address_) {
     ZNET_LOG_ERROR("Socket::reconnect no remote address");
@@ -172,13 +349,14 @@ bool Socket::reconnect(uint64_t timeout_ms) {
   return connect(remote_address_, timeout_ms);
 }
 
+// 协程友好的 close 封装，避免直接调用系统 close 破坏 hook 语义。
 bool Socket::close() {
   if (!is_valid()) {
     return true;
   }
 
   is_connected_ = false;
-  if (::close(sockfd_) != 0) {
+  if (zcoroutine::co_close(sockfd_) != 0) {
     ZNET_LOG_ERROR("Socket::close failed: fd={}, errno={}, error={}", sockfd_,
                    errno, strerror(errno));
     return false;
@@ -187,9 +365,9 @@ bool Socket::close() {
   return true;
 }
 
+// 半关闭写端，常用于优雅关闭流程。
 bool Socket::shutdown_write() {
   if (!is_valid()) {
-    // 与 close() 的语义保持一致：重复调用视为成功
     return true;
   }
 
@@ -205,47 +383,155 @@ bool Socket::shutdown_write() {
   return true;
 }
 
-ssize_t Socket::send(const void *buffer, size_t length, int flags) {
+// 协程版 send：对 EINTR/EAGAIN 重试，其他错误直接返回失败。
+ssize_t Socket::send(const void* buffer, size_t length, int flags) {
+  if (!require_coroutine_context("Socket::send")) {
+    return -1;
+  }
+
   if (!is_valid()) {
     return -1;
   }
-  return ::send(sockfd_, buffer, length, flags);
+
+  while (true) {
+    const ssize_t ret = zcoroutine::co_send(sockfd_, buffer, length, flags,
+                                            zcoroutine::kInfiniteTimeoutMs);
+    if (ret >= 0) {
+      return ret;
+    }
+
+    if (errno == EINTR) {
+      continue;
+    }
+
+    // 写阻塞时等待可写事件。
+    if (is_retryable_io_errno(errno)) {
+      if (!wait_for_io_event(sockfd_, zcoroutine::IoEventType::kWrite,
+                             zcoroutine::kInfiniteTimeoutMs)) {
+        return -1;
+      }
+      continue;
+    }
+
+    return -1;
+  }
 }
 
-ssize_t Socket::recv(void *buffer, size_t length, int flags) {
+// 协程版 recv：对 EINTR/EAGAIN 重试，其他错误直接返回失败。
+ssize_t Socket::recv(void* buffer, size_t length, int flags) {
+  if (!require_coroutine_context("Socket::recv")) {
+    return -1;
+  }
+
   if (!is_valid()) {
     return -1;
   }
-  return ::recv(sockfd_, buffer, length, flags);
+
+  while (true) {
+    const ssize_t ret = zcoroutine::co_recv(sockfd_, buffer, length, flags,
+                                            zcoroutine::kInfiniteTimeoutMs);
+    if (ret >= 0) {
+      return ret;
+    }
+
+    if (errno == EINTR) {
+      continue;
+    }
+
+    // 读阻塞时等待可读事件。
+    if (is_retryable_io_errno(errno)) {
+      if (!wait_for_io_event(sockfd_, zcoroutine::IoEventType::kRead,
+                             zcoroutine::kInfiniteTimeoutMs)) {
+        return -1;
+      }
+      continue;
+    }
+
+    return -1;
+  }
 }
 
-ssize_t Socket::send_to(const void *buffer, size_t length,
+// UDP 发送封装，行为与 send 一致。
+ssize_t Socket::send_to(const void* buffer, size_t length,
                         const Address::ptr to, int flags) {
-  if (!is_valid()) {
+  if (!require_coroutine_context("Socket::send_to")) {
     return -1;
   }
-  return ::sendto(sockfd_, buffer, length, flags, to->sockaddr_ptr(),
-                  to->sockaddr_len());
+
+  if (!is_valid() || !to) {
+    errno = EINVAL;
+    return -1;
+  }
+
+  while (true) {
+    const ssize_t ret = zcoroutine::co_sendto(
+        sockfd_, buffer, length, flags, to->sockaddr_ptr(), to->sockaddr_len(),
+        zcoroutine::kInfiniteTimeoutMs);
+    if (ret >= 0) {
+      return ret;
+    }
+
+    if (errno == EINTR) {
+      continue;
+    }
+
+    // UDP 发送同样可能遇到可写阻塞，需要等待事件。
+    if (is_retryable_io_errno(errno)) {
+      if (!wait_for_io_event(sockfd_, zcoroutine::IoEventType::kWrite,
+                             zcoroutine::kInfiniteTimeoutMs)) {
+        return -1;
+      }
+      continue;
+    }
+
+    return -1;
+  }
 }
 
-ssize_t Socket::recv_from(void *buffer, size_t length, Address::ptr from,
+// UDP 接收封装，成功时可选择输出来源地址。
+ssize_t Socket::recv_from(void* buffer, size_t length, Address::ptr from,
                           int flags) {
+  if (!require_coroutine_context("Socket::recv_from")) {
+    return -1;
+  }
+
   if (!is_valid()) {
     return -1;
   }
 
   sockaddr_storage addr;
   socklen_t len = sizeof(addr);
-  ssize_t ret = ::recvfrom(sockfd_, buffer, length, flags,
-                           reinterpret_cast<sockaddr *>(&addr), &len);
+  while (true) {
+    const ssize_t ret = zcoroutine::co_recvfrom(
+        sockfd_, buffer, length, flags, reinterpret_cast<sockaddr*>(&addr), &len,
+        zcoroutine::kInfiniteTimeoutMs);
 
-  if (ret >= 0 && from) {
-    from = Address::create(reinterpret_cast<sockaddr *>(&addr), len);
+    if (ret >= 0) {
+      if (from) {
+        // 注意：from 为值传递，此赋值不会回传到调用方。
+        from = Address::create(reinterpret_cast<sockaddr*>(&addr), len);
+      }
+      return ret;
+    }
+
+    if (errno == EINTR) {
+      continue;
+    }
+
+    // UDP 接收暂时不可读时等待读事件。
+    if (is_retryable_io_errno(errno)) {
+      if (!wait_for_io_event(sockfd_, zcoroutine::IoEventType::kRead,
+                             zcoroutine::kInfiniteTimeoutMs)) {
+        return -1;
+      }
+      continue;
+    }
+
+    return -1;
   }
-
-  return ret;
 }
 
+// 毫秒超时转换为 timeval 并写入内核 SO_SNDTIMEO。
 bool Socket::set_send_timeout(uint64_t timeout_ms) {
   struct timeval tv;
   tv.tv_sec = timeout_ms / 1000;
@@ -253,6 +539,7 @@ bool Socket::set_send_timeout(uint64_t timeout_ms) {
   return set_option(SOL_SOCKET, SO_SNDTIMEO, tv);
 }
 
+// 毫秒超时转换为 timeval 并写入内核 SO_RCVTIMEO。
 bool Socket::set_recv_timeout(uint64_t timeout_ms) {
   struct timeval tv;
   tv.tv_sec = timeout_ms / 1000;
@@ -280,8 +567,9 @@ bool Socket::set_keep_alive(bool on) {
   return set_option(SOL_SOCKET, SO_KEEPALIVE, optval);
 }
 
+// 切换 fd 的 O_NONBLOCK 标志。
 bool Socket::set_non_blocking(bool on) {
-  int flags = fcntl(sockfd_, F_GETFL, 0);
+  int flags = ::fcntl(sockfd_, F_GETFL, 0);
   if (flags == -1) {
     ZNET_LOG_ERROR("Socket::set_non_blocking fcntl F_GETFL failed: fd={}",
                    sockfd_);
@@ -294,7 +582,7 @@ bool Socket::set_non_blocking(bool on) {
     flags &= ~O_NONBLOCK;
   }
 
-  if (fcntl(sockfd_, F_SETFL, flags) == -1) {
+  if (::fcntl(sockfd_, F_SETFL, flags) == -1) {
     ZNET_LOG_ERROR("Socket::set_non_blocking fcntl F_SETFL failed: fd={}",
                    sockfd_);
     return false;
@@ -303,6 +591,7 @@ bool Socket::set_non_blocking(bool on) {
   return true;
 }
 
+// 查询并缓存本地地址，后续重复调用直接返回缓存。
 Address::ptr Socket::get_local_address() {
   if (local_address_) {
     return local_address_;
@@ -310,15 +599,16 @@ Address::ptr Socket::get_local_address() {
 
   sockaddr_storage addr;
   socklen_t len = sizeof(addr);
-  if (getsockname(sockfd_, reinterpret_cast<sockaddr *>(&addr), &len) != 0) {
+  if (::getsockname(sockfd_, reinterpret_cast<sockaddr*>(&addr), &len) != 0) {
     ZNET_LOG_ERROR("Socket::get_local_address failed: fd={}", sockfd_);
     return nullptr;
   }
 
-  local_address_ = Address::create(reinterpret_cast<sockaddr *>(&addr), len);
+  local_address_ = Address::create(reinterpret_cast<sockaddr*>(&addr), len);
   return local_address_;
 }
 
+// 查询并缓存远端地址，后续重复调用直接返回缓存。
 Address::ptr Socket::get_remote_address() {
   if (remote_address_) {
     return remote_address_;
@@ -326,15 +616,16 @@ Address::ptr Socket::get_remote_address() {
 
   sockaddr_storage addr;
   socklen_t len = sizeof(addr);
-  if (getpeername(sockfd_, reinterpret_cast<sockaddr *>(&addr), &len) != 0) {
+  if (::getpeername(sockfd_, reinterpret_cast<sockaddr*>(&addr), &len) != 0) {
     ZNET_LOG_ERROR("Socket::get_remote_address failed: fd={}", sockfd_);
     return nullptr;
   }
 
-  remote_address_ = Address::create(reinterpret_cast<sockaddr *>(&addr), len);
+  remote_address_ = Address::create(reinterpret_cast<sockaddr*>(&addr), len);
   return remote_address_;
 }
 
+// 读取 SO_ERROR 作为最近一次 socket 错误状态。
 int Socket::get_error() {
   int error = 0;
   socklen_t len = sizeof(error);
@@ -345,46 +636,25 @@ int Socket::get_error() {
   return error;
 }
 
-bool Socket::cancel_read() {
-  zcoroutine::IoScheduler *scheduler = zcoroutine::IoScheduler::get_this();
-  if (!scheduler) {
+// 新建/接管 fd 后的统一初始化：非阻塞 + 常用选项。
+bool Socket::init_sock() {
+  if (!set_non_blocking(true)) {
+    ZNET_LOG_ERROR("Socket::init_sock failed to set non-blocking: fd={}", sockfd_);
     return false;
   }
-  return scheduler->cancel_event(sockfd_, zcoroutine::Channel::kRead) == 0;
-}
 
-bool Socket::cancel_write() {
-  zcoroutine::IoScheduler *scheduler = zcoroutine::IoScheduler::get_this();
-  if (!scheduler) {
-    return false;
-  }
-  return scheduler->cancel_event(sockfd_, zcoroutine::Channel::kWrite) == 0;
-}
-
-bool Socket::cancel_accept() {
-  // accept 就是读事件
-  return cancel_read();
-}
-
-bool Socket::cancel_all() {
-  zcoroutine::IoScheduler *scheduler = zcoroutine::IoScheduler::get_this();
-  if (!scheduler) {
-    return false;
-  }
-  return scheduler->cancel_all(sockfd_) == 0;
-}
-
-void Socket::init_sock() {
-  // 设置常用选项
-  set_reuse_addr(true);
-
+  // REUSEADDR 可降低服务重启时端口占用带来的 bind 失败概率。
+  (void)set_reuse_addr(true);
   if (type_ == SOCK_STREAM) {
-    set_tcp_nodelay(true);
+    // TCP 默认关闭 Nagle，减少小包交互延迟。
+    (void)set_tcp_nodelay(true);
   }
+  return true;
 }
 
+// 创建底层 fd 并完成初始化，失败时保证资源回收干净。
 bool Socket::new_sock() {
-  sockfd_ = socket(family_, type_, protocol_);
+  sockfd_ = ::socket(family_, type_, protocol_);
   if (sockfd_ == -1) {
     ZNET_LOG_ERROR("Socket::new_sock failed: family={}, type={}, protocol={}, "
                    "errno={}, error={}",
@@ -392,10 +662,17 @@ bool Socket::new_sock() {
     return false;
   }
 
-  init_sock();
+  if (!init_sock()) {
+    const int fd = sockfd_;
+    (void)::close(sockfd_);
+    sockfd_ = -1;
+    ZNET_LOG_ERROR("Socket::new_sock init failed: fd={}", fd);
+    return false;
+  }
+
   ZNET_LOG_DEBUG("Socket::new_sock success: fd={}, family={}, type={}", sockfd_,
                  family_, type_);
   return true;
 }
 
-} // namespace znet
+}  // namespace znet

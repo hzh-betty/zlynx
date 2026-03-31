@@ -1,17 +1,20 @@
-#include "address.h"
-#include "znet_logger.h"
+#include "znet/address.h"
+
+
 #include <cstdio>
 #include <cstring>
 #include <netdb.h>
 
+#include "znet/znet_logger.h"
+
 namespace znet {
 
-// ========== Address静态方法实现 ==========
-
+// 通过 getaddrinfo 解析 host:port，并将结果统一转换为 Address 派生对象。
 std::vector<Address::ptr> Address::lookup(const std::string &host,
                                           uint16_t port, int family) {
   std::vector<Address::ptr> result;
 
+  // hints 仅限制地址族与 socket 类型，协议由系统自行选择。
   struct addrinfo hints, *res, *curr;
   memset(&hints, 0, sizeof(hints));
   hints.ai_family = family; // AF_INET, AF_INET6, 或 0 (不限制)
@@ -25,6 +28,7 @@ std::vector<Address::ptr> Address::lookup(const std::string &host,
     return result;
   }
 
+  // 将链表中的每一项 sockaddr 包装成统一 Address 抽象。
   for (curr = res; curr != nullptr; curr = curr->ai_next) {
     Address::ptr addr = create(curr->ai_addr, curr->ai_addrlen);
     if (addr) {
@@ -36,6 +40,7 @@ std::vector<Address::ptr> Address::lookup(const std::string &host,
   return result;
 }
 
+// 根据 sa_family 分派到具体地址类型，便于上层以多态方式处理。
 Address::ptr Address::create(const sockaddr *addr, socklen_t addrlen) {
   (void)addrlen; // 参数保留用于未来扩展
   if (!addr) {
@@ -59,6 +64,7 @@ Address::ptr Address::create(const sockaddr *addr, socklen_t addrlen) {
   }
 }
 
+// IPv4 文本地址构造：非法地址会降级为 INADDR_ANY，避免构造阶段崩溃。
 IPv4Address::IPv4Address(const std::string &ip, uint16_t port) {
   memset(&addr_, 0, sizeof(addr_));
   addr_.sin_family = AF_INET;
@@ -73,6 +79,7 @@ IPv4Address::IPv4Address(const std::string &ip, uint16_t port) {
 
 IPv4Address::IPv4Address(const sockaddr_in &addr) : addr_(addr) {}
 
+// 统一输出为 ip:port 形式，便于日志检索和问题定位。
 std::string IPv4Address::to_string() const {
   char buf[INET_ADDRSTRLEN];
   inet_ntop(AF_INET, &addr_.sin_addr, buf, sizeof(buf));
@@ -90,6 +97,7 @@ uint16_t IPv4Address::port() const { return ntohs(addr_.sin_port); }
 
 void IPv4Address::set_port(uint16_t port) { addr_.sin_port = htons(port); }
 
+// IPv6 文本地址构造：非法地址会降级为 in6addr_any。
 IPv6Address::IPv6Address(const std::string &ip, uint16_t port) {
   memset(&addr_, 0, sizeof(addr_));
   addr_.sin6_family = AF_INET6;
@@ -104,6 +112,7 @@ IPv6Address::IPv6Address(const std::string &ip, uint16_t port) {
 
 IPv6Address::IPv6Address(const sockaddr_in6 &addr) : addr_(addr) {}
 
+// 统一输出为 [ip]:port 形式，避免 IPv6 冒号与端口分隔冲突。
 std::string IPv6Address::to_string() const {
   char buf[INET6_ADDRSTRLEN];
   inet_ntop(AF_INET6, &addr_.sin6_addr, buf, sizeof(buf));
@@ -121,6 +130,7 @@ uint16_t IPv6Address::port() const { return ntohs(addr_.sin6_port); }
 
 void IPv6Address::set_port(uint16_t port) { addr_.sin6_port = htons(port); }
 
+// Unix 域地址默认仅设置 family，路径由 set_path() 安全写入。
 UnixAddress::UnixAddress(const std::string &path) {
   memset(&addr_, 0, sizeof(addr_));
   addr_.sun_family = AF_UNIX;
@@ -136,6 +146,7 @@ std::string UnixAddress::to_string() const {
   return std::string(addr_.sun_path);
 }
 
+// 路径过长时截断并告警，保证 sun_path 始终以 '\0' 终止。
 void UnixAddress::set_path(const std::string &path) {
   size_t max_len = sizeof(addr_.sun_path) - 1;
   if (path.length() > max_len) {

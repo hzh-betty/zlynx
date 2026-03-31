@@ -1,264 +1,296 @@
-#include "tcp_server.h"
-#include "fiber_pool.h"
-#include "io_scheduler.h"
-#include "thread_context.h"
-#include "znet_logger.h"
-#include <errno.h>
-#include <sstream>
-#include <string.h>
+#include "znet/tcp_server.h"
+
+#include <atomic>
+#include <cerrno>
+#include <chrono>
+#include <thread>
+#include <utility>
+
+#include "znet/socket.h"
+#include "zcoroutine/sched.h"
+#include "znet/session.h"
+#include "znet/znet_logger.h"
 
 namespace znet {
 
 namespace {
-constexpr int kDefaultRecvTimeout = 60 * 1000 * 2;  // 2分钟
-constexpr int kDefaultWriteTimeout = 60 * 1000;     // 1分钟
-constexpr int kDefaultKeepAliveTimeout = 60 * 1000; // 1分钟
-} // namespace
 
-TcpServer::TcpServer(zcoroutine::IoScheduler::ptr io_worker,
-                     zcoroutine::IoScheduler::ptr accept_worker)
-    : io_worker_(io_worker),
-      accept_worker_(accept_worker ? accept_worker
-                                   : std::make_shared<zcoroutine::IoScheduler>(
-                                         1, "TcpServer-Accept", false)),
-      recv_timeout_(kDefaultRecvTimeout), write_timeout_(kDefaultWriteTimeout),
-      keepalive_timeout_(kDefaultKeepAliveTimeout), name_("znet/1.0.0"),
-      type_("tcp"), is_stop_(true) {
-  zcoroutine::FiberPool::get_instance().init();
+// 默认流工厂：读写都使用 BufferStream，覆盖大多数应用场景。
+std::pair<Stream::ptr, Stream::ptr> make_default_stream_pair() {
+  return {std::make_shared<BufferStream>(), std::make_shared<BufferStream>()};
 }
 
-TcpServer::~TcpServer() { stop(); }
-
-bool TcpServer::bind(Address::ptr addr) {
-  std::vector<Address::ptr> addrs;
-  std::vector<Address::ptr> fails;
-  addrs.push_back(addr);
-  return bind(addrs, fails);
+// 读循环中可重试的短暂错误。
+bool is_retryable_read_errno(int err) {
+  return err == EINTR || err == EAGAIN || err == EWOULDBLOCK ||
+         err == ETIMEDOUT;
 }
 
-bool TcpServer::bind(const std::vector<Address::ptr> &addrs,
-                     std::vector<Address::ptr> &fails) {
-  // 在该作用域开启hook，用于将监听socket设置为非阻塞
-  // 这里的 HookEnabler 只包住 bind/listen 这段准备逻辑。
-  // 目的不是让 bind 本身“异步化”，而是确保底层 socket 在本库约定的
-  // hook 语义下被初始化成后续 accept/IO 流程期望的状态，避免监听 socket
-  // 和连接 socket 的行为模型不一致。
-  struct HookEnabler {
-    HookEnabler() { zcoroutine::ThreadContext::set_hook_enable(true); }
-    ~HookEnabler() { zcoroutine::ThreadContext::set_hook_enable(false); }
-  };
-  HookEnabler hook_enabler;
-  zcoroutine::RWMutex::WriteLock lock(socks_mutex_);
-  for (auto &addr : addrs) {
-    Socket::ptr sock = Socket::create_tcp(addr);
-    if (!sock) {
-      ZNET_LOG_ERROR("TcpServer::bind create socket failed for addr={}",
-                     addr->to_string());
-      fails.push_back(addr);
-      continue;
-    }
+// 代表连接已不可继续使用的错误。
+bool is_peer_disconnect_errno(int err) {
+  return err == ECONNRESET || err == ENOTCONN || err == EPIPE;
+}
 
-    if (!sock->bind(addr)) {
-      ZNET_LOG_ERROR("TcpServer::bind bind fail errno={} errstr={} addr={}",
-                     errno, strerror(errno), addr->to_string());
-      fails.push_back(addr);
-      continue;
-    }
+}  // namespace
 
-    if (!sock->listen()) {
-      ZNET_LOG_ERROR("TcpServer::bind listen fail errno={} errstr={} addr={}",
-                     errno, strerror(errno), addr->to_string());
-      fails.push_back(addr);
-      continue;
-    }
-
-    socks_.push_back(sock);
+// 规范化流工厂返回值，确保读写流至少都有可用实例。
+std::pair<Stream::ptr, Stream::ptr> TcpServer::create_stream_pair() const {
+  if (!stream_factory_) {
+    return make_default_stream_pair();
   }
 
-  if (!fails.empty()) {
-    socks_.clear();
+  auto streams = stream_factory_();
+  if (!streams.first && !streams.second) {
+    return make_default_stream_pair();
+  }
+
+  if (!streams.first) {
+    streams.first = streams.second;
+  }
+  if (!streams.second) {
+    streams.second = streams.first;
+  }
+  return streams;
+}
+
+// 默认连接高水位阈值 64MB，线程数由外部 set_thread_count 控制。
+TcpServer::TcpServer(Address::ptr listen_address, int backlog)
+    : acceptor_(std::make_shared<Acceptor>(std::move(listen_address), backlog)),
+      high_water_mark_(64 * 1024 * 1024),thread_count_(0),
+      connection_registry_sched_(nullptr) {}
+
+// 启动流程：初始化协程运行时 -> 选择连接表归属调度器 -> 启动 acceptor。
+bool TcpServer::do_start() {
+  if (!acceptor_) {
+    ZNET_LOG_ERROR("TcpServer::do_start failed because acceptor is null");
     return false;
   }
 
-  for (auto &i : socks_) {
-    ZNET_LOG_INFO("TcpServer type={} name={} bind success: fd={} addr={}",
-                  type_, name_, i->fd(), i->get_local_address()->to_string());
+  zcoroutine::init(thread_count_); // 初始化协程调度器线程池
+  ZNET_LOG_INFO("TcpServer::do_start initialized zcoroutine runtime: thread_count={}",
+                thread_count_);
+
+  connection_registry_sched_ = zcoroutine::main_sched();
+  if (!connection_registry_sched_) {
+    connection_registry_sched_ = zcoroutine::next_sched();
   }
-  return true;
+  if (!connection_registry_sched_) {
+    errno = EOPNOTSUPP;
+    ZNET_LOG_ERROR("TcpServer::start requires zcoroutine::init before start");
+    return false;
+  }
+
+  ZNET_LOG_INFO("TcpServer::do_start using connection registry scheduler: id={}",
+                connection_registry_sched_->id());
+
+  acceptor_->set_accept_callback(
+      [this](Socket::ptr client) { handle_connection(std::move(client)); });
+
+  const bool ok = acceptor_->start();
+  if (ok) {
+    ZNET_LOG_INFO("TcpServer::do_start acceptor started successfully");
+  } else {
+    ZNET_LOG_ERROR("TcpServer::do_start failed to start acceptor");
+  }
+  return ok;
 }
 
-void TcpServer::start_accept(Socket::ptr sock) {
-  // 一个监听 socket 对应一个 accept 循环。
-  // 这个循环运行在 accept_worker_ 的调度线程里，负责不断 accept 新连接，
-  // 然后把真正的连接处理转移到 io_worker_ 上。
-  // 这样做的目的有两个：
-  // 1. accept 和连接收发解耦，避免监听线程被单个连接处理拖慢；
-  // 2. 新连接最终在所属 worker 线程上创建协程，能拿到该线程的 TLS /
-  //    shared stack / epoll 上下文，避免跨线程恢复协程带来的问题。
-  while (!is_stop_.load(std::memory_order_acquire)) {
-    Socket::ptr client = sock->accept();
-    if (client) {
-      // 创建TcpConnection，转移 Socket 所有权
-      auto local_addr = client->get_local_address();
-      auto peer_addr = client->get_remote_address();
-      std::string conn_name;
-      conn_name.reserve(name_.size() + 1 + 64);
-      conn_name.append(name_);
-      conn_name.push_back('-');
-      conn_name.append(peer_addr->to_string());
+// 停机流程：停止接入 -> 关闭并清空连接表（在 registry 调度器上串行执行）。
+void TcpServer::do_stop() {
+  ZNET_LOG_INFO("TcpServer::do_stop begin");
+  if (acceptor_) {
+    acceptor_->stop();
+  }
 
-      TcpConnectionPtr conn = std::make_shared<TcpConnection>(
-          std::move(conn_name), std::move(client), local_addr, peer_addr,
-          io_worker_.get());
-      // 新连接在进入业务层前，先继承 server 级 timeout 策略：
-      // - read_timeout: 建连后等待请求字节到达，以及后续请求读取超时
-      // - write_timeout: 响应发送过程中，输出缓冲区长期刷不空则断开
-      // - keepalive_timeout: 响应发完后若连接继续保持，则按空闲时间回收
-      conn->set_read_timeout(recv_timeout_);
-      conn->set_write_timeout(write_timeout_);
-      conn->set_keepalive_timeout(keepalive_timeout_);
-
-      // 这样可以确保协程使用正确的线程本地 SharedStack，避免跨线程共享栈问题
-      if (io_worker_) {
-        auto self = shared_from_this();
-        io_worker_->schedule([self, conn = std::move(conn)]() mutable {
-          // 在 worker 线程中创建协程，使用 worker 线程的 SharedStack
-          // 注意：handle_client() 只是给连接挂上回调、准备协议层逻辑；
-          // 真正把连接状态切到 Connected 并注册首次读事件，发生在
-          // connect_established() 里。
-          auto fiber = zcoroutine::FiberPool::get_instance().get_fiber(
-              [self, conn = std::move(conn)]() mutable {
-                self->handle_client(conn);
-                if (conn->state() == TcpConnection::State::Connecting) {
-                  conn->connect_established();
-                }
-              });
-          fiber->resume();
-          (void)zcoroutine::FiberPool::get_instance().return_fiber(fiber);
-        });
-      } else {
-        ZNET_LOG_FATAL("TcpServer::start no io_worker_ available");
-        throw std::runtime_error("TcpServer::start no io_worker_ available");
+  auto close_all = [this]() {
+    ConnectionMap connections_snapshot;
+    // 先 swap 再遍历，缩短持有共享映射的时间窗口。
+    connections_snapshot.swap(connections_);
+    for (auto& item : connections_snapshot) {
+      if (item.second) {
+        item.second->close();
       }
-    } else {
-      if (is_stop_.load(std::memory_order_acquire)) {
-        break;
-      }
-
-      const int err = errno;
-      if (err == EAGAIN || err == EWOULDBLOCK) {
-        continue;
-      }
-      if (err == EINTR || err == EBADF) {
-        // EINTR: 被信号中断；EBADF: 监听 socket 已关闭
-        break;
-      }
-      ZNET_LOG_ERROR("TcpServer::start_accept accept errno={} errstr={}", err,
-                     strerror(err));
     }
-  }
-}
+    ZNET_LOG_INFO("TcpServer::do_stop closed all connections: count={}",
+                  connections_snapshot.size());
+  };
 
-bool TcpServer::start() {
-  // 判断是否已经在运行，避免重复调用 start()。
-  if(!is_stop_.load(std::memory_order_acquire)) {
-    ZNET_LOG_WARN("TcpServer::start already started");
-    return true;
-  }
-  is_stop_.store(false, std::memory_order_release);
-
-  // 启动 accept_worker_
-  if (accept_worker_) {
-    accept_worker_->start();
-  }
-
-  // 启动 io_worker_
-  if (io_worker_) {
-    io_worker_->start();
-  }
-
-  zcoroutine::RWMutex::ReadLock lock(socks_mutex_);
-  for (auto &sock : socks_) {
-    if (accept_worker_) {
-      // 使用协程池创建协程用于接受连接
-      auto self = shared_from_this();
-      auto fiber = zcoroutine::FiberPool::get_instance().get_fiber(
-          [self, sock]() { self->start_accept(sock); });
-      accept_worker_->schedule(std::move(fiber));
-    } else {
-      ZNET_LOG_ERROR("TcpServer::start no scheduler available");
-      return false;
-    }
-  }
-  return true;
-}
-
-void TcpServer::stop() {
-  // 判断是否已经停止，避免重复调用 stop()。
-  if (is_stop_.load(std::memory_order_acquire)) {
-    ZNET_LOG_WARN("TcpServer::stop already stopped");
+  if (!connection_registry_sched_) {
+    close_all();
     return;
   }
-  is_stop_.store(true, std::memory_order_release);
 
-  // 将关闭操作调度到 accept_worker_ 执行，确保线程安全
-  auto self = shared_from_this();
-  if (accept_worker_) {
-    accept_worker_->schedule([this, self]() {
-      // 在 accept_worker 线程中执行关闭操作
-      // 这里特意把监听 socket 的 close 放回 accept 线程，是为了让
-      // 正在 accept() 的循环尽快以 EBADF/中断形式退出，避免不同线程
-      // 直接关闭监听 fd 带来的竞态。
-      {
-        zcoroutine::RWMutex::WriteLock lock(socks_mutex_);
-        for (auto &sock : socks_) {
-          sock->close();
-        }
-        socks_.clear();
-      }
-    });
-  } else {
-    // 没有 accept_worker，直接关闭
-    zcoroutine::RWMutex::WriteLock lock(socks_mutex_);
-    for (auto &sock : socks_) {
-      sock->close();
+  if (zcoroutine::in_coroutine() &&
+      zcoroutine::sched_id() == connection_registry_sched_->id()) {
+    close_all();
+    return;
+  }
+
+  std::atomic<bool> done{false};
+  connection_registry_sched_->go([&done, close_all]() mutable {
+    close_all();
+    done.store(true, std::memory_order_release);
+  });
+
+  // 等待异步回收完成，确保 stop() 返回时连接已全部关闭。
+  while (!done.load(std::memory_order_acquire)) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  ZNET_LOG_INFO("TcpServer::do_stop completed");
+}
+
+// 新连接处理：构造 TcpConnection，建立读循环并驱动业务回调。
+void TcpServer::handle_connection(Socket::ptr client) {
+  if (!client) {
+    ZNET_LOG_WARN("TcpServer::handle_connection ignored null client socket");
+    return;
+  }
+
+  zcoroutine::Scheduler* scheduler = zcoroutine::next_sched();
+  if (!scheduler) {
+    scheduler = connection_registry_sched_;
+  }
+
+  ZNET_LOG_DEBUG("TcpServer::handle_connection dispatch: client_fd={}, sched_id={}",
+                 client->fd(), scheduler ? scheduler->id() : -1);
+
+  std::shared_ptr<TcpServer> self = shared_from_this();
+  auto run_connection = [self, scheduler, client = std::move(client)]() mutable {
+    ZNET_LOG_INFO("TcpServer::handle_connection begin: client_fd={}", client->fd());
+    TcpConnection::ptr connection = std::make_shared<TcpConnection>(client);
+    connection->bind_to_loop(scheduler);
+
+    // 每个连接独立创建流对象，避免连接间缓冲状态串扰。
+    auto streams = self->create_stream_pair();
+    connection->set_streams(streams.first, streams.second);
+
+    if (self->on_write_complete_callback_) {
+      connection->set_write_complete_callback(self->on_write_complete_callback_);
     }
-    socks_.clear();
+    if (self->on_high_water_mark_callback_) {
+      connection->set_high_water_mark_callback(self->on_high_water_mark_callback_,
+                                               self->high_water_mark_);
+    }
+
+    self->register_connection(connection);
+
+    if (self->on_connection_callback_) {
+      self->on_connection_callback_(connection);
+    }
+
+    streams.first->on_open();
+    if (streams.second != streams.first) {
+      streams.second->on_open();
+    }
+
+    while (self->is_running() && connection->connected()) {
+      const ssize_t n = connection->read();
+      if (n > 0) {
+        // 数据就绪后由上层协议在 read_stream 中消费。
+        if (self->on_message_callback_) {
+          self->on_message_callback_(connection, streams.first);
+        }
+        continue;
+      }
+
+      if (n == 0) {
+        ZNET_LOG_INFO("TcpServer::handle_connection peer closed: fd={}",
+                      connection->fd());
+        break;
+      }
+
+      const int read_err = errno;
+      if (is_retryable_read_errno(read_err)) {
+        // 短暂错误让出执行权，后续继续读循环。
+        zcoroutine::yield();
+        continue;
+      }
+
+      // 除非是对端断开，否则记录警告日志并继续保持连接，等待下一次可读事件。
+      if (is_peer_disconnect_errno(read_err) || read_err == EBADF) {
+        ZNET_LOG_INFO("TcpServer::handle_connection disconnected by peer/error: "
+                      "fd={}, errno={}",
+                      connection->fd(), read_err);
+        break;
+      }
+
+      ZNET_LOG_WARN(
+          "TcpServer::handle_connection keep alive on read error: fd={}, "
+          "errno={}",
+          connection->fd(), read_err);
+      zcoroutine::yield();
+    }
+
+    streams.first->on_close();
+    if (streams.second != streams.first) {
+      streams.second->on_close();
+    }
+    if (self->on_close_callback_) {
+      self->on_close_callback_(connection);
+    }
+    connection->close();
+    self->remove_connection(connection->fd());
+    ZNET_LOG_INFO("TcpServer::handle_connection end: fd={}", connection->fd());
+  };
+
+  if (!scheduler) {
+    // 无可用调度器时在当前上下文直接执行，保证连接不丢失。
+    run_connection();
+    return;
   }
 
-  // 停止 accept_worker_（同步等待完成）
-  if (accept_worker_) {
-    accept_worker_->stop();
-  }
-
-  // 停止 io_worker_（同步等待完成）
-  if (io_worker_) {
-    io_worker_->stop();
-  }
+  scheduler->go(std::move(run_connection));
 }
 
-void TcpServer::handle_client(TcpConnectionPtr conn) {
-  ZNET_LOG_INFO("TcpServer::handle_client connection [{}] fd={} remote={}",
-                conn->name(), conn->socket()->fd(),
-                conn->peer_address()->to_string());
-
-  // 默认实现：什么都不做
-  // 子类应该重写这个方法来处理客户端连接
-}
-
-std::string TcpServer::to_string(const std::string &prefix) {
-  std::stringstream ss;
-  ss << prefix << "[type=" << type_ << " name=" << name_
-     << " recv_timeout=" << recv_timeout_ << " write_timeout=" << write_timeout_
-     << " keepalive_timeout=" << keepalive_timeout_ << "]" << std::endl;
-  std::string pfx = prefix.empty() ? "    " : prefix;
-
-  zcoroutine::RWMutex::ReadLock lock(socks_mutex_);
-  for (auto &i : socks_) {
-    ss << pfx << pfx << "fd=" << i->fd()
-       << " local=" << i->get_local_address()->to_string() << std::endl;
+// 在连接表归属调度器上登记连接，保证映射并发安全。
+void TcpServer::register_connection(const TcpConnection::ptr& connection) {
+  if (!connection) {
+    ZNET_LOG_WARN("TcpServer::register_connection ignored null connection");
+    return;
   }
-  return ss.str();
+
+  const int fd = connection->fd();
+  auto task = [self = shared_from_this(), fd, connection]() {
+    self->connections_[fd] = connection;
+    ZNET_LOG_DEBUG("TcpServer::register_connection success: fd={}, total={}", fd,
+                   self->connections_.size());
+  };
+
+  if (!connection_registry_sched_) {
+    task();
+    return;
+  }
+
+  if (zcoroutine::in_coroutine() &&
+      zcoroutine::sched_id() == connection_registry_sched_->id()) {
+    task();
+    return;
+  }
+
+  connection_registry_sched_->go(std::move(task));
 }
 
-} // namespace znet
+// 在连接表归属调度器上移除连接，避免跨调度器并发修改。
+void TcpServer::remove_connection(int fd) {
+  auto task = [self = shared_from_this(), fd]() {
+    self->connections_.erase(fd);
+    ZNET_LOG_DEBUG("TcpServer::remove_connection success: fd={}, total={}", fd,
+                   self->connections_.size());
+  };
+
+  if (!connection_registry_sched_) {
+    task();
+    return;
+  }
+
+  if (zcoroutine::in_coroutine() &&
+      zcoroutine::sched_id() == connection_registry_sched_->id()) {
+    task();
+    return;
+  }
+
+  connection_registry_sched_->go(std::move(task));
+}
+
+}  // namespace znet
