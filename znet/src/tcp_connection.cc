@@ -41,7 +41,8 @@ TcpConnection::TcpConnection(Socket::ptr socket,
       owner_sched_id_(-1),
       write_complete_callback_(),
       high_water_mark_callback_(),
-      high_water_mark_(64 * 1024 * 1024) {
+      high_water_mark_(64 * 1024 * 1024),
+      context_(nullptr) {
   // 无效 socket 直接降级为断开态，避免后续调用误判为可用连接。
   if (!socket_ || !socket_->is_valid()) {
     ZNET_LOG_WARN("TcpConnection::TcpConnection created with invalid socket");

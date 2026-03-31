@@ -37,6 +37,12 @@ class Buffer : public NonCopyable {
   explicit Buffer(size_t initial_size = kInitialSize);
 
   /**
+   * @brief 查找 CRLF（\r\n）位置，返回指向 CRLF 首字符的指针。
+   * @return 找到时返回指向 CRLF 首字符的指针，未找到时返回 nullptr。
+   */
+  const char* find_crlf() const;
+
+  /**
    * @brief 当前可读字节数。
    */
   size_t readable_bytes() const;
