@@ -271,6 +271,7 @@ std::shared_ptr<TimerToken> add_timer(uint32_t milliseconds, std::function<void(
 
 /**
  * @brief 等待 fd 事件。
+ * @details 仅允许在协程上下文调用。
  * @param fd 文件描述符。
  * @param events 事件掩码。
  * @param milliseconds 超时毫秒。

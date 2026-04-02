@@ -21,8 +21,6 @@ add_library(znet STATIC
   src/address.cc
   src/acceptor.cc
   src/buffer.cc
-  src/server.cc
-  src/session.cc
   src/socket.cc
   src/tcp_connection.cc
   src/tcp_server.cc

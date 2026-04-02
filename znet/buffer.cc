@@ -13,12 +13,6 @@ Buffer::Buffer(size_t initial_size)
       reader_index_(kCheapPrepend),
       writer_index_(kCheapPrepend) {}
 
-const char* Buffer::find_crlf() const {
-  static const char kCRLF[] = "\r\n";
-  const char* crlf = std::search(peek(), begin_write(), kCRLF, kCRLF + 2);
-  return crlf == begin_write() ? nullptr : crlf;
-}
-
 size_t Buffer::readable_bytes() const {
   return writer_index_ - reader_index_;
 }

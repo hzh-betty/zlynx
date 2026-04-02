@@ -3,7 +3,7 @@
 
 #include <cstddef>
 #include <functional>
-#include "session.h"
+#include "buffer.h"
 #include "tcp_connection.h"
 
 namespace znet {
@@ -38,10 +38,10 @@ using HighWaterMarkCallback =
 /**
  * @brief 消息到达回调。
  *
- * 触发时机：TcpConnection::read 成功后，read_stream 已持有可读数据。
+ * 触发时机：TcpConnection::read 成功后，连接输入缓冲区已有可读数据。
  */
 using MessageCallback =
-    std::function<void(const TcpConnection::ptr&, Stream::ptr)>;
+    std::function<void(const TcpConnection::ptr&, Buffer&)>;
 
 }  // namespace znet
 

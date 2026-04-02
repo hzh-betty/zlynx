@@ -33,9 +33,7 @@ class Buffer : public NonCopyable {
   // 默认初始可写容量（不含前置预留区）。
   static const size_t kInitialSize = 1024;
 
-  const char* find_crlf() const;
-  
-   /**
+  /**
    * @brief 构造缓冲区。
    * @param initial_size 初始可写容量（不含 kCheapPrepend）。
    */

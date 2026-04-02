@@ -10,8 +10,8 @@ namespace zcoroutine {
 
 // IoEvent 在 Linux 下封装 epoll 等待语义：
 // 1) 将高层读写事件映射到 EPOLLIN/EPOLLOUT。
-// 2) 在协程上下文走 wait_fd 挂起协程。
-// 3) 在非协程上下文走 poll fallback（见 wait_fd）。
+// 2) 必须在协程上下文走 wait_fd 挂起协程。
+// 3) 不再提供线程 poll fallback。
 
 IoEvent::IoEvent(int fd, IoEventType event_type)
     : fd_(fd), event_type_(event_type), added_(false) {}
@@ -43,7 +43,7 @@ bool IoEvent::wait(uint32_t milliseconds) {
   }
 
   // IoEvent 只做事件语义映射，不直接管理 epoll 生命周期。
-  // 具体等待/挂起行为由 runtime_manager::wait_fd 分发到协程或线程路径。
+  // 具体等待/挂起行为由 runtime_manager::wait_fd 分发到协程路径。
   // added_ 当前用于记录 wait 生命周期，可在后续扩展中用于调试或资源追踪。
   added_ = true;
   const bool ok = wait_fd(fd_, epoll_events, milliseconds);

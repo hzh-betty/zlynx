@@ -35,41 +35,76 @@ TEST_F(IoEventUnitTest, InvalidEventTypeReturnsFalseAndEinval) {
 }
 
 TEST_F(IoEventUnitTest, ReadReadyReturnsTrue) {
+  init(1);
+
   int pair[2] = {-1, -1};
   ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
 
-  const char marker = 'z';
-  ASSERT_EQ(::write(pair[0], &marker, 1), 1);
+  WaitGroup done(1);
+  go([&done, fd_read = pair[1], fd_write = pair[0]]() {
+    const char marker = 'z';
+    ASSERT_EQ(::write(fd_write, &marker, 1), 1);
 
-  IoEvent event(pair[1], IoEventType::kRead);
-  EXPECT_TRUE(event.wait(20));
+    IoEvent event(fd_read, IoEventType::kRead);
+    EXPECT_TRUE(event.wait(20));
 
-  char out = 0;
-  EXPECT_EQ(::read(pair[1], &out, 1), 1);
-  EXPECT_EQ(out, marker);
+    char out = 0;
+    EXPECT_EQ(::read(fd_read, &out, 1), 1);
+    EXPECT_EQ(out, marker);
+    done.done();
+  });
+  done.wait();
 
   ::close(pair[0]);
   ::close(pair[1]);
 }
 
 TEST_F(IoEventUnitTest, ReadTimeoutReturnsFalse) {
+  init(1);
+
   int pair[2] = {-1, -1};
   ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
 
-  IoEvent event(pair[1], IoEventType::kRead);
-  errno = 0;
-  EXPECT_FALSE(event.wait(5));
+  WaitGroup done(1);
+  go([&done, fd = pair[1]]() {
+    IoEvent event(fd, IoEventType::kRead);
+    errno = 0;
+    EXPECT_FALSE(event.wait(5));
+    EXPECT_TRUE(errno == ETIMEDOUT || errno == EAGAIN || errno == EWOULDBLOCK);
+    done.done();
+  });
+  done.wait();
 
   ::close(pair[0]);
   ::close(pair[1]);
 }
 
 TEST_F(IoEventUnitTest, WriteReadyReturnsTrue) {
+  init(1);
+
   int pair[2] = {-1, -1};
   ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
 
-  IoEvent event(pair[0], IoEventType::kWrite);
-  EXPECT_TRUE(event.wait(10));
+  WaitGroup done(1);
+  go([&done, fd = pair[0]]() {
+    IoEvent event(fd, IoEventType::kWrite);
+    EXPECT_TRUE(event.wait(10));
+    done.done();
+  });
+  done.wait();
+
+  ::close(pair[0]);
+  ::close(pair[1]);
+}
+
+TEST_F(IoEventUnitTest, OutsideCoroutineWaitReturnsEperm) {
+  int pair[2] = {-1, -1};
+  ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+
+  IoEvent event(pair[1], IoEventType::kRead);
+  errno = 0;
+  EXPECT_FALSE(event.wait(5));
+  EXPECT_EQ(errno, EPERM);
 
   ::close(pair[0]);
   ::close(pair[1]);

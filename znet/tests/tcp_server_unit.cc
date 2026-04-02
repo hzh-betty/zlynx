@@ -6,52 +6,43 @@
 #include <unistd.h>
 
 #include <atomic>
-#include <cerrno>
 #include <chrono>
-#include <cstring>
+#include <mutex>
 #include <string>
 #include <thread>
-#include <unordered_map>
 
 #include <gtest/gtest.h>
 
-#include "zcoroutine/sched.h"
-
 namespace znet {
 namespace {
-
-class TaggedStream : public BufferStream {
- public:
-  explicit TaggedStream(int tag) : tag_(tag) {}
-
-  int tag() const { return tag_; }
-
- private:
-  int tag_;
-};
 
 class TcpServerUnitTest : public ::testing::Test {
  protected:
   void TearDown() override { zcoroutine::shutdown(); }
 };
 
-TEST_F(TcpServerUnitTest, AcceptsConnectionAndCreatesSession) {
-  zcoroutine::init(2);
+TEST_F(TcpServerUnitTest, AcceptsConnectionAndConsumesBufferMessages) {
+  zcoroutine::init(3);
 
   auto listen_addr = std::make_shared<IPv4Address>("127.0.0.1", 0);
   auto server = std::make_shared<TcpServer>(listen_addr, 16);
+  ASSERT_NE(server, nullptr);
 
   std::atomic<int> message_events{0};
   std::atomic<int> total_bytes{0};
-  server->set_on_message([&](const TcpConnection::ptr& conn, Stream::ptr stream) {
+  std::mutex payload_mu;
+  std::string payload;
+
+  server->set_on_message([&](const TcpConnection::ptr& conn, Buffer& buffer) {
     ASSERT_NE(conn, nullptr);
-    ASSERT_NE(stream, nullptr);
-    char chunk[32] = {0};
-    ssize_t n = 0;
-    while ((n = stream->read(chunk, sizeof(chunk))) > 0) {
-      total_bytes.fetch_add(static_cast<int>(n));
+    const size_t bytes = buffer.readable_bytes();
+    total_bytes.fetch_add(static_cast<int>(bytes), std::memory_order_relaxed);
+    std::string chunk = buffer.retrieve_all_as_string();
+    {
+      std::lock_guard<std::mutex> lock(payload_mu);
+      payload.append(chunk);
     }
-    message_events.fetch_add(1);
+    message_events.fetch_add(1, std::memory_order_relaxed);
   });
 
   ASSERT_TRUE(server->start());
@@ -74,47 +65,36 @@ TEST_F(TcpServerUnitTest, AcceptsConnectionAndCreatesSession) {
   ASSERT_EQ(::send(client_fd, "ping", 4, 0), 4);
   ::close(client_fd);
 
-  for (int i = 0; i < 50 && message_events.load() == 0; ++i) {
+  for (int i = 0; i < 100 && message_events.load(std::memory_order_relaxed) == 0;
+       ++i) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 
-  EXPECT_GE(message_events.load(), 1);
-  EXPECT_EQ(total_bytes.load(), 4);
+  EXPECT_GE(message_events.load(std::memory_order_relaxed), 1);
+  EXPECT_EQ(total_bytes.load(std::memory_order_relaxed), 4);
+  EXPECT_EQ(payload, "ping");
 
   server->stop();
 }
 
-TEST_F(TcpServerUnitTest, OnMessageCallbackUsesConnectionAndSession) {
+TEST_F(TcpServerUnitTest, OnMessageCallbackUsesConnectionAndBuffer) {
   zcoroutine::init(3);
 
   auto listen_addr = std::make_shared<IPv4Address>("127.0.0.1", 0);
   auto server = std::make_shared<TcpServer>(listen_addr, 16);
+  ASSERT_NE(server, nullptr);
 
   std::atomic<int> callback_count{0};
   std::atomic<int> total_bytes{0};
-  std::unordered_map<int, int> connection_sched;
+  std::atomic<int> seen_fd{-1};
 
-  server->set_on_message([&](const TcpConnection::ptr& conn, Stream::ptr stream) {
+  server->set_on_message([&](const TcpConnection::ptr& conn, Buffer& buffer) {
     ASSERT_NE(conn, nullptr);
-    ASSERT_NE(stream, nullptr);
-    const int fd = conn->fd();
-    const int sched = conn->owner_sched_id();
-    ASSERT_GE(sched, 0);
-
-    auto it = connection_sched.find(fd);
-    if (it == connection_sched.end()) {
-      connection_sched.emplace(fd, sched);
-    } else {
-      EXPECT_EQ(it->second, sched);
-    }
-
-    char chunk[32] = {0};
-    ssize_t n = 0;
-    while ((n = stream->read(chunk, sizeof(chunk))) > 0) {
-      total_bytes.fetch_add(static_cast<int>(n));
-    }
-
-    callback_count.fetch_add(1);
+    seen_fd.store(conn->fd(), std::memory_order_relaxed);
+    total_bytes.fetch_add(static_cast<int>(buffer.readable_bytes()),
+                          std::memory_order_relaxed);
+    (void)buffer.retrieve_all_as_string();
+    callback_count.fetch_add(1, std::memory_order_relaxed);
   });
 
   ASSERT_TRUE(server->start());
@@ -140,13 +120,14 @@ TEST_F(TcpServerUnitTest, OnMessageCallbackUsesConnectionAndSession) {
 
   send_payload("msg1");
 
-  for (int i = 0; i < 100 && callback_count.load() < 1; ++i) {
+  for (int i = 0; i < 100 && callback_count.load(std::memory_order_relaxed) < 1;
+       ++i) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 
-  EXPECT_GE(callback_count.load(), 1);
-  EXPECT_EQ(total_bytes.load(), 8);
-  EXPECT_EQ(connection_sched.size(), 1U);
+  EXPECT_GE(callback_count.load(std::memory_order_relaxed), 1);
+  EXPECT_EQ(total_bytes.load(std::memory_order_relaxed), 8);
+  EXPECT_GE(seen_fd.load(std::memory_order_relaxed), 0);
 
   server->stop();
 }
@@ -156,6 +137,7 @@ TEST_F(TcpServerUnitTest, ConnectAndCloseCallbacksAreIndependent) {
 
   auto listen_addr = std::make_shared<IPv4Address>("127.0.0.1", 0);
   auto server = std::make_shared<TcpServer>(listen_addr, 16);
+  ASSERT_NE(server, nullptr);
 
   std::atomic<int> connect_count{0};
   std::atomic<int> close_count{0};
@@ -199,11 +181,12 @@ TEST_F(TcpServerUnitTest, ConnectAndCloseCallbacksAreIndependent) {
   server->stop();
 }
 
-TEST_F(TcpServerUnitTest, SnakeCaseMessageCallbackReceivesSession) {
+TEST_F(TcpServerUnitTest, SnakeCaseMessageCallbackReceivesBuffer) {
   zcoroutine::init(2);
 
   auto listen_addr = std::make_shared<IPv4Address>("127.0.0.1", 0);
   auto server = std::make_shared<TcpServer>(listen_addr, 16);
+  ASSERT_NE(server, nullptr);
 
   std::atomic<int> connection_events{0};
   std::atomic<int> message_events{0};
@@ -215,14 +198,9 @@ TEST_F(TcpServerUnitTest, SnakeCaseMessageCallbackReceivesSession) {
   });
 
   server->set_on_message(
-      [&](const TcpConnection::ptr& conn, Stream::ptr stream) {
+      [&](const TcpConnection::ptr& conn, Buffer& buffer) {
         EXPECT_NE(conn, nullptr);
-        EXPECT_NE(stream, nullptr);
-        char chunk[16] = {0};
-        ssize_t n = 0;
-        while ((n = stream->read(chunk, sizeof(chunk))) > 0) {
-          merged_payload.append(chunk, static_cast<size_t>(n));
-        }
+        merged_payload.append(buffer.retrieve_all_as_string());
         message_events.fetch_add(1);
       });
 
@@ -256,25 +234,20 @@ TEST_F(TcpServerUnitTest, SnakeCaseMessageCallbackReceivesSession) {
   server->stop();
 }
 
-TEST_F(TcpServerUnitTest, KeepsConnectionAliveUntilPeerCloses) {
+TEST_F(TcpServerUnitTest, KeepsConnectionOpenUntilPeerCloses) {
   zcoroutine::init(2);
 
   auto listen_addr = std::make_shared<IPv4Address>("127.0.0.1", 0);
   auto server = std::make_shared<TcpServer>(listen_addr, 16);
+  ASSERT_NE(server, nullptr);
 
-  std::atomic<int> message_count{0};
+  std::atomic<int> total_bytes{0};
   std::atomic<int> close_count{0};
 
-  server->set_on_message([&](const TcpConnection::ptr& conn, Stream::ptr stream) {
+  server->set_on_message([&](const TcpConnection::ptr& conn, Buffer& buffer) {
     ASSERT_NE(conn, nullptr);
-    ASSERT_NE(stream, nullptr);
-
-    char chunk[16] = {0};
-    ssize_t n = 0;
-    while ((n = stream->read(chunk, sizeof(chunk))) > 0) {
-      (void)n;
-    }
-    message_count.fetch_add(1);
+    total_bytes.fetch_add(static_cast<int>(buffer.readable_bytes()));
+    (void)buffer.retrieve_all_as_string();
   });
 
   server->set_on_close([&](const TcpConnection::ptr& conn) {
@@ -299,17 +272,17 @@ TEST_F(TcpServerUnitTest, KeepsConnectionAliveUntilPeerCloses) {
       0);
 
   ASSERT_EQ(::send(client_fd, "a", 1, 0), 1);
-  for (int i = 0; i < 100 && message_count.load() < 1; ++i) {
+  for (int i = 0; i < 100 && total_bytes.load() < 1; ++i) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
-  EXPECT_GE(message_count.load(), 1);
+  EXPECT_GE(total_bytes.load(), 1);
   EXPECT_EQ(close_count.load(), 0);
 
   ASSERT_EQ(::send(client_fd, "b", 1, 0), 1);
-  for (int i = 0; i < 100 && message_count.load() < 2; ++i) {
+  for (int i = 0; i < 100 && total_bytes.load() < 2; ++i) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
-  EXPECT_GE(message_count.load(), 2);
+  EXPECT_GE(total_bytes.load(), 2);
   EXPECT_EQ(close_count.load(), 0);
 
   ::close(client_fd);
@@ -322,38 +295,17 @@ TEST_F(TcpServerUnitTest, KeepsConnectionAliveUntilPeerCloses) {
   server->stop();
 }
 
-TEST_F(TcpServerUnitTest, UsesConfiguredStreamFactory) {
+TEST_F(TcpServerUnitTest, StopReturnsPromptlyWhenConnectionIsIdle) {
   zcoroutine::init(2);
 
   auto listen_addr = std::make_shared<IPv4Address>("127.0.0.1", 0);
   auto server = std::make_shared<TcpServer>(listen_addr, 16);
+  ASSERT_NE(server, nullptr);
 
-  std::atomic<int> message_count{0};
-  std::atomic<int> seen_read_tag{-1};
-  std::atomic<int> seen_write_tag{-1};
-
-  server->set_stream_factory([]() {
-    return std::make_pair(std::make_shared<TaggedStream>(101),
-                          std::make_shared<TaggedStream>(202));
-  });
-
+  std::atomic<int> connect_count{0};
   server->set_on_connection([&](const TcpConnection::ptr& conn) {
     ASSERT_NE(conn, nullptr);
-    auto tagged_write = std::dynamic_pointer_cast<TaggedStream>(conn->write_stream());
-    ASSERT_NE(tagged_write, nullptr);
-    seen_write_tag.store(tagged_write->tag());
-  });
-
-  server->set_on_message([&](const TcpConnection::ptr& conn, Stream::ptr stream) {
-    ASSERT_NE(conn, nullptr);
-    auto tagged_read = std::dynamic_pointer_cast<TaggedStream>(stream);
-    ASSERT_NE(tagged_read, nullptr);
-    seen_read_tag.store(tagged_read->tag());
-
-    char chunk[16] = {0};
-    while (stream->read(chunk, sizeof(chunk)) > 0) {
-    }
-    message_count.fetch_add(1);
+    connect_count.fetch_add(1, std::memory_order_relaxed);
   });
 
   ASSERT_TRUE(server->start());
@@ -372,18 +324,44 @@ TEST_F(TcpServerUnitTest, UsesConfiguredStreamFactory) {
       ::connect(client_fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)),
       0);
 
-  ASSERT_EQ(::send(client_fd, "xy", 2, 0), 2);
-  ::close(client_fd);
+  for (int i = 0;
+       i < 100 && connect_count.load(std::memory_order_relaxed) == 0; ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_GE(connect_count.load(std::memory_order_relaxed), 1);
 
-  for (int i = 0; i < 100 && message_count.load() == 0; ++i) {
+  // 给连接协程一点时间进入空闲读等待。
+  std::this_thread::sleep_for(std::chrono::milliseconds(120));
+
+  std::atomic<bool> stop_done{false};
+  std::thread stopper([&]() {
+    server->stop();
+    stop_done.store(true, std::memory_order_release);
+  });
+
+  bool finished_in_time = false;
+  for (int i = 0; i < 50; ++i) {
+    if (stop_done.load(std::memory_order_acquire)) {
+      finished_in_time = true;
+      break;
+    }
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 
-  EXPECT_GE(message_count.load(), 1);
-  EXPECT_EQ(seen_read_tag.load(), 101);
-  EXPECT_EQ(seen_write_tag.load(), 202);
+  if (!finished_in_time) {
+    ::close(client_fd);
+    client_fd = -1;
+  }
 
-  server->stop();
+  if (stopper.joinable()) {
+    stopper.join();
+  }
+
+  if (client_fd >= 0) {
+    ::close(client_fd);
+  }
+
+  EXPECT_TRUE(finished_in_time);
 }
 
 }  // namespace

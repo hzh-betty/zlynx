@@ -3,6 +3,7 @@
 
 #include "address.h"
 #include "noncopyable.h"
+#include "zcoroutine/hook.h"
 #include <memory>
 #include <sys/socket.h>
 #include <cstdint>
@@ -94,10 +95,11 @@ public:
 
   /**
    * @brief 接受连接
+    * @param timeout_ms 接收超时（毫秒），0 表示无限等待
     * @note 必须在协程 go 上下文中调用
    * @return 新连接的 Socket，失败返回 nullptr
    */
-  Socket::ptr accept();
+    Socket::ptr accept(uint64_t timeout_ms = 0);
 
   /**
    * @brief 连接到远端地址
@@ -130,34 +132,40 @@ public:
    * @param buffer 数据缓冲区
    * @param length 数据长度
    * @param flags 发送标志
+    * @param timeout_ms 本次发送超时（毫秒），0 表示无限等待
     * @note 必须在协程 go 上下文中调用
    * @return 发送的字节数，-1 表示错误
    */
-  ssize_t send(const void *buffer, size_t length, int flags = 0);
+    ssize_t send(const void *buffer, size_t length, int flags = 0,
+            uint64_t timeout_ms = 0);
 
   /**
    * @brief 接收数据
    * @param buffer 接收缓冲区
    * @param length 缓冲区长度
    * @param flags 接收标志
+    * @param timeout_ms 本次接收超时（毫秒），0 表示无限等待
     * @note 必须在协程 go 上下文中调用
    * @return 接收的字节数，-1 表示错误，0 表示连接关闭
    */
-  ssize_t recv(void *buffer, size_t length, int flags = 0);
+    ssize_t recv(void *buffer, size_t length, int flags = 0,
+            uint64_t timeout_ms = 0);
 
   /**
    * @brief 发送数据到指定地址 (UDP)
+    * @param timeout_ms 本次发送超时（毫秒），0 表示无限等待
     * @note 必须在协程 go 上下文中调用
    */
   ssize_t send_to(const void *buffer, size_t length, const Address::ptr to,
-                  int flags = 0);
+              int flags = 0, uint64_t timeout_ms = 0);
 
   /**
    * @brief 从指定地址接收数据 (UDP)
+    * @param timeout_ms 本次接收超时（毫秒），0 表示无限等待
     * @note 必须在协程 go 上下文中调用
    */
   ssize_t recv_from(void *buffer, size_t length, Address::ptr from,
-                    int flags = 0);
+                int flags = 0, uint64_t timeout_ms = 0);
 
   /**
    * @brief 设置 socket 选项
@@ -166,7 +174,8 @@ public:
    * @param value 选项值
    */
   template <typename T> bool set_option(int level, int option, const T &value) {
-    return setsockopt(sockfd_, level, option, &value, sizeof(T)) == 0;
+    return zcoroutine::co_setsockopt(sockfd_, level, option, &value,
+                                     static_cast<socklen_t>(sizeof(T))) == 0;
   }
 
   /**
@@ -174,7 +183,7 @@ public:
    */
   template <typename T> bool get_option(int level, int option, T *value) {
     socklen_t len = sizeof(T);
-    return getsockopt(sockfd_, level, option, value, &len) == 0;
+    return zcoroutine::co_getsockopt(sockfd_, level, option, value, &len) == 0;
   }
 
   /**

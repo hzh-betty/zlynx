@@ -19,15 +19,21 @@ class HookMetadataTimeoutUnitTest : public test::RuntimeTestBase {};
 TEST_F(HookMetadataTimeoutUnitTest, InvalidFdReadWriteFailWithEbadf) {
   init(1);
 
-  char buffer[8] = {0};
+  WaitGroup done(1);
+  go([&done]() {
+    char buffer[8] = {0};
 
-  errno = 0;
-  EXPECT_EQ(co_read(-1, buffer, sizeof(buffer), 10), -1);
-  EXPECT_EQ(errno, EBADF);
+    errno = 0;
+    EXPECT_EQ(co_read(-1, buffer, sizeof(buffer), 10), -1);
+    EXPECT_EQ(errno, EBADF);
 
-  errno = 0;
-  EXPECT_EQ(co_write(-1, "x", 1, 10), -1);
-  EXPECT_EQ(errno, EBADF);
+    errno = 0;
+    EXPECT_EQ(co_write(-1, "x", 1, 10), -1);
+    EXPECT_EQ(errno, EBADF);
+
+    done.done();
+  });
+  done.wait();
 }
 
 TEST_F(HookMetadataTimeoutUnitTest, ExplicitTimeoutOverridesSocketTimeout) {
@@ -35,22 +41,29 @@ TEST_F(HookMetadataTimeoutUnitTest, ExplicitTimeoutOverridesSocketTimeout) {
 
   int pair[2] = {-1, -1};
   ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+  ASSERT_EQ(::fcntl(pair[0], F_SETFL, ::fcntl(pair[0], F_GETFL, 0) | O_NONBLOCK), 0);
+  ASSERT_EQ(::fcntl(pair[1], F_SETFL, ::fcntl(pair[1], F_GETFL, 0) | O_NONBLOCK), 0);
 
   timeval timeout;
   timeout.tv_sec = 0;
   timeout.tv_usec = 250000;
   ASSERT_EQ(::setsockopt(pair[0], SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)), 0);
 
-  char buffer[8] = {0};
-  const auto begin = std::chrono::steady_clock::now();
-  errno = 0;
-  EXPECT_EQ(co_read(pair[0], buffer, sizeof(buffer), 10), -1);
-  const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-      std::chrono::steady_clock::now() - begin)
-                              .count();
+  WaitGroup done(1);
+  go([&done, fd = pair[0]]() {
+    char buffer[8] = {0};
+    const auto begin = std::chrono::steady_clock::now();
+    errno = 0;
+    EXPECT_EQ(co_read(fd, buffer, sizeof(buffer), 10), -1);
+    const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - begin)
+                                .count();
 
-  EXPECT_LT(elapsed_ms, 160);
-  EXPECT_TRUE(errno == ETIMEDOUT || errno == EAGAIN || errno == EWOULDBLOCK);
+    EXPECT_LT(elapsed_ms, 160);
+    EXPECT_TRUE(errno == ETIMEDOUT || errno == EAGAIN || errno == EWOULDBLOCK);
+    done.done();
+  });
+  done.wait();
 
   ::close(pair[0]);
   ::close(pair[1]);
@@ -61,22 +74,29 @@ TEST_F(HookMetadataTimeoutUnitTest, InfiniteTimeoutFallsBackToSocketTimeout) {
 
   int pair[2] = {-1, -1};
   ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+  ASSERT_EQ(::fcntl(pair[0], F_SETFL, ::fcntl(pair[0], F_GETFL, 0) | O_NONBLOCK), 0);
+  ASSERT_EQ(::fcntl(pair[1], F_SETFL, ::fcntl(pair[1], F_GETFL, 0) | O_NONBLOCK), 0);
 
   timeval timeout;
   timeout.tv_sec = 0;
   timeout.tv_usec = 30000;
   ASSERT_EQ(::setsockopt(pair[0], SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)), 0);
 
-  char buffer[8] = {0};
-  const auto begin = std::chrono::steady_clock::now();
-  errno = 0;
-  EXPECT_EQ(co_read(pair[0], buffer, sizeof(buffer), kInfiniteTimeoutMs), -1);
-  const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-      std::chrono::steady_clock::now() - begin)
-                              .count();
+  WaitGroup done(1);
+  go([&done, fd = pair[0]]() {
+    char buffer[8] = {0};
+    const auto begin = std::chrono::steady_clock::now();
+    errno = 0;
+    EXPECT_EQ(co_read(fd, buffer, sizeof(buffer), kInfiniteTimeoutMs), -1);
+    const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - begin)
+                                .count();
 
-  EXPECT_LT(elapsed_ms, 400);
-  EXPECT_TRUE(errno == ETIMEDOUT || errno == EAGAIN || errno == EWOULDBLOCK);
+    EXPECT_LT(elapsed_ms, 400);
+    EXPECT_TRUE(errno == ETIMEDOUT || errno == EAGAIN || errno == EWOULDBLOCK);
+    done.done();
+  });
+  done.wait();
 
   ::close(pair[0]);
   ::close(pair[1]);
@@ -87,6 +107,8 @@ TEST_F(HookMetadataTimeoutUnitTest, DupMetadataSyncAndClosePathWorks) {
 
   int pair[2] = {-1, -1};
   ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+  ASSERT_EQ(::fcntl(pair[0], F_SETFL, ::fcntl(pair[0], F_GETFL, 0) | O_NONBLOCK), 0);
+  ASSERT_EQ(::fcntl(pair[1], F_SETFL, ::fcntl(pair[1], F_GETFL, 0) | O_NONBLOCK), 0);
 
   timeval timeout;
   timeout.tv_sec = 0;
@@ -97,10 +119,15 @@ TEST_F(HookMetadataTimeoutUnitTest, DupMetadataSyncAndClosePathWorks) {
   ASSERT_GE(duplicated, 0);
   sync_fd_metadata_on_dup(pair[0], duplicated);
 
-  char buffer[8] = {0};
-  errno = 0;
-  EXPECT_EQ(co_read(duplicated, buffer, sizeof(buffer), kInfiniteTimeoutMs), -1);
-  EXPECT_TRUE(errno == ETIMEDOUT || errno == EAGAIN || errno == EWOULDBLOCK);
+  WaitGroup done(1);
+  go([&done, fd = duplicated]() {
+    char buffer[8] = {0};
+    errno = 0;
+    EXPECT_EQ(co_read(fd, buffer, sizeof(buffer), kInfiniteTimeoutMs), -1);
+    EXPECT_TRUE(errno == ETIMEDOUT || errno == EAGAIN || errno == EWOULDBLOCK);
+    done.done();
+  });
+  done.wait();
   EXPECT_EQ(co_close(duplicated), 0);
 
   int api_dup = co_dup(pair[0]);
@@ -130,6 +157,8 @@ TEST_F(HookMetadataTimeoutUnitTest, ConcurrentReadWriteAcrossCoroutinesSucceeds)
 
   int pair[2] = {-1, -1};
   ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+  ASSERT_EQ(::fcntl(pair[0], F_SETFL, ::fcntl(pair[0], F_GETFL, 0) | O_NONBLOCK), 0);
+  ASSERT_EQ(::fcntl(pair[1], F_SETFL, ::fcntl(pair[1], F_GETFL, 0) | O_NONBLOCK), 0);
 
   WaitGroup done(2);
 
@@ -152,26 +181,32 @@ TEST_F(HookMetadataTimeoutUnitTest, ConcurrentReadWriteAcrossCoroutinesSucceeds)
   ::close(pair[1]);
 }
 
-TEST_F(HookMetadataTimeoutUnitTest, UserNonblockingReadReturnsImmediatelyOnNoData) {
+TEST_F(HookMetadataTimeoutUnitTest, UserNonblockingReadTimesOutInCoroutineContext) {
   init(1);
 
   int pair[2] = {-1, -1};
   ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+  ASSERT_EQ(::fcntl(pair[1], F_SETFL, ::fcntl(pair[1], F_GETFL, 0) | O_NONBLOCK), 0);
 
   const int flags = ::fcntl(pair[0], F_GETFL, 0);
   ASSERT_GE(flags, 0);
   ASSERT_EQ(::fcntl(pair[0], F_SETFL, flags | O_NONBLOCK), 0);
 
-  char buffer[8] = {0};
-  errno = 0;
-  EXPECT_EQ(co_read(pair[0], buffer, sizeof(buffer), 200), -1);
-  EXPECT_TRUE(errno == EAGAIN || errno == EWOULDBLOCK);
+  WaitGroup done(1);
+  go([&done, fd = pair[0]]() {
+    char buffer[8] = {0};
+    errno = 0;
+    EXPECT_EQ(co_read(fd, buffer, sizeof(buffer), 30), -1);
+    EXPECT_TRUE(errno == ETIMEDOUT || errno == EAGAIN || errno == EWOULDBLOCK);
+    done.done();
+  });
+  done.wait();
 
   ::close(pair[0]);
   ::close(pair[1]);
 }
 
-TEST_F(HookMetadataTimeoutUnitTest, Accept4OnUserNonblockingSocketReturnsEagain) {
+TEST_F(HookMetadataTimeoutUnitTest, Accept4OnUserNonblockingSocketTimesOutInCoroutineContext) {
   init(1);
 
   int listen_fd = ::socket(AF_INET, SOCK_STREAM, 0);
@@ -189,12 +224,17 @@ TEST_F(HookMetadataTimeoutUnitTest, Accept4OnUserNonblockingSocketReturnsEagain)
   ASSERT_EQ(::bind(listen_fd, reinterpret_cast<sockaddr*>(&listen_addr), sizeof(listen_addr)), 0);
   ASSERT_EQ(::listen(listen_fd, 4), 0);
 
-  errno = 0;
-  socklen_t addr_len = sizeof(listen_addr);
-  EXPECT_EQ(co_accept4(listen_fd, reinterpret_cast<sockaddr*>(&listen_addr), &addr_len,
-                       SOCK_CLOEXEC, 100),
-            -1);
-  EXPECT_TRUE(errno == EAGAIN || errno == EWOULDBLOCK);
+  WaitGroup done(1);
+  go([&done, listen_fd, &listen_addr]() {
+    errno = 0;
+    socklen_t addr_len = sizeof(listen_addr);
+    EXPECT_EQ(co_accept4(listen_fd, reinterpret_cast<sockaddr*>(&listen_addr), &addr_len,
+                         SOCK_CLOEXEC, 40),
+              -1);
+    EXPECT_TRUE(errno == ETIMEDOUT || errno == EAGAIN || errno == EWOULDBLOCK);
+    done.done();
+  });
+  done.wait();
 
   ::close(listen_fd);
 }

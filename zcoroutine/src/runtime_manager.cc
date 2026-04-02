@@ -433,34 +433,15 @@ std::shared_ptr<TimerToken> add_timer(uint32_t milliseconds, std::function<void(
 
 bool wait_fd(int fd, uint32_t events, uint32_t milliseconds) {
   Processor* processor = current_processor();
-  if (processor && processor->current_fiber()) {
-    // 协程上下文：交给 Processor，通过 epoll + 挂起实现非阻塞等待。
-    return processor->wait_fd(fd, events, milliseconds);
-  }
-
-  // 非协程上下文：退化为 poll，同样支持超时参数。
-  pollfd pfd;
-  pfd.fd = fd;
-  pfd.events = 0;
-  if ((events & EPOLLIN) != 0) {
-    pfd.events = static_cast<short>(pfd.events | POLLIN);
-  }
-  if ((events & EPOLLOUT) != 0) {
-    pfd.events = static_cast<short>(pfd.events | POLLOUT);
-  }
-  pfd.revents = 0;
-
-  const int timeout = milliseconds == kInfiniteTimeoutMs ? -1 : static_cast<int>(milliseconds);
-  const int rc = poll(&pfd, 1, timeout);
-  if (rc == 0) {
-    errno = ETIMEDOUT;
+  if (!processor || !processor->current_fiber()) {
+    errno = EPERM;
+    ZCOROUTINE_LOG_FATAL("wait_fd must be called in coroutine context, fd={}, events={}, timeout_ms={}",
+                         fd, events, milliseconds);
     return false;
   }
-  if (rc < 0 && errno != EINTR) {
-    ZCOROUTINE_LOG_WARN("poll fallback failed, fd={}, events={}, timeout_ms={}, errno={}", fd, events,
-                        milliseconds, errno);
-  }
-  return rc > 0;
+
+  // 仅支持协程上下文：统一走 Processor epoll + 挂起模型。
+  return processor->wait_fd(fd, events, milliseconds);
 }
 
 }  // namespace zcoroutine

@@ -1,4 +1,6 @@
+#define private public
 #include "znet/tcp_connection.h"
+#undef private
 
 #include <sys/socket.h>
 #include <unistd.h>
@@ -6,13 +8,12 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <cstring>
 #include <string>
 #include <thread>
+
 #include <gtest/gtest.h>
 
 #include "zcoroutine/sched.h"
-#include "zcoroutine/wait_group.h"
 
 namespace znet {
 namespace {
@@ -22,37 +23,6 @@ class TcpConnectionUnitTest : public ::testing::Test {
   void TearDown() override { zcoroutine::shutdown(); }
 };
 
-class LegacyMemoryStream : public Stream {
- protected:
-  ssize_t do_read(void* buffer, size_t length, uint32_t /*timeout_ms*/) override {
-    if (!buffer || length == 0 || data_.empty()) {
-      errno = EAGAIN;
-      return -1;
-    }
-
-    const size_t n = std::min(length, data_.size());
-    std::memcpy(buffer, data_.data(), n);
-    data_.erase(0, n);
-    return static_cast<ssize_t>(n);
-  }
-
-  ssize_t do_write(const void* buffer, size_t length,
-                   uint32_t /*timeout_ms*/) override {
-    if (!buffer && length > 0) {
-      errno = EINVAL;
-      return -1;
-    }
-
-    data_.append(static_cast<const char*>(buffer), length);
-    return static_cast<ssize_t>(length);
-  }
-
-  size_t pending_bytes() const override { return data_.size(); }
-
- private:
-  std::string data_;
-};
-
 TEST_F(TcpConnectionUnitTest, ReadIntoInputBufferAndFlushOutputBuffer) {
   zcoroutine::init(2);
 
@@ -60,153 +30,130 @@ TEST_F(TcpConnectionUnitTest, ReadIntoInputBufferAndFlushOutputBuffer) {
   ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
 
   auto conn = std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
-  auto read_stream = std::make_shared<BufferStream>();
-  auto write_stream = std::make_shared<BufferStream>();
-  conn->set_streams(read_stream, write_stream);
-  zcoroutine::WaitGroup done(2);
-
-  zcoroutine::go([peer = pair[1], &done]() {
-    ASSERT_EQ(::send(peer, "ping", 4, 0), 4);
-    done.done();
-  });
-
-  zcoroutine::go([conn, peer = pair[1], &done]() {
-    conn->bind_to_current_loop();
-    EXPECT_EQ(conn->read(1024), 4);
-    char in[8] = {0};
-    ASSERT_EQ(conn->read_stream()->read(in, 4), 4);
-    EXPECT_STREQ(in, "ping");
-
-    ASSERT_EQ(conn->write_stream()->write("pong", 4), 4);
-    EXPECT_EQ(conn->flush_output(), 4);
-
-    char out[8] = {0};
-    ASSERT_EQ(::recv(peer, out, 4, 0), 4);
-    EXPECT_STREQ(out, "pong");
-    done.done();
-  });
-
-  done.wait();
-  ::close(pair[1]);
-}
-
-TEST_F(TcpConnectionUnitTest, ReadOnceDoesNotFallbackForLegacyStream) {
-  zcoroutine::init(1);
-
-  int pair[2] = {-1, -1};
-  ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-
-  auto conn = std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
-  auto legacy = std::make_shared<LegacyMemoryStream>();
-  conn->set_streams(legacy, std::make_shared<BufferStream>());
-
-  zcoroutine::WaitGroup done(1);
-  zcoroutine::go([conn, &done]() {
-    conn->bind_to_current_loop();
-    EXPECT_EQ(conn->read(1024), 0);
-    EXPECT_EQ(conn->state(), TcpConnection::State::kDisconnected);
-    done.done();
-  });
+  ASSERT_NE(conn, nullptr);
 
   ASSERT_EQ(::send(pair[1], "ping", 4, 0), 4);
-  done.wait();
+  ASSERT_EQ(conn->read(1024), 4);
+  EXPECT_EQ(conn->input_buffer().retrieve_as_string(4), "ping");
 
+  ASSERT_EQ(conn->send("pong", 4), 4);
+  char out[8] = {0};
+  ASSERT_EQ(::recv(pair[1], out, 4, 0), 4);
+  EXPECT_STREQ(out, "pong");
+
+  conn->close();
   ::close(pair[1]);
 }
 
-TEST_F(TcpConnectionUnitTest, StateMachineTransitionsFromConnectingToDisconnected) {
+TEST_F(TcpConnectionUnitTest, StateMachineTransitionsFromConnectedToDisconnected) {
   int pair[2] = {-1, -1};
   ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
 
   auto conn = std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
-  EXPECT_EQ(conn->state(), TcpConnection::State::kConnecting);
-
-  zcoroutine::init(1);
-  zcoroutine::WaitGroup done(1);
-  zcoroutine::go([conn, &done]() {
-    conn->bind_to_current_loop();
-    done.done();
-  });
-  done.wait();
-
   EXPECT_EQ(conn->state(), TcpConnection::State::kConnected);
+
   conn->close();
   EXPECT_EQ(conn->state(), TcpConnection::State::kDisconnected);
 
   ::close(pair[1]);
 }
 
-TEST_F(TcpConnectionUnitTest, SendCalledFromOtherThreadDispatchesToOwnerLoop) {
-  zcoroutine::init(2);
-
-  int pair[2] = {-1, -1};
-  ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-
-  auto conn = std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
-  auto read_stream = std::make_shared<BufferStream>();
-  auto write_stream = std::make_shared<BufferStream>();
-  conn->set_streams(read_stream, write_stream);
-
-  zcoroutine::Scheduler* owner = zcoroutine::next_sched();
-  ASSERT_NE(owner, nullptr);
-
-  std::atomic<bool> bound{false};
-  owner->go([conn, owner, &bound]() {
-    conn->bind_to_loop(owner);
-    bound.store(true, std::memory_order_release);
-  });
-
-  for (int i = 0; i < 100 && !bound.load(std::memory_order_acquire); ++i) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
-  ASSERT_TRUE(bound.load(std::memory_order_acquire));
-
-  ASSERT_EQ(conn->send("ping", 4), 4);
-
-  char out[8] = {0};
-  ssize_t n = -1;
-  for (int i = 0; i < 100; ++i) {
-    n = ::recv(pair[1], out, 4, MSG_DONTWAIT);
-    if (n == 4) {
-      break;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
-
-  ASSERT_EQ(n, 4);
-  EXPECT_STREQ(out, "ping");
-
-  conn->close();
-  ::close(pair[1]);
-}
-
-TEST_F(TcpConnectionUnitTest, WriteCompleteCallbackIsTriggeredAfterFlush) {
+TEST_F(TcpConnectionUnitTest, ConcurrentSendIsSerializedByActorMailbox) {
   zcoroutine::init(1);
 
   int pair[2] = {-1, -1};
   ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
 
   auto conn = std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
-  auto read_stream = std::make_shared<BufferStream>();
-  auto write_stream = std::make_shared<BufferStream>();
-  conn->set_streams(read_stream, write_stream);
 
-  std::atomic<int> write_complete_count{0};
-  zcoroutine::WaitGroup done(1);
+  const int rounds = 128;
+  const std::string payload_a = "AAAA";
+  const std::string payload_b = "BBBB";
+  const size_t expected_bytes =
+      static_cast<size_t>(rounds) * (payload_a.size() + payload_b.size());
 
-  zcoroutine::go([conn, &write_complete_count, &done]() {
-    conn->bind_to_current_loop();
-    conn->set_write_complete_callback([&write_complete_count](TcpConnection::ptr c) {
-      ASSERT_NE(c, nullptr);
-      write_complete_count.fetch_add(1);
-    });
-
-    ASSERT_EQ(conn->send("ok", 2), 2);
-    done.done();
+  std::atomic<int> send_count{0};
+  std::thread sender_a([&]() {
+    for (int i = 0; i < rounds; ++i) {
+      ASSERT_EQ(conn->send(payload_a.data(), payload_a.size()),
+                static_cast<ssize_t>(payload_a.size()));
+      send_count.fetch_add(1, std::memory_order_relaxed);
+    }
+  });
+  std::thread sender_b([&]() {
+    for (int i = 0; i < rounds; ++i) {
+      ASSERT_EQ(conn->send(payload_b.data(), payload_b.size()),
+                static_cast<ssize_t>(payload_b.size()));
+      send_count.fetch_add(1, std::memory_order_relaxed);
+    }
   });
 
-  done.wait();
-  EXPECT_EQ(write_complete_count.load(), 1);
+  std::string received;
+  received.reserve(expected_bytes);
+  std::thread reader([&]() {
+    char buf[256] = {0};
+    while (received.size() < expected_bytes) {
+      const ssize_t n = ::recv(pair[1], buf, sizeof(buf), 0);
+      if (n > 0) {
+        received.append(buf, static_cast<size_t>(n));
+      }
+    }
+  });
+
+  sender_a.join();
+  sender_b.join();
+  reader.join();
+
+  EXPECT_EQ(send_count.load(std::memory_order_relaxed), rounds * 2);
+  EXPECT_EQ(received.size(), expected_bytes);
+  EXPECT_EQ(std::count(received.begin(), received.end(), 'A'),
+            rounds * static_cast<int>(payload_a.size()));
+  EXPECT_EQ(std::count(received.begin(), received.end(), 'B'),
+            rounds * static_cast<int>(payload_b.size()));
+
+  conn->close();
+  ::close(pair[1]);
+}
+
+TEST_F(TcpConnectionUnitTest,
+       SendSucceedsWhenActorSchedulerIsNullInThreadContext) {
+  zcoroutine::init(1);
+
+  int pair[2] = {-1, -1};
+  ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+
+  auto conn = std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+  ASSERT_NE(conn, nullptr);
+
+  // 模拟调度器句柄不可用，验证线程上下文仍可通过 go 投递并完成发送。
+  conn->actor_scheduler_ = nullptr;
+  conn->actor_sched_id_ = -1;
+
+  ASSERT_EQ(conn->send("X", 1), 1);
+
+  char out[2] = {0};
+  ASSERT_EQ(::recv(pair[1], out, 1, 0), 1);
+  EXPECT_EQ(out[0], 'X');
+
+  conn->close();
+  ::close(pair[1]);
+}
+
+TEST_F(TcpConnectionUnitTest, WriteCompleteCallbackIsTriggeredAfterFlush) {
+  int pair[2] = {-1, -1};
+  ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+
+  auto conn = std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+  ASSERT_NE(conn, nullptr);
+
+  std::atomic<int> write_complete_count{0};
+  conn->set_write_complete_callback([&write_complete_count](TcpConnection::ptr c) {
+    ASSERT_NE(c, nullptr);
+    write_complete_count.fetch_add(1, std::memory_order_relaxed);
+  });
+
+  ASSERT_EQ(conn->send("ok", 2), 2);
+  EXPECT_EQ(write_complete_count.load(std::memory_order_relaxed), 1);
 
   char out[4] = {0};
   ASSERT_EQ(::recv(pair[1], out, 2, 0), 2);
@@ -217,41 +164,71 @@ TEST_F(TcpConnectionUnitTest, WriteCompleteCallbackIsTriggeredAfterFlush) {
 }
 
 TEST_F(TcpConnectionUnitTest, HighWaterMarkCallbackIsTriggeredOnThresholdCross) {
+  int pair[2] = {-1, -1};
+  ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+
+  auto conn = std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+  ASSERT_NE(conn, nullptr);
+
+  std::atomic<int> high_water_count{0};
+  std::atomic<size_t> high_water_bytes{0};
+  conn->set_high_water_mark_callback(
+      [&high_water_count, &high_water_bytes](TcpConnection::ptr c, size_t bytes) {
+        ASSERT_NE(c, nullptr);
+        high_water_count.fetch_add(1, std::memory_order_relaxed);
+        high_water_bytes.store(bytes, std::memory_order_relaxed);
+      },
+      4);
+
+  ASSERT_EQ(conn->send("12345678", 8), 8);
+  EXPECT_EQ(high_water_count.load(std::memory_order_relaxed), 1);
+  EXPECT_GE(high_water_bytes.load(std::memory_order_relaxed), 8U);
+
+  char out[16] = {0};
+  ASSERT_EQ(::recv(pair[1], out, 8, 0), 8);
+  EXPECT_STREQ(out, "12345678");
+
+  conn->close();
+  ::close(pair[1]);
+}
+
+TEST_F(TcpConnectionUnitTest, ShutdownClosesConnectionIdempotently) {
+  int pair[2] = {-1, -1};
+  ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+
+  auto conn = std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+  ASSERT_NE(conn, nullptr);
+
+  ASSERT_EQ(conn->send("bye", 3), 3);
+  conn->shutdown();
+  EXPECT_EQ(conn->state(), TcpConnection::State::kDisconnected);
+
+  // 再次调用应保持幂等。
+  conn->shutdown();
+  EXPECT_EQ(conn->state(), TcpConnection::State::kDisconnected);
+
+  ::close(pair[1]);
+}
+
+TEST_F(TcpConnectionUnitTest, ReadTimeoutIsReportedAsEtimedout) {
   zcoroutine::init(1);
 
   int pair[2] = {-1, -1};
   ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
 
   auto conn = std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
-  auto read_stream = std::make_shared<BufferStream>();
-  auto write_stream = std::make_shared<BufferStream>();
-  conn->set_streams(read_stream, write_stream);
+  ASSERT_NE(conn, nullptr);
 
-  std::atomic<int> high_water_count{0};
-  std::atomic<size_t> high_water_bytes{0};
-  zcoroutine::WaitGroup done(1);
+  const auto started = std::chrono::steady_clock::now();
+  errno = 0;
+  const ssize_t n = conn->read(64, 30);
+  const auto ended = std::chrono::steady_clock::now();
 
-  zcoroutine::go([conn, &high_water_count, &high_water_bytes, &done]() {
-    conn->bind_to_current_loop();
-    conn->set_high_water_mark_callback(
-        [&high_water_count, &high_water_bytes](TcpConnection::ptr c, size_t bytes) {
-          ASSERT_NE(c, nullptr);
-          high_water_count.fetch_add(1);
-          high_water_bytes.store(bytes);
-        },
-        4);
-
-    ASSERT_EQ(conn->send("12345678", 8), 8);
-    done.done();
-  });
-
-  done.wait();
-  EXPECT_EQ(high_water_count.load(), 1);
-  EXPECT_GE(high_water_bytes.load(), 8U);
-
-  char out[16] = {0};
-  ASSERT_EQ(::recv(pair[1], out, 8, 0), 8);
-  EXPECT_STREQ(out, "12345678");
+  EXPECT_EQ(n, -1);
+  EXPECT_EQ(errno, ETIMEDOUT);
+  EXPECT_GE(std::chrono::duration_cast<std::chrono::milliseconds>(ended - started)
+                .count(),
+            20);
 
   conn->close();
   ::close(pair[1]);

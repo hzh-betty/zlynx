@@ -1,19 +1,12 @@
 #include "znet/acceptor.h"
 
 #include <cerrno>
-#include <cstdint>
 #include <utility>
 
 #include "zcoroutine/sched.h"
 #include "znet/znet_logger.h"
 
 namespace znet {
-
-namespace {
-
-constexpr uint32_t kAcceptErrorBackoffMs = 50;
-
-}  // namespace
 
 // 仅保存监听参数，真正的 socket 初始化在 start() 中完成。
 Acceptor::Acceptor(Address::ptr listen_address, int backlog)
@@ -106,8 +99,9 @@ void Acceptor::accept_loop() {
         break;
       }
 
-      // 可重试错误由底层 co_accept 等待驱动，这里直接重试即可。
+      // 瞬时错误（中断/暂时不可读）让出调度器后重试。
       if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) {
+        zcoroutine::yield();
         continue;
       }
 
@@ -118,8 +112,7 @@ void Acceptor::accept_loop() {
       }
 
       ZNET_LOG_WARN("Acceptor::accept_loop accept failed: errno={}", errno);
-      // 非可重试错误走短暂退避，避免异常场景下 busy loop 与日志风暴。
-      zcoroutine::sleep_for(kAcceptErrorBackoffMs);
+      zcoroutine::yield();
       continue;
     }
 
