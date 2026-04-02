@@ -19,6 +19,7 @@ set(UNIT_TESTS
     timeout_middleware_test
     security_middleware_test
     static_file_opt_test
+    http_server_context_test
     http_parser_detailed_test
     router_detailed_test
     regex_prefix_bucket_test
@@ -31,8 +32,8 @@ foreach(test_name ${UNIT_TESTS})
     add_executable(${test_name} unit/${test_name}.cc)
     target_link_libraries(${test_name}
         zhttp
-        znet_static
-        zcoroutine_static
+        znet
+        zcoroutine
         zlog_static
         GTest::gtest
         pthread
@@ -47,8 +48,8 @@ endforeach()
 add_executable(http_server_test integration/http_server_test.cc)
 target_link_libraries(http_server_test
     zhttp
-    znet_static
-    zcoroutine_static
+    znet
+    zcoroutine
     zlog_static
     GTest::gtest
     pthread
@@ -62,8 +63,8 @@ add_executable(zhttp_benchmark benchmark/zhttp_benchmark.cc)
 
 target_link_libraries(zhttp_benchmark
     zhttp
-    znet_static
-    zcoroutine_static
+    znet
+    zcoroutine
     zlog_static
     pthread
 )

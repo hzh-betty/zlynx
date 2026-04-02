@@ -21,6 +21,15 @@ class TcpServerUnitTest : public ::testing::Test {
   void TearDown() override { zcoroutine::shutdown(); }
 };
 
+TEST_F(TcpServerUnitTest, EnableTlsRejectsInvalidCertificatePaths) {
+  auto listen_addr = std::make_shared<IPv4Address>("127.0.0.1", 0);
+  auto server = std::make_shared<TcpServer>(listen_addr, 16);
+  ASSERT_NE(server, nullptr);
+
+  EXPECT_FALSE(server->enable_tls("/tmp/not-exist-cert.pem",
+                                  "/tmp/not-exist-key.pem"));
+}
+
 TEST_F(TcpServerUnitTest, AcceptsConnectionAndConsumesBufferMessages) {
   zcoroutine::init(3);
 

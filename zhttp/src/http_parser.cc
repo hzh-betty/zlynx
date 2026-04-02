@@ -1,6 +1,6 @@
 #include "http_parser.h"
 
-#include "buff.h"
+#include "znet/buffer.h"
 #include "zhttp_logger.h"
 
 #include <algorithm>
@@ -28,10 +28,20 @@ void HttpParser::reset() {
  * 3. 数据不足时立即返回 NEED_MORE，等待网络层继续投喂。
  */
 ParseResult HttpParser::parse(znet::Buffer *buffer) {
+  if (buffer == nullptr) {
+    error_ = "Buffer is null";
+    state_ = ParseState::ERROR;
+    return ParseResult::ERROR;
+  }
+
   ZHTTP_LOG_DEBUG("Parsing HTTP request, buffer size: {}",
                   buffer->readable_bytes());
 
   while (state_ != ParseState::COMPLETE && state_ != ParseState::ERROR) {
+    if (buffer->readable_bytes() == 0) {
+      return ParseResult::NEED_MORE;
+    }
+
     if (state_ == ParseState::REQUEST_LINE || state_ == ParseState::HEADERS) {
       // 请求行和头部都是逐行解析，所以先找一行结尾。
       const char *crlf = buffer->find_crlf();
@@ -183,7 +193,7 @@ ParseResult HttpParser::parse_body(znet::Buffer *buffer) {
   }
 
   // 一次性读取完整 Body，读取后缓冲区里的对应字节会被消费掉。
-  std::string body = buffer->read_string(content_length_);
+  std::string body = buffer->retrieve_as_string(content_length_);
   request_->set_body(std::move(body));
 
   state_ = ParseState::COMPLETE;

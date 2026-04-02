@@ -3,10 +3,15 @@
 
 #include "http_parser.h"
 #include "router.h"
-#include "tcp_server.h"
+#include "znet/address.h"
+#include "znet/tcp_connection.h"
+#include "znet/tcp_server.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
+
+#include <sys/socket.h>
 
 namespace zhttp {
 
@@ -16,19 +21,14 @@ namespace zhttp {
  * HttpServer 复用底层 TcpServer 的连接管理能力，在消息回调里完成 HTTP 解析、
  * 路由分发和响应回写。它关注的是“如何把一个 TCP 字节流变成 HTTP 请求并交给业务”。
  */
-class HttpServer : public znet::TcpServer {
+class HttpServer {
 public:
   using ptr = std::shared_ptr<HttpServer>;
 
-  /**
-   * @brief 构造函数
-   * @param io_worker IO 调度器
-   * @param accept_worker Accept 调度器（可选）
-   */
-  HttpServer(zcoroutine::IoScheduler::ptr io_worker,
-             zcoroutine::IoScheduler::ptr accept_worker = nullptr);
+  explicit HttpServer(znet::Address::ptr listen_address,
+                      int backlog = SOMAXCONN);
 
-  ~HttpServer() override;
+  virtual ~HttpServer();
 
   /**
    * @brief 获取路由器
@@ -36,50 +36,60 @@ public:
    */
   Router &router() { return router_; }
 
+  void set_name(const std::string &name);
+
+  const std::string &name() const { return server_name_; }
+
+  void set_thread_count(size_t thread_count);
+
+  void set_recv_timeout(uint64_t timeout_ms);
+
+  void set_write_timeout(uint64_t timeout_ms);
+
+  void set_keepalive_timeout(uint64_t timeout_ms);
+
   /**
-   * @brief 设置服务器名称（用于 Server 响应头）
-    * @param name 服务器名称
-    * @details
-    * 该名称既会同步到底层 TcpServer，也会用于后续响应里的 Server 头部。
+   * @brief 启用 HTTPS（TLS）
+   * @param cert_file 证书文件路径
+   * @param key_file 私钥文件路径
+   * @return 是否初始化成功
    */
-  void set_name(const std::string &name) override;
+  bool set_ssl_certificate(const std::string &cert_file,
+                           const std::string &key_file);
+
+  bool start();
+
+  void stop();
+
+  bool is_running() const;
 
 protected:
-  /**
-   * @brief 处理新连接
-   * @param conn TCP 连接对象
-    * @details
-    * 这里主要给连接绑定消息回调和关闭回调，真正的 HTTP 解析在 on_message() 中完成。
-   */
-  void handle_client(znet::TcpConnectionPtr conn) override;
+  znet::TcpServer::ptr tcp_server() const { return tcp_server_; }
+
+  uint32_t write_timeout() const { return write_timeout_ms_; }
+
+  virtual void on_connection(const znet::TcpConnection::ptr &conn);
+
+  virtual void on_message(const znet::TcpConnection::ptr &conn,
+                          znet::Buffer &buffer);
+
+  virtual void on_close(const znet::TcpConnection::ptr &conn);
+
+  virtual bool handle_request(const znet::TcpConnection::ptr &conn,
+                              const HttpRequest::ptr &request);
+
+  HttpParser *ensure_parser(const znet::TcpConnection::ptr &conn);
 
 private:
-  /**
-   * @brief 处理 HTTP 消息
-   * @param conn TCP 连接对象
-   * @param buffer 网络缓冲区
-    * @details
-    * 一个连接上可能连续收到多个请求，也可能一个请求分多次到达，因此该函数内部
-    * 会循环驱动解析器，直到数据耗尽、请求不完整或出现错误。
-   */
-  void on_message(const znet::TcpConnectionPtr &conn, znet::Buffer *buffer);
+  znet::TcpServer::ptr tcp_server_;
 
-  /**
-   * @brief 处理请求
-   * @param conn TCP 连接对象
-   * @param request HTTP 请求对象
-   * @details
-   * 该阶段会补全请求上下文、构造响应对象、调用路由器，然后把序列化后的响应发送回客户端。
-   */
-  bool handle_request(const znet::TcpConnectionPtr &conn,
-                      const HttpRequest::ptr &request);
-
-private:
   // 负责路径匹配、中间件执行和业务处理器调度。
   Router router_;
 
   // Server 响应头默认值。
   std::string server_name_ = "zhttp/1.0";
+
+  uint32_t write_timeout_ms_ = 0;
 };
 
 } // namespace zhttp

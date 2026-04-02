@@ -23,6 +23,10 @@ class Scheduler;
 
 namespace znet {
 
+class TcpServer;
+class TlsContext;
+class TlsChannel;
+
 /**
  * @brief TCP 连接对象，封装 socket + 输入输出缓冲 + 连接状态机。
  *
@@ -45,6 +49,8 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>,
 
   explicit TcpConnection(Socket::ptr socket,
                          zcoroutine::Scheduler* actor_scheduler = nullptr);
+
+  ~TcpConnection();
 
   int fd() const;
 
@@ -85,7 +91,16 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>,
   void shutdown();
   void close();
 
+  bool is_tls_enabled() const { return tls_channel_ != nullptr; }
+
  private:
+  friend class TcpServer;
+
+  bool enable_tls_server(const std::shared_ptr<TlsContext>& tls_context,
+                         uint32_t handshake_timeout_ms);
+
+  bool wait_tls_io(bool wait_for_write, uint32_t timeout_ms);
+
   enum class EventType : uint8_t {
     kRead = 0,
     kSend = 1,
@@ -124,8 +139,14 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>,
   void process_event(const Event::ptr& event);
 
   ssize_t read_internal(size_t max_read_bytes, uint32_t timeout_ms);
+  ssize_t read_tls_internal(size_t max_read_bytes, uint32_t timeout_ms);
   ssize_t flush_output_internal(uint32_t timeout_ms);
+  ssize_t write_tls_internal(const char* data,
+                             size_t length,
+                             uint32_t timeout_ms);
   ssize_t send_internal(const std::string& payload, uint32_t timeout_ms);
+  void shutdown_tls_internal();
+  void close_tls_internal();
   void shutdown_internal();
   void close_internal();
 
@@ -139,6 +160,8 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>,
   WriteCompleteCallback write_complete_callback_;
   HighWaterMarkCallback high_water_mark_callback_;
   size_t high_water_mark_;
+
+  std::unique_ptr<TlsChannel> tls_channel_;
 
   void* context_;
 

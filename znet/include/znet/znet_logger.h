@@ -18,6 +18,11 @@ namespace znet {
 void init_logger(zlog::LogLevel::value level = zlog::LogLevel::value::DEBUG);
 
 /**
+ * @brief 使用统一日志配置更新 znet 日志器。
+ */
+void configure_logger(const zlog::LoggerConfig& config);
+
+/**
  * @brief 获取 znet 默认日志器。
  * @return 日志器裸指针；若初始化失败可能返回 nullptr。
  */

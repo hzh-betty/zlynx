@@ -168,6 +168,91 @@ TEST(ServerConfigTest, BuilderSupportsHttpsRedirectChaining) {
   EXPECT_EQ(builder.config().redirect_http_port, 18080);
 }
 
+TEST(ServerConfigTest, LoadsLoggingOverridesFromTomlFile) {
+  TempTomlFile config_file(R"(
+[server]
+host = "127.0.0.1"
+port = 18081
+
+[threads]
+count = 1
+
+[logging]
+level = "warning"
+format = "[%p] %m%n"
+sink = "both"
+file = "/tmp/zhttp-all.log"
+
+[logging.modules.zcoroutine]
+level = "debug"
+format = "%m%n"
+
+[logging.modules.znet]
+level = "error"
+sink = "file"
+file = "/tmp/znet-only.log"
+
+[logging.modules.zhttp]
+level = "info"
+sink = "stdout"
+)");
+
+  const zhttp::ServerConfig config =
+      zhttp::ServerConfig::from_toml(config_file.path());
+
+  EXPECT_EQ(config.log_level, "warning");
+  EXPECT_EQ(config.log_format, "[%p] %m%n");
+  EXPECT_EQ(config.log_sink, "both");
+  EXPECT_EQ(config.log_file, "/tmp/zhttp-all.log");
+
+  EXPECT_EQ(config.zcoroutine_log.level, "debug");
+  EXPECT_EQ(config.zcoroutine_log.format, "%m%n");
+
+  EXPECT_EQ(config.znet_log.level, "error");
+  EXPECT_EQ(config.znet_log.sink, "file");
+  EXPECT_EQ(config.znet_log.file, "/tmp/znet-only.log");
+
+  EXPECT_EQ(config.zhttp_log.level, "info");
+  EXPECT_EQ(config.zhttp_log.sink, "stdout");
+}
+
+TEST(ServerConfigTest, BuilderAppliesUnifiedLoggingConfig) {
+  TempTomlFile config_file(R"(
+[server]
+host = "127.0.0.1"
+port = 18082
+
+[threads]
+count = 1
+
+[logging]
+level = "warning"
+format = "[%p][%c] %m%n"
+sink = "stdout"
+
+[logging.modules.znet]
+level = "error"
+sink = "file"
+file = "/tmp/znet-builder.log"
+)");
+
+  zhttp::HttpServerBuilder builder;
+  builder.from_config(config_file.path());
+
+  auto server = builder.build();
+  ASSERT_TRUE(server);
+
+  const auto znet_config = zlog::resolve_logger_config("znet");
+  EXPECT_EQ(znet_config.level, zlog::LogLevel::value::ERROR);
+  EXPECT_EQ(znet_config.sink_mode, zlog::LogSinkMode::kFile);
+  EXPECT_EQ(znet_config.file_path, "/tmp/znet-builder.log");
+
+  const auto zhttp_config = zlog::resolve_logger_config("zhttp");
+  EXPECT_EQ(zhttp_config.level, zlog::LogLevel::value::WARNING);
+  EXPECT_EQ(zhttp_config.formatter, "[%p][%c] %m%n");
+  EXPECT_EQ(zhttp_config.sink_mode, zlog::LogSinkMode::kStdout);
+}
+
 int main(int argc, char **argv) {
   zhttp::init_logger();
   ::testing::InitGoogleTest(&argc, argv);

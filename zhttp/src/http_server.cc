@@ -1,61 +1,151 @@
 #include "http_server.h"
 
-#include "buff.h"
-#include "tcp_connection.h"
 #include "zhttp_logger.h"
 
+#include <limits>
 #include <memory>
+#include <utility>
 
 namespace zhttp {
 
 namespace {
 
-std::shared_ptr<HttpParser> ensure_parser(const znet::TcpConnectionPtr &conn) {
-  auto parser = conn->get_context<HttpParser>();
+uint32_t clamp_timeout_to_u32(const uint64_t timeout_ms) {
+  const uint64_t max_timeout =
+      static_cast<uint64_t>(std::numeric_limits<uint32_t>::max()) - 1;
+  if (timeout_ms >= max_timeout) {
+    return static_cast<uint32_t>(max_timeout);
+  }
+  return static_cast<uint32_t>(timeout_ms);
+}
+
+} // namespace
+
+HttpServer::HttpServer(znet::Address::ptr listen_address, int backlog)
+    : tcp_server_(
+          std::make_shared<znet::TcpServer>(std::move(listen_address), backlog)) {
+  tcp_server_->set_on_connection(
+      [this](const znet::TcpConnection::ptr &conn) { on_connection(conn); });
+  tcp_server_->set_on_message([this](const znet::TcpConnection::ptr &conn,
+                                     znet::Buffer &buffer) {
+    on_message(conn, buffer);
+  });
+  tcp_server_->set_on_close(
+      [this](const znet::TcpConnection::ptr &conn) { on_close(conn); });
+
+  // 默认把 Server 响应头和底层服务名都设置成统一值。
+  set_name("zhttp/1.0");
+}
+
+HttpServer::~HttpServer() {
+  if (tcp_server_) {
+    tcp_server_->stop();
+  }
+}
+
+void HttpServer::set_name(const std::string &name) {
+  server_name_ = name;
+}
+
+void HttpServer::set_thread_count(size_t thread_count) {
+  if (!tcp_server_) {
+    return;
+  }
+
+  const size_t max_count = static_cast<size_t>(std::numeric_limits<int>::max());
+  if (thread_count > max_count) {
+    thread_count = max_count;
+  }
+  tcp_server_->set_thread_count(static_cast<int>(thread_count));
+}
+
+void HttpServer::set_recv_timeout(uint64_t timeout_ms) {
+  if (!tcp_server_) {
+    return;
+  }
+  tcp_server_->set_read_timeout(clamp_timeout_to_u32(timeout_ms));
+}
+
+void HttpServer::set_write_timeout(uint64_t timeout_ms) {
+  write_timeout_ms_ = clamp_timeout_to_u32(timeout_ms);
+  if (tcp_server_) {
+    tcp_server_->set_write_timeout(write_timeout_ms_);
+  }
+}
+
+void HttpServer::set_keepalive_timeout(uint64_t timeout_ms) {
+  if (!tcp_server_) {
+    return;
+  }
+  tcp_server_->set_keepalive_timeout(timeout_ms);
+}
+
+bool HttpServer::set_ssl_certificate(const std::string &cert_file,
+                                     const std::string &key_file) {
+  if (!tcp_server_) {
+    return false;
+  }
+
+  return tcp_server_->enable_tls(cert_file, key_file);
+}
+
+bool HttpServer::start() {
+  if (!tcp_server_) {
+    return false;
+  }
+  return tcp_server_->start();
+}
+
+void HttpServer::stop() {
+  if (tcp_server_) {
+    tcp_server_->stop();
+  }
+}
+
+bool HttpServer::is_running() const {
+  return tcp_server_ && tcp_server_->is_running();
+}
+
+HttpParser *HttpServer::ensure_parser(const znet::TcpConnection::ptr &conn) {
+  if (!conn) {
+    return nullptr;
+  }
+
+  auto *parser = static_cast<HttpParser *>(conn->context());
   if (!parser) {
-    parser = std::make_shared<HttpParser>();
+    parser = new HttpParser();
     conn->set_context(parser);
   }
   return parser;
 }
 
-} // namespace
+void HttpServer::on_connection(const znet::TcpConnection::ptr &conn) {
+  if (!conn) {
+    return;
+  }
 
-HttpServer::HttpServer(zcoroutine::IoScheduler::ptr io_worker,
-                       zcoroutine::IoScheduler::ptr accept_worker)
-    : TcpServer(std::move(io_worker), std::move(accept_worker)) {
-  // 默认把 Server 响应头和底层服务名都设置成统一值。
-  set_name("zhttp/1.0");
+  ensure_parser(conn);
+  ZHTTP_LOG_DEBUG("New connection: fd={}", conn->fd());
 }
 
-HttpServer::~HttpServer() = default;
+void HttpServer::on_close(const znet::TcpConnection::ptr &conn) {
+  if (!conn) {
+    return;
+  }
 
-void HttpServer::set_name(const std::string &name) {
-  TcpServer::set_name(name);
-  server_name_ = name;
+  auto *parser = static_cast<HttpParser *>(conn->context());
+  delete parser;
+  conn->set_context(nullptr);
+
+  ZHTTP_LOG_DEBUG("Connection closed: fd={}", conn->fd());
 }
 
-void HttpServer::handle_client(znet::TcpConnectionPtr conn) {
-  ZHTTP_LOG_DEBUG("New HTTP connection: {}", conn->name());
+void HttpServer::on_message(const znet::TcpConnection::ptr &conn,
+                            znet::Buffer &buffer) {
+  if (!conn) {
+    return;
+  }
 
-  // 解析器状态跟随连接生命周期，避免请求拆包时在下一次回调里丢失状态。
-  conn->set_context(std::make_shared<HttpParser>());
-
-  // 消息回调负责把收到的字节流交给 HTTP 解析流程。
-  conn->set_message_callback(
-      [this](const znet::TcpConnectionPtr &c, znet::Buffer *buffer) {
-        on_message(c, buffer);
-      });
-
-  // 关闭回调这里只做日志记录，资源释放交给连接对象自身生命周期管理。
-  conn->set_close_callback([](const znet::TcpConnectionPtr &c) {
-    c->clear_context();
-    ZHTTP_LOG_DEBUG("HTTP connection closed: {}", c->name());
-  });
-}
-
-void HttpServer::on_message(const znet::TcpConnectionPtr &conn,
-                            znet::Buffer *buffer) {
   /**
    * 这里的循环有两个目的：
    * 1. 处理一个缓冲区里可能连续到达的多个请求。
@@ -63,10 +153,13 @@ void HttpServer::on_message(const znet::TcpConnectionPtr &conn,
    */
 
   // 解析器挂在连接上下文里，拆包时可以跨多次 on_message 持续推进状态机。
-  auto parser = ensure_parser(conn);
+  auto *parser = ensure_parser(conn);
+  if (!parser) {
+    return;
+  }
 
-  while (buffer->readable_bytes() > 0) {
-    ParseResult result = parser->parse(buffer);
+  while (buffer.readable_bytes() > 0) {
+    ParseResult result = parser->parse(&buffer);
 
     if (result == ParseResult::COMPLETE) {
       // 一条完整请求已经拿到，可以交给业务层处理。
@@ -74,13 +167,8 @@ void HttpServer::on_message(const znet::TcpConnectionPtr &conn,
 
       // 客户端如果不希望保持连接，就在当前响应发完后主动关闭。
       if (!keep_alive) {
-        conn->finish_response(false);
         conn->shutdown();
         return;
-      }
-
-      if (buffer->readable_bytes() == 0) {
-        conn->finish_response(true);
       }
 
       // 连接仍然保持时，继续尝试解析缓冲区里后续可能已经到达的请求。
@@ -96,21 +184,27 @@ void HttpServer::on_message(const znet::TcpConnectionPtr &conn,
           .content_type("text/plain")
           .body("Bad Request: " + parser->error());
       response.set_keep_alive(false);
-      conn->send(response.serialize());
+      const std::string payload = response.serialize();
+      if (conn->send(payload.data(), payload.size(), write_timeout_ms_) < 0) {
+        ZHTTP_LOG_WARN("Send HTTP 400 failed: fd={}", conn->fd());
+      }
       conn->shutdown();
       return;
     }
   }
 }
 
-bool HttpServer::handle_request(const znet::TcpConnectionPtr &conn,
+bool HttpServer::handle_request(const znet::TcpConnection::ptr &conn,
                                 const HttpRequest::ptr &request) {
   ZHTTP_LOG_DEBUG("{} {} {}", method_to_string(request->method()),
                   request->path(), version_to_string(request->version()));
 
   // 把对端地址补进请求对象，便于日志、鉴权、限流等上层逻辑直接读取。
-  if (conn && conn->peer_address()) {
-    request->set_remote_addr(conn->peer_address()->to_string());
+  if (conn && conn->socket()) {
+    auto remote_addr = conn->socket()->get_remote_address();
+    if (remote_addr) {
+      request->set_remote_addr(remote_addr->to_string());
+    }
   }
 
   // 响应对象的协议版本和 Keep-Alive 策略通常跟随请求。
@@ -124,7 +218,11 @@ bool HttpServer::handle_request(const znet::TcpConnectionPtr &conn,
 
   // 最终把响应序列化成标准 HTTP 报文并发回客户端。
   std::string response_str = response.serialize();
-  conn->send(response_str);
+  if (conn->send(response_str.data(), response_str.size(), write_timeout_ms_) <
+      0) {
+    ZHTTP_LOG_WARN("Send HTTP response failed: fd={}", conn->fd());
+    return false;
+  }
 
   ZHTTP_LOG_DEBUG("Response: {} {}", static_cast<int>(response.status_code()),
                   status_to_string(response.status_code()));

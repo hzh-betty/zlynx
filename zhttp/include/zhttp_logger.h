@@ -13,6 +13,11 @@ namespace zhttp {
 void init_logger(zlog::LogLevel::value level = zlog::LogLevel::value::DEBUG);
 
 /**
+ * @brief 使用统一日志配置更新 zhttp 日志器。
+ */
+void configure_logger(const zlog::LoggerConfig &config);
+
+/**
  * @brief 获取 zhttp 日志器
  * @return 全局日志器指针
  */

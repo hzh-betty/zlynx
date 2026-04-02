@@ -1,32 +1,38 @@
 #include "zhttp_logger.h"
 
-#include "logger.h"
-#include "sink.h"
-#include "znet_logger.h"
-
 namespace zhttp {
 
-void init_logger(zlog::LogLevel::value level) {
-  znet::init_logger(level); // 同时初始化 znet 日志系统
+namespace {
 
-  // 构建 zhttp 专属日志器
-  zlog::GlobalLoggerBuilder builder;
-  builder.buildLoggerName("zhttp_logger");
-  builder.buildLoggerLevel(level);
-  builder.buildLoggerType(zlog::LoggerType::LOGGER_SYNC);
-  builder.buildLoggerFormatter("[%d{%H:%M:%S}][%c][%p]%T%m%n");
-  builder.buildLoggerSink<zlog::StdOutSink>();
-  builder.build();
+constexpr char kLoggerName[] = "zhttp_logger";
+constexpr char kModuleName[] = "zhttp";
+
+zlog::Logger::ptr &cached_logger() {
+  static zlog::Logger::ptr logger;
+  return logger;
+}
+
+} // namespace
+
+void configure_logger(const zlog::LoggerConfig &config) {
+  zlog::set_module_logger_config(kModuleName, config);
+  cached_logger() = zlog::rebuild_module_logger(kLoggerName, kModuleName);
+}
+
+void init_logger(zlog::LogLevel::value level) {
+  zlog::LoggerConfig config = zlog::resolve_logger_config(kModuleName);
+  config.level = level;
+  configure_logger(config);
 }
 
 zlog::Logger *get_logger() {
- static zlog::Logger::ptr logger;
+ auto &logger = cached_logger();
   if (!logger) {
-    logger = zlog::getLogger("zhttp_logger");
+    logger = zlog::ensure_module_logger(kLoggerName, kModuleName);
   }
   if (!logger) {
-    init_logger(zlog::LogLevel::value::DEBUG);
-    logger = zlog::getLogger("zhttp_logger");
+    init_logger(zlog::LogLevel::value::INFO);
+    logger = zlog::ensure_module_logger(kLoggerName, kModuleName);
   }
   return logger.get();
 }

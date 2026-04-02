@@ -346,6 +346,13 @@ public:
   void addLogger(Logger::ptr &logger);
 
   /**
+   * @brief 新增或替换日志器。
+   * @param name 日志器名称
+   * @param logger 日志器实例
+   */
+  void upsertLogger(const std::string &name, Logger::ptr logger);
+
+  /**
    * @brief 检查日志器是否存在
    * @param name 日志器名称
    * @return 存在返回true，否则返回false

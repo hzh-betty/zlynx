@@ -5,11 +5,14 @@
 #include "callbacks.h"
 #include "noncopyable.h"
 #include "tcp_connection.h"
+#include "tls_context.h"
 
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <unordered_map>
 
 namespace zcoroutine {
@@ -58,6 +61,12 @@ class TcpServer : public std::enable_shared_from_this<TcpServer>,
     on_write_complete_callback_ = std::move(callback);
   }
 
+  bool enable_tls(const std::string& cert_file,
+                  const std::string& key_file,
+                  uint32_t handshake_timeout_ms = 10000);
+
+  bool tls_enabled() const { return tls_context_ != nullptr; }
+
   /**
    * @brief 设置高水位回调。
    * @param callback 跨越高水位阈值时触发。
@@ -68,6 +77,22 @@ class TcpServer : public std::enable_shared_from_this<TcpServer>,
     on_high_water_mark_callback_ = std::move(callback);
     high_water_mark_ = high_water_mark;
   }
+
+  void set_read_timeout(uint32_t timeout_ms) { read_timeout_ms_ = timeout_ms; }
+
+  void set_write_timeout(uint32_t timeout_ms) {
+    write_timeout_ms_ = timeout_ms;
+  }
+
+  void set_keepalive_timeout(uint64_t timeout_ms) {
+    keepalive_timeout_ms_ = timeout_ms;
+  }
+
+  uint32_t read_timeout() const { return read_timeout_ms_; }
+
+  uint32_t write_timeout() const { return write_timeout_ms_; }
+
+  uint64_t keepalive_timeout() const { return keepalive_timeout_ms_; }
 
   std::shared_ptr<Acceptor> acceptor() const { return acceptor_; }
 
@@ -86,8 +111,15 @@ class TcpServer : public std::enable_shared_from_this<TcpServer>,
   CloseCallback on_close_callback_;
   WriteCompleteCallback on_write_complete_callback_;
 
+  TlsContext::ptr tls_context_;
+  uint32_t tls_handshake_timeout_ms_;
+
   HighWaterMarkCallback on_high_water_mark_callback_;
   size_t high_water_mark_;
+
+  uint32_t read_timeout_ms_;
+  uint32_t write_timeout_ms_;
+  uint64_t keepalive_timeout_ms_;
 
   int thread_count_;
 

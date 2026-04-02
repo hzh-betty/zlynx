@@ -17,6 +17,13 @@ enum class StackMode {
   SHARED       // 共享栈模式
 };
 
+struct ModuleLogConfig {
+  std::string level;
+  std::string format;
+  std::string sink;
+  std::string file;
+};
+
 /**
  * @brief HTTP 服务器配置
  * @details
@@ -46,7 +53,12 @@ struct ServerConfig {
 
   // 日志配置。
   std::string log_level = "info";
+  std::string log_format = "[%d{%Y-%m-%d %H:%M:%S}][%c][%p][%t] %m%n";
+  std::string log_sink = "stdout";
   std::string log_file;
+  ModuleLogConfig zcoroutine_log;
+  ModuleLogConfig znet_log;
+  ModuleLogConfig zhttp_log;
 
   // 超时配置，单位毫秒。
   uint64_t read_timeout = 30000;

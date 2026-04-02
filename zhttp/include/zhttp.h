@@ -34,7 +34,6 @@
 // 服务器：HTTP/HTTPS 服务封装与构建器。
 #include "http_server.h"
 #include "http_server_builder.h"
-#include "https_server.h"
 #include "ssl_context.h"
 
 // 工具：守护进程、配置等辅助组件。

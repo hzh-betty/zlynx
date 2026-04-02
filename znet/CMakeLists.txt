@@ -11,6 +11,8 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 option(ZNET_BUILD_TESTS "Build znet tests" ON)
 
+find_package(OpenSSL REQUIRED)
+
 if(NOT TARGET zcoroutine)
   set(ZCOROUTINE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
   set(ZCOROUTINE_ENABLE_LOGGING ON CACHE BOOL "" FORCE)
@@ -24,6 +26,7 @@ add_library(znet STATIC
   src/socket.cc
   src/tcp_connection.cc
   src/tcp_server.cc
+  src/tls_context_openssl.cc
   src/znet_logger.cc
 )
 
@@ -35,6 +38,8 @@ target_include_directories(znet
 target_link_libraries(znet
   PUBLIC
     zcoroutine
+    OpenSSL::SSL
+    OpenSSL::Crypto
 )
 
 target_compile_options(znet PRIVATE

@@ -205,6 +205,27 @@ public:
   HttpServerBuilder &log_level(const std::string &level);
 
   /**
+   * @brief 设置日志格式
+   * @param format zlog 模式串
+   * @return 当前 Builder 引用
+   */
+  HttpServerBuilder &log_format(const std::string &format);
+
+  /**
+   * @brief 设置日志输出目标
+   * @param sink stdout/file/both
+   * @return 当前 Builder 引用
+   */
+  HttpServerBuilder &log_sink(const std::string &sink);
+
+  /**
+   * @brief 设置日志文件路径
+   * @param file_path 文件路径
+   * @return 当前 Builder 引用
+   */
+  HttpServerBuilder &log_file(const std::string &file_path);
+
+  /**
    * @brief 启用守护进程模式
    * @param enable 是否启用
    * @return 当前 Builder 引用
@@ -266,9 +287,6 @@ private:
 
   // 可选的自定义异常处理器。
   Router::ExceptionHandler exception_handler_;
-
-  // Builder 内部持有的调度器实例。
-  zcoroutine::IoScheduler::ptr io_scheduler_;
 
   // 可选的 HTTP -> HTTPS 重定向服务器。
   std::shared_ptr<HttpServer> redirect_server_;

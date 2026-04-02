@@ -130,6 +130,18 @@ void LoggerManager::addLogger(Logger::ptr &logger) {
   loggers_.insert({logger->getName(), logger});
 }
 
+void LoggerManager::upsertLogger(const std::string &name, Logger::ptr logger) {
+  if (!logger) {
+    return;
+  }
+
+  std::unique_lock<std::mutex> lock(mutex_);
+  loggers_[name] = logger;
+  if (name == "root") {
+    rootLogger_ = logger;
+  }
+}
+
 bool LoggerManager::hasLogger(const std::string &name) {
   std::unique_lock<std::mutex> lock(mutex_);
   const auto iter = loggers_.find(name);

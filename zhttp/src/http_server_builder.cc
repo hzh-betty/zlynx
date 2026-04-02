@@ -1,14 +1,18 @@
 #include "http_server_builder.h"
-#include "address.h"
 #include "daemon.h"
-#include "https_server.h"
 #include "request_body_middleware.h"
 #include "rate_limiter.h"
 #include "zhttp_logger.h"
 
+#include "zcoroutine/log.h"
+#include "zcoroutine/sched.h"
+#include "znet/address.h"
+#include "znet/znet_logger.h"
+
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <stdexcept>
 
 namespace zhttp {
 
@@ -47,6 +51,95 @@ static RateLimiter::TimeUnit parse_time_unit(std::string s) {
     return RateLimiter::TimeUnit::HOUR;
   }
   return RateLimiter::TimeUnit::SECOND;
+}
+
+static zlog::LogLevel::value parse_log_level(std::string s) {
+  std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
+
+  if (s == "debug") {
+    return zlog::LogLevel::value::DEBUG;
+  }
+  if (s == "info") {
+    return zlog::LogLevel::value::INFO;
+  }
+  if (s == "warning" || s == "warn") {
+    return zlog::LogLevel::value::WARNING;
+  }
+  if (s == "error") {
+    return zlog::LogLevel::value::ERROR;
+  }
+  if (s == "fatal") {
+    return zlog::LogLevel::value::FATAL;
+  }
+  return zlog::LogLevel::value::INFO;
+}
+
+static zlog::LogSinkMode parse_sink_mode(std::string s) {
+  std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
+
+  if (s == "file") {
+    return zlog::LogSinkMode::kFile;
+  }
+  if (s == "both" || s == "stdout+file" || s == "file+stdout") {
+    return zlog::LogSinkMode::kStdoutAndFile;
+  }
+  return zlog::LogSinkMode::kStdout;
+}
+
+static zlog::LoggerConfig apply_module_override(
+    const zlog::LoggerConfig &base, const ModuleLogConfig &override_cfg,
+    const std::string &default_file) {
+  zlog::LoggerConfig config = base;
+
+  if (!override_cfg.level.empty()) {
+    config.level = parse_log_level(override_cfg.level);
+  }
+  if (!override_cfg.format.empty()) {
+    config.formatter = override_cfg.format;
+  }
+  if (!override_cfg.sink.empty()) {
+    config.sink_mode = parse_sink_mode(override_cfg.sink);
+  }
+  if (!override_cfg.file.empty()) {
+    config.file_path = override_cfg.file;
+  }
+
+  if ((config.sink_mode == zlog::LogSinkMode::kFile ||
+       config.sink_mode == zlog::LogSinkMode::kStdoutAndFile) &&
+      config.file_path.empty()) {
+    config.file_path = default_file;
+  }
+
+  return config;
+}
+
+static void configure_unified_logging(const ServerConfig &config) {
+  zlog::LoggingConfig logging_config;
+
+  zlog::LoggerConfig global;
+  global.level = parse_log_level(config.log_level);
+  global.formatter = config.log_format;
+  global.sink_mode = parse_sink_mode(config.log_sink);
+  global.file_path = config.log_file;
+  logging_config.default_config = global;
+
+  logging_config.module_configs["zcoroutine"] =
+      apply_module_override(global, config.zcoroutine_log,
+                            "./logfile/zcoroutine.log");
+  logging_config.module_configs["znet"] =
+      apply_module_override(global, config.znet_log, "./logfile/znet.log");
+  logging_config.module_configs["zhttp"] =
+      apply_module_override(global, config.zhttp_log, "./logfile/zhttp.log");
+
+  zlog::set_logging_config(logging_config);
+
+  zcoroutine::configure_logger(zlog::resolve_logger_config("zcoroutine"));
+  znet::configure_logger(zlog::resolve_logger_config("znet"));
+  zhttp::configure_logger(zlog::resolve_logger_config("zhttp"));
 }
 
 static bool is_any_address_host(const std::string &host) {
@@ -283,6 +376,21 @@ HttpServerBuilder &HttpServerBuilder::log_level(const std::string &level) {
   return *this;
 }
 
+HttpServerBuilder &HttpServerBuilder::log_format(const std::string &format) {
+  config_.log_format = format;
+  return *this;
+}
+
+HttpServerBuilder &HttpServerBuilder::log_sink(const std::string &sink) {
+  config_.log_sink = sink;
+  return *this;
+}
+
+HttpServerBuilder &HttpServerBuilder::log_file(const std::string &file_path) {
+  config_.log_file = file_path;
+  return *this;
+}
+
 HttpServerBuilder &HttpServerBuilder::daemon(bool enable) {
   config_.daemon = enable;
   return *this;
@@ -306,36 +414,31 @@ std::shared_ptr<HttpServer> HttpServerBuilder::build() {
     throw std::runtime_error("Invalid server configuration");
   }
 
-  // 设置日志级别
-  if (config_.log_level == "debug") {
-    init_logger(zlog::LogLevel::value::DEBUG);
-  } else if (config_.log_level == "info") {
-    init_logger(zlog::LogLevel::value::INFO);
-  } else if (config_.log_level == "warning" || config_.log_level == "warn") {
-    init_logger(zlog::LogLevel::value::WARNING);
-  } else if (config_.log_level == "error") {
-    init_logger(zlog::LogLevel::value::ERROR);
-  }
+  configure_unified_logging(config_);
 
-  // 根据栈模式创建 IoScheduler
-  bool use_shared = (config_.stack_mode == StackMode::SHARED);
-  io_scheduler_ = std::make_shared<zcoroutine::IoScheduler>(
-      static_cast<int>(config_.num_threads), "zhttp-io", use_shared);
+  if (config_.stack_mode == StackMode::SHARED) {
+    zcoroutine::co_stack_model(zcoroutine::StackModel::kShared);
+  } else {
+    zcoroutine::co_stack_model(zcoroutine::StackModel::kIndependent);
+  }
 
   ZHTTP_LOG_INFO("Creating server with {} threads, stack_mode={}",
                  config_.num_threads, stack_mode_to_string(config_.stack_mode));
 
-  // 创建服务器
-  std::shared_ptr<HttpServer> server;
-
-  if (config_.enable_https) {
-    auto https_server = std::make_shared<HttpsServer>(io_scheduler_, nullptr);
-    https_server->set_ssl_certificate(config_.cert_file, config_.key_file);
-    server = https_server;
-  } else {
-    server = std::make_shared<HttpServer>(io_scheduler_, nullptr);
+  auto addrs = znet::Address::lookup(config_.host, config_.port);
+  if (addrs.empty()) {
+    throw std::runtime_error("Failed to resolve address: " + config_.host +
+                             ":" + std::to_string(config_.port));
   }
 
+  // 创建服务器。HTTPS 与 HTTP 统一在 HttpServer 内部处理，避免双分支实现。
+  auto server = std::make_shared<HttpServer>(addrs[0]);
+  if (config_.enable_https &&
+      !server->set_ssl_certificate(config_.cert_file, config_.key_file)) {
+    throw std::runtime_error("Failed to initialize SSL certificate");
+  }
+
+  server->set_thread_count(config_.num_threads);
   server->set_name(config_.server_name);
   server->set_recv_timeout(config_.read_timeout);
   server->set_write_timeout(config_.write_timeout);
@@ -397,29 +500,7 @@ std::shared_ptr<HttpServer> HttpServerBuilder::build() {
     server->router().set_exception_handler(exception_handler_);
   }
 
-  // 绑定地址并开始监听
-  auto addrs = znet::Address::lookup(config_.host, config_.port);
-  if (addrs.empty()) {
-    throw std::runtime_error("Failed to resolve address: " + config_.host +
-                             ":" + std::to_string(config_.port));
-  }
-  if (!server->bind(addrs[0])) {
-    throw std::runtime_error("Failed to bind: " + addrs[0]->to_string());
-  }
-
   if (config_.enable_https && config_.force_http_to_https) {
-    bool use_shared = (config_.stack_mode == StackMode::SHARED);
-    auto redirect_scheduler = std::make_shared<zcoroutine::IoScheduler>(
-        1, "zhttp-redirect-io", use_shared);
-
-    redirect_server_ = std::make_shared<HttpServer>(redirect_scheduler, nullptr);
-    redirect_server_->set_name(config_.server_name + " (redirect)");
-    redirect_server_->set_recv_timeout(config_.read_timeout);
-    redirect_server_->set_write_timeout(config_.write_timeout);
-    redirect_server_->set_keepalive_timeout(config_.keepalive_timeout);
-
-    install_force_https_redirect_routes(*redirect_server_, config_);
-
     auto redirect_addrs =
         znet::Address::lookup(config_.host, config_.redirect_http_port);
     if (redirect_addrs.empty()) {
@@ -427,10 +508,15 @@ std::shared_ptr<HttpServer> HttpServerBuilder::build() {
                                config_.host + ":" +
                                std::to_string(config_.redirect_http_port));
     }
-    if (!redirect_server_->bind(redirect_addrs[0])) {
-      throw std::runtime_error("Failed to bind redirect server: " +
-                               redirect_addrs[0]->to_string());
-    }
+
+    redirect_server_ = std::make_shared<HttpServer>(redirect_addrs[0]);
+    redirect_server_->set_thread_count(1);
+    redirect_server_->set_name(config_.server_name + " (redirect)");
+    redirect_server_->set_recv_timeout(config_.read_timeout);
+    redirect_server_->set_write_timeout(config_.write_timeout);
+    redirect_server_->set_keepalive_timeout(config_.keepalive_timeout);
+
+    install_force_https_redirect_routes(*redirect_server_, config_);
   }
 
   return server;

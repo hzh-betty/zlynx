@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cerrno>
+#include <string>
 #include <utility>
 
 #include "zcoroutine/sched.h"
@@ -11,12 +12,8 @@
 namespace znet {
 
 namespace {
-
-constexpr uint32_t kConnectionReadSliceTimeoutMs = 100;
-
 bool is_retryable_read_errno(int err) {
-  return err == EINTR || err == EAGAIN || err == EWOULDBLOCK ||
-         err == ETIMEDOUT;
+  return err == EINTR || err == EAGAIN || err == EWOULDBLOCK;
 }
 
 bool is_peer_disconnect_errno(int err) {
@@ -31,12 +28,37 @@ TcpServer::TcpServer(Address::ptr listen_address, int backlog)
       on_connection_callback_(),
       on_close_callback_(),
       on_write_complete_callback_(),
+      tls_context_(),
+      tls_handshake_timeout_ms_(10000),
       on_high_water_mark_callback_(),
       high_water_mark_(64 * 1024 * 1024),
+      read_timeout_ms_(100),
+      write_timeout_ms_(0),
+      keepalive_timeout_ms_(0),
       thread_count_(0),
       connections_mutex_(),
       connections_(),
       running_(false) {}
+
+bool TcpServer::enable_tls(const std::string& cert_file,
+                           const std::string& key_file,
+                           uint32_t handshake_timeout_ms) {
+  std::string error;
+  auto tls_context =
+      create_server_tls_context_openssl(cert_file, key_file, &error);
+  if (!tls_context) {
+    ZNET_LOG_ERROR("TcpServer::enable_tls failed: cert={}, key={}, error={}",
+                   cert_file, key_file, error);
+    return false;
+  }
+
+  tls_context_ = std::move(tls_context);
+  tls_handshake_timeout_ms_ = handshake_timeout_ms;
+
+  ZNET_LOG_INFO("TcpServer::enable_tls enabled: cert={}, key={}", cert_file,
+                key_file);
+  return true;
+}
 
 bool TcpServer::start() {
   bool expected = false;
@@ -138,16 +160,28 @@ void TcpServer::handle_connection(Socket::ptr client) {
                                                self->high_water_mark_);
     }
 
+    if (self->tls_context_) {
+      if (!connection->enable_tls_server(self->tls_context_,
+                                         self->tls_handshake_timeout_ms_)) {
+        ZNET_LOG_WARN("TcpServer::handle_connection TLS handshake failed: fd={}",
+                      connection->fd());
+        connection->close();
+        return;
+      }
+    }
+
     self->register_connection(connection);
 
     if (self->on_connection_callback_) {
       self->on_connection_callback_(connection);
     }
 
+    uint64_t idle_elapsed_ms = 0;
     while (self->is_running() && connection->connected()) {
-      const ssize_t n =
-          connection->read(4096, kConnectionReadSliceTimeoutMs);
+      const uint32_t read_timeout_ms = self->read_timeout_ms_;
+      const ssize_t n = connection->read(4096, read_timeout_ms);
       if (n > 0) {
+        idle_elapsed_ms = 0;
         if (self->on_message_callback_) {
           self->on_message_callback_(connection, connection->input_buffer());
         }
@@ -161,6 +195,19 @@ void TcpServer::handle_connection(Socket::ptr client) {
       }
 
       const int read_err = errno;
+      if (read_err == ETIMEDOUT) {
+        if (self->keepalive_timeout_ms_ > 0 && read_timeout_ms > 0) {
+          idle_elapsed_ms += read_timeout_ms;
+          if (idle_elapsed_ms >= self->keepalive_timeout_ms_) {
+            ZNET_LOG_INFO("TcpServer::handle_connection keepalive timeout: "
+                          "fd={}, keepalive_timeout_ms={}",
+                          connection->fd(), self->keepalive_timeout_ms_);
+            break;
+          }
+        }
+        continue;
+      }
+
       if (is_retryable_read_errno(read_err)) {
         continue;
       }
@@ -172,10 +219,9 @@ void TcpServer::handle_connection(Socket::ptr client) {
         break;
       }
 
-      ZNET_LOG_WARN("TcpServer::handle_connection keep alive on read error: fd={}, "
-                    "errno={}",
+      ZNET_LOG_WARN("TcpServer::handle_connection keep alive on read error: "
+                    "fd={}, errno={}",
                     connection->fd(), read_err);
-      continue;
     }
 
     if (self->on_close_callback_) {

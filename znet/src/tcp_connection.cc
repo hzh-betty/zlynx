@@ -1,10 +1,14 @@
 #include "znet/tcp_connection.h"
 
+#include <algorithm>
 #include <cerrno>
-#include <string>
+#include <limits>
 #include <utility>
+#include <vector>
 
+#include "zcoroutine/io_event.h"
 #include "zcoroutine/sched.h"
+#include "znet/tls_context.h"
 #include "znet/znet_logger.h"
 
 namespace znet {
@@ -36,6 +40,7 @@ TcpConnection::TcpConnection(Socket::ptr socket,
       write_complete_callback_(),
       high_water_mark_callback_(),
       high_water_mark_(64 * 1024 * 1024),
+      tls_channel_(nullptr),
       context_(nullptr),
       actor_mutex_(),
       mailbox_(),
@@ -68,6 +73,8 @@ TcpConnection::TcpConnection(Socket::ptr socket,
       "TcpConnection::TcpConnection initialized: fd={}, state={}, actor_sched_id={}",
       fd(), state_to_string(state()), actor_sched_id_);
 }
+
+    TcpConnection::~TcpConnection() = default;
 
 size_t TcpConnection::pending_write_bytes() const {
   return output_buffer_.readable_bytes();
@@ -222,6 +229,10 @@ ssize_t TcpConnection::read_internal(size_t max_read_bytes, uint32_t timeout_ms)
     return -1;
   }
 
+  if (tls_channel_) {
+    return read_tls_internal(max_read_bytes, timeout_ms);
+  }
+
   int saved_errno = 0;
     const ssize_t n = input_buffer_.read_from_socket(
       socket_, max_read_bytes, timeout_ms, &saved_errno);
@@ -233,6 +244,85 @@ ssize_t TcpConnection::read_internal(size_t max_read_bytes, uint32_t timeout_ms)
   if (n == 0) {
     set_state(State::kDisconnected);
     ZNET_LOG_INFO("TcpConnection::read peer closed: fd={}", fd());
+  }
+
+  return n;
+}
+
+bool TcpConnection::enable_tls_server(const std::shared_ptr<TlsContext>& tls_context,
+                                      uint32_t handshake_timeout_ms) {
+  if (!tls_context || !socket_ || !socket_->is_valid()) {
+    errno = EINVAL;
+    return false;
+  }
+
+  if (tls_channel_) {
+    return true;
+  }
+
+  auto channel = tls_context->create_server_channel(fd());
+  if (!channel) {
+    ZNET_LOG_ERROR(
+        "TcpConnection::enable_tls_server create_server_channel failed: fd={}, errno={}",
+        fd(), errno);
+    return false;
+  }
+
+  if (!channel->handshake(
+          handshake_timeout_ms,
+          [this](bool wait_for_write, uint32_t timeout_ms) {
+            return wait_tls_io(wait_for_write, timeout_ms);
+          })) {
+    ZNET_LOG_WARN(
+        "TcpConnection::enable_tls_server handshake failed: fd={}, errno={}",
+        fd(), errno);
+    return false;
+  }
+
+  tls_channel_ = std::move(channel);
+  ZNET_LOG_INFO("TcpConnection::enable_tls_server handshake success: fd={}", fd());
+  return true;
+}
+
+bool TcpConnection::wait_tls_io(bool wait_for_write, uint32_t timeout_ms) {
+  zcoroutine::IoEvent io_event(
+      fd(), wait_for_write ? zcoroutine::IoEventType::kWrite
+                           : zcoroutine::IoEventType::kRead);
+  const uint32_t wait_timeout_ms =
+      timeout_ms == 0 ? zcoroutine::kInfiniteTimeoutMs : timeout_ms;
+  if (!io_event.wait(wait_timeout_ms)) {
+    if (errno == 0 && zcoroutine::timeout()) {
+      errno = ETIMEDOUT;
+    }
+    return false;
+  }
+  return true;
+}
+
+ssize_t TcpConnection::read_tls_internal(size_t max_read_bytes,
+                                         uint32_t timeout_ms) {
+  if (!tls_channel_) {
+    errno = EINVAL;
+    return -1;
+  }
+
+  const size_t max_chunk = std::min(
+      max_read_bytes, static_cast<size_t>(std::numeric_limits<int>::max()));
+  std::vector<char> read_buffer(max_chunk);
+
+  const ssize_t n = tls_channel_->read(
+      read_buffer.data(), read_buffer.size(), timeout_ms,
+      [this](bool wait_for_write, uint32_t wait_timeout_ms) {
+        return wait_tls_io(wait_for_write, wait_timeout_ms);
+      });
+
+  if (n > 0) {
+    input_buffer_.append(read_buffer.data(), static_cast<size_t>(n));
+    return n;
+  }
+
+  if (n == 0) {
+    set_state(State::kDisconnected);
   }
 
   return n;
@@ -250,6 +340,32 @@ ssize_t TcpConnection::flush_output_internal(uint32_t timeout_ms) {
   }
 
   ssize_t sent_total = 0;
+  if (tls_channel_) {
+    while (output_buffer_.readable_bytes() > 0) {
+      const char* data = output_buffer_.peek();
+      const size_t bytes = output_buffer_.readable_bytes();
+      const ssize_t n = write_tls_internal(data, bytes, timeout_ms);
+      if (n <= 0) {
+        if (n < 0) {
+          ZNET_LOG_WARN("TcpConnection::flush_output tls write failed: fd={}, errno={}",
+                        fd(), errno);
+          return -1;
+        }
+        break;
+      }
+
+      output_buffer_.retrieve(static_cast<size_t>(n));
+      sent_total += n;
+    }
+
+    if (sent_total > 0 && output_buffer_.readable_bytes() == 0 &&
+        write_complete_callback_) {
+      write_complete_callback_(shared_from_this());
+    }
+
+    return sent_total;
+  }
+
   while (output_buffer_.readable_bytes() > 0) {
     int saved_errno = 0;
     const ssize_t n =
@@ -283,6 +399,40 @@ ssize_t TcpConnection::flush_output_internal(uint32_t timeout_ms) {
   }
 
   return sent_total;
+}
+
+ssize_t TcpConnection::write_tls_internal(const char* data,
+                                          size_t length,
+                                          uint32_t timeout_ms) {
+  if (!tls_channel_ || !data || length == 0) {
+    errno = EINVAL;
+    return -1;
+  }
+
+  return tls_channel_->write(
+      data, length, timeout_ms,
+      [this](bool wait_for_write, uint32_t wait_timeout_ms) {
+        return wait_tls_io(wait_for_write, wait_timeout_ms);
+      });
+}
+
+void TcpConnection::shutdown_tls_internal() {
+  if (!tls_channel_) {
+    return;
+  }
+
+  tls_channel_->shutdown(
+      1000, [this](bool wait_for_write, uint32_t wait_timeout_ms) {
+        return wait_tls_io(wait_for_write, wait_timeout_ms);
+      });
+}
+
+void TcpConnection::close_tls_internal() {
+  if (!tls_channel_) {
+    return;
+  }
+
+  tls_channel_.reset();
 }
 
 ssize_t TcpConnection::send_internal(const std::string& payload,
@@ -331,6 +481,7 @@ void TcpConnection::shutdown_internal() {
   }
 
   (void)flush_output_internal(0);
+  shutdown_tls_internal();
   close_internal();
 }
 
@@ -341,6 +492,7 @@ void TcpConnection::close_internal() {
   }
 
   set_state(State::kDisconnected);
+  close_tls_internal();
   if (socket_) {
     (void)socket_->close();
   }
