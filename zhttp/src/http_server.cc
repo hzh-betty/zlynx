@@ -67,10 +67,10 @@ void HttpServer::set_recv_timeout(uint64_t timeout_ms) {
 }
 
 void HttpServer::set_write_timeout(uint64_t timeout_ms) {
-  write_timeout_ms_ = clamp_timeout_to_u32(timeout_ms);
-  if (tcp_server_) {
-    tcp_server_->set_write_timeout(write_timeout_ms_);
+  if (!tcp_server_) {
+    return;
   }
+  tcp_server_->set_write_timeout(clamp_timeout_to_u32(timeout_ms));
 }
 
 void HttpServer::set_keepalive_timeout(uint64_t timeout_ms) {
@@ -185,7 +185,7 @@ void HttpServer::on_message(const znet::TcpConnection::ptr &conn,
           .body("Bad Request: " + parser->error());
       response.set_keep_alive(false);
       const std::string payload = response.serialize();
-      if (conn->send(payload.data(), payload.size(), write_timeout_ms_) < 0) {
+      if (conn->send(payload.data(), payload.size()) < 0) {
         ZHTTP_LOG_WARN("Send HTTP 400 failed: fd={}", conn->fd());
       }
       conn->shutdown();
@@ -218,8 +218,7 @@ bool HttpServer::handle_request(const znet::TcpConnection::ptr &conn,
 
   // 最终把响应序列化成标准 HTTP 报文并发回客户端。
   std::string response_str = response.serialize();
-  if (conn->send(response_str.data(), response_str.size(), write_timeout_ms_) <
-      0) {
+  if (conn->send(response_str.data(), response_str.size()) < 0) {
     ZHTTP_LOG_WARN("Send HTTP response failed: fd={}", conn->fd());
     return false;
   }

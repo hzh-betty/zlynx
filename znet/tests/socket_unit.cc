@@ -16,6 +16,10 @@
 namespace znet {
 namespace {
 
+bool is_timeout_errno(int err) {
+  return err == ETIMEDOUT || err == EAGAIN || err == EWOULDBLOCK;
+}
+
 class SocketCoroutineUnitTest : public ::testing::Test {
  protected:
   void TearDown() override { zcoroutine::shutdown(); }
@@ -114,7 +118,7 @@ TEST_F(SocketCoroutineUnitTest, RecvRespectsExplicitTimeoutInCoroutineContext) {
   done.wait();
 
   EXPECT_EQ(result.load(std::memory_order_acquire), -1);
-  EXPECT_EQ(err.load(std::memory_order_acquire), ETIMEDOUT);
+  EXPECT_TRUE(is_timeout_errno(err.load(std::memory_order_acquire)));
   EXPECT_GE(elapsed_ms.load(std::memory_order_acquire), 20);
 
   ::close(pair[1]);
@@ -152,7 +156,7 @@ TEST_F(SocketCoroutineUnitTest,
   done.wait();
 
   EXPECT_TRUE(timed_out.load(std::memory_order_acquire));
-  EXPECT_EQ(err.load(std::memory_order_acquire), ETIMEDOUT);
+  EXPECT_TRUE(is_timeout_errno(err.load(std::memory_order_acquire)));
   EXPECT_GE(elapsed_ms.load(std::memory_order_acquire), 20);
 }
 
@@ -189,7 +193,7 @@ TEST_F(SocketCoroutineUnitTest,
   done.wait();
 
   EXPECT_FALSE(connected.load(std::memory_order_acquire));
-  EXPECT_EQ(err.load(std::memory_order_acquire), ETIMEDOUT);
+  EXPECT_TRUE(is_timeout_errno(err.load(std::memory_order_acquire)));
   EXPECT_GE(elapsed_ms.load(std::memory_order_acquire), 20);
 }
 

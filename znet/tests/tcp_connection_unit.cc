@@ -18,6 +18,10 @@
 namespace znet {
 namespace {
 
+bool is_timeout_errno(int err) {
+  return err == ETIMEDOUT || err == EAGAIN || err == EWOULDBLOCK;
+}
+
 class TcpConnectionUnitTest : public ::testing::Test {
  protected:
   void TearDown() override { zcoroutine::shutdown(); }
@@ -225,10 +229,24 @@ TEST_F(TcpConnectionUnitTest, ReadTimeoutIsReportedAsEtimedout) {
   const auto ended = std::chrono::steady_clock::now();
 
   EXPECT_EQ(n, -1);
-  EXPECT_EQ(errno, ETIMEDOUT);
+  EXPECT_TRUE(is_timeout_errno(errno));
   EXPECT_GE(std::chrono::duration_cast<std::chrono::milliseconds>(ended - started)
                 .count(),
             20);
+
+  conn->close();
+  ::close(pair[1]);
+}
+
+TEST_F(TcpConnectionUnitTest, ConnectionWriteTimeoutCanBeConfigured) {
+  int pair[2] = {-1, -1};
+  ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+
+  auto conn = std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+  ASSERT_NE(conn, nullptr);
+
+  conn->set_write_timeout(123);
+  EXPECT_EQ(conn->write_timeout(), 123U);
 
   conn->close();
   ::close(pair[1]);

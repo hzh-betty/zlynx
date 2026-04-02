@@ -38,16 +38,6 @@ uint32_t normalize_timeout_ms(uint64_t timeout_ms) {
   return static_cast<uint32_t>(timeout_ms);
 }
 
-void normalize_timeout_errno(uint32_t effective_timeout_ms) {
-  if (effective_timeout_ms == zcoroutine::kInfiniteTimeoutMs) {
-    return;
-  }
-
-  if (errno == EAGAIN || errno == EWOULDBLOCK) {
-    errno = ETIMEDOUT;
-  }
-}
-
 }  // namespace
 
 namespace znet {
@@ -185,7 +175,6 @@ Socket::ptr Socket::accept(uint64_t timeout_ms) {
     if (errno == EBADF) {
       return nullptr;
     }
-    normalize_timeout_errno(effective_timeout_ms);
     ZNET_LOG_ERROR("Socket::accept failed: fd={}, errno={}, error={}", sockfd_,
                    errno, strerror(errno));
     return nullptr;
@@ -219,7 +208,6 @@ bool Socket::connect(const Address::ptr addr, uint64_t timeout_ms) {
   const uint32_t effective_timeout_ms = normalize_timeout_ms(timeout_ms);
   if (zcoroutine::co_connect(sockfd_, addr->sockaddr_ptr(), addr->sockaddr_len(),
                              effective_timeout_ms) != 0) {
-    normalize_timeout_errno(effective_timeout_ms);
     ZNET_LOG_ERROR("Socket::connect failed: fd={}, addr={}, errno={}, error={}",
                    sockfd_, addr->to_string(), errno, strerror(errno));
     return false;
@@ -290,9 +278,6 @@ ssize_t Socket::send(const void* buffer, size_t length, int flags,
   const uint32_t effective_timeout_ms = normalize_timeout_ms(timeout_ms);
   const ssize_t n =
       zcoroutine::co_send(sockfd_, buffer, length, flags, effective_timeout_ms);
-  if (n < 0) {
-    normalize_timeout_errno(effective_timeout_ms);
-  }
   return n;
 }
 
@@ -310,9 +295,6 @@ ssize_t Socket::recv(void* buffer, size_t length, int flags,
   const uint32_t effective_timeout_ms = normalize_timeout_ms(timeout_ms);
   const ssize_t n =
       zcoroutine::co_recv(sockfd_, buffer, length, flags, effective_timeout_ms);
-  if (n < 0) {
-    normalize_timeout_errno(effective_timeout_ms);
-  }
   return n;
 }
 
@@ -334,9 +316,6 @@ ssize_t Socket::send_to(const void* buffer, size_t length,
                                           to->sockaddr_ptr(),
                                           to->sockaddr_len(),
                                           effective_timeout_ms);
-  if (n < 0) {
-    normalize_timeout_errno(effective_timeout_ms);
-  }
   return n;
 }
 
@@ -357,9 +336,6 @@ ssize_t Socket::recv_from(void* buffer, size_t length, Address::ptr from,
   const ssize_t ret = zcoroutine::co_recvfrom(
       sockfd_, buffer, length, flags, reinterpret_cast<sockaddr*>(&addr), &len,
       effective_timeout_ms);
-    if (ret < 0) {
-      normalize_timeout_errno(effective_timeout_ms);
-    }
   if (ret >= 0 && from) {
     // 注意：from 为值传递，此赋值不会回传到调用方。
     from = Address::create(reinterpret_cast<sockaddr*>(&addr), len);

@@ -37,7 +37,6 @@ set(ZHTTP_SOURCES
     src/security_middleware.cc
     src/http_server.cc
     src/session.cc
-    src/ssl_context.cc
     src/daemon.cc
     src/server_config.cc
     src/http_server_builder.cc

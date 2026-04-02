@@ -40,6 +40,7 @@ TcpConnection::TcpConnection(Socket::ptr socket,
       write_complete_callback_(),
       high_water_mark_callback_(),
       high_water_mark_(64 * 1024 * 1024),
+      write_timeout_ms_(0),
       tls_channel_(nullptr),
       context_(nullptr),
       actor_mutex_(),
@@ -74,10 +75,17 @@ TcpConnection::TcpConnection(Socket::ptr socket,
       fd(), state_to_string(state()), actor_sched_id_);
 }
 
-    TcpConnection::~TcpConnection() = default;
+  TcpConnection::~TcpConnection() = default;
 
 size_t TcpConnection::pending_write_bytes() const {
   return output_buffer_.readable_bytes();
+}
+
+uint32_t TcpConnection::resolve_write_timeout(uint32_t timeout_ms) const {
+  if (timeout_ms == kUseConnectionWriteTimeout) {
+    return write_timeout();
+  }
+  return timeout_ms;
 }
 
 int TcpConnection::fd() const {
@@ -509,7 +517,7 @@ ssize_t TcpConnection::read(size_t max_read_bytes, uint32_t timeout_ms) {
 
 ssize_t TcpConnection::flush_output(uint32_t timeout_ms) {
   Event::ptr event = std::make_shared<Event>(EventType::kFlush);
-  event->timeout_ms = timeout_ms;
+  event->timeout_ms = resolve_write_timeout(timeout_ms);
   return dispatch_event_and_wait(event);
 }
 
@@ -527,7 +535,7 @@ ssize_t TcpConnection::send(const void* data, size_t length,
   }
 
   Event::ptr event = std::make_shared<Event>(EventType::kSend);
-  event->timeout_ms = timeout_ms;
+  event->timeout_ms = resolve_write_timeout(timeout_ms);
   event->payload.assign(static_cast<const char*>(data), length);
   return dispatch_event_and_wait(event);
 }

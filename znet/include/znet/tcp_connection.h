@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -37,6 +38,9 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>,
                       public NonCopyable {
  public:
   using ptr = std::shared_ptr<TcpConnection>;
+  static constexpr uint32_t kUseConnectionWriteTimeout =
+      std::numeric_limits<uint32_t>::max();
+
   using WriteCompleteCallback = std::function<void(TcpConnection::ptr)>;
   using HighWaterMarkCallback = std::function<void(TcpConnection::ptr, size_t)>;
 
@@ -84,9 +88,20 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>,
   void set_context(void* ctx) { context_ = ctx; }
   void* context() const { return context_; }
 
+  void set_write_timeout(uint32_t timeout_ms) {
+    write_timeout_ms_.store(timeout_ms, std::memory_order_release);
+  }
+
+  uint32_t write_timeout() const {
+    return write_timeout_ms_.load(std::memory_order_acquire);
+  }
+
   ssize_t read(size_t max_read_bytes = 4096, uint32_t timeout_ms = 0);
-  ssize_t flush_output(uint32_t timeout_ms = 0);
-  ssize_t send(const void* data, size_t length, uint32_t timeout_ms = 0);
+  ssize_t flush_output(
+      uint32_t timeout_ms = kUseConnectionWriteTimeout);
+  ssize_t send(const void* data,
+               size_t length,
+               uint32_t timeout_ms = kUseConnectionWriteTimeout);
 
   void shutdown();
   void close();
@@ -133,6 +148,7 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>,
  private:
   void set_state(State state);
   size_t pending_write_bytes() const;
+  uint32_t resolve_write_timeout(uint32_t timeout_ms) const;
 
   ssize_t dispatch_event_and_wait(const Event::ptr& event);
   void drain_mailbox();
@@ -160,6 +176,7 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>,
   WriteCompleteCallback write_complete_callback_;
   HighWaterMarkCallback high_water_mark_callback_;
   size_t high_water_mark_;
+  std::atomic<uint32_t> write_timeout_ms_;
 
   std::unique_ptr<TlsChannel> tls_channel_;
 

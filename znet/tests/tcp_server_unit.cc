@@ -373,5 +373,50 @@ TEST_F(TcpServerUnitTest, StopReturnsPromptlyWhenConnectionIsIdle) {
   EXPECT_TRUE(finished_in_time);
 }
 
+TEST_F(TcpServerUnitTest, WriteTimeoutIsAppliedToAcceptedConnection) {
+  zcoroutine::init(2);
+
+  auto listen_addr = std::make_shared<IPv4Address>("127.0.0.1", 0);
+  auto server = std::make_shared<TcpServer>(listen_addr, 16);
+  ASSERT_NE(server, nullptr);
+
+  server->set_write_timeout(321);
+
+  std::atomic<uint32_t> observed_write_timeout{0};
+  std::atomic<int> connect_count{0};
+  server->set_on_connection([&](const TcpConnection::ptr& conn) {
+    ASSERT_NE(conn, nullptr);
+    observed_write_timeout.store(conn->write_timeout(), std::memory_order_relaxed);
+    connect_count.fetch_add(1, std::memory_order_relaxed);
+  });
+
+  ASSERT_TRUE(server->start());
+  auto bound_addr = std::dynamic_pointer_cast<IPv4Address>(
+      server->acceptor()->listen_socket()->get_local_address());
+  ASSERT_NE(bound_addr, nullptr);
+
+  int client_fd = ::socket(AF_INET, SOCK_STREAM, 0);
+  ASSERT_GE(client_fd, 0);
+
+  sockaddr_in addr;
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(bound_addr->port());
+  ASSERT_EQ(::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr), 1);
+  ASSERT_EQ(
+      ::connect(client_fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)),
+      0);
+
+  for (int i = 0; i < 100 && connect_count.load(std::memory_order_relaxed) == 0;
+       ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+
+  EXPECT_EQ(connect_count.load(std::memory_order_relaxed), 1);
+  EXPECT_EQ(observed_write_timeout.load(std::memory_order_relaxed), 321U);
+
+  ::close(client_fd);
+  server->stop();
+}
+
 }  // namespace
 }  // namespace znet

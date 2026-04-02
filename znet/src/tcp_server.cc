@@ -152,6 +152,7 @@ void TcpServer::handle_connection(Socket::ptr client) {
 
     TcpConnection::ptr connection =
         std::make_shared<TcpConnection>(client, scheduler);
+    connection->set_write_timeout(self->write_timeout_ms_);
     if (self->on_write_complete_callback_) {
       connection->set_write_complete_callback(self->on_write_complete_callback_);
     }

@@ -66,7 +66,9 @@ public:
 protected:
   znet::TcpServer::ptr tcp_server() const { return tcp_server_; }
 
-  uint32_t write_timeout() const { return write_timeout_ms_; }
+  uint32_t write_timeout() const {
+    return tcp_server_ ? tcp_server_->write_timeout() : 0;
+  }
 
   virtual void on_connection(const znet::TcpConnection::ptr &conn);
 
@@ -88,8 +90,6 @@ private:
 
   // Server 响应头默认值。
   std::string server_name_ = "zhttp/1.0";
-
-  uint32_t write_timeout_ms_ = 0;
 };
 
 } // namespace zhttp
