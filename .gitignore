@@ -8,3 +8,6 @@ lib/
 .vscode/
 cmake-build-*/
 logfile/
+.github/
+.worktrees/
+*.log
