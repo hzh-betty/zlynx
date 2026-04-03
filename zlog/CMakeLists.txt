@@ -13,7 +13,6 @@ set(ZLOG_SOURCES
     src/buffer.cc
     src/format.cc
     src/level.cc
-    src/logging_config.cc
     src/logger.cc
     src/looper.cc
     src/message.cc
