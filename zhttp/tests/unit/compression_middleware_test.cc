@@ -144,6 +144,32 @@ TEST(CompressionMiddlewareTest, SkipCompressionWhenBodyTooSmall) {
   EXPECT_EQ(resp.body_content(), "small");
 }
 
+TEST(CompressionMiddlewareTest, SkipCompressionForChunkedResponse) {
+  CompressionMiddleware::Options opt;
+  opt.enable_gzip = true;
+  opt.enable_br = false;
+  opt.min_compress_size = 32;
+
+  CompressionMiddleware middleware(opt);
+
+  auto req = std::make_shared<HttpRequest>();
+  req->set_method(HttpMethod::GET);
+  req->set_header("Accept-Encoding", "gzip");
+
+  HttpResponse resp;
+  const std::string plain = large_text_payload();
+  resp.status(HttpStatus::OK)
+      .content_type("text/plain; charset=utf-8")
+      .body(plain)
+      .enable_chunked();
+
+  middleware.after(req, resp);
+
+  EXPECT_EQ(resp.headers().find("Content-Encoding"), resp.headers().end());
+  EXPECT_EQ(resp.headers().find("Content-Length"), resp.headers().end());
+  EXPECT_EQ(resp.body_content(), plain);
+}
+
 #ifdef ZHTTP_USE_BROTLI
 TEST(CompressionMiddlewareTest, PreferBrotliWhenClientSupportsBoth) {
   CompressionMiddleware::Options opt;

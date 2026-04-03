@@ -4,6 +4,22 @@
 
 namespace zhttp {
 
+namespace {
+
+bool is_body_allowed(HttpStatus status) {
+  const int code = static_cast<int>(status);
+  if (code >= 100 && code < 200) {
+    return false;
+  }
+  return code != 204 && code != 304;
+}
+
+bool header_name_equals(const std::string &name, const std::string &target_lower) {
+  return to_lower(name) == target_lower;
+}
+
+} // namespace
+
 HttpResponse::HttpResponse() {
   // 提供一个默认 Server 头，业务层如果需要可以再覆盖。
   headers_["Server"] = "zhttp/1.0";
@@ -112,9 +128,30 @@ HttpResponse &HttpResponse::redirect(const std::string &url,
   return *this;
 }
 
-std::string HttpResponse::serialize() const {
+HttpResponse &HttpResponse::enable_chunked(bool enable) {
+  chunked_enabled_ = enable;
+  if (!enable) {
+    stream_callback_ = StreamCallback();
+  }
+  return *this;
+}
+
+HttpResponse &HttpResponse::stream(StreamCallback callback) {
+  stream_callback_ = std::move(callback);
+  chunked_enabled_ = true;
+  return *this;
+}
+
+std::string HttpResponse::serialize(bool include_body) const {
   // HTTP 响应最终就是一段按协议格式拼好的纯文本字节流。
   std::ostringstream oss;
+  const bool allow_body = is_body_allowed(status_);
+  const bool use_chunked =
+      allow_body && version_ == HttpVersion::HTTP_1_1 &&
+      (chunked_enabled_ || static_cast<bool>(stream_callback_));
+  bool has_content_length = false;
+  bool has_connection = false;
+  bool has_transfer_encoding = false;
 
   // 第一行是状态行：版本 + 数字状态码 + 状态短语。
   oss << version_to_string(version_) << " " << static_cast<int>(status_) << " "
@@ -122,6 +159,24 @@ std::string HttpResponse::serialize() const {
 
   // 普通响应头逐项输出。
   for (const auto &pair : headers_) {
+    if (header_name_equals(pair.first, "connection")) {
+      has_connection = true;
+    }
+
+    if (header_name_equals(pair.first, "content-length")) {
+      if (use_chunked || !allow_body) {
+        continue;
+      }
+      has_content_length = true;
+    }
+
+    if (header_name_equals(pair.first, "transfer-encoding")) {
+      if (!use_chunked || !allow_body) {
+        continue;
+      }
+      has_transfer_encoding = true;
+    }
+
     oss << pair.first << ": " << pair.second << "\r\n";
   }
 
@@ -130,13 +185,17 @@ std::string HttpResponse::serialize() const {
     oss << "Set-Cookie: " << val << "\r\n";
   }
 
+  if (use_chunked && !has_transfer_encoding) {
+    oss << "Transfer-Encoding: chunked\r\n";
+  }
+
   // 如果业务层没手动设置 Content-Length，这里自动补齐，避免客户端无法判断 Body 边界。
-  if (headers_.find("Content-Length") == headers_.end()) {
+  if (allow_body && !use_chunked && !has_content_length) {
     oss << "Content-Length: " << body_.size() << "\r\n";
   }
 
   // Connection 头用于告诉客户端当前连接是否还会继续复用。
-  if (headers_.find("Connection") == headers_.end()) {
+  if (!has_connection) {
     oss << "Connection: " << (keep_alive_ ? "keep-alive" : "close") << "\r\n";
   }
 
@@ -144,7 +203,9 @@ std::string HttpResponse::serialize() const {
   oss << "\r\n";
 
   // 最后直接拼接响应体原始内容。
-  oss << body_;
+  if (include_body && allow_body && !use_chunked) {
+    oss << body_;
+  }
 
   return oss.str();
 }

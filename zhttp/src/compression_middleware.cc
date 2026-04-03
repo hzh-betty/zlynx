@@ -101,6 +101,11 @@ bool CompressionMiddleware::is_compressible_content_type(
 
 bool CompressionMiddleware::can_compress(const HttpRequest::ptr &request,
                                          const HttpResponse &response) const {
+  // chunked/stream 响应由发送层按分块写出，避免在中间件阶段重写实体与长度。
+  if (response.is_chunked_enabled() || response.has_stream_callback()) {
+    return false;
+  }
+
   // HEAD 响应不包含实体正文，压缩无意义。
   if (request->method() == HttpMethod::HEAD) {
     return false;

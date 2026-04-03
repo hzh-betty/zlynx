@@ -341,6 +341,143 @@ TEST(HttpServerIntegrationTest, KeepsParserStateAcrossSplitPackets) {
   EXPECT_NE(response.find("split-ok"), std::string::npos) << response;
 }
 
+TEST(HttpServerIntegrationTest, HandlesChunkedRequestBodyEndToEnd) {
+  const uint16_t port = find_free_port();
+  ASSERT_NE(port, 0);
+
+  HttpServerBuilder builder;
+  builder.listen("127.0.0.1", port)
+      .threads(1)
+      .log_level("error")
+      .post("/upload", [](const HttpRequest::ptr &req, HttpResponse &resp) {
+        resp.status(HttpStatus::OK).text(req->body());
+      });
+
+  auto server = builder.build();
+  ASSERT_TRUE(server);
+  ScopedServer guard(server);
+  ASSERT_TRUE(server->start());
+
+  const int client_fd = connect_with_retry(port, 20, 25);
+  ASSERT_GE(client_fd, 0);
+
+  const std::string request =
+      "POST /upload HTTP/1.1\r\n"
+      "Host: localhost\r\n"
+      "Transfer-Encoding: chunked\r\n"
+      "Connection: close\r\n"
+      "\r\n"
+      "4\r\n"
+      "Wiki\r\n"
+      "5\r\n"
+      "pedia\r\n"
+      "0\r\n"
+      "\r\n";
+
+  ASSERT_TRUE(send_all(client_fd, request));
+  const std::string response = recv_until_close(client_fd, 1000);
+  ::close(client_fd);
+
+  EXPECT_NE(response.find("HTTP/1.1 200 OK"), std::string::npos) << response;
+  EXPECT_NE(response.find("\r\n\r\nWikipedia"), std::string::npos) << response;
+}
+
+TEST(HttpServerIntegrationTest, SendsExplicitChunkedResponseBody) {
+  const uint16_t port = find_free_port();
+  ASSERT_NE(port, 0);
+
+  HttpServerBuilder builder;
+  builder.listen("127.0.0.1", port)
+      .threads(1)
+      .log_level("error")
+      .get("/chunked-static", [](const HttpRequest::ptr &, HttpResponse &resp) {
+        resp.status(HttpStatus::OK)
+            .content_type("text/plain")
+            .body("hello")
+            .enable_chunked();
+      });
+
+  auto server = builder.build();
+  ASSERT_TRUE(server);
+  ScopedServer guard(server);
+  ASSERT_TRUE(server->start());
+
+  const int client_fd = connect_with_retry(port, 20, 25);
+  ASSERT_GE(client_fd, 0);
+
+  const std::string request =
+      "GET /chunked-static HTTP/1.1\r\n"
+      "Host: localhost\r\n"
+      "Connection: close\r\n"
+      "\r\n";
+
+  ASSERT_TRUE(send_all(client_fd, request));
+  const std::string response = recv_until_close(client_fd, 1000);
+  ::close(client_fd);
+
+  EXPECT_NE(response.find("HTTP/1.1 200 OK"), std::string::npos) << response;
+  EXPECT_NE(response.find("Transfer-Encoding: chunked"), std::string::npos)
+      << response;
+  EXPECT_EQ(response.find("Content-Length:"), std::string::npos) << response;
+  EXPECT_NE(response.find("\r\n\r\n5\r\nhello\r\n0\r\n\r\n"),
+            std::string::npos)
+      << response;
+}
+
+TEST(HttpServerIntegrationTest, SendsChunkedStreamResponse) {
+  const uint16_t port = find_free_port();
+  ASSERT_NE(port, 0);
+
+  HttpServerBuilder builder;
+  builder.listen("127.0.0.1", port)
+      .threads(1)
+      .log_level("error")
+      .get("/chunked-stream", [](const HttpRequest::ptr &, HttpResponse &resp) {
+        resp.status(HttpStatus::OK)
+            .content_type("text/plain")
+            .stream([chunks = std::vector<std::string>{"Wiki", "pedia"},
+                     index = size_t{0}](char *buffer, size_t size) mutable -> size_t {
+              if (index >= chunks.size()) {
+                return 0;
+              }
+
+              const std::string &chunk = chunks[index++];
+              if (chunk.size() > size) {
+                return 0;
+              }
+
+              std::memcpy(buffer, chunk.data(), chunk.size());
+              return chunk.size();
+            });
+      });
+
+  auto server = builder.build();
+  ASSERT_TRUE(server);
+  ScopedServer guard(server);
+  ASSERT_TRUE(server->start());
+
+  const int client_fd = connect_with_retry(port, 20, 25);
+  ASSERT_GE(client_fd, 0);
+
+  const std::string request =
+      "GET /chunked-stream HTTP/1.1\r\n"
+      "Host: localhost\r\n"
+      "Connection: close\r\n"
+      "\r\n";
+
+  ASSERT_TRUE(send_all(client_fd, request));
+  const std::string response = recv_until_close(client_fd, 1000);
+  ::close(client_fd);
+
+  EXPECT_NE(response.find("HTTP/1.1 200 OK"), std::string::npos) << response;
+  EXPECT_NE(response.find("Transfer-Encoding: chunked"), std::string::npos)
+      << response;
+  EXPECT_EQ(response.find("Content-Length:"), std::string::npos) << response;
+  EXPECT_NE(response.find("\r\n\r\n4\r\nWiki\r\n5\r\npedia\r\n0\r\n\r\n"),
+            std::string::npos)
+      << response;
+}
+
 TEST(HttpServerIntegrationTest, HttpsRoundTripWithRealTlsHandshake) {
   const uint16_t port = find_free_port();
   ASSERT_NE(port, 0);

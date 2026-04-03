@@ -85,6 +85,49 @@ TEST(HttpResponseTest, StatusCodeInteger) {
   EXPECT_EQ(resp.status_code(), HttpStatus::NOT_FOUND);
 }
 
+TEST(HttpResponseTest, ChunkedResponseOmitsContentLength) {
+  HttpResponse resp;
+  resp.status(HttpStatus::OK).content_type("text/plain").body("Hello").enable_chunked();
+
+  std::string serialized = resp.serialize();
+
+  EXPECT_NE(serialized.find("Transfer-Encoding: chunked"), std::string::npos);
+  EXPECT_EQ(serialized.find("Content-Length:"), std::string::npos);
+  EXPECT_EQ(serialized.find("\r\n\r\nHello"), std::string::npos);
+}
+
+TEST(HttpResponseTest, StreamCallbackEnablesChunked) {
+  HttpResponse resp;
+  bool called = false;
+  resp.stream([&called](char *buffer, size_t size) -> size_t {
+    called = true;
+    if (size < 2) {
+      return 0;
+    }
+    buffer[0] = 'o';
+    buffer[1] = 'k';
+    return 2;
+  });
+
+  std::string serialized = resp.serialize();
+
+  EXPECT_TRUE(resp.has_stream_callback());
+  EXPECT_TRUE(resp.is_chunked_enabled());
+  EXPECT_NE(serialized.find("Transfer-Encoding: chunked"), std::string::npos);
+  EXPECT_EQ(serialized.find("Content-Length:"), std::string::npos);
+  EXPECT_FALSE(called);
+}
+
+TEST(HttpResponseTest, NoBodyStatusDoesNotEmitChunkedBody) {
+  HttpResponse resp;
+  resp.status(HttpStatus::NO_CONTENT).body("ignored").enable_chunked();
+
+  std::string serialized = resp.serialize();
+
+  EXPECT_EQ(serialized.find("Transfer-Encoding: chunked"), std::string::npos);
+  EXPECT_EQ(serialized.find("\r\n\r\nignored"), std::string::npos);
+}
+
 int main(int argc, char **argv) {
   zhttp::init_logger();
   ::testing::InitGoogleTest(&argc, argv);

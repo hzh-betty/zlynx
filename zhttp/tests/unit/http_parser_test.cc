@@ -108,6 +108,41 @@ TEST_F(HttpParserTest, ResetAfterComplete) {
   EXPECT_EQ(parser_->request()->method(), HttpMethod::POST);
 }
 
+TEST_F(HttpParserTest, ParseChunkedPostRequest) {
+  const char *request = "POST /api/chunk HTTP/1.1\r\n"
+                        "Host: localhost\r\n"
+                        "Transfer-Encoding: chunked\r\n"
+                        "\r\n"
+                        "4\r\n"
+                        "Wiki\r\n"
+                        "5\r\n"
+                        "pedia\r\n"
+                        "0\r\n"
+                        "\r\n";
+  buffer_.append(request, strlen(request));
+
+  ParseResult result = parser_->parse(&buffer_);
+  EXPECT_EQ(result, ParseResult::COMPLETE);
+  EXPECT_EQ(parser_->request()->body(), "Wikipedia");
+}
+
+TEST_F(HttpParserTest, ChunkedTransferEncodingTakesPriorityOverContentLength) {
+  const char *request = "POST /api/chunk HTTP/1.1\r\n"
+                        "Host: localhost\r\n"
+                        "Content-Length: 999\r\n"
+                        "Transfer-Encoding: chunked\r\n"
+                        "\r\n"
+                        "4\r\n"
+                        "test\r\n"
+                        "0\r\n"
+                        "\r\n";
+  buffer_.append(request, strlen(request));
+
+  ParseResult result = parser_->parse(&buffer_);
+  EXPECT_EQ(result, ParseResult::COMPLETE);
+  EXPECT_EQ(parser_->request()->body(), "test");
+}
+
 int main(int argc, char **argv) {
   zhttp::init_logger();
   ::testing::InitGoogleTest(&argc, argv);

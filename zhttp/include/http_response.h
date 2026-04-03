@@ -3,6 +3,7 @@
 
 #include "http_common.h"
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -20,6 +21,7 @@ class HttpResponse {
 public:
   using ptr = std::shared_ptr<HttpResponse>;
   using Headers = std::unordered_map<std::string, std::string>;
+  using StreamCallback = std::function<size_t(char *, size_t)>;
 
   HttpResponse();
 
@@ -138,10 +140,45 @@ public:
   void set_version(HttpVersion version) { version_ = version; }
 
   /**
+   * @brief 获取 HTTP 版本
+   */
+  HttpVersion version() const { return version_; }
+
+  /**
+   * @brief 显式启用/禁用 chunked 响应
+   * @note 仅在 HTTP/1.1 且允许响应体时生效
+   */
+  HttpResponse &enable_chunked(bool enable = true);
+
+  /**
+   * @brief 配置同步流式回调（拉取模式）
+   * @details 服务器会循环调用该回调获取下一段数据，返回 0 表示结束
+   */
+  HttpResponse &stream(StreamCallback callback);
+
+  /**
+   * @brief 当前响应是否启用了 chunked 发送策略
+   */
+  bool is_chunked_enabled() const { return chunked_enabled_; }
+
+  /**
+   * @brief 是否存在流式回调
+   */
+  bool has_stream_callback() const {
+    return static_cast<bool>(stream_callback_);
+  }
+
+  /**
+   * @brief 获取流式回调
+   */
+  const StreamCallback &stream_callback() const { return stream_callback_; }
+
+  /**
    * @brief 序列化为 HTTP 响应字符串
+   * @param include_body 是否拼接响应体
    * @return 完整的 HTTP 响应字符串
    */
-  std::string serialize() const;
+  std::string serialize(bool include_body = true) const;
 
 
   /**
@@ -198,6 +235,8 @@ private:
   std::vector<std::string> set_cookies_;
   std::string body_;
   bool keep_alive_ = true;
+  bool chunked_enabled_ = false;
+  StreamCallback stream_callback_;
 };
 
 } // namespace zhttp

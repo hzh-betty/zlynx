@@ -2,9 +2,11 @@
 
 #include "zhttp_logger.h"
 
+#include <cstdio>
 #include <limits>
 #include <memory>
 #include <utility>
+#include <vector>
 
 namespace zhttp {
 
@@ -17,6 +19,75 @@ uint32_t clamp_timeout_to_u32(const uint64_t timeout_ms) {
     return static_cast<uint32_t>(max_timeout);
   }
   return static_cast<uint32_t>(timeout_ms);
+}
+
+bool is_body_allowed(const HttpStatus status) {
+  const int code = static_cast<int>(status);
+  if (code >= 100 && code < 200) {
+    return false;
+  }
+  return code != 204 && code != 304;
+}
+
+bool send_all_or_fail(const znet::TcpConnection::ptr &conn,
+                      const char *data,
+                      size_t length) {
+  if (length == 0) {
+    return true;
+  }
+
+  if (!conn) {
+    return false;
+  }
+
+  return conn->send(data, length) >= 0;
+}
+
+bool send_chunk_frame(const znet::TcpConnection::ptr &conn,
+                      const char *data,
+                      size_t length) {
+  char size_line[32];
+  const int size_len = std::snprintf(size_line, sizeof(size_line), "%zx\r\n", length);
+  if (size_len <= 0 || static_cast<size_t>(size_len) >= sizeof(size_line)) {
+    return false;
+  }
+
+  if (!send_all_or_fail(conn, size_line, static_cast<size_t>(size_len))) {
+    return false;
+  }
+  if (!send_all_or_fail(conn, data, length)) {
+    return false;
+  }
+  return send_all_or_fail(conn, "\r\n", 2);
+}
+
+bool send_chunked_body(const znet::TcpConnection::ptr &conn,
+                       const HttpResponse &response) {
+  if (response.has_stream_callback()) {
+    constexpr size_t kStreamChunkBufferSize = 8192;
+    std::vector<char> stream_buffer(kStreamChunkBufferSize);
+    const auto &callback = response.stream_callback();
+
+    while (true) {
+      const size_t produced = callback(stream_buffer.data(), stream_buffer.size());
+      if (produced == 0) {
+        break;
+      }
+      if (produced > stream_buffer.size()) {
+        return false;
+      }
+      if (!send_chunk_frame(conn, stream_buffer.data(), produced)) {
+        return false;
+      }
+    }
+  } else if (!response.body_content().empty()) {
+    if (!send_chunk_frame(conn, response.body_content().data(),
+                          response.body_content().size())) {
+      return false;
+    }
+  }
+
+  return send_all_or_fail(conn, "0\r\n\r\n", 5);
 }
 
 } // namespace
@@ -216,11 +287,26 @@ bool HttpServer::handle_request(const znet::TcpConnection::ptr &conn,
   // 路由器内部会完成匹配、中间件执行和业务处理器调用。
   router_.route(request, response);
 
-  // 最终把响应序列化成标准 HTTP 报文并发回客户端。
-  std::string response_str = response.serialize();
-  if (conn->send(response_str.data(), response_str.size()) < 0) {
-    ZHTTP_LOG_WARN("Send HTTP response failed: fd={}", conn->fd());
-    return false;
+  const bool use_chunked =
+      is_body_allowed(response.status_code()) &&
+      response.version() == HttpVersion::HTTP_1_1 &&
+      (response.is_chunked_enabled() || response.has_stream_callback());
+
+  if (!use_chunked) {
+    // 非 chunked 路径一次性序列化并发送完整报文。
+    std::string response_str = response.serialize();
+    if (conn->send(response_str.data(), response_str.size()) < 0) {
+      ZHTTP_LOG_WARN("Send HTTP response failed: fd={}", conn->fd());
+      return false;
+    }
+  } else {
+    // chunked 路径先发响应头，再发送分块体与终止块。
+    const std::string headers = response.serialize(false);
+    if (!send_all_or_fail(conn, headers.data(), headers.size()) ||
+        !send_chunked_body(conn, response)) {
+      ZHTTP_LOG_WARN("Send HTTP chunked response failed: fd={}", conn->fd());
+      return false;
+    }
   }
 
   ZHTTP_LOG_DEBUG("Response: {} {}", static_cast<int>(response.status_code()),

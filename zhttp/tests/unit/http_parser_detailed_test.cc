@@ -227,6 +227,57 @@ TEST_F(HttpParserDetailedTest, MultipleRequestsKeepAlive) {
   EXPECT_EQ(parser_->request()->body(), "test");
 }
 
+TEST_F(HttpParserDetailedTest, ChunkedWithTrailers) {
+  const char *request = "POST /chunk HTTP/1.1\r\n"
+                        "Host: localhost\r\n"
+                        "Transfer-Encoding: chunked\r\n"
+                        "\r\n"
+                        "3\r\n"
+                        "abc\r\n"
+                        "2\r\n"
+                        "de\r\n"
+                        "0\r\n"
+                        "X-Trace: yes\r\n"
+                        "\r\n";
+  buffer_.append(request, strlen(request));
+
+  EXPECT_EQ(parser_->parse(&buffer_), ParseResult::COMPLETE);
+  EXPECT_EQ(parser_->request()->body(), "abcde");
+}
+
+TEST_F(HttpParserDetailedTest, InvalidChunkSizeReturnsError) {
+  const char *request = "POST /chunk HTTP/1.1\r\n"
+                        "Transfer-Encoding: chunked\r\n"
+                        "\r\n"
+                        "Z\r\n"
+                        "oops\r\n"
+                        "0\r\n"
+                        "\r\n";
+  buffer_.append(request, strlen(request));
+
+  EXPECT_EQ(parser_->parse(&buffer_), ParseResult::ERROR);
+}
+
+TEST_F(HttpParserDetailedTest, IncrementalChunkedParsing) {
+  const char *part1 = "POST /chunk HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n";
+  const char *part2 = "4\r\nWiki\r\n";
+  const char *part3 = "5\r\npedia\r\n";
+  const char *part4 = "0\r\n\r\n";
+
+  buffer_.append(part1, strlen(part1));
+  EXPECT_EQ(parser_->parse(&buffer_), ParseResult::NEED_MORE);
+
+  buffer_.append(part2, strlen(part2));
+  EXPECT_EQ(parser_->parse(&buffer_), ParseResult::NEED_MORE);
+
+  buffer_.append(part3, strlen(part3));
+  EXPECT_EQ(parser_->parse(&buffer_), ParseResult::NEED_MORE);
+
+  buffer_.append(part4, strlen(part4));
+  EXPECT_EQ(parser_->parse(&buffer_), ParseResult::COMPLETE);
+  EXPECT_EQ(parser_->request()->body(), "Wikipedia");
+}
+
 int main(int argc, char **argv) {
   zhttp::init_logger();
   ::testing::InitGoogleTest(&argc, argv);

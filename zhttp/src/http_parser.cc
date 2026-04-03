@@ -4,7 +4,10 @@
 #include "zhttp_logger.h"
 
 #include <algorithm>
+#include <cctype>
+#include <cstdlib>
 #include <cstring>
+#include <limits>
 
 namespace zhttp {
 
@@ -17,6 +20,9 @@ void HttpParser::reset() {
   request_ = std::make_shared<HttpRequest>();
   error_.clear();
   content_length_ = 0;
+  chunked_body_ = false;
+  chunk_state_ = ChunkParseState::SIZE_LINE;
+  chunked_body_buffer_.clear();
 }
 
 /**
@@ -148,12 +154,21 @@ ParseResult HttpParser::parse_request_line(const char *begin, const char *end) {
 ParseResult HttpParser::parse_headers(const char *begin, const char *end) {
   // 空行表示头部结束，后面不是 Body 就是整个请求结束。
   if (begin == end) {
-    // 当前实现依据 Content-Length 判断是否存在定长 Body。
-    content_length_ = request_->content_length();
-    if (content_length_ > 0) {
+    // 按 RFC 语义：Transfer-Encoding: chunked 优先于 Content-Length。
+    chunked_body_ = is_chunked_transfer_encoding();
+    chunk_state_ = ChunkParseState::SIZE_LINE;
+    chunked_body_buffer_.clear();
+
+    if (chunked_body_) {
       state_ = ParseState::BODY;
+      content_length_ = 0;
     } else {
-      state_ = ParseState::COMPLETE;
+      content_length_ = request_->content_length();
+      if (content_length_ > 0) {
+        state_ = ParseState::BODY;
+      } else {
+        state_ = ParseState::COMPLETE;
+      }
     }
     return ParseResult::OK;
   }
@@ -187,6 +202,10 @@ ParseResult HttpParser::parse_headers(const char *begin, const char *end) {
 }
 
 ParseResult HttpParser::parse_body(znet::Buffer *buffer) {
+  if (chunked_body_) {
+    return parse_chunked_body(buffer);
+  }
+
   // Body 没收全之前不能继续向下走，避免拿到半包内容。
   if (buffer->readable_bytes() < content_length_) {
     return ParseResult::NEED_MORE;
@@ -198,6 +217,138 @@ ParseResult HttpParser::parse_body(znet::Buffer *buffer) {
 
   state_ = ParseState::COMPLETE;
   return ParseResult::COMPLETE;
+}
+
+bool HttpParser::is_chunked_transfer_encoding() const {
+  const std::string transfer_encoding = request_->header("Transfer-Encoding");
+  if (transfer_encoding.empty()) {
+    return false;
+  }
+
+  std::vector<std::string> tokens = split_string(transfer_encoding, ',');
+  for (auto &token : tokens) {
+    trim(token);
+    if (to_lower(token) == "chunked") {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+bool HttpParser::parse_chunk_size_line(const std::string &line,
+                                       size_t *chunk_size) const {
+  if (chunk_size == nullptr) {
+    return false;
+  }
+
+  std::string chunk_line = line;
+  trim(chunk_line);
+  const size_t ext_pos = chunk_line.find(';');
+  if (ext_pos != std::string::npos) {
+    chunk_line = chunk_line.substr(0, ext_pos);
+    trim(chunk_line);
+  }
+
+  if (chunk_line.empty()) {
+    return false;
+  }
+
+  for (const char c : chunk_line) {
+    if (!std::isxdigit(static_cast<unsigned char>(c))) {
+      return false;
+    }
+  }
+
+  const unsigned long long parsed = std::strtoull(chunk_line.c_str(), nullptr, 16);
+  if (parsed > static_cast<unsigned long long>(std::numeric_limits<size_t>::max())) {
+    return false;
+  }
+
+  *chunk_size = static_cast<size_t>(parsed);
+  return true;
+}
+
+ParseResult HttpParser::parse_chunked_body(znet::Buffer *buffer) {
+  while (true) {
+    if (buffer->readable_bytes() == 0) {
+      return ParseResult::NEED_MORE;
+    }
+
+    if (chunk_state_ == ChunkParseState::SIZE_LINE) {
+      const char *crlf = buffer->find_crlf();
+      if (crlf == nullptr) {
+        return ParseResult::NEED_MORE;
+      }
+
+      const char *begin = buffer->peek();
+      std::string line(begin, crlf);
+      buffer->retrieve(static_cast<size_t>(crlf - begin + 2));
+
+      size_t chunk_size = 0;
+      if (!parse_chunk_size_line(line, &chunk_size)) {
+        error_ = "Invalid chunk size";
+        state_ = ParseState::ERROR;
+        return ParseResult::ERROR;
+      }
+
+      content_length_ = chunk_size;
+      chunk_state_ = (chunk_size == 0) ? ChunkParseState::TRAILERS
+                                       : ChunkParseState::DATA;
+      continue;
+    }
+
+    if (chunk_state_ == ChunkParseState::DATA) {
+      if (buffer->readable_bytes() < content_length_) {
+        return ParseResult::NEED_MORE;
+      }
+
+      chunked_body_buffer_.append(buffer->peek(), content_length_);
+      buffer->retrieve(content_length_);
+      chunk_state_ = ChunkParseState::DATA_CRLF;
+      continue;
+    }
+
+    if (chunk_state_ == ChunkParseState::DATA_CRLF) {
+      if (buffer->readable_bytes() < 2) {
+        return ParseResult::NEED_MORE;
+      }
+
+      const char *begin = buffer->peek();
+      if (begin[0] != '\r' || begin[1] != '\n') {
+        error_ = "Invalid chunk data terminator";
+        state_ = ParseState::ERROR;
+        return ParseResult::ERROR;
+      }
+
+      buffer->retrieve(2);
+      chunk_state_ = ChunkParseState::SIZE_LINE;
+      continue;
+    }
+
+    // 读取 trailer 区，直到遇到空行结束整个 chunked body。
+    const char *crlf = buffer->find_crlf();
+    if (crlf == nullptr) {
+      return ParseResult::NEED_MORE;
+    }
+
+    const char *begin = buffer->peek();
+    if (crlf == begin) {
+      buffer->retrieve(2);
+      request_->set_body(std::move(chunked_body_buffer_));
+      state_ = ParseState::COMPLETE;
+      return ParseResult::COMPLETE;
+    }
+
+    const char *colon = std::find(begin, crlf, ':');
+    if (colon == crlf) {
+      error_ = "Invalid chunk trailer";
+      state_ = ParseState::ERROR;
+      return ParseResult::ERROR;
+    }
+
+    buffer->retrieve(static_cast<size_t>(crlf - begin + 2));
+  }
 }
 
 } // namespace zhttp

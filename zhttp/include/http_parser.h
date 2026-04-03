@@ -116,9 +116,26 @@ private:
    * @param buffer 网络缓冲区
    * @return 解析结果
    * @details
-   * 当前实现基于 Content-Length 读取定长 Body，不处理 chunked 编码。
+    * 支持两类 Body：
+    * 1. Content-Length 定长读取
+    * 2. Transfer-Encoding: chunked 分块解码
    */
   ParseResult parse_body(znet::Buffer *buffer);
+
+    /**
+    * @brief 解析 chunked 请求体
+    */
+    ParseResult parse_chunked_body(znet::Buffer *buffer);
+
+    /**
+    * @brief 当前请求头是否声明了 chunked 传输编码
+    */
+    bool is_chunked_transfer_encoding() const;
+
+    /**
+    * @brief 解析 chunk-size 行（支持忽略 chunk-extension）
+    */
+    bool parse_chunk_size_line(const std::string &line, size_t *chunk_size) const;
 
 private:
   // 当前状态机阶段。
@@ -132,6 +149,22 @@ private:
 
   // 从 Content-Length 读取出的 Body 长度。
   size_t content_length_ = 0;
+
+  enum class ChunkParseState {
+    SIZE_LINE,
+    DATA,
+    DATA_CRLF,
+    TRAILERS,
+  };
+
+  // 当前请求是否为 chunked 编码。
+  bool chunked_body_ = false;
+
+  // chunked 解析阶段。
+  ChunkParseState chunk_state_ = ChunkParseState::SIZE_LINE;
+
+  // 分块拼装中的请求体缓存。
+  std::string chunked_body_buffer_;
 };
 
 } // namespace zhttp
