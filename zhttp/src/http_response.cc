@@ -132,13 +132,24 @@ HttpResponse &HttpResponse::enable_chunked(bool enable) {
   chunked_enabled_ = enable;
   if (!enable) {
     stream_callback_ = StreamCallback();
+    async_stream_callback_ = AsyncStreamCallback();
   }
   return *this;
 }
 
 HttpResponse &HttpResponse::stream(StreamCallback callback) {
   stream_callback_ = std::move(callback);
+  async_stream_callback_ = AsyncStreamCallback();
   chunked_enabled_ = true;
+  return *this;
+}
+
+HttpResponse &HttpResponse::async_stream(AsyncStreamCallback callback) {
+  async_stream_callback_ = std::move(callback);
+  stream_callback_ = StreamCallback();
+  chunked_enabled_ = true;
+  // 异步推送阶段连接会在 close 回调里结束，避免同连接复用带来的乱序风险。
+  keep_alive_ = false;
   return *this;
 }
 
@@ -148,7 +159,8 @@ std::string HttpResponse::serialize(bool include_body) const {
   const bool allow_body = is_body_allowed(status_);
   const bool use_chunked =
       allow_body && version_ == HttpVersion::HTTP_1_1 &&
-      (chunked_enabled_ || static_cast<bool>(stream_callback_));
+      (chunked_enabled_ || static_cast<bool>(stream_callback_) ||
+       static_cast<bool>(async_stream_callback_));
   bool has_content_length = false;
   bool has_connection = false;
   bool has_transfer_encoding = false;

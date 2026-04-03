@@ -21,7 +21,15 @@ class HttpResponse {
 public:
   using ptr = std::shared_ptr<HttpResponse>;
   using Headers = std::unordered_map<std::string, std::string>;
+  // 返回写入到 buffer 的字节数；返回 0 表示流结束。
   using StreamCallback = std::function<size_t(char *, size_t)>;
+  // 推送一个业务 chunk；返回 false 表示连接不可再写。
+  using AsyncChunkSender = std::function<bool(const std::string &)>;
+  // 结束异步流，触发终止块发送与连接收尾。
+  using AsyncStreamCloser = std::function<void()>;
+  // 业务层拿到 sender/closer 后可在任意时机异步推送 chunk。
+  using AsyncStreamCallback =
+      std::function<void(AsyncChunkSender, AsyncStreamCloser)>;
 
   HttpResponse();
 
@@ -152,9 +160,17 @@ public:
 
   /**
    * @brief 配置同步流式回调（拉取模式）
-   * @details 服务器会循环调用该回调获取下一段数据，返回 0 表示结束
+    * @details 服务器会循环调用该回调获取下一段数据，返回 0 表示结束。
+    * 每次返回的字节序列都会被编码为一个 chunk 帧。
    */
   HttpResponse &stream(StreamCallback callback);
+
+  /**
+   * @brief 配置异步流式回调（推送模式）
+    * @details 业务层通过 sender 逐块发送，完成后必须调用 closer 结束响应。
+    * sender 只负责发送数据块，终止块由 closer 统一触发。
+   */
+  HttpResponse &async_stream(AsyncStreamCallback callback);
 
   /**
    * @brief 当前响应是否启用了 chunked 发送策略
@@ -174,8 +190,23 @@ public:
   const StreamCallback &stream_callback() const { return stream_callback_; }
 
   /**
+   * @brief 是否存在异步流式回调
+   */
+  bool has_async_stream_callback() const {
+    return static_cast<bool>(async_stream_callback_);
+  }
+
+  /**
+   * @brief 获取异步流式回调
+   */
+  const AsyncStreamCallback &async_stream_callback() const {
+    return async_stream_callback_;
+  }
+
+  /**
    * @brief 序列化为 HTTP 响应字符串
-   * @param include_body 是否拼接响应体
+    * @param include_body 是否拼接响应体
+    * @details chunked 路径常用 include_body=false 仅发响应头，body 走后续分块发送。
    * @return 完整的 HTTP 响应字符串
    */
   std::string serialize(bool include_body = true) const;
@@ -237,6 +268,7 @@ private:
   bool keep_alive_ = true;
   bool chunked_enabled_ = false;
   StreamCallback stream_callback_;
+  AsyncStreamCallback async_stream_callback_;
 };
 
 } // namespace zhttp

@@ -9,7 +9,9 @@
 
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <unordered_set>
 
 #include <sys/socket.h>
 
@@ -82,6 +84,29 @@ protected:
 
   HttpParser *ensure_parser(const znet::TcpConnection::ptr &conn);
 
+  /**
+   * @brief 判断连接是否处于异步 chunked 推送中
+   * @details 活跃期间会暂停该连接后续请求解析，避免响应交叉。
+   */
+  bool is_async_stream_active(const znet::TcpConnection::ptr &conn) const;
+
+  /**
+   * @brief 标记连接进入异步 chunked 推送状态
+   */
+  void mark_async_stream_active(int fd);
+
+  /**
+   * @brief 清理连接的异步 chunked 推送状态
+   */
+  void mark_async_stream_finished(int fd);
+
+  /**
+   * @brief 发送异步 chunked 响应
+   * @details 先发送响应头，再由业务层通过 sender 推送 chunk，最终由 closer 结束。
+   */
+  bool send_async_chunked_response(const znet::TcpConnection::ptr &conn,
+                                   const HttpResponse &response);
+
 private:
   znet::TcpServer::ptr tcp_server_;
 
@@ -90,6 +115,9 @@ private:
 
   // Server 响应头默认值。
   std::string server_name_ = "zhttp/1.0";
+
+  mutable std::mutex async_stream_mutex_;
+  std::unordered_set<int> async_stream_fds_;
 };
 
 } // namespace zhttp

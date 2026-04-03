@@ -361,6 +361,7 @@ TEST(HttpServerIntegrationTest, HandlesChunkedRequestBodyEndToEnd) {
   const int client_fd = connect_with_retry(port, 20, 25);
   ASSERT_GE(client_fd, 0);
 
+  // 请求体由两个 chunk 组成：4=Wiki、5=pedia，最后用 0 块结束。
   const std::string request =
       "POST /upload HTTP/1.1\r\n"
       "Host: localhost\r\n"
@@ -378,6 +379,7 @@ TEST(HttpServerIntegrationTest, HandlesChunkedRequestBodyEndToEnd) {
   const std::string response = recv_until_close(client_fd, 1000);
   ::close(client_fd);
 
+  // 服务端会先把 chunk 合并成完整 body，再由业务逻辑回显。
   EXPECT_NE(response.find("HTTP/1.1 200 OK"), std::string::npos) << response;
   EXPECT_NE(response.find("\r\n\r\nWikipedia"), std::string::npos) << response;
 }
@@ -415,6 +417,7 @@ TEST(HttpServerIntegrationTest, SendsExplicitChunkedResponseBody) {
   const std::string response = recv_until_close(client_fd, 1000);
   ::close(client_fd);
 
+  // 显式 enable_chunked 后，body 应按 chunk 帧输出且不再附带 Content-Length。
   EXPECT_NE(response.find("HTTP/1.1 200 OK"), std::string::npos) << response;
   EXPECT_NE(response.find("Transfer-Encoding: chunked"), std::string::npos)
       << response;
@@ -437,6 +440,7 @@ TEST(HttpServerIntegrationTest, SendsChunkedStreamResponse) {
             .content_type("text/plain")
             .stream([chunks = std::vector<std::string>{"Wiki", "pedia"},
                      index = size_t{0}](char *buffer, size_t size) mutable -> size_t {
+              // 每次回调返回一段数据，服务端会把该段编码为独立 chunk。
               if (index >= chunks.size()) {
                 return 0;
               }
@@ -472,6 +476,60 @@ TEST(HttpServerIntegrationTest, SendsChunkedStreamResponse) {
   EXPECT_NE(response.find("HTTP/1.1 200 OK"), std::string::npos) << response;
   EXPECT_NE(response.find("Transfer-Encoding: chunked"), std::string::npos)
       << response;
+  EXPECT_EQ(response.find("Content-Length:"), std::string::npos) << response;
+  EXPECT_NE(response.find("\r\n\r\n4\r\nWiki\r\n5\r\npedia\r\n0\r\n\r\n"),
+            std::string::npos)
+      << response;
+}
+
+TEST(HttpServerIntegrationTest, SendsAsyncChunkedStreamResponse) {
+  const uint16_t port = find_free_port();
+  ASSERT_NE(port, 0);
+
+  HttpServerBuilder builder;
+  builder.listen("127.0.0.1", port)
+      .threads(1)
+      .log_level("error")
+      .get("/chunked-async", [](const HttpRequest::ptr &, HttpResponse &resp) {
+        resp.status(HttpStatus::OK)
+            .content_type("text/plain")
+            .async_stream([](HttpResponse::AsyncChunkSender send,
+                             HttpResponse::AsyncStreamCloser close) {
+              // 异步推送两段数据，最终通过 close() 触发终止块发送。
+              std::this_thread::sleep_for(std::chrono::milliseconds(30));
+              if (!send("Wiki")) {
+                close();
+                return;
+              }
+
+              std::this_thread::sleep_for(std::chrono::milliseconds(30));
+              (void)send("pedia");
+              close();
+            });
+      });
+
+  auto server = builder.build();
+  ASSERT_TRUE(server);
+  ScopedServer guard(server);
+  ASSERT_TRUE(server->start());
+
+  const int client_fd = connect_with_retry(port, 20, 25);
+  ASSERT_GE(client_fd, 0);
+
+  const std::string request =
+      "GET /chunked-async HTTP/1.1\r\n"
+      "Host: localhost\r\n"
+      "Connection: keep-alive\r\n"
+      "\r\n";
+
+  ASSERT_TRUE(send_all(client_fd, request));
+  const std::string response = recv_until_close(client_fd, 2000);
+  ::close(client_fd);
+
+  EXPECT_NE(response.find("HTTP/1.1 200 OK"), std::string::npos) << response;
+  EXPECT_NE(response.find("Transfer-Encoding: chunked"), std::string::npos)
+      << response;
+  EXPECT_NE(response.find("Connection: close"), std::string::npos) << response;
   EXPECT_EQ(response.find("Content-Length:"), std::string::npos) << response;
   EXPECT_NE(response.find("\r\n\r\n4\r\nWiki\r\n5\r\npedia\r\n0\r\n\r\n"),
             std::string::npos)

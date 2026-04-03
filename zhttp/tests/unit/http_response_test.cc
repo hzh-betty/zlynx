@@ -118,6 +118,24 @@ TEST(HttpResponseTest, StreamCallbackEnablesChunked) {
   EXPECT_FALSE(called);
 }
 
+TEST(HttpResponseTest, AsyncStreamCallbackEnablesChunked) {
+  HttpResponse resp;
+  bool called = false;
+  resp.async_stream(
+      [&called](HttpResponse::AsyncChunkSender, HttpResponse::AsyncStreamCloser) {
+        called = true;
+      });
+
+  std::string serialized = resp.serialize();
+
+  EXPECT_TRUE(resp.has_async_stream_callback());
+  EXPECT_TRUE(resp.is_chunked_enabled());
+  EXPECT_FALSE(resp.is_keep_alive());
+  EXPECT_NE(serialized.find("Transfer-Encoding: chunked"), std::string::npos);
+  EXPECT_EQ(serialized.find("Content-Length:"), std::string::npos);
+  EXPECT_FALSE(called);
+}
+
 TEST(HttpResponseTest, NoBodyStatusDoesNotEmitChunkedBody) {
   HttpResponse resp;
   resp.status(HttpStatus::NO_CONTENT).body("ignored").enable_chunked();

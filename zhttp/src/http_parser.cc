@@ -270,12 +270,15 @@ bool HttpParser::parse_chunk_size_line(const std::string &line,
 }
 
 ParseResult HttpParser::parse_chunked_body(znet::Buffer *buffer) {
+  // chunked 解析按如下循环推进：
+  // SIZE_LINE -> DATA -> DATA_CRLF -> SIZE_LINE ... -> TRAILERS -> COMPLETE
   while (true) {
     if (buffer->readable_bytes() == 0) {
       return ParseResult::NEED_MORE;
     }
 
     if (chunk_state_ == ChunkParseState::SIZE_LINE) {
+      // 读取当前块的 size 行，支持 "<hex>[;ext]" 形式。
       const char *crlf = buffer->find_crlf();
       if (crlf == nullptr) {
         return ParseResult::NEED_MORE;
@@ -292,6 +295,7 @@ ParseResult HttpParser::parse_chunked_body(znet::Buffer *buffer) {
         return ParseResult::ERROR;
       }
 
+      // size=0 表示进入 trailer 区；否则读取该 chunk 的数据段。
       content_length_ = chunk_size;
       chunk_state_ = (chunk_size == 0) ? ChunkParseState::TRAILERS
                                        : ChunkParseState::DATA;
@@ -299,6 +303,7 @@ ParseResult HttpParser::parse_chunked_body(znet::Buffer *buffer) {
     }
 
     if (chunk_state_ == ChunkParseState::DATA) {
+      // 按 size 精确读取数据段，允许跨多个网络包拼齐。
       if (buffer->readable_bytes() < content_length_) {
         return ParseResult::NEED_MORE;
       }
@@ -310,6 +315,7 @@ ParseResult HttpParser::parse_chunked_body(znet::Buffer *buffer) {
     }
 
     if (chunk_state_ == ChunkParseState::DATA_CRLF) {
+      // 每个数据段后必须紧跟 CRLF，缺失或格式错误都视为非法报文。
       if (buffer->readable_bytes() < 2) {
         return ParseResult::NEED_MORE;
       }
@@ -326,7 +332,7 @@ ParseResult HttpParser::parse_chunked_body(znet::Buffer *buffer) {
       continue;
     }
 
-    // 读取 trailer 区，直到遇到空行结束整个 chunked body。
+    // 读取 trailer 区，直到遇到空行。trailer 字段当前只做语法校验并跳过。
     const char *crlf = buffer->find_crlf();
     if (crlf == nullptr) {
       return ParseResult::NEED_MORE;
