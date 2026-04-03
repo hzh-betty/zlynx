@@ -1,26 +1,31 @@
 #ifndef ZNET_LOGGER_H_
 #define ZNET_LOGGER_H_
 
-#include "zlog.h"
+#include "logger.h"
 
+#include <string>
 #include <utility>
 
 namespace znet {
 
-/**
- * @brief 初始化 znet 专属日志器。
- * @param level 日志级别，默认为 DEBUG。
- *
- * 说明：
- * - 若重复调用，后一次配置是否生效由 zlog 注册策略决定。
- * - 建议在进程启动阶段尽早调用，避免业务路径首次打日志时隐式初始化。
- */
-void init_logger(zlog::LogLevel::value level = zlog::LogLevel::value::DEBUG);
+struct LoggerInitOptions {
+  zlog::LogLevel::value level = zlog::LogLevel::value::DEBUG;
+  bool async = true;
+  std::string formatter = "[%d{%H:%M:%S}][%c][%p]%T%m%n";
+  std::string sink = "stdout";
+  std::string file_path;
+};
 
 /**
- * @brief 使用统一日志配置更新 znet 日志器。
+ * @brief 初始化 znet 专属日志器。
+ * @param options 初始化选项，支持日志级别、同步/异步、格式与落地方向。
  */
-void configure_logger(const zlog::LoggerConfig& config);
+void init_logger(const LoggerInitOptions& options);
+
+/**
+ * @brief 兼容旧接口：仅指定日志级别。
+ */
+void init_logger(zlog::LogLevel::value level = zlog::LogLevel::value::DEBUG);
 
 /**
  * @brief 获取 znet 默认日志器。
