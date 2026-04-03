@@ -205,6 +205,13 @@ public:
   HttpServerBuilder &log_level(const std::string &level);
 
   /**
+   * @brief 设置日志是否异步
+   * @param enable true 为异步，false 为同步
+   * @return 当前 Builder 引用
+   */
+  HttpServerBuilder &log_async(bool enable);
+
+  /**
    * @brief 设置日志格式
    * @param format zlog 模式串
    * @return 当前 Builder 引用

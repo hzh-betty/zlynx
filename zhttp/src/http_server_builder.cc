@@ -1,7 +1,6 @@
 #include "http_server_builder.h"
 #include "daemon.h"
 #include "request_body_middleware.h"
-#include "rate_limiter.h"
 #include "zhttp_logger.h"
 
 #include "zcoroutine/log.h"
@@ -13,45 +12,11 @@
 #include <array>
 #include <cctype>
 #include <stdexcept>
+#include <utility>
 
 namespace zhttp {
 
 namespace {
-
-static RateLimiter::Type parse_rate_limiter_type(std::string s) {
-  // lower
-  std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
-    return static_cast<char>(std::tolower(c));
-  });
-
-  if (s == "fixed_window" || s == "fixed" || s == "fw") {
-    return RateLimiter::Type::FIXED_WINDOW;
-  }
-  if (s == "sliding_window" || s == "sliding" || s == "sw") {
-    return RateLimiter::Type::SLIDING_WINDOW;
-  }
-  return RateLimiter::Type::TOKEN_BUCKET;
-}
-
-static RateLimiter::TimeUnit parse_time_unit(std::string s) {
-  std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
-    return static_cast<char>(std::tolower(c));
-  });
-
-  if (s == "ms" || s == "millisecond" || s == "milliseconds") {
-    return RateLimiter::TimeUnit::MILLISECOND;
-  }
-  if (s == "s" || s == "sec" || s == "second" || s == "seconds") {
-    return RateLimiter::TimeUnit::SECOND;
-  }
-  if (s == "m" || s == "min" || s == "minute" || s == "minutes") {
-    return RateLimiter::TimeUnit::MINUTE;
-  }
-  if (s == "h" || s == "hour" || s == "hours") {
-    return RateLimiter::TimeUnit::HOUR;
-  }
-  return RateLimiter::TimeUnit::SECOND;
-}
 
 static zlog::LogLevel::value parse_log_level(std::string s) {
   std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
@@ -76,70 +41,114 @@ static zlog::LogLevel::value parse_log_level(std::string s) {
   return zlog::LogLevel::value::INFO;
 }
 
-static zlog::LogSinkMode parse_sink_mode(std::string s) {
+struct UnifiedLoggerOptions {
+  zlog::LogLevel::value level = zlog::LogLevel::value::INFO;
+  bool async = true;
+  std::string formatter = "[%d{%H:%M:%S}][%c][%p]%T%m%n";
+  std::string sink = "stdout";
+  std::string file_path;
+};
+
+static std::string normalize_token(std::string s) {
   std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
     return static_cast<char>(std::tolower(c));
   });
-
-  if (s == "file") {
-    return zlog::LogSinkMode::kFile;
-  }
-  if (s == "both" || s == "stdout+file" || s == "file+stdout") {
-    return zlog::LogSinkMode::kStdoutAndFile;
-  }
-  return zlog::LogSinkMode::kStdout;
+  return s;
 }
 
-static zlog::LoggerConfig apply_module_override(
-    const zlog::LoggerConfig &base, const ModuleLogConfig &override_cfg,
+static std::string parse_sink_name(std::string s) {
+  s = normalize_token(std::move(s));
+
+  if (s == "file") {
+    return "file";
+  }
+  if (s == "both" || s == "stdout+file" || s == "file+stdout") {
+    return "both";
+  }
+  return "stdout";
+}
+
+static UnifiedLoggerOptions apply_module_override(
+    const UnifiedLoggerOptions &base, const ModuleLogConfig &override_cfg,
     const std::string &default_file) {
-  zlog::LoggerConfig config = base;
+  UnifiedLoggerOptions options = base;
 
   if (!override_cfg.level.empty()) {
-    config.level = parse_log_level(override_cfg.level);
+    options.level = parse_log_level(override_cfg.level);
   }
   if (!override_cfg.format.empty()) {
-    config.formatter = override_cfg.format;
+    options.formatter = override_cfg.format;
   }
   if (!override_cfg.sink.empty()) {
-    config.sink_mode = parse_sink_mode(override_cfg.sink);
+    options.sink = parse_sink_name(override_cfg.sink);
   }
   if (!override_cfg.file.empty()) {
-    config.file_path = override_cfg.file;
+    options.file_path = override_cfg.file;
+  }
+  if (override_cfg.has_async) {
+    options.async = override_cfg.async;
   }
 
-  if ((config.sink_mode == zlog::LogSinkMode::kFile ||
-       config.sink_mode == zlog::LogSinkMode::kStdoutAndFile) &&
-      config.file_path.empty()) {
-    config.file_path = default_file;
+  if ((options.sink == "file" || options.sink == "both") &&
+      options.file_path.empty()) {
+    options.file_path = default_file;
   }
 
-  return config;
+  return options;
+}
+
+static zcoroutine::LoggerInitOptions to_coroutine_options(
+    const UnifiedLoggerOptions &options) {
+  zcoroutine::LoggerInitOptions converted;
+  converted.level = options.level;
+  converted.async = options.async;
+  converted.formatter = options.formatter;
+  converted.sink = options.sink;
+  converted.file_path = options.file_path;
+  return converted;
+}
+
+static znet::LoggerInitOptions to_znet_options(
+    const UnifiedLoggerOptions &options) {
+  znet::LoggerInitOptions converted;
+  converted.level = options.level;
+  converted.async = options.async;
+  converted.formatter = options.formatter;
+  converted.sink = options.sink;
+  converted.file_path = options.file_path;
+  return converted;
+}
+
+static zhttp::LoggerInitOptions to_zhttp_options(
+    const UnifiedLoggerOptions &options) {
+  zhttp::LoggerInitOptions converted;
+  converted.level = options.level;
+  converted.async = options.async;
+  converted.formatter = options.formatter;
+  converted.sink = options.sink;
+  converted.file_path = options.file_path;
+  return converted;
 }
 
 static void configure_unified_logging(const ServerConfig &config) {
-  zlog::LoggingConfig logging_config;
-
-  zlog::LoggerConfig global;
+  UnifiedLoggerOptions global;
   global.level = parse_log_level(config.log_level);
+  global.async = config.log_async;
   global.formatter = config.log_format;
-  global.sink_mode = parse_sink_mode(config.log_sink);
+  global.sink = parse_sink_name(config.log_sink);
   global.file_path = config.log_file;
-  logging_config.default_config = global;
 
-  logging_config.module_configs["zcoroutine"] =
+  const UnifiedLoggerOptions zcoroutine_options =
       apply_module_override(global, config.zcoroutine_log,
                             "./logfile/zcoroutine.log");
-  logging_config.module_configs["znet"] =
+  const UnifiedLoggerOptions znet_options =
       apply_module_override(global, config.znet_log, "./logfile/znet.log");
-  logging_config.module_configs["zhttp"] =
+  const UnifiedLoggerOptions zhttp_options =
       apply_module_override(global, config.zhttp_log, "./logfile/zhttp.log");
 
-  zlog::set_logging_config(logging_config);
-
-  zcoroutine::configure_logger(zlog::resolve_logger_config("zcoroutine"));
-  znet::configure_logger(zlog::resolve_logger_config("znet"));
-  zhttp::configure_logger(zlog::resolve_logger_config("zhttp"));
+  zcoroutine::init_logger(to_coroutine_options(zcoroutine_options));
+  znet::init_logger(to_znet_options(znet_options));
+  zhttp::init_logger(to_zhttp_options(zhttp_options));
 }
 
 static bool is_any_address_host(const std::string &host) {
@@ -376,6 +385,11 @@ HttpServerBuilder &HttpServerBuilder::log_level(const std::string &level) {
   return *this;
 }
 
+HttpServerBuilder &HttpServerBuilder::log_async(bool enable) {
+  config_.log_async = enable;
+  return *this;
+}
+
 HttpServerBuilder &HttpServerBuilder::log_format(const std::string &format) {
   config_.log_format = format;
   return *this;
@@ -446,22 +460,6 @@ std::shared_ptr<HttpServer> HttpServerBuilder::build() {
 
   if (!config_.homepage.empty()) {
     server->router().set_homepage(config_.homepage);
-  }
-
-  // 从配置自动启用限流
-  if (config_.rate_limit_enabled) {
-    auto type = parse_rate_limiter_type(config_.rate_limit_type);
-    auto unit = parse_time_unit(config_.rate_limit_time_unit);
-    auto limiter =
-        RateLimiter::newRateLimiter(type, config_.rate_limit_capacity, unit);
-
-    RateLimiterMiddleware::Options opt;
-    opt.limiter = std::move(limiter);
-    server->router().use(std::make_shared<RateLimiterMiddleware>(opt));
-
-    ZHTTP_LOG_INFO("Rate limit enabled: type={}, capacity={}, time_unit={}",
-                   config_.rate_limit_type, config_.rate_limit_capacity,
-                   config_.rate_limit_time_unit);
   }
 
   // 默认启用请求体解析：JSON / x-www-form-urlencoded / multipart。

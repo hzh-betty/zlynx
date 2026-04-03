@@ -105,6 +105,9 @@ void parse_logging_section(const toml::value &data, ServerConfig &config) {
   if (logging.contains("level")) {
     config.log_level = toml::find<std::string>(logging, "level");
   }
+  if (logging.contains("async")) {
+    config.log_async = toml::find<bool>(logging, "async");
+  }
   if (logging.contains("format")) {
     config.log_format = toml::find<std::string>(logging, "format");
   }
@@ -129,6 +132,10 @@ void parse_logging_section(const toml::value &data, ServerConfig &config) {
     const auto &module = toml::find(modules, module_name);
     if (module.contains("level")) {
       module_config.level = toml::find<std::string>(module, "level");
+    }
+    if (module.contains("async")) {
+      module_config.async = toml::find<bool>(module, "async");
+      module_config.has_async = true;
     }
     if (module.contains("format")) {
       module_config.format = toml::find<std::string>(module, "format");
@@ -171,26 +178,6 @@ void reject_unsupported_sections(const toml::value &data) {
   }
 }
 
-void parse_rate_limit_section(const toml::value &data, ServerConfig &config) {
-  if (!data.contains("rate_limit")) {
-    return;
-  }
-
-  auto &rl = toml::find(data, "rate_limit");
-  if (rl.contains("enabled")) {
-    config.rate_limit_enabled = toml::find<bool>(rl, "enabled");
-  }
-  if (rl.contains("type")) {
-    config.rate_limit_type = toml::find<std::string>(rl, "type");
-  }
-  if (rl.contains("capacity")) {
-    config.rate_limit_capacity = parse_size(rl, "capacity");
-  }
-  if (rl.contains("time_unit") ) {
-    config.rate_limit_time_unit = toml::find<std::string>(rl, "time_unit");
-  }
-}
-
 ServerConfig parse_server_config(const toml::value &data) {
   ServerConfig config;
   parse_server_section(data, config);
@@ -199,7 +186,6 @@ ServerConfig parse_server_config(const toml::value &data) {
   parse_logging_section(data, config);
   parse_timeout_section(data, config);
   reject_unsupported_sections(data);
-  parse_rate_limit_section(data, config);
   return config;
 }
 

@@ -19,6 +19,8 @@ enum class StackMode {
 
 struct ModuleLogConfig {
   std::string level;
+  bool has_async = false;
+  bool async = true;
   std::string format;
   std::string sink;
   std::string file;
@@ -53,6 +55,7 @@ struct ServerConfig {
 
   // 日志配置。
   std::string log_level = "info";
+  bool log_async = true;
   std::string log_format = "[%d{%Y-%m-%d %H:%M:%S}][%c][%p][%t] %m%n";
   std::string log_sink = "stdout";
   std::string log_file;
@@ -64,12 +67,6 @@ struct ServerConfig {
   uint64_t read_timeout = 30000;
   uint64_t write_timeout = 30000;
   uint64_t keepalive_timeout = 60000;
-
-  // 限流配置。
-  bool rate_limit_enabled = false;
-  std::string rate_limit_type = "token_bucket"; // fixed_window/sliding_window/token_bucket
-  size_t rate_limit_capacity = 10;              // capacity per time unit
-  std::string rate_limit_time_unit = "second"; // millisecond/second/minute/hour
 
   /**
    * @brief 从 TOML 文件加载配置
