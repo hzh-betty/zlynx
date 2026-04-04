@@ -89,6 +89,70 @@ TEST(WebSocketFrameTest, RejectsClientUnmaskedFrame) {
   EXPECT_FALSE(error.empty());
 }
 
+TEST(WebSocketFrameTest, RejectsInvalidUtf8TextFrame) {
+  WebSocketFrameParser parser;
+  znet::Buffer buffer;
+
+  const std::string invalid_utf8("\xC3\x28", 2);
+  buffer.append(build_masked_client_frame(WebSocketOpcode::kText, invalid_utf8));
+
+  std::vector<WebSocketFrameEvent> events;
+  uint16_t close_code = 0;
+  std::string error;
+
+  const bool ok = parser.parse(&buffer, &events, &close_code, &error);
+
+  EXPECT_FALSE(ok);
+  EXPECT_EQ(
+      close_code,
+      static_cast<uint16_t>(WebSocketCloseCode::kInvalidFramePayloadData));
+  EXPECT_FALSE(error.empty());
+}
+
+TEST(WebSocketFrameTest, RejectsInvalidCloseStatusCode) {
+  WebSocketFrameParser parser;
+  znet::Buffer buffer;
+
+  std::string close_payload;
+  close_payload.push_back(static_cast<char>(0x03));
+  close_payload.push_back(static_cast<char>(0xED)); // 1005 is reserved/invalid on wire.
+  buffer.append(build_masked_client_frame(WebSocketOpcode::kClose, close_payload));
+
+  std::vector<WebSocketFrameEvent> events;
+  uint16_t close_code = 0;
+  std::string error;
+
+  const bool ok = parser.parse(&buffer, &events, &close_code, &error);
+
+  EXPECT_FALSE(ok);
+  EXPECT_EQ(close_code, static_cast<uint16_t>(WebSocketCloseCode::kProtocolError));
+  EXPECT_FALSE(error.empty());
+}
+
+TEST(WebSocketFrameTest, RejectsInvalidUtf8CloseReason) {
+  WebSocketFrameParser parser;
+  znet::Buffer buffer;
+
+  std::string close_payload;
+  close_payload.push_back(static_cast<char>(0x03));
+  close_payload.push_back(static_cast<char>(0xE8)); // 1000 normal closure.
+  close_payload.push_back(static_cast<char>(0xC3));
+  close_payload.push_back(static_cast<char>(0x28));
+  buffer.append(build_masked_client_frame(WebSocketOpcode::kClose, close_payload));
+
+  std::vector<WebSocketFrameEvent> events;
+  uint16_t close_code = 0;
+  std::string error;
+
+  const bool ok = parser.parse(&buffer, &events, &close_code, &error);
+
+  EXPECT_FALSE(ok);
+  EXPECT_EQ(
+      close_code,
+      static_cast<uint16_t>(WebSocketCloseCode::kInvalidFramePayloadData));
+  EXPECT_FALSE(error.empty());
+}
+
 TEST(WebSocketFrameTest, EncodesServerFrameWithoutMask) {
   std::string frame;
   const bool ok = build_websocket_frame(WebSocketOpcode::kText, "hey", &frame, true);

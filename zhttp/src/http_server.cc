@@ -510,9 +510,28 @@ bool HttpServer::handle_request(const znet::TcpConnection::ptr &conn,
       return false;
     }
 
+    std::string selected_subprotocol;
+    if (!negotiate_websocket_subprotocol(request, response.websocket_options(),
+                                         &selected_subprotocol, &error)) {
+      HttpResponse reject_response;
+      reject_response.set_version(request->version());
+      reject_response.set_keep_alive(false);
+      reject_response.header("Server", server_name_);
+      reject_response.status(HttpStatus::BAD_REQUEST)
+          .text("Bad WebSocket Request: " + error);
+
+      const std::string payload = reject_response.serialize();
+      if (!send_all_or_fail(conn, payload.data(), payload.size())) {
+        ZHTTP_LOG_WARN(
+            "Send WebSocket subprotocol negotiation failure response failed: fd={}",
+            conn->fd());
+      }
+      return false;
+    }
+
     std::string handshake_response;
     if (!build_websocket_handshake_response(request, &handshake_response,
-                                            &error)) {
+                                            &error, selected_subprotocol)) {
       HttpResponse reject_response;
       reject_response.set_version(request->version());
       reject_response.set_keep_alive(false);
@@ -537,7 +556,7 @@ bool HttpServer::handle_request(const znet::TcpConnection::ptr &conn,
 
     auto session = std::make_shared<WebSocketSession>(
         conn, request, response.websocket_callbacks(),
-        response.websocket_options());
+    response.websocket_options(), selected_subprotocol);
     register_websocket_session(conn->fd(), session);
 
     if (!session->on_open()) {
@@ -545,8 +564,11 @@ bool HttpServer::handle_request(const znet::TcpConnection::ptr &conn,
       return false;
     }
 
-    ZHTTP_LOG_DEBUG("WebSocket upgrade success: fd={}, path={}", conn->fd(),
-                    request->path());
+    ZHTTP_LOG_DEBUG(
+        "WebSocket upgrade success: fd={}, path={}, subprotocol={}",
+        conn->fd(), request->path(), selected_subprotocol.empty()
+                                     ? "<none>"
+                                     : selected_subprotocol);
     return true;
   }
 

@@ -147,7 +147,10 @@ TEST(WebSocketServerIntegrationTest, UpgradesAndEchoesTextFrame) {
                                }
                              },
                              {},
-                             {}});
+                             {}},
+                  WebSocketOptions{
+                      kDefaultWebSocketMaxMessageSize,
+                      {"superchat", "chat"}});
 
   auto server = builder.build();
   ASSERT_TRUE(server);
@@ -162,6 +165,7 @@ TEST(WebSocketServerIntegrationTest, UpgradesAndEchoesTextFrame) {
       "Host: localhost\r\n"
       "Upgrade: websocket\r\n"
       "Connection: Upgrade\r\n"
+      "Sec-WebSocket-Protocol: chat, superchat\r\n"
       "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
       "Sec-WebSocket-Version: 13\r\n"
       "\r\n";
@@ -169,6 +173,9 @@ TEST(WebSocketServerIntegrationTest, UpgradesAndEchoesTextFrame) {
   ASSERT_TRUE(send_all(client_fd, handshake_request));
   const std::string handshake_response = recv_once_with_timeout(client_fd, 1000);
   ASSERT_NE(handshake_response.find("101 Switching Protocols"), std::string::npos)
+      << handshake_response;
+  ASSERT_NE(handshake_response.find("Sec-WebSocket-Protocol: superchat"),
+            std::string::npos)
       << handshake_response;
 
   ASSERT_TRUE(send_all(client_fd,

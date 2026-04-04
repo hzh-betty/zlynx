@@ -54,6 +54,28 @@ TEST(WebSocketHandshakeTest, BuildsSwitchingProtocolsResponse) {
       << response;
 }
 
+  TEST(WebSocketHandshakeTest, BuildsResponseWithNegotiatedSubprotocol) {
+    auto request = std::make_shared<HttpRequest>();
+    request->set_method(HttpMethod::GET);
+    request->set_version(HttpVersion::HTTP_1_1);
+    request->set_header("Connection", "Upgrade");
+    request->set_header("Upgrade", "websocket");
+    request->set_header("Sec-WebSocket-Version", "13");
+    request->set_header("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==");
+    request->set_header("Sec-WebSocket-Protocol", "chat, superchat");
+
+    std::string response;
+    std::string error;
+    const bool ok = build_websocket_handshake_response(
+    request, &response, &error, "superchat");
+
+    EXPECT_TRUE(ok);
+    EXPECT_TRUE(error.empty());
+    EXPECT_NE(response.find("Sec-WebSocket-Protocol: superchat"),
+      std::string::npos)
+    << response;
+  }
+
 int main(int argc, char **argv) {
   zhttp::init_logger();
   ::testing::InitGoogleTest(&argc, argv);
