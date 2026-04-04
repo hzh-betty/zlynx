@@ -96,6 +96,28 @@ bool send_chunked_body(const znet::TcpConnection::ptr &conn,
   return send_all_or_fail(conn, "0\r\n\r\n", 5);
 }
 
+HttpResponse make_websocket_handshake_error_response(
+    const HttpVersion version,
+    const std::string &server_name,
+    const WebSocketHandshakeResult result,
+    const std::string &error) {
+  HttpResponse response;
+  response.set_version(version);
+  response.set_keep_alive(false);
+  response.header("Server", server_name);
+
+  if (result == WebSocketHandshakeResult::kUnsupportedVersion) {
+    response.status(HttpStatus::BAD_REQUEST)
+        .header("Sec-WebSocket-Version", "13")
+        .text("Bad WebSocket Request: " + error);
+  } else {
+    response.status(HttpStatus::BAD_REQUEST)
+        .text("Bad WebSocket Request: " + error);
+  }
+
+  return response;
+}
+
 } // namespace
 
 HttpServer::HttpServer(znet::Address::ptr listen_address, int backlog)
@@ -290,6 +312,55 @@ bool HttpServer::send_async_chunked_response(
   return true;
 }
 
+bool HttpServer::is_websocket_active(
+    const znet::TcpConnection::ptr &conn) const {
+  if (!conn) {
+    return false;
+  }
+
+  std::lock_guard<std::mutex> guard(websocket_mutex_);
+  return websocket_sessions_.find(conn->fd()) != websocket_sessions_.end();
+}
+
+WebSocketSession::ptr HttpServer::find_websocket_session(const int fd) const {
+  if (fd < 0) {
+    return nullptr;
+  }
+
+  std::lock_guard<std::mutex> guard(websocket_mutex_);
+  auto it = websocket_sessions_.find(fd);
+  if (it == websocket_sessions_.end()) {
+    return nullptr;
+  }
+  return it->second;
+}
+
+void HttpServer::register_websocket_session(const int fd,
+                                            WebSocketSession::ptr session) {
+  if (fd < 0 || !session) {
+    return;
+  }
+
+  std::lock_guard<std::mutex> guard(websocket_mutex_);
+  websocket_sessions_[fd] = std::move(session);
+}
+
+WebSocketSession::ptr HttpServer::take_websocket_session(const int fd) {
+  if (fd < 0) {
+    return nullptr;
+  }
+
+  std::lock_guard<std::mutex> guard(websocket_mutex_);
+  auto it = websocket_sessions_.find(fd);
+  if (it == websocket_sessions_.end()) {
+    return nullptr;
+  }
+
+  auto session = std::move(it->second);
+  websocket_sessions_.erase(it);
+  return session;
+}
+
 HttpParser *HttpServer::ensure_parser(const znet::TcpConnection::ptr &conn) {
   if (!conn) {
     return nullptr;
@@ -319,6 +390,11 @@ void HttpServer::on_close(const znet::TcpConnection::ptr &conn) {
 
   mark_async_stream_finished(conn->fd());
 
+  auto websocket_session = take_websocket_session(conn->fd());
+  if (websocket_session) {
+    websocket_session->on_close();
+  }
+
   auto *parser = static_cast<HttpParser *>(conn->context());
   delete parser;
   conn->set_context(nullptr);
@@ -329,6 +405,14 @@ void HttpServer::on_close(const znet::TcpConnection::ptr &conn) {
 void HttpServer::on_message(const znet::TcpConnection::ptr &conn,
                             znet::Buffer &buffer) {
   if (!conn) {
+    return;
+  }
+
+  auto websocket_session = find_websocket_session(conn->fd());
+  if (websocket_session) {
+    if (!websocket_session->on_message(&buffer)) {
+      take_websocket_session(conn->fd());
+    }
     return;
   }
 
@@ -345,7 +429,7 @@ void HttpServer::on_message(const znet::TcpConnection::ptr &conn,
   }
 
   while (buffer.readable_bytes() > 0) {
-    if (is_async_stream_active(conn)) {
+    if (is_async_stream_active(conn) || is_websocket_active(conn)) {
       // 异步流式写出期间暂停该连接的后续请求解析，避免响应交叉。
       return;
     }
@@ -356,7 +440,7 @@ void HttpServer::on_message(const znet::TcpConnection::ptr &conn,
       // 一条完整请求已经拿到，可以交给业务层处理。
       const bool keep_alive = handle_request(conn, parser->request());
 
-      if (is_async_stream_active(conn)) {
+      if (is_async_stream_active(conn) || is_websocket_active(conn)) {
         return;
       }
 
@@ -410,6 +494,61 @@ bool HttpServer::handle_request(const znet::TcpConnection::ptr &conn,
 
   // 路由器内部会完成匹配、中间件执行和业务处理器调用。
   router_.route(request, response);
+
+  if (response.has_websocket_upgrade()) {
+    std::string error;
+    const WebSocketHandshakeResult check_result =
+        check_websocket_handshake_request(request, &error);
+    if (check_result != WebSocketHandshakeResult::kOk) {
+      const HttpResponse reject_response = make_websocket_handshake_error_response(
+          request->version(), server_name_, check_result, error);
+      const std::string payload = reject_response.serialize();
+      if (!send_all_or_fail(conn, payload.data(), payload.size())) {
+        ZHTTP_LOG_WARN("Send WebSocket handshake rejection failed: fd={}",
+                       conn->fd());
+      }
+      return false;
+    }
+
+    std::string handshake_response;
+    if (!build_websocket_handshake_response(request, &handshake_response,
+                                            &error)) {
+      HttpResponse reject_response;
+      reject_response.set_version(request->version());
+      reject_response.set_keep_alive(false);
+      reject_response.header("Server", server_name_);
+      reject_response.status(HttpStatus::BAD_REQUEST)
+          .text("Bad WebSocket Request: " + error);
+
+      const std::string payload = reject_response.serialize();
+      if (!send_all_or_fail(conn, payload.data(), payload.size())) {
+        ZHTTP_LOG_WARN("Send WebSocket handshake failure response failed: fd={}",
+                       conn->fd());
+      }
+      return false;
+    }
+
+    if (!send_all_or_fail(conn, handshake_response.data(),
+                          handshake_response.size())) {
+      ZHTTP_LOG_WARN("Send WebSocket handshake response failed: fd={}",
+                     conn->fd());
+      return false;
+    }
+
+    auto session = std::make_shared<WebSocketSession>(
+        conn, request, response.websocket_callbacks(),
+        response.websocket_options());
+    register_websocket_session(conn->fd(), session);
+
+    if (!session->on_open()) {
+      take_websocket_session(conn->fd());
+      return false;
+    }
+
+    ZHTTP_LOG_DEBUG("WebSocket upgrade success: fd={}, path={}", conn->fd(),
+                    request->path());
+    return true;
+  }
 
   const bool use_chunked =
       is_body_allowed(response.status_code()) &&

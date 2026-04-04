@@ -5,6 +5,7 @@
 #include "middleware.h"
 #include "route_handler.h"
 #include "server_config.h"
+#include "websocket.h"
 
 #include <memory>
 #include <string>
@@ -175,6 +176,18 @@ public:
    * @return 当前 Builder 引用
    */
   HttpServerBuilder &del(const std::string &path, RouteHandler::ptr handler);
+
+  /**
+   * @brief 注册 WebSocket 路由
+   * @param path 路由路径
+   * @param callbacks WebSocket 生命周期回调
+   * @param options WebSocket 协议参数
+   * @return 当前 Builder 引用
+   */
+  HttpServerBuilder &websocket(
+      const std::string &path,
+      WebSocketCallbacks callbacks,
+      const WebSocketOptions &options = WebSocketOptions());
 
   /**
    * @brief 设置404处理器（回调方式）

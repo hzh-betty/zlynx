@@ -364,6 +364,22 @@ HttpServerBuilder &HttpServerBuilder::del(const std::string &path,
   return *this;
 }
 
+HttpServerBuilder &HttpServerBuilder::websocket(
+    const std::string &path,
+    WebSocketCallbacks callbacks,
+    const WebSocketOptions &options) {
+  auto callbacks_ref = std::make_shared<WebSocketCallbacks>(std::move(callbacks));
+
+  routes_.emplace_back(
+      HttpMethod::GET,
+      path,
+      RouteHandlerWrapper([callbacks_ref, options](const HttpRequest::ptr &,
+                                                   HttpResponse &response) {
+        response.upgrade_to_websocket(*callbacks_ref, options);
+      }));
+  return *this;
+}
+
 HttpServerBuilder &HttpServerBuilder::not_found(RouterCallback callback) {
   not_found_handler_ = RouteHandlerWrapper(std::move(callback));
   return *this;

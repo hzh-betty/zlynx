@@ -2,6 +2,7 @@
 #define ZHTTP_HTTP_RESPONSE_H_
 
 #include "http_common.h"
+#include "websocket.h"
 
 #include <functional>
 #include <memory>
@@ -173,6 +174,16 @@ public:
   HttpResponse &async_stream(AsyncStreamCallback callback);
 
   /**
+   * @brief 声明将当前请求升级为 WebSocket 会话
+   * @details
+   * 路由处理器通过该接口只表达“升级意图”，真正握手和协议切换由 HttpServer
+   * 在请求处理完成后统一执行，确保与中间件/路由流程保持一致。
+   */
+  HttpResponse &upgrade_to_websocket(
+      WebSocketCallbacks callbacks,
+      const WebSocketOptions &options = WebSocketOptions());
+
+  /**
    * @brief 当前响应是否启用了 chunked 发送策略
    */
   bool is_chunked_enabled() const { return chunked_enabled_; }
@@ -194,6 +205,25 @@ public:
    */
   bool has_async_stream_callback() const {
     return static_cast<bool>(async_stream_callback_);
+  }
+
+  /**
+   * @brief 当前响应是否声明了 WebSocket 升级
+   */
+  bool has_websocket_upgrade() const { return websocket_upgrade_enabled_; }
+
+  /**
+   * @brief 获取 WebSocket 回调配置
+   */
+  const WebSocketCallbacks &websocket_callbacks() const {
+    return websocket_callbacks_;
+  }
+
+  /**
+   * @brief 获取 WebSocket 选项
+   */
+  const WebSocketOptions &websocket_options() const {
+    return websocket_options_;
   }
 
   /**
@@ -269,6 +299,10 @@ private:
   bool chunked_enabled_ = false;
   StreamCallback stream_callback_;
   AsyncStreamCallback async_stream_callback_;
+
+  bool websocket_upgrade_enabled_ = false;
+  WebSocketCallbacks websocket_callbacks_;
+  WebSocketOptions websocket_options_;
 };
 
 } // namespace zhttp

@@ -36,6 +36,8 @@ set(ZHTTP_SOURCES
     src/timeout_middleware.cc
     src/security_middleware.cc
     src/http_server.cc
+    src/websocket_frame.cc
+    src/websocket.cc
     src/session.cc
     src/daemon.cc
     src/server_config.cc

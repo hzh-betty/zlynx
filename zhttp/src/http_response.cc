@@ -153,6 +153,24 @@ HttpResponse &HttpResponse::async_stream(AsyncStreamCallback callback) {
   return *this;
 }
 
+HttpResponse &HttpResponse::upgrade_to_websocket(
+    WebSocketCallbacks callbacks,
+    const WebSocketOptions &options) {
+  websocket_upgrade_enabled_ = true;
+  websocket_callbacks_ = std::move(callbacks);
+  websocket_options_ = options;
+
+  // 协议升级与 HTTP chunked/stream 属于互斥路径，声明升级时清空流式状态。
+  chunked_enabled_ = false;
+  stream_callback_ = StreamCallback();
+  async_stream_callback_ = AsyncStreamCallback();
+
+  body_.clear();
+  status_ = HttpStatus::SWITCHING_PROTOCOLS;
+  keep_alive_ = true;
+  return *this;
+}
+
 std::string HttpResponse::serialize(bool include_body) const {
   // HTTP 响应最终就是一段按协议格式拼好的纯文本字节流。
   std::ostringstream oss;

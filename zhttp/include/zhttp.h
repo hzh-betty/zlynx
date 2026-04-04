@@ -30,6 +30,8 @@
 #include "security_middleware.h"
 #include "route_handler.h"
 #include "router.h"
+#include "websocket.h"
+#include "websocket_frame.h"
 
 // 服务器：HTTP/HTTPS 服务封装与构建器。
 #include "http_server.h"

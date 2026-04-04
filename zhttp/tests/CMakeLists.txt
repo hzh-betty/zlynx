@@ -5,6 +5,8 @@ set(UNIT_TESTS
     http_parser_test
     http_request_test
     http_response_test
+    websocket_frame_test
+    websocket_handshake_test
     multipart_test
     server_config_test
     session_test
@@ -58,6 +60,20 @@ target_include_directories(http_server_test PRIVATE
     ${CMAKE_SOURCE_DIR}/zhttp/include
 )
 add_test(NAME http_server_test COMMAND http_server_test)
+
+add_executable(websocket_server_test integration/websocket_server_test.cc)
+target_link_libraries(websocket_server_test
+    zhttp
+    znet
+    zcoroutine
+    zlog_static
+    GTest::gtest
+    pthread
+)
+target_include_directories(websocket_server_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/zhttp/include
+)
+add_test(NAME websocket_server_test COMMAND websocket_server_test)
 
 add_executable(zhttp_benchmark benchmark/zhttp_benchmark.cc)
 

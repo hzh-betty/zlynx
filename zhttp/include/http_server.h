@@ -3,6 +3,7 @@
 
 #include "http_parser.h"
 #include "router.h"
+#include "websocket.h"
 #include "znet/address.h"
 #include "znet/tcp_connection.h"
 #include "znet/tcp_server.h"
@@ -11,6 +12,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 
 #include <sys/socket.h>
@@ -107,6 +109,26 @@ protected:
   bool send_async_chunked_response(const znet::TcpConnection::ptr &conn,
                                    const HttpResponse &response);
 
+  /**
+   * @brief 判断连接是否已切换到 WebSocket 协议
+   */
+  bool is_websocket_active(const znet::TcpConnection::ptr &conn) const;
+
+  /**
+   * @brief 获取连接对应的 WebSocket 会话
+   */
+  WebSocketSession::ptr find_websocket_session(int fd) const;
+
+  /**
+   * @brief 注册 WebSocket 会话
+   */
+  void register_websocket_session(int fd, WebSocketSession::ptr session);
+
+  /**
+   * @brief 移除并返回 WebSocket 会话
+   */
+  WebSocketSession::ptr take_websocket_session(int fd);
+
 private:
   znet::TcpServer::ptr tcp_server_;
 
@@ -118,6 +140,9 @@ private:
 
   mutable std::mutex async_stream_mutex_;
   std::unordered_set<int> async_stream_fds_;
+
+  mutable std::mutex websocket_mutex_;
+  std::unordered_map<int, WebSocketSession::ptr> websocket_sessions_;
 };
 
 } // namespace zhttp
