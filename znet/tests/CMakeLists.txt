@@ -26,3 +26,19 @@ foreach(test_src ${ZNET_UNIT_TESTS})
   get_filename_component(test_name ${test_src} NAME_WE)
   add_znet_unit_test(${test_name} ${test_src})
 endforeach()
+
+add_executable(znet_wrk_benchmark
+  benchmark/znet_wrk_benchmark.cc
+)
+
+target_link_libraries(znet_wrk_benchmark
+  PRIVATE
+    znet
+    zcoroutine
+    Threads::Threads
+)
+
+target_include_directories(znet_wrk_benchmark
+  PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+)
