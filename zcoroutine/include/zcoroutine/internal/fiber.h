@@ -90,6 +90,28 @@ class Fiber : public std::enable_shared_from_this<Fiber>, public NonCopyable {
   bool use_shared_stack() const;
 
   /**
+   * @brief 获取外部句柄 id。
+   * @param 无参数。
+   * @return 句柄 id；0 表示未注册。
+   */
+  uint64_t external_handle_id() const;
+
+  /**
+   * @brief 尝试设置外部句柄 id（仅允许从 0 初始化一次）。
+   * @param handle_id 待设置句柄。
+   * @param effective_handle 输出最终有效句柄。
+   * @return true 表示得到有效句柄（新设或已存在）。
+   */
+  bool try_set_external_handle_id(uint64_t handle_id, uint64_t* effective_handle);
+
+  /**
+   * @brief 清空外部句柄 id。
+   * @param 无参数。
+   * @return 清空前的句柄 id。
+   */
+  uint64_t clear_external_handle_id();
+
+  /**
    * @brief 获取上下文对象。
    * @param 无参数。
     * @return Context 指针。
@@ -225,6 +247,7 @@ class Fiber : public std::enable_shared_from_this<Fiber>, public NonCopyable {
   bool context_initialized_;
   std::atomic<State> state_;
   std::atomic<bool> timed_out_;
+  std::atomic<uint64_t> external_handle_id_;
 };
 
 }  // namespace zcoroutine

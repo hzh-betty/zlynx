@@ -58,7 +58,8 @@ Fiber::Fiber(int id,
       saved_stack_bucket_(kDynamicSnapshotBucketLocal),
       context_initialized_(false),
       state_(State::kReady),
-      timed_out_(false) {
+      timed_out_(false),
+      external_handle_id_(0) {
   if (!owner_) {
     throw std::runtime_error("fiber owner is null");
   }
@@ -102,6 +103,7 @@ void Fiber::reset(int id, Task task, size_t stack_slot) {
   context_initialized_ = false;
   state_.store(State::kReady, std::memory_order_release);
   timed_out_.store(false, std::memory_order_release);
+  external_handle_id_.store(0, std::memory_order_release);
   clear_saved_stack();
 }
 
@@ -110,6 +112,31 @@ Processor* Fiber::owner() const { return owner_; }
 size_t Fiber::stack_slot() const { return stack_slot_; }
 
 bool Fiber::use_shared_stack() const { return use_shared_stack_; }
+
+uint64_t Fiber::external_handle_id() const {
+  return external_handle_id_.load(std::memory_order_acquire);
+}
+
+bool Fiber::try_set_external_handle_id(uint64_t handle_id, uint64_t* effective_handle) {
+  if (handle_id == 0 || !effective_handle) {
+    return false;
+  }
+
+  uint64_t expected = 0;
+  if (external_handle_id_.compare_exchange_strong(expected, handle_id,
+                                                  std::memory_order_acq_rel,
+                                                  std::memory_order_acquire)) {
+    *effective_handle = handle_id;
+    return true;
+  }
+
+  *effective_handle = expected;
+  return expected != 0;
+}
+
+uint64_t Fiber::clear_external_handle_id() {
+  return external_handle_id_.exchange(0, std::memory_order_acq_rel);
+}
 
 Context* Fiber::context() { return &context_; }
 

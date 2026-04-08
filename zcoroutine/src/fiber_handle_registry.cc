@@ -2,44 +2,42 @@
 
 namespace zcoroutine {
 
-FiberHandleRegistry::FiberHandleRegistry() : mutex_(), handle_map_(), reverse_map_() {}
+FiberHandleRegistry::FiberHandleRegistry() : mutex_(), handle_map_() {}
 
 void FiberHandleRegistry::clear() {
   std::lock_guard<std::mutex> lock(mutex_);
   handle_map_.clear();
-  reverse_map_.clear();
 }
 
-void FiberHandleRegistry::register_fiber(const std::shared_ptr<Fiber>& fiber, uint64_t handle_id) {
+uint64_t FiberHandleRegistry::register_fiber(const std::shared_ptr<Fiber>& fiber,
+                                             uint64_t handle_id) {
   if (!fiber || handle_id == 0) {
-    return;
+    return 0;
+  }
+
+  uint64_t effective_handle_id = 0;
+  if (!fiber->try_set_external_handle_id(handle_id, &effective_handle_id)) {
+    return 0;
   }
 
   std::lock_guard<std::mutex> lock(mutex_);
-  const Fiber* key = fiber.get();
-  auto it = reverse_map_.find(key);
-  if (it != reverse_map_.end()) {
-    handle_map_[it->second] = fiber;
-    return;
-  }
-
-  reverse_map_[key] = handle_id;
-  handle_map_[handle_id] = fiber;
+  handle_map_[effective_handle_id] = fiber;
+  return effective_handle_id;
 }
 
-void FiberHandleRegistry::unregister_fiber(const Fiber* fiber) {
+uint64_t FiberHandleRegistry::unregister_fiber(Fiber* fiber) {
   if (!fiber) {
-    return;
+    return 0;
+  }
+
+  const uint64_t handle_id = fiber->clear_external_handle_id();
+  if (handle_id == 0) {
+    return 0;
   }
 
   std::lock_guard<std::mutex> lock(mutex_);
-  auto it = reverse_map_.find(fiber);
-  if (it == reverse_map_.end()) {
-    return;
-  }
-
-  handle_map_.erase(it->second);
-  reverse_map_.erase(it);
+  handle_map_.erase(handle_id);
+  return handle_id;
 }
 
 std::shared_ptr<Fiber> FiberHandleRegistry::find_by_handle(uint64_t handle_id) const {
@@ -60,13 +58,12 @@ bool FiberHandleRegistry::try_get_handle_id(const Fiber* fiber, uint64_t* handle
     return false;
   }
 
-  std::lock_guard<std::mutex> lock(mutex_);
-  auto it = reverse_map_.find(fiber);
-  if (it == reverse_map_.end()) {
+  const uint64_t id = fiber->external_handle_id();
+  if (id == 0) {
     return false;
   }
 
-  *handle_id = it->second;
+  *handle_id = id;
   return true;
 }
 

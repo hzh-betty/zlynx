@@ -333,16 +333,19 @@ void Runtime::register_fiber(const std::shared_ptr<Fiber>& fiber) {
     return;
   }
 
-  uint64_t existing_handle_id = 0;
-  if (fiber_handle_registry_.try_get_handle_id(fiber.get(), &existing_handle_id)) {
-    fiber_handle_registry_.register_fiber(fiber, existing_handle_id);
+  uint64_t handle_id = fiber->external_handle_id();
+  if (handle_id == 0) {
+    handle_id = fiber_handle_id_gen_.fetch_add(1, std::memory_order_relaxed);
+  }
+
+  // 记录句柄映射，供 current_coroutine()/resume(void*) 跨 API 使用。
+  const uint64_t registered_handle_id = fiber_handle_registry_.register_fiber(fiber, handle_id);
+  if (registered_handle_id == 0) {
     return;
   }
 
-  const uint64_t handle_id = fiber_handle_id_gen_.fetch_add(1, std::memory_order_relaxed);
-  // 记录句柄映射，供 current_coroutine()/resume(void*) 跨 API 使用。
-  fiber_handle_registry_.register_fiber(fiber, handle_id);
-  ZCOROUTINE_LOG_DEBUG("fiber registered, fiber_id={}, handle_id={}", fiber->id(), handle_id);
+  ZCOROUTINE_LOG_DEBUG("fiber registered, fiber_id={}, handle_id={}", fiber->id(),
+                       registered_handle_id);
 }
 
 void Runtime::unregister_fiber(Fiber* fiber) {
@@ -350,12 +353,11 @@ void Runtime::unregister_fiber(Fiber* fiber) {
     return;
   }
 
-  uint64_t handle_id = 0;
-  if (!fiber_handle_registry_.try_get_handle_id(fiber, &handle_id)) {
+  const uint64_t handle_id = fiber_handle_registry_.unregister_fiber(fiber);
+  if (handle_id == 0) {
     return;
   }
 
-  fiber_handle_registry_.unregister_fiber(fiber);
   ZCOROUTINE_LOG_DEBUG("fiber unregistered, fiber_id={}, handle_id={}", fiber->id(), handle_id);
 }
 
@@ -364,8 +366,8 @@ void* Runtime::external_handle(const Fiber* fiber) const {
     return nullptr;
   }
 
-  uint64_t handle_id = 0;
-  if (!fiber_handle_registry_.try_get_handle_id(fiber, &handle_id)) {
+  const uint64_t handle_id = fiber->external_handle_id();
+  if (handle_id == 0) {
     return nullptr;
   }
   return encode_fiber_handle(handle_id);
