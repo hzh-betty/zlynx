@@ -93,7 +93,7 @@ bool Event::wait(uint32_t milliseconds) const {
   }
 
   // 协程模式：将当前协程登记到 waiters，随后挂起，等待 signal/notify_all 或超时。
-  std::shared_ptr<Fiber> coroutine = current_fiber_shared();
+  Fiber::ptr coroutine = current_fiber_shared();
   if (!coroutine) {
     ZCOROUTINE_LOG_WARN("event wait in coroutine context but no current coroutine");
     return false;
@@ -134,7 +134,7 @@ void Event::signal() const {
     return;
   }
 
-  std::vector<std::shared_ptr<Fiber>> resume_list;
+  std::vector<Fiber::ptr> resume_list;
   {
     std::lock_guard<std::mutex> lock(impl_->mutex);
     impl_->cleanup_waiters();
@@ -144,7 +144,7 @@ void Event::signal() const {
       impl_->signaled = true;
       for (size_t i = 0; i < impl_->waiters.size(); ++i) {
         CoroutineWaiterEntry& waiter = impl_->waiters[i];
-        std::shared_ptr<Fiber> coroutine = claim_waiter(&waiter);
+        Fiber::ptr coroutine = claim_waiter(&waiter);
         if (coroutine) {
           resume_list.push_back(coroutine);
         }
@@ -155,7 +155,7 @@ void Event::signal() const {
       bool resumed = false;
       for (size_t i = 0; i < impl_->waiters.size(); ++i) {
         CoroutineWaiterEntry& waiter = impl_->waiters[i];
-        std::shared_ptr<Fiber> coroutine = claim_waiter(&waiter);
+        Fiber::ptr coroutine = claim_waiter(&waiter);
         if (coroutine) {
           resume_list.push_back(coroutine);
           resumed = true;
@@ -197,14 +197,14 @@ void Event::notify_all() const {
     return;
   }
 
-  std::vector<std::shared_ptr<Fiber>> resume_list;
+  std::vector<Fiber::ptr> resume_list;
   {
     std::lock_guard<std::mutex> lock(impl_->mutex);
     impl_->cleanup_waiters();
 
     for (size_t i = 0; i < impl_->waiters.size(); ++i) {
       CoroutineWaiterEntry& waiter = impl_->waiters[i];
-      std::shared_ptr<Fiber> coroutine = claim_waiter(&waiter);
+      Fiber::ptr coroutine = claim_waiter(&waiter);
       if (coroutine) {
         resume_list.push_back(coroutine);
       }

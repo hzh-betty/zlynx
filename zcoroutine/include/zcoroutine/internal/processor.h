@@ -85,7 +85,7 @@ class Processor : public NonCopyable {
   * @param fiber 协程对象。
   * @return 无返回值。
   */
-  void enqueue_ready(const std::shared_ptr<Fiber>& fiber);
+  void enqueue_ready(Fiber::ptr fiber);
 
   /**
   * @brief 窃取一批待创建任务。
@@ -115,7 +115,7 @@ class Processor : public NonCopyable {
   * @param 无参数。
   * @return 当前 Fiber 指针。
   */
-  std::shared_ptr<Fiber> current_fiber() const;
+  Fiber::ptr current_fiber() const;
 
   /**
   * @brief 获取调度器上下文。
@@ -267,15 +267,15 @@ class Processor : public NonCopyable {
    */
   void run_ready_tasks();
 
-  bool dequeue_ready_fiber(std::shared_ptr<Fiber>* fiber);
+  bool dequeue_ready_fiber(Fiber::ptr* fiber);
 
-  bool recycle_if_done_before_run(const std::shared_ptr<Fiber>& fiber);
+  bool recycle_if_done_before_run(const Fiber::ptr& fiber);
 
-  std::shared_ptr<Fiber> switch_to_fiber(const std::shared_ptr<Fiber>& fiber);
+  Fiber::ptr switch_to_fiber(Fiber::ptr fiber);
 
-  Fiber::State finalize_after_switch(const std::shared_ptr<Fiber>& fiber);
+  Fiber::State finalize_after_switch(const Fiber::ptr& fiber);
 
-  void dispatch_resumed_fiber(const std::shared_ptr<Fiber>& fiber, Fiber::State state);
+  void dispatch_resumed_fiber(Fiber::ptr fiber, Fiber::State state);
 
   bool has_ready_tasks() const;
 
@@ -311,18 +311,18 @@ class Processor : public NonCopyable {
    * @param fiber 协程对象。
    * @return 无返回值。
    */
-  void save_fiber_stack(const std::shared_ptr<Fiber>& fiber);
+  void save_fiber_stack(const Fiber::ptr& fiber);
 
   /**
    * @brief 恢复 Fiber 共享栈快照。
    * @param fiber 协程对象。
    * @return 无返回值。
    */
-  void restore_fiber_stack(const std::shared_ptr<Fiber>& fiber);
+  void restore_fiber_stack(const Fiber::ptr& fiber);
 
-  std::shared_ptr<Fiber> obtain_fiber(Task task);
+  Fiber::ptr obtain_fiber(Task task);
 
-  void recycle_fiber(const std::shared_ptr<Fiber>& fiber);
+  void recycle_fiber(const Fiber::ptr& fiber);
 
   void enqueue_stolen_tasks(std::deque<Task>* tasks);
 
@@ -337,7 +337,7 @@ class Processor : public NonCopyable {
   std::atomic<uint64_t> ema_loop_ns_; // 调度循环平均耗时，纳秒级，供负载评估使用
 
   mutable std::mutex run_queue_mutex_;
-  std::deque<std::shared_ptr<Fiber>> run_queue_;
+  std::deque<Fiber::ptr> run_queue_;
 
   StealQueue steal_queue_;
 
@@ -354,7 +354,7 @@ class Processor : public NonCopyable {
   SharedStackPool shared_stacks_;
 
   Context scheduler_context_;
-  std::shared_ptr<Fiber> current_fiber_;
+  Fiber::ptr current_fiber_;
 };
 
 /**

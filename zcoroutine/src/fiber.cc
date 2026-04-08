@@ -27,7 +27,7 @@ void zcoroutine_context_entry() {
     return;
   }
 
-  std::shared_ptr<Fiber> holder = processor->current_fiber();
+  Fiber::ptr holder = processor->current_fiber();
   if (!holder) {
     ZCOROUTINE_LOG_ERROR("context entry has no current fiber, sched_id={}", processor->id());
     return;

@@ -15,9 +15,9 @@ class FiberPool : public NonCopyable {
  public:
   explicit FiberPool(size_t max_size);
 
-  std::shared_ptr<Fiber> acquire();
+  Fiber::ptr acquire();
 
-  void recycle(const std::shared_ptr<Fiber>& fiber);
+  void recycle(const Fiber::ptr& fiber);
 
   void clear();
 
@@ -26,7 +26,7 @@ class FiberPool : public NonCopyable {
  private:
   const size_t max_size_;
   mutable std::mutex mutex_;
-  std::deque<std::shared_ptr<Fiber>> fibers_;
+  std::deque<Fiber::ptr> fibers_;
 };
 
 }  // namespace zcoroutine

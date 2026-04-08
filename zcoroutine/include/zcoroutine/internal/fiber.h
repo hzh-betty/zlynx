@@ -20,6 +20,8 @@ class Processor;
  */
 class Fiber : public std::enable_shared_from_this<Fiber>, public NonCopyable {
  public:
+ using ptr = std::shared_ptr<Fiber>;
+
   /**
   * @brief 协程状态。
   */

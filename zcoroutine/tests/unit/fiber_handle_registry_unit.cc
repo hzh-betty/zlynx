@@ -14,11 +14,11 @@ TEST_F(FiberHandleRegistryUnitTest, RegisterLookupAndUnregisterFlow) {
   FiberHandleRegistry registry;
   Processor processor(0, 64 * 1024);
 
-  std::shared_ptr<Fiber> fiber = test::MakeFiberForTest(&processor, 1, 0);
+  Fiber::ptr fiber = test::MakeFiberForTest(&processor, 1, 0);
 
   registry.register_fiber(fiber, 101);
 
-  std::shared_ptr<Fiber> found = registry.find_by_handle(101);
+  Fiber::ptr found = registry.find_by_handle(101);
   ASSERT_NE(found, nullptr);
   EXPECT_EQ(found.get(), fiber.get());
 
@@ -35,7 +35,7 @@ TEST_F(FiberHandleRegistryUnitTest, ExistingReverseMappingKeepsOriginalHandle) {
   FiberHandleRegistry registry;
   Processor processor(0, 64 * 1024);
 
-  std::shared_ptr<Fiber> fiber = test::MakeFiberForTest(&processor, 7, 0);
+  Fiber::ptr fiber = test::MakeFiberForTest(&processor, 7, 0);
   registry.register_fiber(fiber, 1001);
   registry.register_fiber(fiber, 2002);
 
@@ -51,7 +51,7 @@ TEST_F(FiberHandleRegistryUnitTest, InvalidInputsAndClearAreSafe) {
   FiberHandleRegistry registry;
   Processor processor(0, 64 * 1024);
 
-  std::shared_ptr<Fiber> fiber = test::MakeFiberForTest(&processor, 8, 0);
+  Fiber::ptr fiber = test::MakeFiberForTest(&processor, 8, 0);
 
   registry.register_fiber(nullptr, 100);
   registry.register_fiber(fiber, 0);

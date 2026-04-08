@@ -10,7 +10,7 @@
 namespace zcoroutine {
 namespace test {
 
-inline std::shared_ptr<Fiber> MakeFiberForTest(Processor* owner,
+inline Fiber::ptr MakeFiberForTest(Processor* owner,
                                                int id,
                                                size_t stack_slot,
                                                Task task = Task(),

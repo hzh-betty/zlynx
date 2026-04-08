@@ -52,7 +52,7 @@ void Mutex::lock() const {
     }
   }
 
-  std::shared_ptr<Fiber> coroutine = current_fiber_shared();
+  Fiber::ptr coroutine = current_fiber_shared();
   if (!coroutine) {
     ZCOROUTINE_LOG_WARN("mutex lock fallback to thread path, no current coroutine");
     std::unique_lock<std::mutex> lock(impl_->mutex);
@@ -90,7 +90,7 @@ void Mutex::unlock() const {
     return;
   }
 
-  std::shared_ptr<Fiber> resume_target;
+  Fiber::ptr resume_target;
   {
     std::lock_guard<std::mutex> lock(impl_->mutex);
     if (!impl_->locked) {

@@ -14,9 +14,9 @@ TEST_F(FiberPoolUnitTest, RecycleRespectsCapacityAndAcquireOrder) {
   FiberPool pool(2);
   Processor processor(0, 64 * 1024);
 
-  std::shared_ptr<Fiber> f1 = test::MakeFiberForTest(&processor, 1, 0);
-  std::shared_ptr<Fiber> f2 = test::MakeFiberForTest(&processor, 2, 1);
-  std::shared_ptr<Fiber> f3 = test::MakeFiberForTest(&processor, 3, 2);
+  Fiber::ptr f1 = test::MakeFiberForTest(&processor, 1, 0);
+  Fiber::ptr f2 = test::MakeFiberForTest(&processor, 2, 1);
+  Fiber::ptr f3 = test::MakeFiberForTest(&processor, 3, 2);
 
   pool.recycle(nullptr);
   EXPECT_EQ(pool.size(), 0u);
@@ -26,9 +26,9 @@ TEST_F(FiberPoolUnitTest, RecycleRespectsCapacityAndAcquireOrder) {
   pool.recycle(f3);
   EXPECT_EQ(pool.size(), 2u);
 
-  std::shared_ptr<Fiber> a = pool.acquire();
-  std::shared_ptr<Fiber> b = pool.acquire();
-  std::shared_ptr<Fiber> c = pool.acquire();
+  Fiber::ptr a = pool.acquire();
+  Fiber::ptr b = pool.acquire();
+  Fiber::ptr c = pool.acquire();
 
   ASSERT_NE(a, nullptr);
   ASSERT_NE(b, nullptr);

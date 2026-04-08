@@ -15,7 +15,7 @@ class FiberUnitTest : public test::RuntimeTestBase {};
 
 TEST_F(FiberUnitTest, BasicStateTransitionsAndTimeoutFlags) {
   Processor processor(0, 64 * 1024);
-  std::shared_ptr<Fiber> fiber = test::MakeFiberForTest(&processor, 1, 0);
+  Fiber::ptr fiber = test::MakeFiberForTest(&processor, 1, 0);
 
   ASSERT_NE(fiber, nullptr);
   EXPECT_EQ(fiber->id(), 1);
@@ -47,7 +47,7 @@ TEST_F(FiberUnitTest, BasicStateTransitionsAndTimeoutFlags) {
 TEST_F(FiberUnitTest, RunMarksDoneEvenIfTaskThrows) {
   Processor processor(0, 64 * 1024);
   bool entered = false;
-  std::shared_ptr<Fiber> fiber = test::MakeFiberForTest(
+  Fiber::ptr fiber = test::MakeFiberForTest(
       &processor, 2, 0, [&entered]() {
         entered = true;
         throw std::runtime_error("expected in test");
@@ -60,7 +60,7 @@ TEST_F(FiberUnitTest, RunMarksDoneEvenIfTaskThrows) {
 
 TEST_F(FiberUnitTest, SaveAndClearSnapshotWorks) {
   Processor processor(0, 64 * 1024);
-  std::shared_ptr<Fiber> fiber = test::MakeFiberForTest(&processor, 3, 0);
+  Fiber::ptr fiber = test::MakeFiberForTest(&processor, 3, 0);
 
   const char payload[] = "snapshot-payload";
   fiber->save_stack_data(payload, sizeof(payload));
@@ -77,7 +77,7 @@ TEST_F(FiberUnitTest, SaveAndClearSnapshotWorks) {
 
 TEST_F(FiberUnitTest, ResetReinitializesFiberIdentityAndState) {
   Processor processor(0, 64 * 1024);
-  std::shared_ptr<Fiber> fiber = test::MakeFiberForTest(&processor, 5, 0);
+  Fiber::ptr fiber = test::MakeFiberForTest(&processor, 5, 0);
 
   const char payload[] = "x";
   fiber->save_stack_data(payload, sizeof(payload));
@@ -95,7 +95,7 @@ TEST_F(FiberUnitTest, ResetReinitializesFiberIdentityAndState) {
 
 TEST_F(FiberUnitTest, IndependentStackModeDisablesSnapshotStorage) {
   Processor processor(0, 64 * 1024, 4, StackModel::kIndependent);
-  std::shared_ptr<Fiber> fiber =
+  Fiber::ptr fiber =
       test::MakeFiberForTest(&processor, 7, 0, Task(), false, 64 * 1024);
 
   ASSERT_NE(fiber, nullptr);
@@ -111,7 +111,7 @@ TEST_F(FiberUnitTest, IndependentStackModeDisablesSnapshotStorage) {
 
 TEST_F(FiberUnitTest, IndependentStackContextInitializeIsIdempotent) {
   Processor processor(0, 64 * 1024, 4, StackModel::kIndependent);
-  std::shared_ptr<Fiber> fiber =
+  Fiber::ptr fiber =
       test::MakeFiberForTest(&processor, 8, 0, Task(), false, 64 * 1024);
 
   ASSERT_NE(fiber, nullptr);
@@ -129,7 +129,7 @@ TEST_F(FiberUnitTest, IndependentStackRequiresPositiveStackSize) {
 
   EXPECT_THROW(
       {
-        std::shared_ptr<Fiber> fiber =
+        Fiber::ptr fiber =
             std::make_shared<Fiber>(11, &processor, Task([]() {}), 0, 0, false);
         (void)fiber;
       },
@@ -141,7 +141,7 @@ TEST_F(FiberUnitTest, SharedStackRejectsOutOfRangeSlot) {
 
   EXPECT_THROW(
       {
-        std::shared_ptr<Fiber> fiber =
+        Fiber::ptr fiber =
             std::make_shared<Fiber>(13, &processor, Task([]() {}), 64 * 1024, 7, true);
         (void)fiber;
       },
@@ -150,7 +150,7 @@ TEST_F(FiberUnitTest, SharedStackRejectsOutOfRangeSlot) {
 
 TEST_F(FiberUnitTest, SharedStackContextInitializeIsIdempotent) {
   Processor processor(0, 64 * 1024, 4, StackModel::kShared);
-  std::shared_ptr<Fiber> fiber = test::MakeFiberForTest(&processor, 14, 1, Task(), true);
+  Fiber::ptr fiber = test::MakeFiberForTest(&processor, 14, 1, Task(), true);
 
   ASSERT_NE(fiber, nullptr);
   ASSERT_TRUE(fiber->use_shared_stack());
@@ -165,7 +165,7 @@ TEST_F(FiberUnitTest, SharedStackContextInitializeIsIdempotent) {
 
 TEST_F(FiberUnitTest, SharedStackZeroSizeSnapshotClearsSavedData) {
   Processor processor(0, 64 * 1024, 4, StackModel::kShared);
-  std::shared_ptr<Fiber> fiber = test::MakeFiberForTest(&processor, 15, 0);
+  Fiber::ptr fiber = test::MakeFiberForTest(&processor, 15, 0);
 
   ASSERT_NE(fiber, nullptr);
   const char payload[] = "snapshot";
@@ -181,7 +181,7 @@ TEST_F(FiberUnitTest, SharedStackZeroSizeSnapshotClearsSavedData) {
 TEST_F(FiberUnitTest, IndependentStackAllowsOutOfRangeStackSlot) {
   Processor processor(0, 64 * 1024, 0, StackModel::kIndependent);
 
-  std::shared_ptr<Fiber> fiber =
+  Fiber::ptr fiber =
       test::MakeFiberForTest(&processor, 12, 999, Task(), false, 32 * 1024);
 
   ASSERT_NE(fiber, nullptr);

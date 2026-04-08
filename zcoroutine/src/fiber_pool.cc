@@ -4,18 +4,18 @@ namespace zcoroutine {
 
 FiberPool::FiberPool(size_t max_size) : max_size_(max_size), mutex_(), fibers_() {}
 
-std::shared_ptr<Fiber> FiberPool::acquire() {
+Fiber::ptr FiberPool::acquire() {
   std::lock_guard<std::mutex> lock(mutex_);
   if (fibers_.empty()) {
     return nullptr;
   }
 
-  std::shared_ptr<Fiber> fiber = fibers_.front();
+  Fiber::ptr fiber = fibers_.front();
   fibers_.pop_front();
   return fiber;
 }
 
-void FiberPool::recycle(const std::shared_ptr<Fiber>& fiber) {
+void FiberPool::recycle(const Fiber::ptr& fiber) {
   if (!fiber) {
     return;
   }

@@ -15,7 +15,7 @@ class CoroutineWaiterUnitTest : public test::RuntimeTestBase {};
 
 TEST_F(CoroutineWaiterUnitTest, ValidityChecksHandleDifferentEntryStates) {
   Processor processor(0, 64 * 1024);
-  std::shared_ptr<Fiber> fiber = test::MakeFiberForTest(&processor, 1, 0);
+  Fiber::ptr fiber = test::MakeFiberForTest(&processor, 1, 0);
 
   CoroutineWaiterEntry missing_active;
   missing_active.coroutine = fiber;
@@ -37,7 +37,7 @@ TEST_F(CoroutineWaiterUnitTest, ValidityChecksHandleDifferentEntryStates) {
 
 TEST_F(CoroutineWaiterUnitTest, CleanupFunctionsRemoveInvalidEntries) {
   Processor processor(0, 64 * 1024);
-  std::shared_ptr<Fiber> fiber = test::MakeFiberForTest(&processor, 2, 0);
+  Fiber::ptr fiber = test::MakeFiberForTest(&processor, 2, 0);
 
   CoroutineWaiterEntry valid;
   valid.coroutine = fiber;
@@ -64,13 +64,13 @@ TEST_F(CoroutineWaiterUnitTest, CleanupFunctionsRemoveInvalidEntries) {
 
 TEST_F(CoroutineWaiterUnitTest, ClaimWaiterReturnsFiberOnlyOnce) {
   Processor processor(0, 64 * 1024);
-  std::shared_ptr<Fiber> fiber = test::MakeFiberForTest(&processor, 3, 0);
+  Fiber::ptr fiber = test::MakeFiberForTest(&processor, 3, 0);
 
   CoroutineWaiterEntry waiter;
   waiter.coroutine = fiber;
   waiter.active = std::make_shared<std::atomic<bool>>(true);
 
-  std::shared_ptr<Fiber> first = claim_waiter(&waiter);
+  Fiber::ptr first = claim_waiter(&waiter);
   ASSERT_NE(first, nullptr);
   EXPECT_EQ(first.get(), fiber.get());
 
@@ -82,7 +82,7 @@ TEST_F(CoroutineWaiterUnitTest, ClaimWaiterReturnsFiberOnlyOnce) {
 
 TEST_F(CoroutineWaiterUnitTest, CleanupWaitersFrontKeepsDequeWhenFrontIsValid) {
   Processor processor(0, 64 * 1024);
-  std::shared_ptr<Fiber> fiber = test::MakeFiberForTest(&processor, 4, 0);
+  Fiber::ptr fiber = test::MakeFiberForTest(&processor, 4, 0);
 
   CoroutineWaiterEntry valid_front;
   valid_front.coroutine = fiber;

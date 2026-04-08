@@ -21,17 +21,17 @@ class FiberHandleRegistry : public NonCopyable {
 
   void clear();
 
-  uint64_t register_fiber(const std::shared_ptr<Fiber>& fiber, uint64_t handle_id);
+  uint64_t register_fiber(const Fiber::ptr& fiber, uint64_t handle_id);
 
   uint64_t unregister_fiber(Fiber* fiber);
 
-  std::shared_ptr<Fiber> find_by_handle(uint64_t handle_id) const;
+  Fiber::ptr find_by_handle(uint64_t handle_id) const;
 
   bool try_get_handle_id(const Fiber* fiber, uint64_t* handle_id) const;
 
  private:
   mutable std::mutex mutex_;
-  std::unordered_map<uint64_t, std::shared_ptr<Fiber>> handle_map_;
+  std::unordered_map<uint64_t, Fiber::ptr> handle_map_;
 };
 
 }  // namespace zcoroutine

@@ -51,7 +51,7 @@ inline void cleanup_waiters_front(std::deque<CoroutineWaiterEntry>* waiters) {
   }
 }
 
-inline std::shared_ptr<Fiber> claim_waiter(CoroutineWaiterEntry* waiter) {
+inline Fiber::ptr claim_waiter(CoroutineWaiterEntry* waiter) {
   if (!waiter || !waiter->active) {
     return nullptr;
   }

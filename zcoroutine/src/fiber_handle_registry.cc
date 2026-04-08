@@ -2,14 +2,17 @@
 
 namespace zcoroutine {
 
-FiberHandleRegistry::FiberHandleRegistry() : mutex_(), handle_map_() {}
+FiberHandleRegistry::FiberHandleRegistry() : mutex_(), handle_map_() {
+  // 短任务压测下句柄注册/注销频繁，预留容量可减少rehash与缓存抖动。
+  handle_map_.reserve(8192);
+}
 
 void FiberHandleRegistry::clear() {
   std::lock_guard<std::mutex> lock(mutex_);
   handle_map_.clear();
 }
 
-uint64_t FiberHandleRegistry::register_fiber(const std::shared_ptr<Fiber>& fiber,
+uint64_t FiberHandleRegistry::register_fiber(const Fiber::ptr& fiber,
                                              uint64_t handle_id) {
   if (!fiber || handle_id == 0) {
     return 0;
@@ -40,7 +43,7 @@ uint64_t FiberHandleRegistry::unregister_fiber(Fiber* fiber) {
   return handle_id;
 }
 
-std::shared_ptr<Fiber> FiberHandleRegistry::find_by_handle(uint64_t handle_id) const {
+Fiber::ptr FiberHandleRegistry::find_by_handle(uint64_t handle_id) const {
   if (handle_id == 0) {
     return nullptr;
   }

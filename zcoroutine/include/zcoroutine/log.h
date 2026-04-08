@@ -100,6 +100,7 @@ inline zlog::Logger::ptr default_logger() {
 /**
  * @brief DEBUG 级别日志宏。
  */
+#if defined(ZCOROUTINE_ENABLE_DEBUG_LOGS)
 #define ZCOROUTINE_LOG_DEBUG(...)                                                     \
   do {                                                                                \
     auto* zcoroutine_logger__ = ::zcoroutine::get_logger();                           \
@@ -107,6 +108,11 @@ inline zlog::Logger::ptr default_logger() {
       zcoroutine_logger__->debug(__FILE__, __LINE__, __VA_ARGS__);                   \
     }                                                                                 \
   } while (0)
+#else
+#define ZCOROUTINE_LOG_DEBUG(...)                                                     \
+  do {                                                                                \
+  } while (0)
+#endif
 
 /**
  * @brief INFO 级别日志宏。

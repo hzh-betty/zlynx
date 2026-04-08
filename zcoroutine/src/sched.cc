@@ -105,7 +105,7 @@ void resume(void* fiber) {
 
 void* current_coroutine() {
   // 返回逻辑句柄用于跨 API 传递，不暴露 Fiber 对象地址。
-  std::shared_ptr<Fiber> fiber = current_fiber_shared();
+  Fiber::ptr fiber = current_fiber_shared();
   return Runtime::instance().external_handle(fiber.get());
 }
 
@@ -115,13 +115,13 @@ int sched_id() {
 }
 
 int coroutine_id() {
-  std::shared_ptr<Fiber> fiber = current_fiber_shared();
+  Fiber::ptr fiber = current_fiber_shared();
   return fiber ? fiber->id() : -1;
 }
 
 bool timeout() {
   // 仅在协程被超时路径唤醒后返回 true。
-  std::shared_ptr<Fiber> fiber = current_fiber_shared();
+  Fiber::ptr fiber = current_fiber_shared();
   return fiber ? fiber->timed_out() : false;
 }
 

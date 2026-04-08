@@ -308,7 +308,7 @@ void Runtime::resume_external(void* handle) {
 
   const uint64_t handle_id = decode_fiber_handle(handle);
   // 先通过句柄映射恢复受管对象，避免对象复用导致的 stale handle 误命中。
-  std::shared_ptr<Fiber> holder = fiber_handle_registry_.find_by_handle(handle_id);
+  Fiber::ptr holder = fiber_handle_registry_.find_by_handle(handle_id);
   if (!holder) {
     ZCOROUTINE_LOG_WARN("resume_external failed, fiber handle not found, handle_id={}", handle_id);
     return;
@@ -328,7 +328,7 @@ const std::vector<std::unique_ptr<Processor>>& Runtime::processors() const { ret
 
 int Runtime::next_fiber_id() { return fiber_id_gen_.fetch_add(1, std::memory_order_relaxed); }
 
-void Runtime::register_fiber(const std::shared_ptr<Fiber>& fiber) {
+void Runtime::register_fiber(const Fiber::ptr& fiber) {
   if (!fiber) {
     return;
   }
@@ -373,7 +373,7 @@ void* Runtime::external_handle(const Fiber* fiber) const {
   return encode_fiber_handle(handle_id);
 }
 
-std::shared_ptr<Fiber> current_fiber_shared() {
+Fiber::ptr current_fiber_shared() {
   Processor* processor = current_processor();
   if (!processor) {
     return nullptr;
@@ -381,7 +381,7 @@ std::shared_ptr<Fiber> current_fiber_shared() {
   return processor->current_fiber();
 }
 
-void resume_fiber(const std::shared_ptr<Fiber>& fiber, bool timed_out) {
+void resume_fiber(const Fiber::ptr& fiber, bool timed_out) {
   if (!fiber) {
     return;
   }
@@ -436,9 +436,11 @@ std::shared_ptr<TimerToken> add_timer(uint32_t milliseconds, std::function<void(
 bool wait_fd(int fd, uint32_t events, uint32_t milliseconds) {
   Processor* processor = current_processor();
   if (!processor || !processor->current_fiber()) {
-    errno = EPERM;
+    const int saved_errno = EPERM;
+    errno = saved_errno;
     ZCOROUTINE_LOG_FATAL("wait_fd must be called in coroutine context, fd={}, events={}, timeout_ms={}",
                          fd, events, milliseconds);
+    errno = saved_errno;
     return false;
   }
 

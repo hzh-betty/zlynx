@@ -154,7 +154,7 @@ class Runtime : public NonCopyable {
   * @param fiber 协程对象。
   * @return 无返回值。
   */
-  void register_fiber(const std::shared_ptr<Fiber>& fiber);
+  void register_fiber(const Fiber::ptr& fiber);
 
   /**
   * @brief 注销 Fiber 句柄。
@@ -230,7 +230,7 @@ class Runtime : public NonCopyable {
  * @param 无参数。
  * @return 当前 Fiber，共享指针；不在处理器线程返回 nullptr。
  */
-std::shared_ptr<Fiber> current_fiber_shared();
+Fiber::ptr current_fiber_shared();
 
 /**
  * @brief 恢复等待中的 Fiber。
@@ -238,7 +238,7 @@ std::shared_ptr<Fiber> current_fiber_shared();
  * @param timed_out 是否因超时恢复。
  * @return 无返回值。
  */
-void resume_fiber(const std::shared_ptr<Fiber>& fiber, bool timed_out);
+void resume_fiber(const Fiber::ptr& fiber, bool timed_out);
 
 /**
  * @brief 将当前 Fiber 标记为等待。

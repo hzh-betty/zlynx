@@ -85,17 +85,17 @@ void Processor::enqueue_task(Task task) {
   wake_loop();
 }
 
-void Processor::enqueue_ready(const std::shared_ptr<Fiber>& fiber) {
+void Processor::enqueue_ready(Fiber::ptr fiber) {
   if (!fiber) {
     return;
   }
 
   {
     std::lock_guard<std::mutex> lock(run_queue_mutex_);
-    run_queue_.push_back(fiber);
+    run_queue_.push_back(std::move(fiber));
     ready_size_.fetch_add(1, std::memory_order_relaxed);
-    ZCOROUTINE_LOG_DEBUG("fiber ready enqueued, sched_id={}, fiber_id={}, ready_size={}", id_,
-                         fiber->id(), run_queue_.size());
+    ZCOROUTINE_LOG_DEBUG("fiber ready enqueued, sched_id={}, ready_size={}", id_,
+                         run_queue_.size());
   }
 
   wake_loop();
@@ -114,7 +114,7 @@ uint32_t Processor::pending_task_count() const {
 
 int Processor::id() const { return id_; }
 
-std::shared_ptr<Fiber> Processor::current_fiber() const { return current_fiber_; }
+Fiber::ptr Processor::current_fiber() const { return current_fiber_; }
 
 ucontext_t* Processor::scheduler_context() { return scheduler_context_.get(); }
 
@@ -157,7 +157,7 @@ bool Processor::park_current_for(uint32_t milliseconds) {
   }
 
   // 为当前等待协程挂一个超时回调，超时后尝试把协程恢复为 ready。
-  std::shared_ptr<Fiber> waiting = current_fiber_;
+  Fiber::ptr waiting = current_fiber_;
   std::shared_ptr<TimerToken> token = add_timer(milliseconds, [waiting]() {
     resume_fiber(waiting, true);
   });
@@ -215,7 +215,7 @@ bool Processor::wait_fd(int fd, uint32_t events, uint32_t milliseconds) {
       if (poller_) {
         poller_->unregister_waiter(waiter);
       }
-      if (std::shared_ptr<Fiber> fiber = waiter->fiber.lock()) {
+      if (Fiber::ptr fiber = waiter->fiber.lock()) {
         ZCOROUTINE_LOG_DEBUG("wait_fd timeout, sched_id={}, fd={}, fiber_id={}", id_, waiter->fd,
                              fiber->id());
         resume_fiber(fiber, true);
@@ -367,19 +367,16 @@ void Processor::steal_tasks_when_idle() {
   }
 
   std::deque<Task> stolen_batch;
-  Processor* success_victim = nullptr;
   if (chosen && chosen->steal_tasks(&stolen_batch, 64, 2) > 0) {
-    success_victim = chosen;
   } else if (victim_b && victim_b != chosen && victim_b->steal_tasks(&stolen_batch, 64, 2) > 0) {
-    success_victim = victim_b;
   }
 
   if (stolen_batch.empty()) {
     return;
   }
 
-  ZCOROUTINE_LOG_DEBUG("tasks stolen by scheduler, thief_sched_id={}, victim_sched_id={}, stolen={}",
-                       id_, success_victim ? success_victim->id() : -1, stolen_batch.size());
+  ZCOROUTINE_LOG_DEBUG("tasks stolen by scheduler, thief_sched_id={}, stolen={}", id_,
+                       stolen_batch.size());
   enqueue_stolen_tasks(&stolen_batch);
 }
 
@@ -412,31 +409,31 @@ void Processor::drain_new_tasks() {
   while (!pending.empty()) {
     Task task = std::move(pending.front());
     pending.pop_front();
-    std::shared_ptr<Fiber> fiber = obtain_fiber(std::move(task));
+    Fiber::ptr fiber = obtain_fiber(std::move(task));
     Runtime::instance().register_fiber(fiber);
     ZCOROUTINE_LOG_DEBUG("task materialized to fiber, sched_id={}, fiber_id={}", id_, fiber->id());
-    enqueue_ready(fiber);
+    enqueue_ready(std::move(fiber));
   }
 }
 
 void Processor::run_ready_tasks() {
-  std::shared_ptr<Fiber> fiber;
+  Fiber::ptr fiber;
   while (dequeue_ready_fiber(&fiber)) {
     if (recycle_if_done_before_run(fiber)) {
       continue;
     }
 
-    std::shared_ptr<Fiber> resumed = switch_to_fiber(fiber);
+    Fiber::ptr resumed = switch_to_fiber(std::move(fiber));
     if (!resumed) {
       continue;
     }
 
     const Fiber::State state = finalize_after_switch(resumed);
-    dispatch_resumed_fiber(resumed, state);
+    dispatch_resumed_fiber(std::move(resumed), state);
   }
 }
 
-bool Processor::dequeue_ready_fiber(std::shared_ptr<Fiber>* fiber) {
+bool Processor::dequeue_ready_fiber(Fiber::ptr* fiber) {
   if (!fiber) {
     return false;
   }
@@ -446,13 +443,13 @@ bool Processor::dequeue_ready_fiber(std::shared_ptr<Fiber>* fiber) {
     return false;
   }
 
-  *fiber = run_queue_.front();
+  *fiber = std::move(run_queue_.front());
   run_queue_.pop_front();
   ready_size_.fetch_sub(1, std::memory_order_relaxed);
   return true;
 }
 
-bool Processor::recycle_if_done_before_run(const std::shared_ptr<Fiber>& fiber) {
+bool Processor::recycle_if_done_before_run(const Fiber::ptr& fiber) {
   if (!fiber) {
     return true;
   }
@@ -467,8 +464,8 @@ bool Processor::recycle_if_done_before_run(const std::shared_ptr<Fiber>& fiber) 
   return true;
 }
 
-std::shared_ptr<Fiber> Processor::switch_to_fiber(const std::shared_ptr<Fiber>& fiber) {
-  current_fiber_ = fiber;
+Fiber::ptr Processor::switch_to_fiber(Fiber::ptr fiber) {
+  current_fiber_ = std::move(fiber);
 
   if (!current_fiber_->context_initialized()) {
     // 首次运行需要初始化 ucontext；后续恢复只做栈快照回填。
@@ -481,12 +478,12 @@ std::shared_ptr<Fiber> Processor::switch_to_fiber(const std::shared_ptr<Fiber>& 
   ZCOROUTINE_LOG_DEBUG("switch to fiber, sched_id={}, fiber_id={}", id_, current_fiber_->id());
   Context::swap_context(&scheduler_context_, fiber_context);
 
-  std::shared_ptr<Fiber> resumed = current_fiber_;
+  Fiber::ptr resumed = current_fiber_;
   current_fiber_.reset();
   return resumed;
 }
 
-Fiber::State Processor::finalize_after_switch(const std::shared_ptr<Fiber>& fiber) {
+Fiber::State Processor::finalize_after_switch(const Fiber::ptr& fiber) {
   const Fiber::State state = fiber->state();
   if (state != Fiber::State::kDone) {
     // 非结束态都要把共享栈快照保存，供下次恢复继续执行。
@@ -498,10 +495,10 @@ Fiber::State Processor::finalize_after_switch(const std::shared_ptr<Fiber>& fibe
   return state;
 }
 
-void Processor::dispatch_resumed_fiber(const std::shared_ptr<Fiber>& fiber, Fiber::State state) {
+void Processor::dispatch_resumed_fiber(Fiber::ptr fiber, Fiber::State state) {
   if (state == Fiber::State::kReady) {
     // 主动 yield 或被唤醒后进入 ready，重新排队等待下一轮调度。
-    enqueue_ready(fiber);
+    enqueue_ready(std::move(fiber));
     return;
   }
 
@@ -520,6 +517,7 @@ void Processor::process_timers() { timer_queue_.process_due(); }
 int Processor::next_timeout_ms() const { return timer_queue_.next_timeout_ms(); }
 
 void Processor::handle_io_ready(const std::shared_ptr<IoWaiter>& waiter, uint32_t ready_events) {
+  (void)ready_events;
   if (!waiter) {
     return;
   }
@@ -533,14 +531,14 @@ void Processor::handle_io_ready(const std::shared_ptr<IoWaiter>& waiter, uint32_
     waiter->timer->cancelled.store(true, std::memory_order_release);
   }
 
-  if (std::shared_ptr<Fiber> fiber = waiter->fiber.lock()) {
+  if (Fiber::ptr fiber = waiter->fiber.lock()) {
     ZCOROUTINE_LOG_DEBUG("io ready resume fiber, sched_id={}, fd={}, fiber_id={}, ready_events={}",
                          id_, waiter->fd, fiber->id(), ready_events);
     resume_fiber(fiber, false);
   }
 }
 
-void Processor::save_fiber_stack(const std::shared_ptr<Fiber>& fiber) {
+void Processor::save_fiber_stack(const Fiber::ptr& fiber) {
   if (!fiber) {
     return;
   }
@@ -572,7 +570,7 @@ void Processor::save_fiber_stack(const std::shared_ptr<Fiber>& fiber) {
                        fiber->id(), used);
 }
 
-void Processor::restore_fiber_stack(const std::shared_ptr<Fiber>& fiber) {
+void Processor::restore_fiber_stack(const Fiber::ptr& fiber) {
   if (!fiber || !fiber->has_saved_stack()) {
     return;
   }
@@ -598,7 +596,7 @@ void Processor::restore_fiber_stack(const std::shared_ptr<Fiber>& fiber) {
                        fiber->id(), used);
 }
 
-std::shared_ptr<Fiber> Processor::obtain_fiber(Task task) {
+Fiber::ptr Processor::obtain_fiber(Task task) {
   size_t stack_slot = 0;
   if (stack_model_ == StackModel::kShared) {
     const size_t stack_count = shared_stacks_.count() == 0 ? 1 : shared_stacks_.count();
@@ -607,7 +605,7 @@ std::shared_ptr<Fiber> Processor::obtain_fiber(Task task) {
 
   const int fiber_id = Runtime::instance().next_fiber_id();
 
-  std::shared_ptr<Fiber> fiber = fiber_pool_.acquire();
+  Fiber::ptr fiber = fiber_pool_.acquire();
 
   if (fiber) {
     fiber->reset(fiber_id, std::move(task), stack_slot);
@@ -619,7 +617,7 @@ std::shared_ptr<Fiber> Processor::obtain_fiber(Task task) {
                                  stack_model_ == StackModel::kShared);
 }
 
-void Processor::recycle_fiber(const std::shared_ptr<Fiber>& fiber) {
+void Processor::recycle_fiber(const Fiber::ptr& fiber) {
   fiber_pool_.recycle(fiber);
 }
 

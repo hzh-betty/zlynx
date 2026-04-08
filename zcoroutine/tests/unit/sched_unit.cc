@@ -27,9 +27,17 @@ class IncrementClosure final : public Closure {
 
 class MemberInvoker {
  public:
+  explicit MemberInvoker(WaitGroup* done) : done_(done) {}
+
   void add(std::atomic<int>* value) {
     value->fetch_add(1, std::memory_order_relaxed);
+    if (done_ != nullptr) {
+      done_->done();
+    }
   }
+
+ private:
+  WaitGroup* done_;
 };
 
 TEST_F(SchedUnitByHeaderTest, InitGoAndSchedulerHandlesWork) {
@@ -134,10 +142,9 @@ TEST_F(SchedUnitByHeaderTest, GoSupportsMemberFunctionWithOneArgument) {
 
   WaitGroup done(1);
   std::atomic<int> counter(0);
-  MemberInvoker invoker;
+  MemberInvoker invoker(&done);
 
   go(&MemberInvoker::add, &invoker, &counter);
-  go([&done]() { done.done(); });
 
   done.wait();
   EXPECT_EQ(counter.load(std::memory_order_relaxed), 1);
