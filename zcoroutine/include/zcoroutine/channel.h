@@ -2,10 +2,12 @@
 #define ZCOROUTINE_CHANNEL_H_
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
-#include <deque>
 #include <mutex>
+#include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "zcoroutine/event.h"
 #include "zcoroutine/log.h"
@@ -27,10 +29,19 @@ class Channel {
   explicit Channel(uint32_t capacity = 1, uint32_t timeout_ms = kInfiniteTimeoutMs)
       : capacity_(capacity == 0 ? 1 : capacity),
         timeout_ms_(timeout_ms),
+        storage_(capacity_, StorageSlot{}),
+        head_(0),
+        tail_(0),
+        size_(0),
         not_empty_(true, false),
         not_full_(true, true),
         closed_(false),
         done_(true) {}
+
+  ~Channel() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    clear_locked();
+  }
 
   /**
    * @brief 从通道读取一个元素。
@@ -51,16 +62,16 @@ class Channel {
     while (true) {
       {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (!queue_.empty()) {
-          out = std::move(queue_.front());
-          queue_.pop_front();
+        if (size_ > 0) {
+          pop_front_locked(&out);
           done_.store(true, std::memory_order_release);
           update_events_locked();
-          ZCOROUTINE_LOG_DEBUG("channel read success, size={}, capacity={}", queue_.size(), capacity_);
+          ZCOROUTINE_LOG_DEBUG("channel read success, size={}, capacity={}", size_, capacity_);
           return true;
         }
 
-        if (closed_.load(std::memory_order_acquire)) {
+        const bool closed = closed_.load(std::memory_order_acquire);
+        if (closed) {
           done_.store(false, std::memory_order_release);
           update_events_locked();
           ZCOROUTINE_LOG_DEBUG("channel read failed, channel closed and empty");
@@ -190,7 +201,7 @@ class Channel {
       std::lock_guard<std::mutex> lock(mutex_);
       closed_.store(true, std::memory_order_release);
       update_events_locked();
-      ZCOROUTINE_LOG_INFO("channel closed, remaining_size={}, capacity={}", queue_.size(), capacity_);
+      ZCOROUTINE_LOG_INFO("channel closed, remaining_size={}, capacity={}", size_, capacity_);
     }
     not_empty_.notify_all();
     not_full_.notify_all();
@@ -214,18 +225,19 @@ class Channel {
     while (true) {
       {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (closed_.load(std::memory_order_acquire)) {
+        const bool closed = closed_.load(std::memory_order_acquire);
+        if (closed) {
           done_.store(false, std::memory_order_release);
           update_events_locked();
           ZCOROUTINE_LOG_WARN("channel write failed, channel already closed");
           return false;
         }
 
-        if (queue_.size() < capacity_) {
-          queue_.push_back(std::move(value));
+        if (size_ < capacity_) {
+          push_back_locked(std::move(value));
           done_.store(true, std::memory_order_release);
           update_events_locked();
-          ZCOROUTINE_LOG_DEBUG("channel write success, size={}, capacity={}", queue_.size(), capacity_);
+          ZCOROUTINE_LOG_DEBUG("channel write success, size={}, capacity={}", size_, capacity_);
           return true;
         }
       }
@@ -244,13 +256,14 @@ class Channel {
    */
   void update_events_locked() const {
     // not_empty_ 和 not_full_ 分别用于读侧和写侧阻塞唤醒。
-    if (!queue_.empty()) {
+    if (size_ > 0) {
       not_empty_.signal();
     } else {
       not_empty_.reset();
     }
 
-    const bool can_write = !closed_.load(std::memory_order_acquire) && queue_.size() < capacity_;
+    const bool closed = closed_.load(std::memory_order_acquire);
+    const bool can_write = !closed && size_ < capacity_;
     if (can_write) {
       not_full_.signal();
     } else {
@@ -258,10 +271,44 @@ class Channel {
     }
   }
 
+  using StorageSlot = typename std::aligned_storage<sizeof(T), alignof(T)>::type;
+
+  T* slot_ptr(size_t index) const {
+    return reinterpret_cast<T*>(const_cast<StorageSlot*>(&storage_[index]));
+  }
+
+  void push_back_locked(T&& value) const {
+    new (slot_ptr(tail_)) T(std::move(value));
+    tail_ = (tail_ + 1U) % capacity_;
+    ++size_;
+  }
+
+  void pop_front_locked(T* out) const {
+    T* element = slot_ptr(head_);
+    *out = std::move(*element);
+    element->~T();
+    head_ = (head_ + 1U) % capacity_;
+    --size_;
+  }
+
+  void clear_locked() const {
+    while (size_ > 0) {
+      T* element = slot_ptr(head_);
+      element->~T();
+      head_ = (head_ + 1U) % capacity_;
+      --size_;
+    }
+    head_ = 0;
+    tail_ = 0;
+  }
+
   const size_t capacity_;
   const uint32_t timeout_ms_;
   mutable std::mutex mutex_;
-  mutable std::deque<T> queue_;
+  mutable std::vector<StorageSlot> storage_;
+  mutable size_t head_;
+  mutable size_t tail_;
+  mutable size_t size_;
   mutable Event not_empty_;
   mutable Event not_full_;
   mutable std::atomic<bool> closed_;

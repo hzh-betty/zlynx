@@ -1,7 +1,6 @@
 #ifndef ZCOROUTINE_INTERNAL_PROCESSOR_H_
 #define ZCOROUTINE_INTERNAL_PROCESSOR_H_
 
-#include <array>
 #include <atomic>
 #include <cstdint>
 #include <deque>
@@ -9,7 +8,6 @@
 #include <memory>
 #include <mutex>
 #include <thread>
-#include <vector>
 
 #include "zcoroutine/internal/context.h"
 #include "zcoroutine/internal/fiber_pool.h"
@@ -325,6 +323,8 @@ class Processor : public NonCopyable {
   void recycle_fiber(const Fiber::ptr& fiber);
 
   void enqueue_stolen_tasks(std::deque<Task>* tasks);
+
+  void enqueue_ready_batch(std::deque<Fiber::ptr>* fibers);
 
   int id_;
   const size_t stack_size_;

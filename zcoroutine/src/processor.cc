@@ -3,12 +3,10 @@
 #include <errno.h>
 #include <sys/epoll.h>
 
-#include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <utility>
 
-#include "zcoroutine/internal/epoller.h"
 #include "zcoroutine/internal/runtime_manager.h"
 #include "zcoroutine/log.h"
 
@@ -99,6 +97,24 @@ void Processor::enqueue_ready(Fiber::ptr fiber) {
   }
 
   wake_loop();
+}
+
+void Processor::enqueue_ready_batch(std::deque<Fiber::ptr>* fibers) {
+  if (!fibers || fibers->empty()) {
+    return;
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(run_queue_mutex_);
+    const uint32_t added = static_cast<uint32_t>(fibers->size());
+    while (!fibers->empty()) {
+      run_queue_.push_back(std::move(fibers->front()));
+      fibers->pop_front();
+    }
+    ready_size_.fetch_add(added, std::memory_order_relaxed);
+    ZCOROUTINE_LOG_DEBUG("fiber ready batch enqueued, sched_id={}, added={}, ready_size={}", id_,
+                         added, run_queue_.size());
+  }
 }
 
 size_t Processor::steal_tasks(std::deque<Task>* tasks, size_t max_steal, size_t min_reserve) {
@@ -406,14 +422,18 @@ void Processor::drain_new_tasks() {
     return;
   }
 
+  std::deque<Fiber::ptr> ready_batch;
+
   while (!pending.empty()) {
     Task task = std::move(pending.front());
     pending.pop_front();
     Fiber::ptr fiber = obtain_fiber(std::move(task));
     Runtime::instance().register_fiber(fiber);
     ZCOROUTINE_LOG_DEBUG("task materialized to fiber, sched_id={}, fiber_id={}", id_, fiber->id());
-    enqueue_ready(std::move(fiber));
+    ready_batch.push_back(std::move(fiber));
   }
+
+  enqueue_ready_batch(&ready_batch);
 }
 
 void Processor::run_ready_tasks() {

@@ -94,6 +94,12 @@ void sleep_for(uint32_t milliseconds) {
     return;
   }
 
+  if (milliseconds == 0) {
+    // zero-sleep 语义等价于主动让出执行权，无需进入定时器队列。
+    processor->yield_current();
+    return;
+  }
+
   processor->prepare_wait_current();
   (void)processor->park_current_for(milliseconds);
 }
