@@ -64,6 +64,33 @@ TEST_F(ChannelUnitByHeaderTest, CloseStillAllowsBufferedReadsBeforeFinalFailure)
   EXPECT_FALSE(channel.done());
 }
 
+TEST_F(ChannelUnitByHeaderTest, WrapAroundKeepsFifoOrder) {
+  Channel<int> channel(3, 100);
+
+  EXPECT_TRUE(channel.write(1));
+  EXPECT_TRUE(channel.write(2));
+  EXPECT_TRUE(channel.write(3));
+
+  int out = 0;
+  EXPECT_TRUE(channel.read(out, 0));
+  EXPECT_EQ(out, 1);
+  EXPECT_TRUE(channel.read(out, 0));
+  EXPECT_EQ(out, 2);
+
+  EXPECT_TRUE(channel.write(4));
+  EXPECT_TRUE(channel.write(5));
+
+  EXPECT_TRUE(channel.read(out, 0));
+  EXPECT_EQ(out, 3);
+  EXPECT_TRUE(channel.read(out, 0));
+  EXPECT_EQ(out, 4);
+  EXPECT_TRUE(channel.read(out, 0));
+  EXPECT_EQ(out, 5);
+
+  channel.close();
+  EXPECT_FALSE(channel.read(out, 0));
+}
+
 TEST_F(ChannelUnitByHeaderTest, CoroutineProducerConsumerWorks) {
   init(2);
 
