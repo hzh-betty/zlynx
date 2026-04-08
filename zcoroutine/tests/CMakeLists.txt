@@ -27,7 +27,11 @@ endforeach()
 
 foreach(test_src ${ZCOROUTINE_STRESS_TESTS})
   get_filename_component(test_name ${test_src} NAME_WE)
-  add_zcoroutine_test(${test_name} ${test_src} "stress;extended" 180)
+  set(stress_labels "stress;extended")
+  if(test_name MATCHES "(perf|benchmark)")
+    set(stress_labels "stress;extended;performance")
+  endif()
+  add_zcoroutine_test(${test_name} ${test_src} "${stress_labels}" 180)
 endforeach()
 
 add_custom_target(zcoroutine_test_quick
@@ -40,4 +44,10 @@ add_custom_target(zcoroutine_test_extended
   COMMAND ${CMAKE_CTEST_COMMAND} -L extended --output-on-failure
   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
   COMMENT "Run zcoroutine extended tests (stress)"
+)
+
+add_custom_target(zcoroutine_test_performance
+  COMMAND ${CMAKE_CTEST_COMMAND} -L performance --output-on-failure
+  WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+  COMMENT "Run zcoroutine performance tests"
 )

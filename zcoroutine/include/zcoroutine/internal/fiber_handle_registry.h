@@ -2,7 +2,6 @@
 #define ZCOROUTINE_INTERNAL_FIBER_HANDLE_REGISTRY_H_
 
 #include <cstdint>
-#include <memory>
 #include <mutex>
 #include <unordered_map>
 
