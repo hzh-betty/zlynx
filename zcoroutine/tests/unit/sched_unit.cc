@@ -10,6 +10,28 @@ namespace {
 
 class SchedUnitByHeaderTest : public test::RuntimeTestBase {};
 
+class IncrementClosure final : public Closure {
+ public:
+  IncrementClosure(std::atomic<int>* counter, WaitGroup* done)
+      : counter_(counter), done_(done) {}
+
+  void run() override {
+    counter_->fetch_add(1, std::memory_order_relaxed);
+    done_->done();
+  }
+
+ private:
+  std::atomic<int>* counter_;
+  WaitGroup* done_;
+};
+
+class MemberInvoker {
+ public:
+  void add(std::atomic<int>* value) {
+    value->fetch_add(1, std::memory_order_relaxed);
+  }
+};
+
 TEST_F(SchedUnitByHeaderTest, InitGoAndSchedulerHandlesWork) {
   init(3);
 
@@ -77,6 +99,48 @@ TEST_F(SchedUnitByHeaderTest, ThreadContextYieldAndCurrentCoroutineRemainSafe) {
   EXPECT_FALSE(in_coroutine());
   EXPECT_EQ(current_coroutine(), nullptr);
   EXPECT_EQ(coroutine_id(), -1);
+}
+
+TEST_F(SchedUnitByHeaderTest, GoSupportsClosurePointerAndAutoDelete) {
+  init(2);
+
+  WaitGroup done(1);
+  std::atomic<int> counter(0);
+
+  go(new IncrementClosure(&counter, &done));
+
+  done.wait();
+  EXPECT_EQ(counter.load(std::memory_order_relaxed), 1);
+}
+
+TEST_F(SchedUnitByHeaderTest, GoSupportsCallableWithOneArgument) {
+  init(2);
+
+  WaitGroup done(1);
+  std::atomic<int> counter(0);
+
+  go([&done](std::atomic<int>* value) {
+    value->fetch_add(1, std::memory_order_relaxed);
+    done.done();
+  },
+     &counter);
+
+  done.wait();
+  EXPECT_EQ(counter.load(std::memory_order_relaxed), 1);
+}
+
+TEST_F(SchedUnitByHeaderTest, GoSupportsMemberFunctionWithOneArgument) {
+  init(2);
+
+  WaitGroup done(1);
+  std::atomic<int> counter(0);
+  MemberInvoker invoker;
+
+  go(&MemberInvoker::add, &invoker, &counter);
+  go([&done]() { done.done(); });
+
+  done.wait();
+  EXPECT_EQ(counter.load(std::memory_order_relaxed), 1);
 }
 
 }  // namespace

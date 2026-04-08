@@ -26,7 +26,7 @@ add_library(znet STATIC
   src/socket.cc
   src/tcp_connection.cc
   src/tcp_server.cc
-  src/tls_context_openssl.cc
+  src/tls_context.cc
   src/znet_logger.cc
 )
 

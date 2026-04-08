@@ -1,12 +1,12 @@
 #include "zcoroutine/sched.h"
 
 #include <chrono>
+#include <memory>
 #include <thread>
 #include <utility>
 
 #include "zcoroutine/internal/processor.h"
 #include "zcoroutine/internal/runtime_manager.h"
-#include "zcoroutine/log.h"
 
 namespace zcoroutine {
 
@@ -19,6 +19,17 @@ Scheduler::Scheduler(size_t scheduler_index) : scheduler_index_(scheduler_index)
 void Scheduler::go(Task task) {
   // 指定投递到某个调度器线程，常用于亲和性或分片场景。
   Runtime::instance().submit_to(scheduler_index_, std::move(task));
+}
+
+void Scheduler::go(Closure* cb) {
+  if (cb == nullptr) {
+    return;
+  }
+
+  this->go([cb]() {
+    std::unique_ptr<Closure> holder(cb);
+    holder->run();
+  });
 }
 
 int Scheduler::id() const { return static_cast<int>(scheduler_index_); }
@@ -41,6 +52,17 @@ void co_stack_model(StackModel stack_model) {
 }
 
 void shutdown() { Runtime::instance().shutdown(); }
+
+void go(Closure* cb) {
+  if (cb == nullptr) {
+    return;
+  }
+
+  go([cb]() {
+    std::unique_ptr<Closure> holder(cb);
+    holder->run();
+  });
+}
 
 void go(Task task) {
   // 不指定调度器时走轮询分发。

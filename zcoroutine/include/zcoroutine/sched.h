@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <type_traits>
+#include <utility>
 
 namespace zcoroutine {
 
@@ -22,6 +24,49 @@ class Scheduler;
  * @brief 协程任务函数类型。
  */
 using Task = std::function<void()>;
+
+/**
+ * @brief 可复用的协程回调基类。
+ * @details 通过 go(Closure*) 启动后，回调对象会在执行后自动释放。
+ */
+class Closure {
+ public:
+  virtual ~Closure() {}
+  virtual void run() = 0;
+};
+
+namespace detail {
+
+template <typename F>
+struct is_task : std::is_same<typename std::decay<F>::type, Task> {};
+
+template <typename F>
+struct is_closure_pointer {
+  using Decayed = typename std::decay<F>::type;
+  static constexpr bool value =
+      std::is_pointer<Decayed>::value &&
+      std::is_base_of<Closure, typename std::remove_pointer<Decayed>::type>::value;
+};
+
+template <typename F>
+using enable_generic_go =
+    typename std::enable_if<!is_task<F>::value && !is_closure_pointer<F>::value, int>::type;
+
+template <typename F,
+          typename P,
+          typename std::enable_if<!std::is_pointer<typename std::decay<F>::type>::value, int>::type = 0>
+inline auto invoke_unary(F& fn, P& param) -> decltype(fn(param), void()) {
+  fn(param);
+}
+
+template <typename F,
+          typename P,
+          typename std::enable_if<std::is_pointer<typename std::decay<F>::type>::value, int>::type = 0>
+inline auto invoke_unary(F& fn, P& param) -> decltype((*fn)(param), void()) {
+  (*fn)(param);
+}
+
+}  // namespace detail
 
 /**
  * @brief 协程栈模型。
@@ -75,11 +120,50 @@ void co_stack_model(StackModel stack_model);
 void shutdown();
 
 /**
+ * @brief 提交 Closure 任务到运行时。
+ * @details 调度执行后会自动释放 cb。
+ */
+void go(Closure* cb);
+
+/**
  * @brief 提交任务到运行时。
  * @param task 需要异步执行的任务。
  * @return 无返回值。
  */
 void go(Task task);
+
+/**
+ * @brief 提交无参可调用对象到运行时。
+ */
+template <typename F, detail::enable_generic_go<F> = 0>
+void go(F&& f) {
+  go(Task(std::forward<F>(f)));
+}
+
+/**
+ * @brief 提交单参数可调用对象到运行时。
+ */
+template <typename F, typename P>
+void go(F&& f, P&& p) {
+  using Fn = typename std::decay<F>::type;
+  using Param = typename std::decay<P>::type;
+  go([fn = Fn(std::forward<F>(f)), param = Param(std::forward<P>(p))]() mutable {
+    detail::invoke_unary(fn, param);
+  });
+}
+
+/**
+ * @brief 提交成员函数任务到运行时。
+ */
+template <typename T, typename P>
+void go(void (T::*method)(P), T* target, P&& p) {
+  using Param = typename std::decay<P>::type;
+  go([method, target, param = Param(std::forward<P>(p))]() mutable {
+    if (target != nullptr) {
+      (target->*method)(param);
+    }
+  });
+}
 
 /**
  * @brief 调度器轻量句柄。
@@ -93,6 +177,45 @@ class Scheduler {
   * @return 无返回值。
   */
   void go(Task task);
+
+  /**
+  * @brief 向当前句柄对应的调度器提交 Closure 任务。
+  * @details 调度执行后会自动释放 cb。
+  */
+  void go(Closure* cb);
+
+  /**
+  * @brief 向当前句柄对应的调度器提交无参可调用对象。
+  */
+  template <typename F, detail::enable_generic_go<F> = 0>
+  void go(F&& f) {
+    this->go(Task(std::forward<F>(f)));
+  }
+
+  /**
+  * @brief 向当前句柄对应的调度器提交单参数可调用对象。
+  */
+  template <typename F, typename P>
+  void go(F&& f, P&& p) {
+    using Fn = typename std::decay<F>::type;
+    using Param = typename std::decay<P>::type;
+    this->go([fn = Fn(std::forward<F>(f)), param = Param(std::forward<P>(p))]() mutable {
+      detail::invoke_unary(fn, param);
+    });
+  }
+
+  /**
+  * @brief 向当前句柄对应的调度器提交成员函数任务。
+  */
+  template <typename T, typename P>
+  void go(void (T::*method)(P), T* target, P&& p) {
+    using Param = typename std::decay<P>::type;
+    this->go([method, target, param = Param(std::forward<P>(p))]() mutable {
+      if (target != nullptr) {
+        (target->*method)(param);
+      }
+    });
+  }
 
   /**
   * @brief 获取调度器编号。
