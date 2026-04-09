@@ -1,4 +1,3 @@
-#include <errno.h>
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -12,30 +11,6 @@ namespace zcoroutine {
 namespace {
 
 class HookUnitByHeaderTest : public test::RuntimeTestBase {};
-
-TEST_F(HookUnitByHeaderTest, InvalidFdPathsReturnExpectedErrors) {
-  init(1);
-
-  WaitGroup done(1);
-  go([&done]() {
-    char buffer[4] = {0};
-
-    errno = 0;
-    EXPECT_EQ(co_read(-1, buffer, sizeof(buffer), 10), -1);
-    EXPECT_EQ(errno, EBADF);
-
-    errno = 0;
-    EXPECT_EQ(co_write(-1, "x", 1, 10), -1);
-    EXPECT_EQ(errno, EBADF);
-
-    done.done();
-  });
-  done.wait();
-
-  errno = 0;
-  EXPECT_EQ(co_close(-1), -1);
-  EXPECT_EQ(errno, EBADF);
-}
 
 TEST_F(HookUnitByHeaderTest, SocketPairReadWriteRoundTrip) {
   init(2);

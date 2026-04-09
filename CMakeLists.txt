@@ -21,6 +21,7 @@ endif()
 
 option(ENABLE_TESTS "Enable building tests" ${ENABLE_TESTS_DEFAULT})
 option(BUILD_SHARED_LIBS "Build shared libraries" ON)
+option(ENABLE_COVERAGE "Enable code coverage instrumentation" OFF)
 
 # 查找公共依赖
 find_package(Threads REQUIRED)
@@ -47,6 +48,7 @@ message(STATUS "C++ Standard      : ${CMAKE_CXX_STANDARD}")
 message(STATUS "Build Type        : ${CMAKE_BUILD_TYPE}")
 message(STATUS "ENABLE_TESTS      : ${ENABLE_TESTS}")
 message(STATUS "BUILD_SHARED_LIBS : ${BUILD_SHARED_LIBS}")
+message(STATUS "ENABLE_COVERAGE   : ${ENABLE_COVERAGE}")
 message(STATUS "")
 message(STATUS "Submodules:")
 message(STATUS "  - zmalloc")

@@ -98,5 +98,19 @@ TEST_F(ProcessorWaitTimerUnitTest, WaitFdWithNoEventsInCoroutineReturnsEinval) {
   ::close(pair[1]);
 }
 
+TEST_F(ProcessorWaitTimerUnitTest, WaitFdWithInvalidFdInCoroutineReturnsEbadf) {
+  init(1);
+  constexpr int kDefinitelyInvalidFd = 1 << 20;
+
+  WaitGroup done(1);
+  go([&done, kDefinitelyInvalidFd]() {
+    errno = 0;
+    EXPECT_FALSE(wait_fd(kDefinitelyInvalidFd, EPOLLIN, 5));
+    EXPECT_EQ(errno, EBADF);
+    done.done();
+  });
+  done.wait();
+}
+
 }  // namespace
 }  // namespace zcoroutine

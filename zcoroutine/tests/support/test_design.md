@@ -140,3 +140,43 @@
 
 Exception by design:
 context.h 被视为功能特别简单（仅 ucontext 薄封装），暂不强制独立 *_unit.cc；其行为通过 fiber/processor 路径间接覆盖。
+
+## Coverage Workflow (zcoroutine/src only)
+
+### Build and Test
+
+```bash
+# Configure with coverage (workspace root)
+cmake -S . -B build-cov -G Ninja \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DENABLE_TESTS=ON \
+  -DENABLE_COVERAGE=ON
+
+# Build via CMake
+cmake --build build-cov -j
+
+# Run zcoroutine unit + integration only (exclude stress)
+ctest --test-dir build-cov --output-on-failure -L quick
+```
+
+### Collect and Filter Report
+
+```bash
+# Collect coverage
+lcov --capture --directory build-cov --output-file coverage.info
+
+# Keep zcoroutine/src only
+lcov --extract coverage.info '*/zcoroutine/src/*' --output-file zcoroutine-src.info
+
+# Remove system and third-party noise
+lcov --remove zcoroutine-src.info '/usr/*' '*/extern/*' --output-file zcoroutine-src.info
+
+# Generate HTML report
+genhtml zcoroutine-src.info --output-directory coverage-zcoroutine-src
+```
+
+### Notes
+
+- Metrics scope is restricted to `zcoroutine/src`.
+- Coverage loop should prioritize branch/condition hotspots before adding more broad tests.
+- If lcov branch details are insufficient, run a secondary clang/llvm-cov report for cross-checking.

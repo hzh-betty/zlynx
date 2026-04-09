@@ -63,6 +63,15 @@ target_compile_options(zcoroutine PRIVATE
 		-Wpedantic
 )
 
+if(ENABLE_COVERAGE)
+	if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+		target_compile_options(zcoroutine PRIVATE -O0 -g --coverage)
+		target_link_options(zcoroutine PUBLIC --coverage)
+	else()
+		message(WARNING "ENABLE_COVERAGE is ON, but compiler ${CMAKE_CXX_COMPILER_ID} is not supported")
+	endif()
+endif()
+
 if(ZCOROUTINE_BUILD_TESTS)
 	enable_testing()
 	add_subdirectory(tests)

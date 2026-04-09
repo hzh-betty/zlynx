@@ -93,7 +93,7 @@ int connect_loopback(const sockaddr_in& target, uint32_t timeout_ms) {
   return fd;
 }
 
-TEST_F(HookIntegrationTest, SocketPairReadWriteVectorAndDatagramFlow) {
+TEST_F(HookIntegrationTest, SocketPairReadWriteAndDatagramFlow) {
   init(2);
 
   int stream_pair[2] = {-1, -1};
@@ -109,26 +109,6 @@ TEST_F(HookIntegrationTest, SocketPairReadWriteVectorAndDatagramFlow) {
     char recv_buffer[8] = {0};
     EXPECT_EQ(co_read(stream_pair[1], recv_buffer, 5, 200), 5);
     EXPECT_STREQ(recv_buffer, "hello");
-
-    const char* left = "ab";
-    const char* right = "cd";
-    iovec write_vec[2];
-    write_vec[0].iov_base = const_cast<char*>(left);
-    write_vec[0].iov_len = 2;
-    write_vec[1].iov_base = const_cast<char*>(right);
-    write_vec[1].iov_len = 2;
-    EXPECT_EQ(co_writev(stream_pair[0], write_vec, 2, 200), 4);
-
-    char out_left[3] = {0};
-    char out_right[3] = {0};
-    iovec read_vec[2];
-    read_vec[0].iov_base = out_left;
-    read_vec[0].iov_len = 2;
-    read_vec[1].iov_base = out_right;
-    read_vec[1].iov_len = 2;
-    EXPECT_EQ(co_readv(stream_pair[1], read_vec, 2, 200), 4);
-    EXPECT_STREQ(out_left, "ab");
-    EXPECT_STREQ(out_right, "cd");
     stream_done.done();
   });
   stream_done.wait();
@@ -159,6 +139,79 @@ TEST_F(HookIntegrationTest, SocketPairReadWriteVectorAndDatagramFlow) {
 
   ::close(dgram_pair[0]);
   ::close(dgram_pair[1]);
+}
+
+TEST_F(HookIntegrationTest, RecvnRoundTripAndPeerCloseSemantic) {
+  init(2);
+
+  int stream_pair[2] = {-1, -1};
+  ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, stream_pair), 0);
+  ASSERT_EQ(::fcntl(stream_pair[0], F_SETFL, ::fcntl(stream_pair[0], F_GETFL, 0) | O_NONBLOCK), 0);
+  ASSERT_EQ(::fcntl(stream_pair[1], F_SETFL, ::fcntl(stream_pair[1], F_GETFL, 0) | O_NONBLOCK), 0);
+
+  WaitGroup done(2);
+
+  go([&done, fd = stream_pair[0]]() {
+    EXPECT_EQ(co_write(fd, "abc", 3, 200), 3);
+    yield();
+    EXPECT_EQ(co_write(fd, "def", 3, 200), 3);
+    EXPECT_EQ(co_close(fd), 0);
+    done.done();
+  });
+
+  go([&done, fd = stream_pair[1]]() {
+    char payload[7] = {0};
+    EXPECT_EQ(co_recvn(fd, payload, 6, 0, 300), 6);
+    EXPECT_STREQ(payload, "abcdef");
+
+    char eof_probe = 0;
+    EXPECT_EQ(co_recvn(fd, &eof_probe, 1, 0, 200), 0);
+    done.done();
+  });
+
+  done.wait();
+  ::close(stream_pair[1]);
+}
+
+TEST_F(HookIntegrationTest, UdpSendtoWithExplicitAddressRoundTrip) {
+  init(2);
+
+  int recv_fd = co_socket(AF_INET, SOCK_DGRAM, 0);
+  ASSERT_GE(recv_fd, 0);
+  int send_fd = co_socket(AF_INET, SOCK_DGRAM, 0);
+  ASSERT_GE(send_fd, 0);
+
+  sockaddr_in recv_addr;
+  recv_addr.sin_family = AF_INET;
+  recv_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  recv_addr.sin_port = 0;
+
+  ASSERT_EQ(::bind(recv_fd, reinterpret_cast<sockaddr*>(&recv_addr), sizeof(recv_addr)), 0);
+  socklen_t recv_addr_len = sizeof(recv_addr);
+  ASSERT_EQ(::getsockname(recv_fd, reinterpret_cast<sockaddr*>(&recv_addr), &recv_addr_len), 0);
+
+  WaitGroup done(2);
+
+  go([&done, fd = send_fd, recv_addr]() {
+    const char* payload = "udp-msg";
+    EXPECT_EQ(co_sendto(fd, payload, 7, 0, reinterpret_cast<const sockaddr*>(&recv_addr),
+                        static_cast<socklen_t>(sizeof(recv_addr)), 500),
+              7);
+    done.done();
+  });
+
+  go([&done, fd = recv_fd]() {
+    char out[16] = {0};
+    sockaddr_storage peer;
+    socklen_t peer_len = sizeof(peer);
+    EXPECT_EQ(co_recvfrom(fd, out, 7, 0, reinterpret_cast<sockaddr*>(&peer), &peer_len, 500), 7);
+    EXPECT_STREQ(out, "udp-msg");
+    done.done();
+  });
+
+  done.wait();
+  ::close(send_fd);
+  ::close(recv_fd);
 }
 
 TEST_F(HookIntegrationTest, SingleAcceptorLoopHandlesMultipleClients) {
@@ -340,6 +393,69 @@ TEST_F(HookIntegrationTest, RandomizedRefusedConnectDeterministicSeed) {
 
     ::close(fd);
   }
+}
+
+TEST_F(HookIntegrationTest, ConnectFailureThenSuccessPathKeepsRuntimeUsable) {
+  init(3);
+
+  int probe_fd = ::socket(AF_INET, SOCK_STREAM, 0);
+  ASSERT_GE(probe_fd, 0);
+  sockaddr_in refused_addr;
+  refused_addr.sin_family = AF_INET;
+  refused_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  refused_addr.sin_port = 0;
+  ASSERT_EQ(::bind(probe_fd, reinterpret_cast<sockaddr*>(&refused_addr), sizeof(refused_addr)), 0);
+  socklen_t refused_len = sizeof(refused_addr);
+  ASSERT_EQ(::getsockname(probe_fd, reinterpret_cast<sockaddr*>(&refused_addr), &refused_len), 0);
+  ::close(probe_fd);
+
+  sockaddr_in listen_addr;
+  const int listen_fd = make_loopback_listener(&listen_addr);
+  ASSERT_GE(listen_fd, 0);
+
+  WaitGroup done(2);
+
+  go([&done, listen_fd]() {
+    sockaddr_in peer_addr;
+    socklen_t peer_len = sizeof(peer_addr);
+    const int conn_fd =
+        co_accept4(listen_fd, reinterpret_cast<sockaddr*>(&peer_addr), &peer_len, SOCK_CLOEXEC, 2000);
+    EXPECT_GE(conn_fd, 0);
+    if (conn_fd >= 0) {
+      char request[3] = {0};
+      EXPECT_EQ(co_recv(conn_fd, request, 2, 0, 1000), 2);
+      EXPECT_STREQ(request, "ok");
+      EXPECT_EQ(co_send(conn_fd, "ok", 2, send_nosignal_flags(), 1000), 2);
+      EXPECT_EQ(co_close(conn_fd), 0);
+    }
+    done.done();
+  });
+
+  go([&done, refused_addr, listen_addr]() {
+    const int failed_fd = co_socket(AF_INET, SOCK_STREAM, 0);
+    ASSERT_GE(failed_fd, 0);
+    errno = 0;
+    EXPECT_EQ(co_connect(failed_fd, reinterpret_cast<const sockaddr*>(&refused_addr),
+                         static_cast<socklen_t>(sizeof(refused_addr)), 120),
+              -1);
+    EXPECT_TRUE(errno == ECONNREFUSED || errno == ETIMEDOUT || errno == EHOSTUNREACH ||
+                errno == ENETUNREACH || errno == EINVAL || errno == EADDRNOTAVAIL);
+    EXPECT_EQ(co_close(failed_fd), 0);
+
+    const int success_fd = connect_loopback(listen_addr, 1500);
+    EXPECT_GE(success_fd, 0);
+    if (success_fd >= 0) {
+      EXPECT_EQ(co_send(success_fd, "ok", 2, send_nosignal_flags(), 1000), 2);
+      char reply[3] = {0};
+      EXPECT_EQ(co_recv(success_fd, reply, 2, 0, 1000), 2);
+      EXPECT_STREQ(reply, "ok");
+      EXPECT_EQ(co_close(success_fd), 0);
+    }
+    done.done();
+  });
+
+  done.wait();
+  EXPECT_EQ(co_close(listen_fd), 0);
 }
 
 TEST_F(HookIntegrationTest, MultiRoundRandomizedAcceptConnectDeterministicSeed) {

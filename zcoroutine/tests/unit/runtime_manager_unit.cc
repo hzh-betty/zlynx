@@ -67,6 +67,23 @@ TEST_F(RuntimeManagerUnitTest, SubmitToUsesModuloSchedulerIndex) {
   EXPECT_LT(static_cast<size_t>(id), runtime.scheduler_count());
 }
 
+TEST_F(RuntimeManagerUnitTest, SubmitToNullTaskIsIgnored) {
+  Runtime& runtime = Runtime::instance();
+  runtime.init(2);
+
+  runtime.submit_to(7, Task());
+
+  WaitGroup done(1);
+  std::atomic<int> counter(0);
+  runtime.submit_to(7, [&counter, &done]() {
+    counter.fetch_add(1, std::memory_order_relaxed);
+    done.done();
+  });
+
+  done.wait();
+  EXPECT_EQ(counter.load(std::memory_order_relaxed), 1);
+}
+
 TEST_F(RuntimeManagerUnitTest, PickSecondaryIndexAvoidsFirstWhenMultipleSchedulers) {
   Runtime& runtime = Runtime::instance();
   runtime.init(4);
@@ -89,6 +106,15 @@ TEST_F(RuntimeManagerUnitTest, PickProcessorIndexReturnsZeroWithSingleScheduler)
 
   for (int i = 0; i < 16; ++i) {
     EXPECT_EQ(runtime.pick_processor_index(), 0u);
+  }
+}
+
+TEST_F(RuntimeManagerUnitTest, PickSecondaryIndexReturnsZeroWithSingleScheduler) {
+  Runtime& runtime = Runtime::instance();
+  runtime.init(1);
+
+  for (uint64_t ticket = 0; ticket < 8; ++ticket) {
+    EXPECT_EQ(runtime.pick_secondary_index(0, ticket), 0u);
   }
 }
 
@@ -132,6 +158,38 @@ TEST_F(RuntimeManagerUnitTest, StackConfigDefaultsToSharedMode) {
   EXPECT_EQ(processor->stack_model(), StackModel::kShared);
   EXPECT_EQ(processor->shared_stack_count(), 8u);
   EXPECT_EQ(processor->shared_stack_size(0), 128u * 1024u);
+}
+
+TEST_F(RuntimeManagerUnitTest, InvalidZeroStackConfigIsRejectedAndDefaultsRemain) {
+  Runtime& runtime = Runtime::instance();
+  runtime.shutdown();
+
+  EXPECT_FALSE(runtime.set_stack_num(0));
+  EXPECT_FALSE(runtime.set_stack_size(0));
+
+  runtime.init(1);
+  const auto& processors = runtime.processors();
+  ASSERT_EQ(processors.size(), 1u);
+  ASSERT_NE(processors[0], nullptr);
+
+  Processor* processor = processors[0].get();
+  EXPECT_EQ(processor->stack_model(), StackModel::kShared);
+  EXPECT_EQ(processor->shared_stack_count(), 8u);
+  EXPECT_EQ(processor->shared_stack_size(0), 128u * 1024u);
+}
+
+TEST_F(RuntimeManagerUnitTest, StackConfigSettersAreRejectedAfterRuntimeStart) {
+  Runtime& runtime = Runtime::instance();
+  runtime.init(1);
+
+  EXPECT_FALSE(runtime.set_stack_num(4));
+  EXPECT_FALSE(runtime.set_stack_size(64 * 1024));
+  EXPECT_FALSE(runtime.set_stack_model(StackModel::kIndependent));
+
+  const auto& processors = runtime.processors();
+  ASSERT_EQ(processors.size(), 1u);
+  ASSERT_NE(processors[0], nullptr);
+  EXPECT_EQ(processors[0]->stack_model(), StackModel::kShared);
 }
 
 TEST_F(RuntimeManagerUnitTest, StackConfigAppliesWhenSetBeforeRuntimeStart) {
