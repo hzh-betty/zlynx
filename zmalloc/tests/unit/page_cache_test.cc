@@ -5,6 +5,7 @@
 
 
 #include "span_list.h"
+#include "system_alloc.h"
 #include "zmalloc_config.h"
 
 // 先包含基础头，避免 private->public 影响标准库头
@@ -49,13 +50,16 @@ static void NewSpanCheckMappingAndRelease(zmalloc::PageCache &pc, size_t k) {
   span->is_use = true;
   pc.release_span_to_page_cache(span);
 
-  // release 后 span 指针可能失效；只验证边界页映射一致且 free。
+  // release 后 span 指针可能失效；只验证起始页仍能定位到一个空闲 span。
   auto *a = static_cast<zmalloc::Span *>(pc.id_span_map_.get(page_id));
-  auto *b = static_cast<zmalloc::Span *>(pc.id_span_map_.get(page_id + k - 1));
   ASSERT_NE(a, nullptr);
-  ASSERT_NE(b, nullptr);
-  EXPECT_EQ(a, b);
   EXPECT_FALSE(a->is_use);
+
+  auto *b = static_cast<zmalloc::Span *>(pc.id_span_map_.get(page_id + k - 1));
+  if (b != nullptr) {
+    EXPECT_EQ(a, b);
+    EXPECT_FALSE(b->is_use);
+  }
 }
 
 static void NewLargeSpanAllocAndFree(zmalloc::PageCache &pc, size_t k) {
@@ -104,11 +108,11 @@ TEST_F(PageCacheTest, ReleaseSpanMarksNotInUse) {
   auto *mapped = static_cast<zmalloc::Span *>(pc.id_span_map_.get(page_id));
   ASSERT_NE(mapped, nullptr);
   EXPECT_FALSE(mapped->is_use);
-  // 原 span 的起始页/结束页仍应映射到一个有效 span。
-  auto *mapped_end =
-      static_cast<zmalloc::Span *>(pc.id_span_map_.get(page_id + n - 1));
-  ASSERT_NE(mapped_end, nullptr);
-  EXPECT_EQ(mapped_end, mapped);
+  // 原 span 的结束页若仍是边界页，则也应指向同一个空闲 span。
+  auto *mapped_end = static_cast<zmalloc::Span *>(pc.id_span_map_.get(page_id + n - 1));
+  if (mapped_end != nullptr) {
+    EXPECT_EQ(mapped_end, mapped);
+  }
 }
 
 TEST_F(PageCacheTest, ReleaseThenNewSpanCanReuseBucket) {
@@ -157,9 +161,106 @@ TEST_F(PageCacheTest, IdSpanMapHasStartAndEndForFreeSpan) {
   auto *a = static_cast<zmalloc::Span *>(pc.id_span_map_.get(page_id));
   auto *b = static_cast<zmalloc::Span *>(pc.id_span_map_.get(page_id + n - 1));
   ASSERT_NE(a, nullptr);
-  ASSERT_NE(b, nullptr);
-  EXPECT_EQ(a, b);
+  if (b != nullptr) {
+    EXPECT_EQ(a, b);
+  }
   EXPECT_FALSE(a->is_use);
+}
+
+TEST_F(PageCacheTest, ReleaseClearsInteriorMappingsForFreeSpan) {
+  std::lock_guard<std::mutex> lk(pc.page_mtx());
+  zmalloc::Span *span = pc.new_span(8);
+  ASSERT_NE(span, nullptr);
+  ASSERT_GT(span->n, 2u);
+
+  const size_t middle_page = span->page_id + 3;
+  span->is_use = true;
+  pc.release_span_to_page_cache(span);
+
+  EXPECT_EQ(pc.id_span_map_.get(middle_page), nullptr);
+}
+
+TEST_F(PageCacheTest, ReusedSpanResetsAccountingState) {
+  std::lock_guard<std::mutex> lk(pc.page_mtx());
+  zmalloc::Span *span = pc.new_span(4);
+  ASSERT_NE(span, nullptr);
+
+  span->obj_size = 160;
+  span->use_count = 7;
+  span->free_list = reinterpret_cast<void *>(0x1);
+  span->is_use = true;
+  const size_t page_id = span->page_id;
+  pc.release_span_to_page_cache(span);
+
+  zmalloc::Span *reused = pc.new_span(4);
+  ASSERT_NE(reused, nullptr);
+  EXPECT_EQ(reused->page_id, page_id);
+  EXPECT_EQ(reused->obj_size, 0u);
+  EXPECT_EQ(reused->use_count, 0u);
+  EXPECT_EQ(reused->free_list, nullptr);
+}
+
+TEST_F(PageCacheTest, MergeClearsOldNeighborBoundaryMappings) {
+  std::lock_guard<std::mutex> lk(pc.page_mtx());
+
+  void *region = zmalloc::system_alloc(6);
+  ASSERT_NE(region, nullptr);
+
+  const zmalloc::PageId base =
+      reinterpret_cast<zmalloc::PageId>(region) >> zmalloc::PAGE_SHIFT;
+
+  auto init_span = [](zmalloc::Span *span, zmalloc::PageId page_id, size_t n,
+                      bool is_use) {
+    span->page_id = page_id;
+    span->n = n;
+    span->next = nullptr;
+    span->prev = nullptr;
+    span->obj_size = 0;
+    span->use_count = 0;
+    span->free_list = nullptr;
+    span->is_use = is_use;
+  };
+
+  zmalloc::Span *left = pc.span_pool_.allocate();
+  zmalloc::Span *middle = pc.span_pool_.allocate();
+  zmalloc::Span *right = pc.span_pool_.allocate();
+  ASSERT_NE(left, nullptr);
+  ASSERT_NE(middle, nullptr);
+  ASSERT_NE(right, nullptr);
+
+  init_span(left, base, 2, false);
+  init_span(middle, base + 2, 2, true);
+  init_span(right, base + 4, 2, false);
+
+  pc.span_lists_[left->n].push_front(left);
+  pc.span_lists_[right->n].push_front(right);
+  pc.id_span_map_.set(left->page_id, left);
+  pc.id_span_map_.set(left->page_id + left->n - 1, left);
+  pc.id_span_map_.set_range(middle->page_id, middle->n, middle);
+  pc.id_span_map_.set(right->page_id, right);
+  pc.id_span_map_.set(right->page_id + right->n - 1, right);
+
+  pc.release_span_to_page_cache(middle);
+
+  EXPECT_EQ(middle->page_id, base);
+  EXPECT_EQ(middle->n, 6u);
+  EXPECT_FALSE(middle->is_use);
+  EXPECT_EQ(middle->obj_size, 0u);
+  EXPECT_EQ(middle->use_count, 0u);
+  EXPECT_EQ(middle->free_list, nullptr);
+  EXPECT_TRUE(ContainsSpan(pc.span_lists_[middle->n], middle));
+
+  EXPECT_EQ(pc.id_span_map_.get(base), middle);
+  EXPECT_EQ(pc.id_span_map_.get(base + 5), middle);
+  EXPECT_EQ(pc.id_span_map_.get(base + 1), nullptr);
+  EXPECT_EQ(pc.id_span_map_.get(base + 2), nullptr);
+  EXPECT_EQ(pc.id_span_map_.get(base + 3), nullptr);
+  EXPECT_EQ(pc.id_span_map_.get(base + 4), nullptr);
+
+  pc.span_lists_[middle->n].erase(middle);
+  pc.id_span_map_.set_range(base, 6, nullptr);
+  pc.span_pool_.deallocate(middle);
+  zmalloc::system_free(region, 6);
 }
 
 TEST_F(PageCacheTest, NewSpanEstablishesAllPagesMapForSmallK) {
@@ -220,9 +321,6 @@ TEST_F(PageCacheTest, MultipleSmallAllocationsDoNotOverlapInMapping) {
   }
 }
 
-// ------------------------------
-// 大量 k 覆盖（每个都是独立用例）
-// ------------------------------
 
 #define ZMALLOC_PC_SMALL_K_CASE(K)                                             \
   TEST_F(PageCacheTest, NewSpanMappingAndRelease_K_##K) {                      \
@@ -268,10 +366,6 @@ ZMALLOC_PC_SMALL_K_CASE(127)
 ZMALLOC_PC_SMALL_K_CASE(128)
 
 #undef ZMALLOC_PC_SMALL_K_CASE
-
-// ------------------------------
-// system path（k > NPAGES-1）覆盖
-// ------------------------------
 
 #define ZMALLOC_PC_LARGE_K_CASE(K)                                             \
   TEST_F(PageCacheTest, LargeSpanAllocFree_K_##K) {                            \

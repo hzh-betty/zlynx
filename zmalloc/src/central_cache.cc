@@ -13,6 +13,19 @@
 
 namespace zmalloc {
 
+namespace {
+
+bool span_freelist_contains(Span *span, void *target) {
+  for (void *it = span->free_list; it != nullptr; it = next_obj(it)) {
+    if (it == target) {
+      return true;
+    }
+  }
+  return false;
+}
+
+} // namespace
+
 size_t CentralCache::fetch_range_obj(void *&start, void *&end, size_t n,
                                      size_t size) {
   const size_t index = SizeClass::index_fast(size);
@@ -93,11 +106,14 @@ Span *CentralCache::get_one_span(CentralFreeList &free_list, size_t size) {
 
   // 关键步骤：把 [span_start, span_end) 切分成 size 大小对象，构建单链表。
   // 这里不做额外对齐：align_size 已由 SizeClass 查表保证。
+  const size_t obj_count = bytes / size;
+  assert(obj_count >= 1);
   span->free_list = start;
   void *tail = start;
   start += size;
 
-  while (start < obj_end) {
+  for (size_t i = 1; i < obj_count; ++i) {
+    assert(start + size <= obj_end);
     next_obj(tail) = start;
     tail = start;
     start += size;
@@ -193,6 +209,10 @@ void CentralCache::release_list_to_spans(void *start, size_t size,
   for (size_t gi = 0; gi < groups; ++gi) {
     Span *span = spans[gi];
     const bool was_empty = (span->free_list == nullptr);
+
+    for (void *it = group_start[gi]; it != nullptr; it = next_obj(it)) {
+      assert(!span_freelist_contains(span, it));
+    }
 
     // splice: [group_start..group_end] + old span->free_list
     next_obj(group_end[gi]) = span->free_list;

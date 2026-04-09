@@ -139,6 +139,33 @@ TEST_F(CentralCacheTest, SpanObjSizeMatchesRequest) {
   cc.release_list_to_spans(start, 128);
 }
 
+TEST_F(CentralCacheTest, SpanSplitDoesNotCreatePartialTailObject) {
+  const size_t request_size = 152;
+  const size_t actual_size = zmalloc::SizeClass::round_up_fast(request_size);
+
+  void *start = nullptr;
+  void *end = nullptr;
+  const size_t got = cc.fetch_range_obj(start, end, 128, request_size);
+  ASSERT_GE(got, 1u);
+
+  zmalloc::Span *span = pc.map_object_to_span(start);
+  ASSERT_NE(span, nullptr);
+  const uintptr_t span_begin =
+      static_cast<uintptr_t>(span->page_id) << zmalloc::PAGE_SHIFT;
+  const uintptr_t span_end =
+      span_begin + (static_cast<uintptr_t>(span->n) << zmalloc::PAGE_SHIFT);
+
+  void *cur = start;
+  while (cur != nullptr) {
+    const uintptr_t obj = reinterpret_cast<uintptr_t>(cur);
+    EXPECT_GE(obj, span_begin);
+    EXPECT_LE(obj + actual_size, span_end);
+    cur = zmalloc::next_obj(cur);
+  }
+
+  cc.release_list_to_spans(start, request_size);
+}
+
 TEST_F(CentralCacheTest, EmptyNonEmptyListsInitiallySmall) {
   const size_t index = zmalloc::SizeClass::index_fast(64);
   // 刚开始不要求为空，但至少结构可访问。
@@ -341,9 +368,6 @@ ZMALLOC_CC_FETCH_RELEASE(262144, 1)
 
 #undef ZMALLOC_CC_FETCH_RELEASE
 
-// ------------------------------
-// 组合链表 / 乱序链表 回归
-// ------------------------------
 
 TEST_F(CentralCacheTest, FetchTwiceConcatThenRelease) {
   FetchTwiceConcatAndRelease(cc, 8, 8, 64);

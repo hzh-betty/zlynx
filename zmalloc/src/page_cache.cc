@@ -9,6 +9,17 @@
 
 namespace zmalloc {
 
+namespace {
+
+void clear_span_mapping(PageMap &id_span_map, Span *span) {
+  if (span == nullptr || span->n == 0) {
+    return;
+  }
+  id_span_map.set_range(span->page_id, span->n, nullptr);
+}
+
+} // namespace
+
 Span *PageCache::new_span(size_t k) {
   assert(k > 0);
 
@@ -34,6 +45,11 @@ Span *PageCache::new_span(size_t k) {
 
     // 该 Span 被分配出去，标记为在用。
     k_span->is_use = true;
+    k_span->obj_size = 0;
+    k_span->use_count = 0;
+    k_span->free_list = nullptr;
+    k_span->next = nullptr;
+    k_span->prev = nullptr;
 
     // 关键步骤：小对象 span 需要为每一页建立映射，支持：
     // - map_object_to_span（任意对象地址 -> 页号 -> span）
@@ -53,10 +69,20 @@ Span *PageCache::new_span(size_t k) {
       k_span->page_id = n_span->page_id;
       k_span->n = k;
       k_span->is_use = true;
+      k_span->obj_size = 0;
+      k_span->use_count = 0;
+      k_span->free_list = nullptr;
+      k_span->next = nullptr;
+      k_span->prev = nullptr;
 
       n_span->page_id += k;
       n_span->n -= k;
       n_span->is_use = false;
+      n_span->obj_size = 0;
+      n_span->use_count = 0;
+      n_span->free_list = nullptr;
+      n_span->next = nullptr;
+      n_span->prev = nullptr;
 
       // 剩余部分挂到对应桶
       span_lists_[n_span->n].push_front(n_span);
@@ -79,6 +105,11 @@ Span *PageCache::new_span(size_t k) {
   big_span->page_id = reinterpret_cast<PageId>(ptr) >> PAGE_SHIFT;
   big_span->n = NPAGES - 1;
   big_span->is_use = false;
+  big_span->obj_size = 0;
+  big_span->use_count = 0;
+  big_span->free_list = nullptr;
+  big_span->next = nullptr;
+  big_span->prev = nullptr;
 
   span_lists_[big_span->n].push_front(big_span);
 
@@ -87,11 +118,11 @@ Span *PageCache::new_span(size_t k) {
 }
 
 void PageCache::release_span_to_page_cache(Span *span) {
+  clear_span_mapping(id_span_map_, span);
+
   // 大于 128 页直接释放给系统
   if (span->n > NPAGES - 1) {
     void *ptr = reinterpret_cast<void *>(span->page_id << PAGE_SHIFT);
-    // 清理起始页映射，避免遗留指向已回收 Span 的条目。
-    id_span_map_.set(span->page_id, nullptr);
     system_free(ptr, span->n);
     span_pool_.deallocate(span);
     return;
@@ -119,17 +150,10 @@ void PageCache::release_span_to_page_cache(Span *span) {
       break;
     }
 
-    const PageId prev_start = prev_span->page_id;
-    const PageId prev_end = prev_span->page_id + prev_span->n - 1;
-
-    span->page_id = prev_start;
+    span->page_id = prev_span->page_id;
     span->n += prev_span->n;
 
-    // prev_span 即将被回收：先更新其边界页映射到新 span。
-    // 这是为了避免 map 中遗留悬空指针（会导致后续合并/映射出错）。
-    id_span_map_.set(prev_start, span);
-    id_span_map_.set(prev_end, span);
-
+    clear_span_mapping(id_span_map_, prev_span);
     span_lists_[prev_span->n].erase(prev_span);
     span_pool_.deallocate(prev_span);
   }
@@ -149,23 +173,20 @@ void PageCache::release_span_to_page_cache(Span *span) {
       break;
     }
 
-    const PageId next_start = next_span->page_id;
-    const PageId next_end = next_span->page_id + next_span->n - 1;
-
     span->n += next_span->n;
 
-    // next_span 即将被回收：同样先更新其边界页映射。
-    id_span_map_.set(next_start, span);
-    id_span_map_.set(next_end, span);
-
+    clear_span_mapping(id_span_map_, next_span);
     span_lists_[next_span->n].erase(next_span);
     span_pool_.deallocate(next_span);
   }
 
   // 关键步骤：合并完成后，按最终页数把 span 挂回对应桶，并建立首尾页映射。
+  span->obj_size = 0;
+  span->use_count = 0;
+  span->free_list = nullptr;
   span_lists_[span->n].push_front(span);
 
-  // 建立首尾页映射
+  // 空闲 span 只维护最终首尾页映射，匹配 tcmalloc 风格的 pagemap 约定。
   id_span_map_.set(span->page_id, span);
   id_span_map_.set(span->page_id + span->n - 1, span);
 
