@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include "logger.h"
 #include "zcoroutine/log.h"
 #include "support/test_fixture.h"
 
@@ -18,7 +19,7 @@ TEST_F(LogUnitByHeaderTest, DefaultLoggerAndMacrosAreCallable) {
   ZCOROUTINE_LOG_ERROR("log_unit error {}", 4);
 }
 
-TEST_F(LogUnitByHeaderTest, LoggerInitContractsStayCallableWithoutZlog) {
+TEST_F(LogUnitByHeaderTest, LoggerInitContractsRegisterInZlogManager) {
   LoggerInitOptions options;
   options.level = zlog::LogLevel::value::ERROR;
   options.async = false;
@@ -29,9 +30,11 @@ TEST_F(LogUnitByHeaderTest, LoggerInitContractsStayCallableWithoutZlog) {
   auto logger = default_logger();
   ASSERT_NE(logger, nullptr);
   EXPECT_EQ(logger.get(), get_logger());
+  EXPECT_EQ(logger, zlog::LoggerManager::getInstance().getLogger(kLoggerName));
 
   init_logger(zlog::LogLevel::value::WARNING);
   EXPECT_EQ(default_logger().get(), get_logger());
+  EXPECT_TRUE(zlog::LoggerManager::getInstance().hasLogger(kLoggerName));
 
   ZCOROUTINE_LOG_FATAL("log_unit fatal {}", 5);
 }

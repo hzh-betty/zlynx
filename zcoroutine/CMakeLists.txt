@@ -10,7 +10,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 option(ZCOROUTINE_BUILD_TESTS "Build zcoroutine tests" ON)
-option(ZCOROUTINE_ENABLE_LOGGING "Enable zlog based logging" ON)
 
 set(ZCOROUTINE_SOURCES
 		src/sched.cc
@@ -33,28 +32,24 @@ set(ZCOROUTINE_SOURCES
 		src/hook.cc
 )
 
-function(configure_zcoroutine_target target_name enable_logging)
+set(ZCOROUTINE_ZLOG_DIR "${PROJECT_SOURCE_DIR}/../zlog")
+if(NOT EXISTS "${ZCOROUTINE_ZLOG_DIR}/CMakeLists.txt")
+	message(FATAL_ERROR "zlog is not found at ${ZCOROUTINE_ZLOG_DIR}")
+endif()
+
+if(NOT TARGET zlog_static)
+	add_subdirectory(${ZCOROUTINE_ZLOG_DIR} ${CMAKE_BINARY_DIR}/zlog)
+endif()
+
+function(configure_zcoroutine_target target_name)
 	target_include_directories(${target_name}
-			PUBLIC ${PROJECT_SOURCE_DIR}/include
+			PUBLIC
+				${PROJECT_SOURCE_DIR}/include
+				${ZCOROUTINE_ZLOG_DIR}/include
 	)
 
 	find_package(Threads REQUIRED)
-	target_link_libraries(${target_name} PUBLIC Threads::Threads)
-
-	if(${enable_logging})
-		set(ZCOROUTINE_ZLOG_DIR "${PROJECT_SOURCE_DIR}/../zlog")
-		if(NOT EXISTS "${ZCOROUTINE_ZLOG_DIR}/CMakeLists.txt")
-			message(FATAL_ERROR "ZCOROUTINE_ENABLE_LOGGING=ON but zlog is not found at ${ZCOROUTINE_ZLOG_DIR}")
-		endif()
-
-		if(NOT TARGET zlog_static)
-			add_subdirectory(${ZCOROUTINE_ZLOG_DIR} ${CMAKE_BINARY_DIR}/zlog)
-		endif()
-
-		target_include_directories(${target_name} PUBLIC ${ZCOROUTINE_ZLOG_DIR}/include)
-		target_link_libraries(${target_name} PUBLIC zlog_static)
-		target_compile_definitions(${target_name} PUBLIC ZCOROUTINE_WITH_ZLOG=1)
-	endif()
+	target_link_libraries(${target_name} PUBLIC Threads::Threads zlog_static)
 
 	target_compile_options(${target_name} PRIVATE
 			-Wall
@@ -73,11 +68,11 @@ function(configure_zcoroutine_target target_name enable_logging)
 endfunction()
 
 add_library(zcoroutine STATIC ${ZCOROUTINE_SOURCES})
-configure_zcoroutine_target(zcoroutine ${ZCOROUTINE_ENABLE_LOGGING})
+configure_zcoroutine_target(zcoroutine)
 
 if(ZCOROUTINE_BUILD_TESTS)
 	add_library(zcoroutine_stdalloc STATIC ${ZCOROUTINE_SOURCES})
-	configure_zcoroutine_target(zcoroutine_stdalloc OFF)
+	configure_zcoroutine_target(zcoroutine_stdalloc)
 endif()
 
 if(ZCOROUTINE_BUILD_TESTS)

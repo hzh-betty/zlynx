@@ -15,7 +15,6 @@ find_package(OpenSSL REQUIRED)
 
 if(NOT TARGET zcoroutine)
   set(ZCOROUTINE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-  set(ZCOROUTINE_ENABLE_LOGGING ON CACHE BOOL "" FORCE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../zcoroutine ${CMAKE_BINARY_DIR}/zcoroutine)
 endif()
 

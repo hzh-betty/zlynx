@@ -108,7 +108,7 @@ void Buffer::ensureEnoughSize(size_t len) {
     }
   }
 
-  char *newData = static_cast<char *>(std::realloc(data_, newSize));
+  char *newData = static_cast<char *>(realloc(data_, newSize));
   if (!newData) {
     throw std::bad_alloc();
   }
