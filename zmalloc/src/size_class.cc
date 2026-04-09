@@ -5,6 +5,7 @@
 
 #include "size_class.h"
 
+#include <cstddef>
 #include <mutex>
 
 namespace zmalloc {
@@ -14,8 +15,9 @@ size_t SizeClass::round_up(size_t bytes, size_t align_num) {
 }
 
 size_t SizeClass::round_up(size_t bytes) {
+  constexpr size_t kMinMallocAlignment = alignof(std::max_align_t);
   if (bytes <= 128) {
-    return round_up(bytes, 8);
+    return round_up(bytes, kMinMallocAlignment);
   } else if (bytes <= 1024) {
     return round_up(bytes, 16);
   } else if (bytes <= 8 * 1024) {
@@ -75,7 +77,7 @@ size_t SizeClass::num_move_size(size_t size) {
 
 size_t SizeClass::num_move_page(size_t size) {
   size_t num = num_move_size(size);
-  size_t npage = (num * size) >> PAGE_SHIFT;
+  size_t npage = (num * size + PAGE_SIZE - 1) >> PAGE_SHIFT;
   if (npage == 0)
     npage = 1;
   return npage;
@@ -115,7 +117,7 @@ static void init_size_class_lookup() {
     num_move = clamp_min(num_move, kMinObjects);
     num_move = clamp_max(num_move, kMaxObjects);
 
-    size_t num_pages = (num_move * align_size) >> PAGE_SHIFT;
+    size_t num_pages = (num_move * align_size + PAGE_SIZE - 1) >> PAGE_SHIFT;
     if (num_pages == 0) {
       num_pages = 1;
     }

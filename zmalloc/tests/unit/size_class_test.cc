@@ -13,10 +13,10 @@ namespace {
 class SizeClassRoundUpTest : public ::testing::Test {};
 
 TEST_F(SizeClassRoundUpTest, SmallSizes) {
-  // [1, 128] 8 字节对齐
-  EXPECT_EQ(SizeClass::round_up(1), 8);
-  EXPECT_EQ(SizeClass::round_up(7), 8);
-  EXPECT_EQ(SizeClass::round_up(8), 8);
+  // [1, 128] 至少满足 malloc/new 的 max_align_t 对齐
+  EXPECT_EQ(SizeClass::round_up(1), 16);
+  EXPECT_EQ(SizeClass::round_up(7), 16);
+  EXPECT_EQ(SizeClass::round_up(8), 16);
   EXPECT_EQ(SizeClass::round_up(9), 16);
   EXPECT_EQ(SizeClass::round_up(128), 128);
 }
@@ -82,7 +82,7 @@ TEST_F(SizeClassIndexTest, NumMovePage) {
 // 更多 round_up 测试
 TEST_F(SizeClassRoundUpTest, AllBoundaries) {
   // 边界值测试
-  EXPECT_EQ(SizeClass::round_up(1), 8);
+  EXPECT_EQ(SizeClass::round_up(1), 16);
   EXPECT_EQ(SizeClass::round_up(127), 128);
   EXPECT_EQ(SizeClass::round_up(1023), 1024);
   EXPECT_EQ(SizeClass::round_up(8191), 8192);
@@ -90,7 +90,7 @@ TEST_F(SizeClassRoundUpTest, AllBoundaries) {
 
 TEST_F(SizeClassRoundUpTest, ExactMultiples) {
   // 已对齐的值应该不变
-  EXPECT_EQ(SizeClass::round_up(8), 8);
+  EXPECT_EQ(SizeClass::round_up(8), 16);
   EXPECT_EQ(SizeClass::round_up(16), 16);
   EXPECT_EQ(SizeClass::round_up(64), 64);
   EXPECT_EQ(SizeClass::round_up(256), 256);
@@ -101,8 +101,8 @@ TEST_F(SizeClassRoundUpTest, ExactMultiples) {
 TEST_F(SizeClassRoundUpTest, OneByteOverBoundary) {
   // 边界+1
   EXPECT_EQ(SizeClass::round_up(9), 16);
-  EXPECT_EQ(SizeClass::round_up(17), 24);
-  EXPECT_EQ(SizeClass::round_up(65), 72);
+  EXPECT_EQ(SizeClass::round_up(17), 32);
+  EXPECT_EQ(SizeClass::round_up(65), 80);
   EXPECT_EQ(SizeClass::round_up(130), 144);
   EXPECT_EQ(SizeClass::round_up(1026), 1152);
 }
@@ -173,9 +173,6 @@ TEST_F(SizeClassIndexTest, NumMovePageLarge) {
   EXPECT_GE(SizeClass::num_move_page(256 * 1024), 1);
 }
 
-// ------------------------------
-// 补充：更细粒度的 round_up 用例（每个用例一个点）
-// ------------------------------
 
 #define ZMALLOC_SC_ROUNDUP_CASE(NAME, SIZE, EXPECTED)                          \
   TEST_F(SizeClassRoundUpTest, RoundUp_##NAME) {                               \
@@ -183,13 +180,13 @@ TEST_F(SizeClassIndexTest, NumMovePageLarge) {
               static_cast<size_t>(EXPECTED));                                  \
   }
 
-ZMALLOC_SC_ROUNDUP_CASE(S2, 2, 8)
+ZMALLOC_SC_ROUNDUP_CASE(S2, 2, 16)
 ZMALLOC_SC_ROUNDUP_CASE(S15, 15, 16)
 ZMALLOC_SC_ROUNDUP_CASE(S63, 63, 64)
 ZMALLOC_SC_ROUNDUP_CASE(S64, 64, 64)
-ZMALLOC_SC_ROUNDUP_CASE(S72, 72, 72)
+ZMALLOC_SC_ROUNDUP_CASE(S72, 72, 80)
 ZMALLOC_SC_ROUNDUP_CASE(S73, 73, 80)
-ZMALLOC_SC_ROUNDUP_CASE(S120, 120, 120)
+ZMALLOC_SC_ROUNDUP_CASE(S120, 120, 128)
 ZMALLOC_SC_ROUNDUP_CASE(S121, 121, 128)
 
 ZMALLOC_SC_ROUNDUP_CASE(S255, 255, 256)
@@ -207,9 +204,6 @@ ZMALLOC_SC_ROUNDUP_CASE(S65537, 65537, 73728)
 
 #undef ZMALLOC_SC_ROUNDUP_CASE
 
-// ------------------------------
-// 补充：更多 index 精细点
-// ------------------------------
 
 #define ZMALLOC_SC_INDEX_CASE(NAME, SIZE, EXPECTED)                            \
   TEST_F(SizeClassIndexTest, Index_##NAME) {                                   \
@@ -230,9 +224,6 @@ ZMALLOC_SC_INDEX_CASE(S9216, 9216, 128)
 
 #undef ZMALLOC_SC_INDEX_CASE
 
-// ------------------------------
-// 补充：num_move_size / num_move_page 典型点
-// ------------------------------
 
 #define ZMALLOC_SC_NUMMOVE_SIZE_CASE(NAME, SIZE, EXPECTED)                     \
   TEST_F(SizeClassIndexTest, NumMoveSize_##NAME) {                             \
@@ -250,6 +241,11 @@ ZMALLOC_SC_NUMMOVE_SIZE_CASE(B4096, 4096, 2)
 ZMALLOC_SC_NUMMOVE_SIZE_CASE(B73728, 73728, 2)
 
 #undef ZMALLOC_SC_NUMMOVE_SIZE_CASE
+
+TEST_F(SizeClassIndexTest, NumMovePageRoundsUpToFitWholeBatch) {
+  EXPECT_EQ(SizeClass::num_move_size(5000), 2u);
+  EXPECT_EQ(SizeClass::num_move_page(5000), 2u);
+}
 
 #define ZMALLOC_SC_NUMMOVE_PAGE_ATLEAST_CASE(NAME, SIZE)                       \
   TEST_F(SizeClassIndexTest, NumMovePage_AtLeast1_##NAME) {                    \
