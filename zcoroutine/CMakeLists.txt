@@ -33,43 +33,51 @@ set(ZCOROUTINE_SOURCES
 		src/hook.cc
 )
 
+function(configure_zcoroutine_target target_name enable_logging)
+	target_include_directories(${target_name}
+			PUBLIC ${PROJECT_SOURCE_DIR}/include
+	)
+
+	find_package(Threads REQUIRED)
+	target_link_libraries(${target_name} PUBLIC Threads::Threads)
+
+	if(${enable_logging})
+		set(ZCOROUTINE_ZLOG_DIR "${PROJECT_SOURCE_DIR}/../zlog")
+		if(NOT EXISTS "${ZCOROUTINE_ZLOG_DIR}/CMakeLists.txt")
+			message(FATAL_ERROR "ZCOROUTINE_ENABLE_LOGGING=ON but zlog is not found at ${ZCOROUTINE_ZLOG_DIR}")
+		endif()
+
+		if(NOT TARGET zlog_static)
+			add_subdirectory(${ZCOROUTINE_ZLOG_DIR} ${CMAKE_BINARY_DIR}/zlog)
+		endif()
+
+		target_include_directories(${target_name} PUBLIC ${ZCOROUTINE_ZLOG_DIR}/include)
+		target_link_libraries(${target_name} PUBLIC zlog_static)
+		target_compile_definitions(${target_name} PUBLIC ZCOROUTINE_WITH_ZLOG=1)
+	endif()
+
+	target_compile_options(${target_name} PRIVATE
+			-Wall
+			-Wextra
+			-Wpedantic
+	)
+
+	if(ENABLE_COVERAGE)
+		if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+			target_compile_options(${target_name} PRIVATE -O0 -g --coverage)
+			target_link_options(${target_name} PUBLIC --coverage)
+		else()
+			message(WARNING "ENABLE_COVERAGE is ON, but compiler ${CMAKE_CXX_COMPILER_ID} is not supported")
+		endif()
+	endif()
+endfunction()
+
 add_library(zcoroutine STATIC ${ZCOROUTINE_SOURCES})
+configure_zcoroutine_target(zcoroutine ${ZCOROUTINE_ENABLE_LOGGING})
 
-target_include_directories(zcoroutine
-		PUBLIC ${PROJECT_SOURCE_DIR}/include
-)
-
-find_package(Threads REQUIRED)
-target_link_libraries(zcoroutine PUBLIC Threads::Threads)
-
-if(ZCOROUTINE_ENABLE_LOGGING)
-	set(ZCOROUTINE_ZLOG_DIR "${PROJECT_SOURCE_DIR}/../zlog")
-	if(NOT EXISTS "${ZCOROUTINE_ZLOG_DIR}/CMakeLists.txt")
-		message(FATAL_ERROR "ZCOROUTINE_ENABLE_LOGGING=ON but zlog is not found at ${ZCOROUTINE_ZLOG_DIR}")
-	endif()
-
-	if(NOT TARGET zlog_static)
-		add_subdirectory(${ZCOROUTINE_ZLOG_DIR} ${CMAKE_BINARY_DIR}/zlog)
-	endif()
-
-	target_include_directories(zcoroutine PUBLIC ${ZCOROUTINE_ZLOG_DIR}/include)
-	target_link_libraries(zcoroutine PUBLIC zlog_static)
-	target_compile_definitions(zcoroutine PUBLIC ZCOROUTINE_WITH_ZLOG=1)
-endif()
-
-target_compile_options(zcoroutine PRIVATE
-		-Wall
-		-Wextra
-		-Wpedantic
-)
-
-if(ENABLE_COVERAGE)
-	if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-		target_compile_options(zcoroutine PRIVATE -O0 -g --coverage)
-		target_link_options(zcoroutine PUBLIC --coverage)
-	else()
-		message(WARNING "ENABLE_COVERAGE is ON, but compiler ${CMAKE_CXX_COMPILER_ID} is not supported")
-	endif()
+if(ZCOROUTINE_BUILD_TESTS)
+	add_library(zcoroutine_stdalloc STATIC ${ZCOROUTINE_SOURCES})
+	configure_zcoroutine_target(zcoroutine_stdalloc OFF)
 endif()
 
 if(ZCOROUTINE_BUILD_TESTS)

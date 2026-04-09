@@ -21,6 +21,12 @@ namespace {
 
 thread_local Processor* tls_processor = nullptr;
 
+#if defined(__x86_64__)
+constexpr size_t kStackRedZoneBytes = 128;
+#else
+constexpr size_t kStackRedZoneBytes = 0;
+#endif
+
 }  // namespace
 
 Processor::Processor(int id, size_t stack_size)
@@ -584,8 +590,16 @@ void Processor::save_fiber_stack(const Fiber::ptr& fiber) {
     return;
   }
 
-  const size_t used = stack_top - stack_sp;
-  fiber->save_stack_data(reinterpret_cast<const char*>(stack_sp), used);
+  uintptr_t save_begin = stack_sp;
+  if (kStackRedZoneBytes != 0) {
+    const uintptr_t red_zone_begin = stack_sp >= stack_bottom + kStackRedZoneBytes
+                                         ? stack_sp - kStackRedZoneBytes
+                                         : stack_bottom;
+    save_begin = red_zone_begin;
+  }
+
+  const size_t used = stack_top - save_begin;
+  fiber->save_stack_data(reinterpret_cast<const char*>(save_begin), used);
   ZCOROUTINE_LOG_DEBUG("shared stack saved, sched_id={}, fiber_id={}, used_bytes={}", id_,
                        fiber->id(), used);
 }
