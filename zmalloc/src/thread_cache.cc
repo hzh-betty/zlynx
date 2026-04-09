@@ -28,6 +28,8 @@ ThreadCache *get_thread_cache() { return &tls_thread_cache; }
 namespace {
 constexpr size_t kLargeSizeThreshold = 1024;
 constexpr size_t kLargeSizeMinMax = 32;
+constexpr bool kEnableTransferCache = false;
+constexpr bool kEnableThreadCacheLocalFreeList = false;
 } // namespace
 
 void *ThreadCache::allocate(size_t size) {
@@ -42,19 +44,19 @@ void *ThreadCache::allocate(size_t size) {
   const size_t index = static_cast<size_t>(e.index);
   const size_t num_move = static_cast<size_t>(e.num_move);
 
+  if (!kEnableThreadCacheLocalFreeList) {
+    return fetch_from_central_cache(index, align_size, 1);
+  }
+
   if (align_size >= kLargeSizeThreshold &&
       free_lists_[index].max_size() < kLargeSizeMinMax) {
     free_lists_[index].max_size() = kLargeSizeMinMax;
   }
 
-  // 热路径：线程本地 freelist 非空，直接 pop（无锁）。
   if (ZM_LIKELY(!free_lists_[index].empty())) {
     return free_lists_[index].pop();
-  } else {
-    // miss：走慢路径，批量从 TransferCache/CentralCache 获取。
-    // 关键点：批量搬运能显著摊薄 Central 的桶锁开销。
-    return fetch_from_central_cache(index, align_size, num_move);
   }
+  return fetch_from_central_cache(index, align_size, num_move);
 }
 
 void ThreadCache::deallocate(void *ptr, size_t size) {
@@ -66,16 +68,18 @@ void ThreadCache::deallocate(void *ptr, size_t size) {
   const size_t align_size = static_cast<size_t>(e.align_size);
   const size_t index = static_cast<size_t>(e.index);
 
+  if (!kEnableThreadCacheLocalFreeList) {
+    next_obj(ptr) = nullptr;
+    CentralCache::get_instance().release_list_to_spans(ptr, align_size, index);
+    return;
+  }
+
   if (align_size >= kLargeSizeThreshold &&
       free_lists_[index].max_size() < kLargeSizeMinMax) {
     free_lists_[index].max_size() = kLargeSizeMinMax;
   }
-  // 热路径：线程本地 push（无锁）。
-  // 注意：这里并不把对象归还给 Span，而是仅回到 ThreadCache；
-  // 当链表过长时再批量回收，减少跨线程/跨层交互。
   free_lists_[index].push(ptr);
 
-  // 自由链表过长时，回收到 CentralCache
   if (ZM_UNLIKELY(free_lists_[index].size() >= free_lists_[index].max_size())) {
     list_too_long(free_lists_[index], size, index);
   }
@@ -95,6 +99,9 @@ void *ThreadCache::fetch_from_central_cache(size_t index, size_t size,
   if (batch_num == free_lists_[index].max_size()) {
     free_lists_[index].max_size() += 1;
   }
+  if (!kEnableThreadCacheLocalFreeList) {
+    batch_num = 1;
+  }
 
   void *batch[128];
   size_t got = 0;
@@ -103,8 +110,11 @@ void *ThreadCache::fetch_from_central_cache(size_t index, size_t size,
   // 关键点：TransferCache 命中时可避免 Central 的桶锁，降低抖动。
   // - try_remove_range 返回 true: 操作完成（got 可能为 0）
   // - try_remove_range 返回 false: 锁竞争，直接 fallback 到 CentralCache
-  bool try_success = TransferCache::get_instance().try_remove_range(
-      index, batch, batch_num, got);
+  bool try_success = false;
+  if (kEnableTransferCache) {
+    try_success = TransferCache::get_instance().try_remove_range(
+        index, batch, batch_num, got);
+  }
 
   if (try_success && got > 0) {
     // TransferCache 命中
@@ -126,7 +136,7 @@ void *ThreadCache::fetch_from_central_cache(size_t index, size_t size,
       start, end, batch_num, size, index);
   assert(actual_num >= 1);
 
-  if (actual_num == 1) {
+  if (actual_num == 1 || !kEnableThreadCacheLocalFreeList) {
     assert(start == end);
     return start;
   } else {
@@ -167,8 +177,11 @@ void ThreadCache::list_too_long(FreeList &list, size_t size, size_t index) {
   // - try_insert_range 返回 true: 操作完成（inserted 可能 < collected）
   // - try_insert_range 返回 false: 锁竞争，全部放入 CentralCache
   size_t inserted = 0;
-  bool try_success = TransferCache::get_instance().try_insert_range(
-      index, batch, collected, inserted);
+  bool try_success = false;
+  if (kEnableTransferCache) {
+    try_success = TransferCache::get_instance().try_insert_range(
+        index, batch, collected, inserted);
+  }
 
   size_t remaining_start = try_success ? inserted : 0;
 
