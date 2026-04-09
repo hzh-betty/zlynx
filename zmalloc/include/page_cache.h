@@ -52,6 +52,16 @@ public:
   }
 
   /**
+   * @brief 安全尝试根据对象地址获取 Span
+   * @param obj 对象指针
+   * @return 找到则返回 Span，否则返回 nullptr
+   */
+  inline Span *try_map_object_to_span(void *obj) {
+    PageId id = reinterpret_cast<PageId>(obj) >> PAGE_SHIFT;
+    return static_cast<Span *>(id_span_map_.get(id));
+  }
+
+  /**
    * @brief 释放 Span 到 PageCache，并尝试合并相邻 Span
    * @param span 要释放的 Span
    */

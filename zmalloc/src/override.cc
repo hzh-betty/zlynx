@@ -3,17 +3,24 @@
 #include "zmalloc.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <new>
 #include <atomic>
+#include <cstdint>
 
 namespace zmalloc {
 namespace internal {
 
 namespace {
+
+#if defined(__GLIBC__)
+extern "C" void __libc_free(void *ptr) noexcept;
+extern "C" void *__libc_realloc(void *ptr, size_t size) noexcept;
+#endif
 
 struct BootstrapAlloc {
   BootstrapAlloc *next;
@@ -21,6 +28,14 @@ struct BootstrapAlloc {
   size_t user_size;
   size_t mapping_pages;
 };
+
+struct AlignedHeader {
+  uint64_t magic;
+  void *raw;
+  size_t user_size;
+};
+
+constexpr uint64_t kAlignedAllocMagic = 0x5a6d616c6c6f6341ULL;
 
 BootstrapAlloc *&bootstrap_head() {
   static BootstrapAlloc *head = nullptr;
@@ -106,6 +121,28 @@ bool is_bootstrap_pointer(void *ptr) noexcept {
   return found;
 }
 
+bool bootstrap_contains_address(void *ptr) noexcept {
+  if (ptr == nullptr) {
+    return false;
+  }
+
+  const uintptr_t addr = reinterpret_cast<uintptr_t>(ptr);
+  SpinLock &lock = bootstrap_lock();
+  lock.lock();
+  BootstrapAlloc *cur = bootstrap_head();
+  while (cur != nullptr) {
+    const uintptr_t begin = reinterpret_cast<uintptr_t>(cur->user_ptr);
+    const uintptr_t end = begin + cur->user_size;
+    if (addr >= begin && addr < end) {
+      lock.unlock();
+      return true;
+    }
+    cur = cur->next;
+  }
+  lock.unlock();
+  return false;
+}
+
 void bootstrap_free(void *ptr) noexcept {
   if (ptr == nullptr) {
     return;
@@ -166,8 +203,73 @@ bool should_use_bootstrap_allocator() noexcept {
          !allocator_ready().load(std::memory_order_acquire);
 }
 
+bool is_power_of_two(size_t value) noexcept {
+  return value != 0 && (value & (value - 1)) == 0;
+}
+
+Span *managed_span(void *ptr) {
+  Span *span = PageCache::get_instance().try_map_object_to_span(ptr);
+  if (span == nullptr || !span->is_use) {
+    return nullptr;
+  }
+
+  const uintptr_t addr = reinterpret_cast<uintptr_t>(ptr);
+  const uintptr_t span_begin = static_cast<uintptr_t>(span->page_id) << PAGE_SHIFT;
+  const uintptr_t span_end = span_begin + (span->n << PAGE_SHIFT);
+  if (addr < span_begin || addr >= span_end) {
+    return nullptr;
+  }
+
+  const uintptr_t offset = addr - span_begin;
+  if (span->obj_size > MAX_BYTES) {
+    return offset == 0 ? span : nullptr;
+  }
+
+  if (span->obj_size == 0 || offset % span->obj_size != 0) {
+    return nullptr;
+  }
+
+  return span;
+}
+
 size_t managed_size(void *ptr) {
-  return PageCache::get_instance().map_object_to_span(ptr)->obj_size;
+  return managed_span(ptr)->obj_size;
+}
+
+bool unwrap_aligned_pointer(void *ptr, void **raw_out,
+                            size_t *size_out) noexcept {
+  if (ptr == nullptr) {
+    return false;
+  }
+
+  const uintptr_t addr = reinterpret_cast<uintptr_t>(ptr);
+  if (addr < sizeof(AlignedHeader)) {
+    return false;
+  }
+
+  void *header_addr = reinterpret_cast<void *>(addr - sizeof(AlignedHeader));
+  if (PageCache::get_instance().try_map_object_to_span(header_addr) == nullptr &&
+      !bootstrap_contains_address(header_addr)) {
+    return false;
+  }
+
+  auto *header = reinterpret_cast<AlignedHeader *>(header_addr);
+  if (header->magic != kAlignedAllocMagic || header->raw == nullptr) {
+    return false;
+  }
+
+  void *raw = header->raw;
+  if (!is_bootstrap_pointer(raw) && managed_span(raw) == nullptr) {
+    return false;
+  }
+
+  if (raw_out != nullptr) {
+    *raw_out = raw;
+  }
+  if (size_out != nullptr) {
+    *size_out = header->user_size;
+  }
+  return true;
 }
 
 void *allocate_bytes(size_t size) noexcept {
@@ -187,6 +289,36 @@ void *allocate_bytes(size_t size) noexcept {
   return zmalloc(size);
 }
 
+void *aligned_allocate_bytes(size_t size, size_t alignment) noexcept {
+  if (alignment <= alignof(std::max_align_t)) {
+    return allocate_bytes(size == 0 ? 1 : size);
+  }
+
+  if (!is_power_of_two(alignment)) {
+    return nullptr;
+  }
+
+  const size_t actual = size == 0 ? 1 : size;
+  const size_t header_size = sizeof(AlignedHeader);
+  if (alignment > std::numeric_limits<size_t>::max() - actual - header_size) {
+    return nullptr;
+  }
+
+  void *raw = allocate_bytes(actual + alignment + header_size);
+  if (raw == nullptr) {
+    return nullptr;
+  }
+
+  uintptr_t start = reinterpret_cast<uintptr_t>(raw) + header_size;
+  uintptr_t aligned =
+      (start + alignment - 1) & ~(static_cast<uintptr_t>(alignment) - 1);
+  auto *header = reinterpret_cast<AlignedHeader *>(aligned - header_size);
+  header->magic = kAlignedAllocMagic;
+  header->raw = raw;
+  header->user_size = actual;
+  return reinterpret_cast<void *>(aligned);
+}
+
 void deallocate_bytes(void *ptr) noexcept {
   if (ptr == nullptr) {
     return;
@@ -196,8 +328,23 @@ void deallocate_bytes(void *ptr) noexcept {
     return;
   }
 
-  AllocatorCallGuard guard;
-  zfree(ptr);
+  if (managed_span(ptr) != nullptr) {
+    AllocatorCallGuard guard;
+    zfree(ptr);
+    return;
+  }
+
+  void *aligned_raw = nullptr;
+  if (unwrap_aligned_pointer(ptr, &aligned_raw, nullptr)) {
+    deallocate_bytes(aligned_raw);
+    return;
+  }
+#if defined(__GLIBC__)
+  __libc_free(ptr);
+  return;
+#else
+  return;
+#endif
 }
 
 void *reallocate_bytes(void *ptr, size_t size) noexcept {
@@ -213,15 +360,34 @@ void *reallocate_bytes(void *ptr, size_t size) noexcept {
     return bootstrap_reallocate(ptr, size);
   }
 
-  const size_t old_size = managed_size(ptr);
-  void *next = allocate_bytes(size);
-  if (next == nullptr) {
-    return nullptr;
+  if (managed_span(ptr) != nullptr) {
+    const size_t old_size = managed_size(ptr);
+    void *next = allocate_bytes(size);
+    if (next == nullptr) {
+      return nullptr;
+    }
+
+    std::memcpy(next, ptr, std::min(old_size, size));
+    deallocate_bytes(ptr);
+    return next;
   }
 
-  std::memcpy(next, ptr, std::min(old_size, size));
-  deallocate_bytes(ptr);
-  return next;
+  void *aligned_raw = nullptr;
+  size_t aligned_size = 0;
+  if (unwrap_aligned_pointer(ptr, &aligned_raw, &aligned_size)) {
+    void *next = aligned_allocate_bytes(size, alignof(std::max_align_t));
+    if (next == nullptr) {
+      return nullptr;
+    }
+    std::memcpy(next, ptr, std::min(aligned_size, size));
+    deallocate_bytes(aligned_raw);
+    return next;
+  }
+#if defined(__GLIBC__)
+  return __libc_realloc(ptr, size);
+#else
+  return nullptr;
+#endif
 }
 
 void *allocate_for_new(size_t size) {
@@ -239,32 +405,12 @@ void *allocate_for_new_nothrow(size_t size) noexcept {
 }
 
 #if defined(__cpp_aligned_new)
-struct AlignedHeader {
-  void *raw;
-};
-
 void *aligned_allocate_for_new(size_t size, size_t alignment) {
-  if (alignment <= alignof(std::max_align_t)) {
-    return allocate_for_new(size);
-  }
-
-  const size_t actual = size == 0 ? 1 : size;
-  const size_t header_size = sizeof(AlignedHeader);
-  if (alignment > std::numeric_limits<size_t>::max() - actual - header_size) {
+  void *ptr = aligned_allocate_bytes(size, alignment);
+  if (ptr == nullptr) {
     throw std::bad_alloc();
   }
-
-  void *raw = allocate_bytes(actual + alignment + header_size);
-  if (raw == nullptr) {
-    throw std::bad_alloc();
-  }
-
-  uintptr_t start = reinterpret_cast<uintptr_t>(raw) + header_size;
-  uintptr_t aligned = (start + alignment - 1) & ~(static_cast<uintptr_t>(alignment) - 1);
-  auto *header =
-      reinterpret_cast<AlignedHeader *>(aligned - header_size);
-  header->raw = raw;
-  return reinterpret_cast<void *>(aligned);
+  return ptr;
 }
 
 void *aligned_allocate_for_new_nothrow(size_t size, size_t alignment) noexcept {
@@ -283,12 +429,7 @@ void aligned_delete(void *ptr, size_t alignment) noexcept {
     deallocate_bytes(ptr);
     return;
   }
-
-  const size_t header_size = sizeof(AlignedHeader);
-  uintptr_t aligned = reinterpret_cast<uintptr_t>(ptr);
-  auto *header =
-      reinterpret_cast<AlignedHeader *>(aligned - header_size);
-  deallocate_bytes(header->raw);
+  deallocate_bytes(ptr);
 }
 #endif
 
@@ -323,6 +464,50 @@ extern "C" void *calloc(size_t nmemb, size_t size) noexcept {
 
 extern "C" void cfree(void *ptr) noexcept {
   free(ptr);
+}
+
+extern "C" void *memalign(size_t alignment, size_t size) noexcept {
+  return zmalloc::internal::aligned_allocate_bytes(size, alignment);
+}
+
+extern "C" void *aligned_alloc(size_t alignment, size_t size) noexcept {
+  if (alignment == 0 || !zmalloc::internal::is_power_of_two(alignment) ||
+      (size % alignment) != 0) {
+    return nullptr;
+  }
+  return zmalloc::internal::aligned_allocate_bytes(size, alignment);
+}
+
+extern "C" int posix_memalign(void **memptr, size_t alignment,
+                               size_t size) noexcept {
+  if (memptr == nullptr) {
+    return EINVAL;
+  }
+  *memptr = nullptr;
+  if (alignment < sizeof(void *) ||
+      !zmalloc::internal::is_power_of_two(alignment)) {
+    return EINVAL;
+  }
+
+  void *ptr = zmalloc::internal::aligned_allocate_bytes(size, alignment);
+  if (ptr == nullptr) {
+    return ENOMEM;
+  }
+  *memptr = ptr;
+  return 0;
+}
+
+extern "C" void *valloc(size_t size) noexcept {
+  return zmalloc::internal::aligned_allocate_bytes(size, zmalloc::PAGE_SIZE);
+}
+
+extern "C" void *pvalloc(size_t size) noexcept {
+  size_t rounded = 0;
+  if (__builtin_add_overflow(size, zmalloc::PAGE_SIZE - 1, &rounded)) {
+    return nullptr;
+  }
+  rounded &= ~(zmalloc::PAGE_SIZE - 1);
+  return zmalloc::internal::aligned_allocate_bytes(rounded, zmalloc::PAGE_SIZE);
 }
 
 void *operator new(size_t size) {
@@ -401,6 +586,16 @@ void operator delete(void *ptr, std::align_val_t alignment, size_t) noexcept {
 }
 
 void operator delete[](void *ptr, std::align_val_t alignment, size_t) noexcept {
+  zmalloc::internal::aligned_delete(ptr, static_cast<size_t>(alignment));
+}
+
+void operator delete(void *ptr, size_t,
+                     std::align_val_t alignment) noexcept {
+  zmalloc::internal::aligned_delete(ptr, static_cast<size_t>(alignment));
+}
+
+void operator delete[](void *ptr, size_t,
+                       std::align_val_t alignment) noexcept {
   zmalloc::internal::aligned_delete(ptr, static_cast<size_t>(alignment));
 }
 
