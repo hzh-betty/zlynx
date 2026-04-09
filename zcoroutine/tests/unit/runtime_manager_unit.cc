@@ -67,6 +67,28 @@ TEST_F(RuntimeManagerUnitTest, SubmitToUsesModuloSchedulerIndex) {
   EXPECT_LT(static_cast<size_t>(id), runtime.scheduler_count());
 }
 
+TEST_F(RuntimeManagerUnitTest, MainAndNextSchedulerProvideReusableHandles) {
+  Runtime& runtime = Runtime::instance();
+  runtime.init(3);
+
+  Scheduler* main_a = runtime.main_scheduler();
+  Scheduler* main_b = runtime.main_scheduler();
+  ASSERT_NE(main_a, nullptr);
+  ASSERT_NE(main_b, nullptr);
+  EXPECT_EQ(main_a, main_b);
+
+  std::unordered_set<Scheduler*> handles;
+  handles.insert(main_a);
+  for (int i = 0; i < 32; ++i) {
+    Scheduler* next = runtime.next_scheduler();
+    ASSERT_NE(next, nullptr);
+    handles.insert(next);
+  }
+
+  EXPECT_GE(handles.size(), 2u);
+  EXPECT_LE(handles.size(), runtime.scheduler_count());
+}
+
 TEST_F(RuntimeManagerUnitTest, SubmitToNullTaskIsIgnored) {
   Runtime& runtime = Runtime::instance();
   runtime.init(2);

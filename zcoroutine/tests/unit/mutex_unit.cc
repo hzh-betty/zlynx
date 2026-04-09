@@ -1,4 +1,5 @@
 #include <atomic>
+#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -71,6 +72,47 @@ TEST_F(MutexUnitByHeaderTest, UnlockWhenNotLockedIsIgnored) {
 TEST_F(MutexUnitByHeaderTest, GuardWithNullPointerIsSafeNoop) {
   MutexGuard guard(static_cast<const Mutex*>(nullptr));
   SUCCEED();
+}
+
+TEST_F(MutexUnitByHeaderTest, CoroutineWaiterGetsLockBeforeThreadWaiter) {
+  init(1);
+
+  Mutex mutex;
+  mutex.lock();
+
+  WaitGroup coroutine_started(1);
+  WaitGroup done(2);
+  std::vector<int> order;
+  std::mutex order_mutex;
+
+  go([&]() {
+    coroutine_started.done();
+    MutexGuard guard(mutex);
+    {
+      std::lock_guard<std::mutex> lock(order_mutex);
+      order.push_back(1);
+    }
+    done.done();
+  });
+
+  coroutine_started.wait();
+
+  std::thread thread_waiter([&]() {
+    MutexGuard guard(mutex);
+    {
+      std::lock_guard<std::mutex> lock(order_mutex);
+      order.push_back(2);
+    }
+    done.done();
+  });
+
+  mutex.unlock();
+  done.wait();
+  thread_waiter.join();
+
+  ASSERT_EQ(order.size(), 2u);
+  EXPECT_EQ(order[0], 1);
+  EXPECT_EQ(order[1], 2);
 }
 
 }  // namespace

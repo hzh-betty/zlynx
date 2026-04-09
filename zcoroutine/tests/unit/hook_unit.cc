@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -155,6 +156,34 @@ TEST_F(HookUnitByHeaderTest, SetSockoptTimeoutAffectsInfiniteTimeoutPath) {
   done.wait();
 
   ::close(pair[0]);
+  ::close(pair[1]);
+}
+
+TEST_F(HookUnitByHeaderTest, ShutdownRejectsInvalidHowFlag) {
+  int pair[2] = {-1, -1};
+  ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+
+  errno = 0;
+  EXPECT_EQ(co_shutdown(pair[0], 'x'), -1);
+  EXPECT_EQ(errno, EINVAL);
+
+  ::close(pair[0]);
+  ::close(pair[1]);
+}
+
+TEST_F(HookUnitByHeaderTest, CloseWithDelayInCoroutinePathWorks) {
+  init(1);
+
+  int pair[2] = {-1, -1};
+  ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+
+  WaitGroup done(1);
+  go([&done, fd = pair[0]]() {
+    EXPECT_EQ(co_close(fd, 5), 0);
+    done.done();
+  });
+  done.wait();
+
   ::close(pair[1]);
 }
 

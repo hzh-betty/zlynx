@@ -6,6 +6,7 @@
 
 #include <gtest/gtest.h>
 
+#include "zcoroutine/internal/processor.h"
 #include "zcoroutine/internal/runtime_manager.h"
 #include "support/test_fixture.h"
 
@@ -110,6 +111,82 @@ TEST_F(ProcessorWaitTimerUnitTest, WaitFdWithInvalidFdInCoroutineReturnsEbadf) {
     done.done();
   });
   done.wait();
+}
+
+TEST_F(ProcessorWaitTimerUnitTest, ParkCurrentForFiniteTimeoutSetsTimeoutFlag) {
+  init(1);
+
+  WaitGroup done(1);
+  go([&done]() {
+    Processor* processor = current_processor();
+    ASSERT_NE(processor, nullptr);
+    processor->prepare_wait_current();
+    EXPECT_FALSE(park_current_for(10));
+    EXPECT_TRUE(timeout());
+    done.done();
+  });
+  done.wait();
+}
+
+TEST_F(ProcessorWaitTimerUnitTest, ParkCurrentForInfiniteCanBeResumedByTimerCallback) {
+  init(1);
+
+  WaitGroup done(1);
+  go([&done]() {
+    void* self = current_coroutine();
+    ASSERT_NE(self, nullptr);
+
+    std::shared_ptr<TimerToken> token = add_timer(10, [self]() { resume(self); });
+    ASSERT_NE(token, nullptr);
+
+    Processor* processor = current_processor();
+    ASSERT_NE(processor, nullptr);
+    processor->prepare_wait_current();
+    EXPECT_TRUE(park_current_for(kInfiniteTimeoutMs));
+    EXPECT_FALSE(timeout());
+    done.done();
+  });
+  done.wait();
+}
+
+TEST_F(ProcessorWaitTimerUnitTest, WaitFdTimeoutThenLateWriteCanBeConsumedByNextWaiter) {
+  init(1);
+
+  int pair[2] = {-1, -1};
+  ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+
+  Event timed_out(false, false);
+  WaitGroup phase_done(2);
+
+  go([&phase_done, &timed_out, fd = pair[1]]() {
+    errno = 0;
+    EXPECT_FALSE(wait_fd(fd, EPOLLIN, 10));
+    EXPECT_TRUE(timeout());
+    timed_out.signal();
+    phase_done.done();
+  });
+
+  go([&phase_done, &timed_out, fd = pair[0]]() {
+    EXPECT_TRUE(timed_out.wait(200));
+    const char marker = 'z';
+    ASSERT_EQ(::write(fd, &marker, 1), 1);
+    phase_done.done();
+  });
+
+  phase_done.wait();
+
+  WaitGroup consume_done(1);
+  go([&consume_done, fd = pair[1]]() {
+    EXPECT_TRUE(wait_fd(fd, EPOLLIN, 200));
+    char out = 0;
+    ASSERT_EQ(::read(fd, &out, 1), 1);
+    EXPECT_EQ(out, 'z');
+    consume_done.done();
+  });
+  consume_done.wait();
+
+  ::close(pair[0]);
+  ::close(pair[1]);
 }
 
 }  // namespace

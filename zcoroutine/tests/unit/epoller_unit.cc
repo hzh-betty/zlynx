@@ -107,5 +107,27 @@ TEST_F(EpollerUnitTest, WaitEventsDispatchesReadyWaiter) {
   epoller.stop();
 }
 
+TEST_F(EpollerUnitTest, RegisterSameWaiterTwiceIsIdempotent) {
+  Epoller epoller;
+  ASSERT_TRUE(epoller.start());
+
+  int pair[2] = {-1, -1};
+  ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+
+  std::shared_ptr<IoWaiter> waiter = std::make_shared<IoWaiter>();
+  waiter->fd = pair[1];
+  waiter->events = EPOLLIN | EPOLLOUT;
+  waiter->active.store(true, std::memory_order_release);
+
+  ASSERT_TRUE(epoller.register_waiter(waiter));
+  errno = 0;
+  EXPECT_TRUE(epoller.register_waiter(waiter));
+
+  epoller.unregister_waiter(waiter);
+  ::close(pair[0]);
+  ::close(pair[1]);
+  epoller.stop();
+}
+
 }  // namespace
 }  // namespace zcoroutine
