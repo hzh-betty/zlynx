@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <atomic>
 
 #include "zmalloc_config.h"
 
@@ -19,6 +20,9 @@ struct SizeClassLookup {
 };
 
 extern SizeClassLookup g_size_class_lookup[kSizeClassLookupLen];
+extern std::atomic<bool> g_size_class_lookup_ready;
+
+void init_size_class_lookup_once();
 
 /**
  * @brief 大小类，管理对齐和映射关系
@@ -50,6 +54,9 @@ public:
 };
 
 inline const SizeClassLookup &SizeClass::lookup(size_t bytes) {
+  if (ZM_UNLIKELY(!g_size_class_lookup_ready.load(std::memory_order_acquire))) {
+    init_size_class_lookup_once();
+  }
   if (ZM_UNLIKELY(bytes == 0)) {
     return g_size_class_lookup[0];
   }

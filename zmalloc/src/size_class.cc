@@ -5,6 +5,8 @@
 
 #include "size_class.h"
 
+#include <mutex>
+
 namespace zmalloc {
 
 size_t SizeClass::round_up(size_t bytes, size_t align_num) {
@@ -81,6 +83,7 @@ size_t SizeClass::num_move_page(size_t size) {
 
 
 SizeClassLookup g_size_class_lookup[kSizeClassLookupLen];
+std::atomic<bool> g_size_class_lookup_ready{false};
 
 namespace {
 
@@ -126,6 +129,16 @@ static void init_size_class_lookup() {
   }
 }
 
+} // namespace
+
+void init_size_class_lookup_once() {
+  static std::once_flag once;
+  std::call_once(once, []() {
+    init_size_class_lookup();
+    g_size_class_lookup_ready.store(true, std::memory_order_release);
+  });
+}
+
 #if defined(__GNUC__) || defined(__clang__)
 __attribute__((constructor))
 #endif
@@ -133,9 +146,7 @@ static void zmalloc_init_tables() {
   // 进程级初始化：构建 SizeClass 查表。
   // 注意：这是“尽早”初始化手段（constructor attribute）。若未来希望更可控
   //（例如显式 init），可替换为函数式初始化并在入口处调用。
-  init_size_class_lookup();
+  init_size_class_lookup_once();
 }
-
-} // namespace
 
 } // namespace zmalloc

@@ -39,6 +39,16 @@ foreach(TEST_NAME ${UNIT_TESTS})
     add_test(NAME zmalloc_${TEST_NAME} COMMAND zmalloc_${TEST_NAME})
 endforeach()
 
+add_executable(zmalloc_allocator_override_test unit/allocator_override_test.cc)
+target_link_libraries(zmalloc_allocator_override_test
+    PRIVATE
+        zmalloc_override
+        GTest::gtest
+        GTest::gtest_main
+)
+target_include_directories(zmalloc_allocator_override_test PRIVATE ${ZMALLOC_INCLUDE_DIR})
+add_test(NAME zmalloc_allocator_override_test COMMAND zmalloc_allocator_override_test)
+
 # 集成测试
 set(INTEGRATION_TESTS
     concurrent_alloc_test

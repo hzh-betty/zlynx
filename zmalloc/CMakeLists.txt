@@ -27,7 +27,17 @@ set(ZMALLOC_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
 # 构建库
 add_library(zmalloc ${ZMALLOC_SOURCES})
 
+add_library(zmalloc_override STATIC
+    src/override.cc
+)
+
 target_include_directories(zmalloc
+    PUBLIC
+        $<BUILD_INTERFACE:${ZMALLOC_INCLUDE_DIR}>
+        $<INSTALL_INTERFACE:include>
+)
+
+target_include_directories(zmalloc_override
     PUBLIC
         $<BUILD_INTERFACE:${ZMALLOC_INCLUDE_DIR}>
         $<INSTALL_INTERFACE:include>
@@ -38,8 +48,19 @@ target_link_libraries(zmalloc
         Threads::Threads
 )
 
+target_link_libraries(zmalloc_override
+    PUBLIC
+        zmalloc
+)
+
 # 编译选项
 target_compile_options(zmalloc PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+)
+
+target_compile_options(zmalloc_override PRIVATE
     -Wall
     -Wextra
     -Wpedantic
@@ -54,4 +75,10 @@ endif()
 set_target_properties(zmalloc PROPERTIES
     VERSION ${PROJECT_VERSION}
     SOVERSION 1
+)
+
+set_target_properties(zmalloc_override PROPERTIES
+    VERSION ${PROJECT_VERSION}
+    SOVERSION 1
+    POSITION_INDEPENDENT_CODE ON
 )
