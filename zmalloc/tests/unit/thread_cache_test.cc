@@ -225,10 +225,6 @@ ZMALLOC_TC_ALLOC_FREE_CASE(262144)
 
 #undef ZMALLOC_TC_ALLOC_FREE_CASE
 
-// ------------------------------
-// list_too_long 触发回归（多 size 覆盖）
-// ------------------------------
-
 #define ZMALLOC_TC_TOO_LONG_CASE(SZ)                                           \
   TEST_F(ThreadCacheTest, ListTooLongTrigger_Size_##SZ) {                      \
     TriggerListTooLongOnce(tc, SZ, 1);                                         \

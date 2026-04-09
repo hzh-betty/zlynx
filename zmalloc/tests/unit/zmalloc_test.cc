@@ -457,10 +457,6 @@ TEST_F(ZmallocTest, MultiPageAlloc) {
   }
 }
 
-// ------------------------------
-// 补充：更多 size 覆盖（边界 + 典型点）
-// ------------------------------
-
 #define ZMALLOC_API_TOUCH_CASE(NAME, SIZE)                                     \
   TEST_F(ZmallocTest, AllocTouchFree_##NAME) {                                 \
     AllocTouchFree(static_cast<size_t>(SIZE));                                 \

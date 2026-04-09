@@ -272,10 +272,6 @@ TEST_F(FreeListTest, PopRangeOneElementMatchesPop) {
   EXPECT_EQ(list_.size(), 0u);
 }
 
-// ------------------------------
-// 批量用例：pop_range 的链表长度/边界
-// ------------------------------
-
 #define ZMALLOC_FREELIST_POPRANGE_CASE(N)                                      \
   TEST_F(FreeListTest, PopRange_ChainLength_##N) {                             \
     for (int i = 0; i < 10; ++i) {                                             \
@@ -306,9 +302,7 @@ ZMALLOC_FREELIST_POPRANGE_CASE(10)
 
 #undef ZMALLOC_FREELIST_POPRANGE_CASE
 
-// ------------------------------
-// 批量用例：push_range 后 pop 顺序
-// ------------------------------
+
 
 #define ZMALLOC_FREELIST_PUSHRANGE_POP_CASE(N)                                 \
   TEST_F(FreeListTest, PushRangeThenPopSequential_##N) {                       \

@@ -197,9 +197,6 @@ TEST(ObjectPoolIndependentTest, PoolsAreIndependent) {
   pool2.deallocate(obj2);
 }
 
-// ------------------------------
-// 批量用例：释放顺序决定复用顺序（LIFO）
-// ------------------------------
 
 #define ZMALLOC_OBJECTPOOL_LIFO_REUSE_CASE(N)                                  \
   TEST_F(ObjectPoolTest, LifoReuseOrder_N##N) {                                \
@@ -242,9 +239,6 @@ ZMALLOC_OBJECTPOOL_LIFO_REUSE_CASE(10)
 
 #undef ZMALLOC_OBJECTPOOL_LIFO_REUSE_CASE
 
-// ------------------------------
-// 批量用例：批量分配唯一性 + 可正常释放
-// ------------------------------
 
 #define ZMALLOC_OBJECTPOOL_BATCH_UNIQUE_CASE(N)                                \
   TEST_F(ObjectPoolTest, BatchAllocationUnique_N##N) {                         \
@@ -274,9 +268,6 @@ ZMALLOC_OBJECTPOOL_BATCH_UNIQUE_CASE(100)
 
 #undef ZMALLOC_OBJECTPOOL_BATCH_UNIQUE_CASE
 
-// ------------------------------
-// 批量用例：交替分配/释放不同迭代次数
-// ------------------------------
 
 #define ZMALLOC_OBJECTPOOL_ALTERNATE_CASE(ITERS)                               \
   TEST_F(ObjectPoolTest, AlternateAllocateDeallocate_Iters##ITERS) {           \
@@ -300,9 +291,6 @@ ZMALLOC_OBJECTPOOL_ALTERNATE_CASE(1000)
 
 #undef ZMALLOC_OBJECTPOOL_ALTERNATE_CASE
 
-// ------------------------------
-// SmallObject：对齐/批量/复用
-// ------------------------------
 
 static void SmallObjectBatch(ObjectPool<SmallObject> &pool, int n) {
   std::vector<SmallObject *> objs;

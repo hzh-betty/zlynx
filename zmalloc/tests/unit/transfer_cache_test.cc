@@ -326,9 +326,6 @@ TEST_F(TransferCacheTest, ConcurrentInsertRemove) {
   EXPECT_EQ(cache.size(), total_inserted.load() - total_removed.load());
 }
 
-// ------------------------------
-// 批量用例：不同 batch 的 FIFO
-// ------------------------------
 
 #define ZMALLOC_TC_ENTRY_EXACT_CASE(N)                                         \
   TEST_F(TransferCacheTest, Entry_InsertRemoveExact_N##N) {                    \
@@ -357,9 +354,6 @@ ZMALLOC_TC_ENTRY_EXACT_CASE(128)
 
 #undef ZMALLOC_TC_ENTRY_EXACT_CASE
 
-// ------------------------------
-// 批量用例：partial remove 不变量
-// ------------------------------
 
 #define ZMALLOC_TC_ENTRY_PARTIAL_CASE(INS, REM)                                \
   TEST_F(TransferCacheTest, Entry_PartialRemove_Insert##INS##_Remove##REM) {   \
@@ -389,9 +383,6 @@ ZMALLOC_TC_ENTRY_PARTIAL_CASE(128, 64)
 
 #undef ZMALLOC_TC_ENTRY_PARTIAL_CASE
 
-// ------------------------------
-// 批量用例：empty remove 始终为 0
-// ------------------------------
 
 #define ZMALLOC_TC_ENTRY_EMPTY_REMOVE_CASE(N)                                  \
   TEST_F(TransferCacheTest, Entry_EmptyRemove_Returns0_N##N) {                 \
@@ -408,9 +399,6 @@ ZMALLOC_TC_ENTRY_EMPTY_REMOVE_CASE(64)
 
 #undef ZMALLOC_TC_ENTRY_EMPTY_REMOVE_CASE
 
-// ------------------------------
-// 批量用例：manager 多 size class
-// ------------------------------
 
 #define ZMALLOC_TC_MANAGER_EXACT_CASE(INDEX, N)                                \
   TEST_F(TransferCacheTest, Manager_InsertRemoveExact_Index##INDEX##_N##N) {   \
