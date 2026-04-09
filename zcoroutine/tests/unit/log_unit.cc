@@ -18,5 +18,23 @@ TEST_F(LogUnitByHeaderTest, DefaultLoggerAndMacrosAreCallable) {
   ZCOROUTINE_LOG_ERROR("log_unit error {}", 4);
 }
 
+TEST_F(LogUnitByHeaderTest, LoggerInitContractsStayCallableWithoutZlog) {
+  LoggerInitOptions options;
+  options.level = zlog::LogLevel::value::ERROR;
+  options.async = false;
+  options.formatter = kDefaultFormatter;
+  options.sink = "stdout";
+
+  init_logger(options);
+  auto logger = default_logger();
+  ASSERT_NE(logger, nullptr);
+  EXPECT_EQ(logger.get(), get_logger());
+
+  init_logger(zlog::LogLevel::value::WARNING);
+  EXPECT_EQ(default_logger().get(), get_logger());
+
+  ZCOROUTINE_LOG_FATAL("log_unit fatal {}", 5);
+}
+
 }  // namespace
 }  // namespace zcoroutine
