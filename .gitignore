@@ -11,3 +11,4 @@ logfile/
 .github/
 .worktrees/
 *.log
+.codex/
