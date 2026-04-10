@@ -153,6 +153,13 @@ TEST(AllocatorOverrideTest, PosixMemalignReturnsAlignedTrackedPointer) {
   std::free(ptr);
 }
 
+TEST(AllocatorOverrideTest, PosixMemalignRejectsInvalidAlignment) {
+  void *ptr = reinterpret_cast<void *>(0x1);
+
+  EXPECT_EQ(::posix_memalign(&ptr, 24, 96), EINVAL);
+  EXPECT_EQ(ptr, nullptr);
+}
+
 TEST(AllocatorOverrideTest, VallocReturnsPageAlignedPointer) {
   void *ptr = ::valloc(33);
   ASSERT_NE(ptr, nullptr);

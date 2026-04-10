@@ -480,7 +480,9 @@ extern "C" void *aligned_alloc(size_t alignment, size_t size) noexcept {
 
 extern "C" int posix_memalign(void **memptr, size_t alignment,
                                size_t size) noexcept {
-  if (memptr == nullptr) {
+  // glibc 头文件把 memptr 标成 nonnull；转成整数后再判零，保留防御性检查，
+  // 同时避免编译器把这里视为恒假比较。
+  if (reinterpret_cast<std::uintptr_t>(memptr) == 0) {
     return EINVAL;
   }
   *memptr = nullptr;
