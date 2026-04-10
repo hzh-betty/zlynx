@@ -7,23 +7,22 @@
 #include <fcntl.h>
 #include <iomanip>
 #include <iostream>
+#include <sstream>
+#include <stdexcept>
+#include <string>
 #include <sys/socket.h>
 #include <thread>
 #include <unistd.h>
 #include <vector>
 
-#include <gtest/gtest.h>
-
 #include "zcoroutine/channel.h"
 #include "zcoroutine/hook.h"
+#include "zcoroutine/log.h"
 #include "zcoroutine/sched.h"
 #include "zcoroutine/wait_group.h"
-#include "support/test_fixture.h"
 
 namespace zcoroutine {
 namespace {
-
-class StackModelPerfStressTest : public test::RuntimeTestBase {};
 
 constexpr int kDefaultSchedulerCount = 8;
 constexpr int kDefaultProducerThreads = 8;
@@ -46,6 +45,81 @@ struct WorkloadConfig {
   int timer_tasks;
   int hook_rounds;
 };
+
+struct ScenarioResult {
+  const char* scenario;
+  StackModel model;
+  int workers;
+  int operations;
+  double seconds;
+  double throughput_ops_per_second;
+};
+
+class RuntimeScenarioGuard {
+ public:
+  RuntimeScenarioGuard() = default;
+  ~RuntimeScenarioGuard() { shutdown(); }
+};
+
+class ScopedFd {
+ public:
+  ScopedFd() : fd_(-1) {}
+  explicit ScopedFd(int fd) : fd_(fd) {}
+
+  ~ScopedFd() {
+    if (fd_ >= 0) {
+      ::close(fd_);
+    }
+  }
+
+  ScopedFd(const ScopedFd&) = delete;
+  ScopedFd& operator=(const ScopedFd&) = delete;
+
+  ScopedFd(ScopedFd&& other) noexcept : fd_(other.fd_) { other.fd_ = -1; }
+
+  ScopedFd& operator=(ScopedFd&& other) noexcept {
+    if (this == &other) {
+      return *this;
+    }
+
+    if (fd_ >= 0) {
+      ::close(fd_);
+    }
+    fd_ = other.fd_;
+    other.fd_ = -1;
+    return *this;
+  }
+
+  int get() const { return fd_; }
+
+ private:
+  int fd_;
+};
+
+[[noreturn]] void fail(const std::string& message) { throw std::runtime_error(message); }
+
+void require_true(bool condition, const std::string& message) {
+  if (!condition) {
+    fail(message);
+  }
+}
+
+template <typename T, typename U>
+void require_eq(const T& actual, const U& expected, const std::string& message) {
+  if (!(actual == expected)) {
+    std::ostringstream oss;
+    oss << message << " actual=" << actual << " expected=" << expected;
+    fail(oss.str());
+  }
+}
+
+void require_positive(double value, const std::string& message) {
+  if (value <= 0.0) {
+    std::ostringstream oss;
+    oss << message << " value=" << value;
+    fail(oss.str());
+  }
+}
 
 int read_env_int(const char* name, int default_value, int min_value, int max_value) {
   const char* raw = std::getenv(name);
@@ -107,7 +181,8 @@ WorkloadConfig load_workload_config() {
   config.yield_interval =
       read_env_int("ZCOROUTINE_PERF_YIELD_INTERVAL", kDefaultYieldInterval, 1, INT_MAX);
   config.stack_size =
-      read_env_size_t("ZCOROUTINE_PERF_STACK_SIZE", kDefaultStackSize, 16 * 1024, 8 * 1024 * 1024);
+      read_env_size_t("ZCOROUTINE_PERF_STACK_SIZE", kDefaultStackSize, 16 * 1024,
+                      8 * 1024 * 1024);
   config.shared_stack_num =
       read_env_size_t("ZCOROUTINE_PERF_SHARED_STACK_NUM", kDefaultSharedStackNum, 1, 1024);
   config.channel_messages = scaled_workload(
@@ -122,15 +197,6 @@ WorkloadConfig load_workload_config() {
   return config;
 }
 
-struct ScenarioResult {
-  const char* scenario;
-  StackModel model;
-  int workers;
-  int operations;
-  double seconds;
-  double throughput_ops_per_second;
-};
-
 void print_workload_config(const WorkloadConfig& config) {
   std::cout << "[zcoroutine-perf] config"
             << " scheduler_count=" << config.scheduler_count
@@ -144,6 +210,15 @@ void print_workload_config(const WorkloadConfig& config) {
             << " shared_stack_num=" << config.shared_stack_num << std::endl;
 }
 
+void disable_benchmark_logging() {
+  LoggerInitOptions options;
+  options.level = zlog::LogLevel::value::OFF;
+  options.async = false;
+  options.formatter = kDefaultFormatter;
+  options.sink = "stdout";
+  init_logger(options);
+}
+
 void prepare_runtime(StackModel model, const WorkloadConfig& config) {
   shutdown();
   co_stack_model(model);
@@ -154,6 +229,7 @@ void prepare_runtime(StackModel model, const WorkloadConfig& config) {
 
 ScenarioResult run_scheduler_throughput(StackModel model, const WorkloadConfig& config) {
   prepare_runtime(model, config);
+  RuntimeScenarioGuard guard;
 
   WaitGroup done(static_cast<uint32_t>(config.scheduler_tasks));
   std::atomic<int> executed(0);
@@ -184,15 +260,13 @@ ScenarioResult run_scheduler_throughput(StackModel model, const WorkloadConfig& 
   }
 
   done.wait();
-  auto end = std::chrono::steady_clock::now();
-
-  EXPECT_EQ(executed.load(std::memory_order_relaxed), config.scheduler_tasks);
+  const auto end = std::chrono::steady_clock::now();
+  const int executed_count = executed.load(std::memory_order_relaxed);
+  require_eq(executed_count, config.scheduler_tasks, "scheduler_submit executed mismatch");
 
   const double seconds =
       std::chrono::duration_cast<std::chrono::duration<double>>(end - start).count();
-  EXPECT_GT(seconds, 0.0);
-
-  shutdown();
+  require_positive(seconds, "scheduler_submit elapsed must be positive");
 
   return ScenarioResult{"scheduler_submit", model, config.producer_threads,
                         config.scheduler_tasks, seconds,
@@ -201,6 +275,7 @@ ScenarioResult run_scheduler_throughput(StackModel model, const WorkloadConfig& 
 
 ScenarioResult run_channel_throughput(StackModel model, const WorkloadConfig& config) {
   prepare_runtime(model, config);
+  RuntimeScenarioGuard guard;
 
   constexpr int kProducerCoroutines = 1;
   constexpr int kConsumerCoroutines = 1;
@@ -214,58 +289,58 @@ ScenarioResult run_channel_throughput(StackModel model, const WorkloadConfig& co
   std::atomic<bool> producer_ok(true);
   std::atomic<bool> consumer_ok(true);
 
-  auto start = std::chrono::steady_clock::now();
+  const auto start = std::chrono::steady_clock::now();
 
   go([&channel, &done, &produced, &producer_ok, &config]() {
-      for (int i = 0; i < config.channel_messages; ++i) {
-        if (!channel.write(i)) {
-          producer_ok.store(false, std::memory_order_release);
-          break;
-        }
-        produced.fetch_add(1, std::memory_order_relaxed);
-        if ((i & 63) == 0) {
-          yield();
-        }
+    for (int i = 0; i < config.channel_messages; ++i) {
+      if (!channel.write(i)) {
+        producer_ok.store(false, std::memory_order_release);
+        break;
       }
-      channel.close();
-      done.done();
+      produced.fetch_add(1, std::memory_order_relaxed);
+      if ((i & 63) == 0) {
+        yield();
+      }
+    }
+    channel.close();
+    done.done();
   });
 
-  go([&channel, &done, &produced, &consumed, &consumer_ok]() {
-      int value = 0;
-      while (true) {
-        if (!channel.read(value, kChannelIoTimeoutMs)) {
-          if (!static_cast<bool>(channel)) {
-            break;
-          }
-          continue;
+  go([&channel, &done, &consumed, &consumer_ok]() {
+    int value = 0;
+    while (true) {
+      if (!channel.read(value, kChannelIoTimeoutMs)) {
+        if (!static_cast<bool>(channel)) {
+          break;
         }
-        const int expected = consumed.load(std::memory_order_relaxed);
-        if (value != expected) {
-          consumer_ok.store(false, std::memory_order_release);
-        }
-        consumed.fetch_add(1, std::memory_order_relaxed);
-        if ((consumed.load(std::memory_order_relaxed) & 63) == 0) {
-          yield();
-        }
+        continue;
       }
-      done.done();
+
+      const int expected = consumed.load(std::memory_order_relaxed);
+      if (value != expected) {
+        consumer_ok.store(false, std::memory_order_release);
+      }
+      consumed.fetch_add(1, std::memory_order_relaxed);
+      if ((consumed.load(std::memory_order_relaxed) & 63) == 0) {
+        yield();
+      }
+    }
+    done.done();
   });
 
   done.wait();
+  const auto end = std::chrono::steady_clock::now();
 
-  auto end = std::chrono::steady_clock::now();
-
-  EXPECT_TRUE(producer_ok.load(std::memory_order_acquire));
-  EXPECT_TRUE(consumer_ok.load(std::memory_order_acquire));
-  EXPECT_EQ(produced.load(std::memory_order_relaxed), config.channel_messages);
-  EXPECT_EQ(consumed.load(std::memory_order_relaxed), config.channel_messages);
+  require_true(producer_ok.load(std::memory_order_acquire), "channel producer failed");
+  require_true(consumer_ok.load(std::memory_order_acquire), "channel consumer failed");
+  require_eq(produced.load(std::memory_order_relaxed), config.channel_messages,
+             "channel produced count mismatch");
+  require_eq(consumed.load(std::memory_order_relaxed), config.channel_messages,
+             "channel consumed count mismatch");
 
   const double seconds =
       std::chrono::duration_cast<std::chrono::duration<double>>(end - start).count();
-  EXPECT_GT(seconds, 0.0);
-
-  shutdown();
+  require_positive(seconds, "channel throughput elapsed must be positive");
 
   return ScenarioResult{"channel_spsc", model, kProducerCoroutines + kConsumerCoroutines,
                         config.channel_messages, seconds,
@@ -274,14 +349,15 @@ ScenarioResult run_channel_throughput(StackModel model, const WorkloadConfig& co
 
 ScenarioResult run_timer_throughput(StackModel model, const WorkloadConfig& config) {
   prepare_runtime(model, config);
+  RuntimeScenarioGuard guard;
 
   WaitGroup done(static_cast<uint32_t>(config.timer_tasks));
   std::atomic<int> executed(0);
 
-  auto start = std::chrono::steady_clock::now();
+  const auto start = std::chrono::steady_clock::now();
 
   for (int i = 0; i < config.timer_tasks; ++i) {
-    go([i, &done, &executed, &config]() {
+    go([i, &done, &executed]() {
       if ((i & 15) == 0) {
         yield();
       }
@@ -292,15 +368,14 @@ ScenarioResult run_timer_throughput(StackModel model, const WorkloadConfig& conf
   }
 
   done.wait();
-  auto end = std::chrono::steady_clock::now();
+  const auto end = std::chrono::steady_clock::now();
 
-  EXPECT_EQ(executed.load(std::memory_order_relaxed), config.timer_tasks);
+  require_eq(executed.load(std::memory_order_relaxed), config.timer_tasks,
+             "timer executed count mismatch");
 
   const double seconds =
       std::chrono::duration_cast<std::chrono::duration<double>>(end - start).count();
-  EXPECT_GT(seconds, 0.0);
-
-  shutdown();
+  require_positive(seconds, "timer throughput elapsed must be positive");
 
   return ScenarioResult{"timer_sleep", model, config.scheduler_count, config.timer_tasks, seconds,
                         static_cast<double>(config.timer_tasks) / seconds};
@@ -308,32 +383,29 @@ ScenarioResult run_timer_throughput(StackModel model, const WorkloadConfig& conf
 
 ScenarioResult run_hook_io_throughput(StackModel model, const WorkloadConfig& config) {
   prepare_runtime(model, config);
+  RuntimeScenarioGuard guard;
 
   int stream_pair[2] = {-1, -1};
   if (::socketpair(AF_UNIX, SOCK_STREAM, 0, stream_pair) != 0) {
-    ADD_FAILURE() << "socketpair failed for hook perf scenario";
-    shutdown();
-    return ScenarioResult{"hook_socketpair", model, 2, config.hook_rounds, 0.0, 0.0};
+    fail("socketpair failed for hook perf scenario");
   }
 
-  if (::fcntl(stream_pair[0], F_SETFL, ::fcntl(stream_pair[0], F_GETFL, 0) | O_NONBLOCK) != 0 ||
-      ::fcntl(stream_pair[1], F_SETFL, ::fcntl(stream_pair[1], F_GETFL, 0) | O_NONBLOCK) != 0) {
-    ADD_FAILURE() << "failed to set non-blocking mode for hook perf scenario";
-    ::close(stream_pair[0]);
-    ::close(stream_pair[1]);
-    shutdown();
-    return ScenarioResult{"hook_socketpair", model, 2, config.hook_rounds, 0.0, 0.0};
+  ScopedFd writer(stream_pair[0]);
+  ScopedFd reader(stream_pair[1]);
+
+  if (::fcntl(writer.get(), F_SETFL, ::fcntl(writer.get(), F_GETFL, 0) | O_NONBLOCK) != 0 ||
+      ::fcntl(reader.get(), F_SETFL, ::fcntl(reader.get(), F_GETFL, 0) | O_NONBLOCK) != 0) {
+    fail("failed to set non-blocking mode for hook perf scenario");
   }
 
   WaitGroup done(2);
-
   std::atomic<int> verified(0);
   std::atomic<bool> writer_ok(true);
   std::atomic<bool> reader_ok(true);
 
-  auto start = std::chrono::steady_clock::now();
+  const auto start = std::chrono::steady_clock::now();
 
-  go([&done, &writer_ok, fd = stream_pair[0], &config]() {
+  go([&done, &writer_ok, fd = writer.get(), &config]() {
     for (int i = 0; i < config.hook_rounds; ++i) {
       const uint32_t marker = static_cast<uint32_t>(i);
       const ssize_t rc = co_write(fd, &marker, sizeof(marker), 2000);
@@ -348,7 +420,7 @@ ScenarioResult run_hook_io_throughput(StackModel model, const WorkloadConfig& co
     done.done();
   });
 
-  go([&done, &reader_ok, &verified, fd = stream_pair[1], &config]() {
+  go([&done, &reader_ok, &verified, fd = reader.get(), &config]() {
     for (int i = 0; i < config.hook_rounds; ++i) {
       uint32_t marker = 0;
       const ssize_t rc = co_read(fd, &marker, sizeof(marker), 2000);
@@ -369,20 +441,16 @@ ScenarioResult run_hook_io_throughput(StackModel model, const WorkloadConfig& co
   });
 
   done.wait();
-  auto end = std::chrono::steady_clock::now();
+  const auto end = std::chrono::steady_clock::now();
 
-  EXPECT_TRUE(writer_ok.load(std::memory_order_acquire));
-  EXPECT_TRUE(reader_ok.load(std::memory_order_acquire));
-  EXPECT_EQ(verified.load(std::memory_order_relaxed), config.hook_rounds);
-
-  ::close(stream_pair[0]);
-  ::close(stream_pair[1]);
+  require_true(writer_ok.load(std::memory_order_acquire), "hook writer failed");
+  require_true(reader_ok.load(std::memory_order_acquire), "hook reader failed");
+  require_eq(verified.load(std::memory_order_relaxed), config.hook_rounds,
+             "hook verified count mismatch");
 
   const double seconds =
       std::chrono::duration_cast<std::chrono::duration<double>>(end - start).count();
-  EXPECT_GT(seconds, 0.0);
-
-  shutdown();
+  require_positive(seconds, "hook throughput elapsed must be positive");
 
   return ScenarioResult{"hook_socketpair", model, 2, config.hook_rounds, seconds,
                         static_cast<double>(config.hook_rounds) / seconds};
@@ -402,8 +470,9 @@ void print_result(const ScenarioResult& result) {
             << result.throughput_ops_per_second << std::endl;
 }
 
-TEST_F(StackModelPerfStressTest, CoverSchedulerChannelTimerAndHookIoPerformance) {
-  zcoroutine::init_logger(zlog::LogLevel::value::ERROR);
+int run_benchmark() {
+  disable_benchmark_logging();
+
   const WorkloadConfig config = load_workload_config();
   print_workload_config(config);
 
@@ -415,10 +484,30 @@ TEST_F(StackModelPerfStressTest, CoverSchedulerChannelTimerAndHookIoPerformance)
   results.push_back(run_hook_io_throughput(StackModel::kShared, config));
 
   for (size_t i = 0; i < results.size(); ++i) {
+    require_positive(results[i].throughput_ops_per_second,
+                     std::string("non-positive throughput for scenario ") + results[i].scenario);
     print_result(results[i]);
-    EXPECT_GT(results[i].throughput_ops_per_second, 0.0);
   }
+
+  return 0;
 }
 
 }  // namespace
+
+int run_stack_model_perf_main() {
+  try {
+    return run_benchmark();
+  } catch (const std::exception& ex) {
+    shutdown();
+    std::cerr << "[zcoroutine-perf] error=" << ex.what() << std::endl;
+    return 1;
+  } catch (...) {
+    shutdown();
+    std::cerr << "[zcoroutine-perf] error=unknown_exception" << std::endl;
+    return 1;
+  }
+}
+
 }  // namespace zcoroutine
+
+int main() { return zcoroutine::run_stack_model_perf_main(); }

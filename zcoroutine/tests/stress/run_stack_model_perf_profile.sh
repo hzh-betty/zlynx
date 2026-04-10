@@ -2,9 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-BUILD_DIR="${ROOT_DIR}/build"
-BIN="${BUILD_DIR}/zcoroutine/tests/stack_model_perf"
-GTEST_FILTER="${GTEST_FILTER:-StackModelPerfStressTest.CoverSchedulerChannelTimerAndHookIoPerformance}"
+BUILD_DIR="${BUILD_DIR:-${ROOT_DIR}/build-zcoroutine-perf-nooverride}"
+BIN="${BIN:-${BUILD_DIR}/zcoroutine/tests/stack_model_perf}"
 MODE="${1:-baseline}"
 OUT_ROOT="${ROOT_DIR}/zcoroutine/tests/stress/perf_results"
 STAMP="$(date +%Y%m%d_%H%M%S)"
@@ -14,7 +13,8 @@ mkdir -p "${OUT_DIR}"
 
 if [[ ! -x "${BIN}" ]]; then
   echo "[error] test binary not found: ${BIN}"
-  echo "[hint] build first: cmake --build build --target stack_model_perf"
+  echo "[hint] configure first: cmake -S . -B build-zcoroutine-perf-nooverride -DCMAKE_BUILD_TYPE=RelWithDebInfo -DZCOROUTINE_BUILD_TESTS=ON -DZLYNX_USE_ZMALLOC_OVERRIDE=OFF"
+  echo "[hint] build first: cmake --build build-zcoroutine-perf-nooverride --target stack_model_perf"
   exit 1
 fi
 
@@ -63,7 +63,7 @@ prepare_perf_permissions() {
 run_baseline() {
   local out_file="${OUT_DIR}/baseline.log"
   log "running baseline"
-  "${BIN}" --gtest_filter="${GTEST_FILTER}" | tee "${out_file}"
+  "${BIN}" | tee "${out_file}"
 }
 
 run_perf() {
@@ -78,13 +78,13 @@ run_perf() {
   export ZCOROUTINE_PERF_SCALE_PCT="${ZCOROUTINE_PERF_SCALE_PCT:-100}"
 
   log "running perf record"
-  "${PERF_CMD[@]}" record -F "${PERF_FREQ:-99}" -g -o "${perf_data}" -- \
-    "${BIN}" --gtest_filter="${GTEST_FILTER}" | tee "${perf_run_log}"
+  "${PERF_CMD[@]}" record -F "${PERF_FREQ:-99}" -g --call-graph dwarf -o "${perf_data}" -- \
+    "${BIN}" | tee "${perf_run_log}"
 
   log "running perf stat"
   "${PERF_CMD[@]}" stat -o "${perf_stat}" \
     -e cache-references,cache-misses,cycles,instructions,branches,branch-misses \
-    -- "${BIN}" --gtest_filter="${GTEST_FILTER}" >/dev/null 2>&1 || true
+    -- "${BIN}" >/dev/null 2>&1 || true
 
   log "generating perf report"
   "${PERF_CMD[@]}" report -i "${perf_data}" --stdio --sort symbol,dso > "${perf_report}" || true
@@ -105,7 +105,7 @@ run_valgrind() {
   valgrind --tool=cachegrind \
     --cache-sim=yes --branch-sim=yes \
     --cachegrind-out-file="${cache_out}" \
-    "${BIN}" --gtest_filter="${GTEST_FILTER}" | tee "${run_log}"
+    "${BIN}" | tee "${run_log}"
 
   cg_annotate "${cache_out}" > "${cache_txt}" || true
 
@@ -113,7 +113,7 @@ run_valgrind() {
   valgrind --tool=callgrind \
     --dump-instr=yes --collect-jumps=yes \
     --callgrind-out-file="${call_out}" \
-    "${BIN}" --gtest_filter="${GTEST_FILTER}" >/dev/null 2>&1 || true
+    "${BIN}" >/dev/null 2>&1 || true
 
   callgrind_annotate "${call_out}" > "${call_txt}" || true
   log "valgrind artifacts: ${OUT_DIR}"
@@ -124,8 +124,8 @@ summarize() {
   {
     echo "mode=${MODE}"
     echo "output_dir=${OUT_DIR}"
+    echo "build_dir=${BUILD_DIR}"
     echo "binary=${BIN}"
-    echo "gtest_filter=${GTEST_FILTER}"
     echo "scale_pct=${ZCOROUTINE_PERF_SCALE_PCT:-100}"
     echo
     if [[ -f "${OUT_DIR}/baseline.log" ]]; then
