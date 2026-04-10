@@ -4,6 +4,7 @@
 #include "logger.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <string>
 #include <utility>
@@ -53,6 +54,11 @@ inline zlog::Logger::ptr& cached_logger() {
   return logger;
 }
 
+inline std::atomic<int>& cached_logger_level() {
+  static std::atomic<int> level(static_cast<int>(zlog::LogLevel::value::INFO));
+  return level;
+}
+
 inline void init_logger(const LoggerInitOptions& options) {
   zlog::GlobalLoggerBuilder builder;
   builder.buildLoggerName(kLoggerName);
@@ -66,6 +72,7 @@ inline void init_logger(const LoggerInitOptions& options) {
   zlog::Logger::ptr logger = builder.build();
   zlog::LoggerManager::getInstance().upsertLogger(kLoggerName, logger);
   cached_logger() = std::move(logger);
+  cached_logger_level().store(static_cast<int>(options.level), std::memory_order_release);
 }
 
 inline void init_logger(
@@ -81,6 +88,10 @@ inline zlog::Logger* get_logger() {
     init_logger(zlog::LogLevel::value::INFO);
   }
   return logger.get();
+}
+
+inline bool should_log(zlog::LogLevel::value level) {
+  return static_cast<int>(level) >= cached_logger_level().load(std::memory_order_acquire);
 }
 
 /**
@@ -102,9 +113,11 @@ inline zlog::Logger::ptr default_logger() {
  */
 #define ZCOROUTINE_LOG_DEBUG(...)                                                     \
   do {                                                                                \
-    auto* zcoroutine_logger__ = ::zcoroutine::get_logger();                           \
-    if (zcoroutine_logger__) {                                                        \
-      zcoroutine_logger__->debug(__FILE__, __LINE__, __VA_ARGS__);                   \
+    if (::zcoroutine::should_log(::zlog::LogLevel::value::DEBUG)) {                  \
+      auto* zcoroutine_logger__ = ::zcoroutine::get_logger();                         \
+      if (zcoroutine_logger__) {                                                      \
+        zcoroutine_logger__->debug(__FILE__, __LINE__, __VA_ARGS__);                 \
+      }                                                                               \
     }                                                                                 \
   } while (0)
   
@@ -113,9 +126,11 @@ inline zlog::Logger::ptr default_logger() {
  */
 #define ZCOROUTINE_LOG_INFO(...)                                                      \
   do {                                                                                \
-    auto* zcoroutine_logger__ = ::zcoroutine::get_logger();                           \
-    if (zcoroutine_logger__) {                                                        \
-      zcoroutine_logger__->info(__FILE__, __LINE__, __VA_ARGS__);                    \
+    if (::zcoroutine::should_log(::zlog::LogLevel::value::INFO)) {                   \
+      auto* zcoroutine_logger__ = ::zcoroutine::get_logger();                         \
+      if (zcoroutine_logger__) {                                                      \
+        zcoroutine_logger__->info(__FILE__, __LINE__, __VA_ARGS__);                  \
+      }                                                                               \
     }                                                                                 \
   } while (0)
 
@@ -124,9 +139,11 @@ inline zlog::Logger::ptr default_logger() {
  */
 #define ZCOROUTINE_LOG_WARN(...)                                                      \
   do {                                                                                \
-    auto* zcoroutine_logger__ = ::zcoroutine::get_logger();                           \
-    if (zcoroutine_logger__) {                                                        \
-      zcoroutine_logger__->warning(__FILE__, __LINE__, __VA_ARGS__);                 \
+    if (::zcoroutine::should_log(::zlog::LogLevel::value::WARNING)) {                \
+      auto* zcoroutine_logger__ = ::zcoroutine::get_logger();                         \
+      if (zcoroutine_logger__) {                                                      \
+        zcoroutine_logger__->warning(__FILE__, __LINE__, __VA_ARGS__);               \
+      }                                                                               \
     }                                                                                 \
   } while (0)
 
@@ -135,9 +152,11 @@ inline zlog::Logger::ptr default_logger() {
  */
 #define ZCOROUTINE_LOG_ERROR(...)                                                     \
   do {                                                                                \
-    auto* zcoroutine_logger__ = ::zcoroutine::get_logger();                           \
-    if (zcoroutine_logger__) {                                                        \
-      zcoroutine_logger__->error(__FILE__, __LINE__, __VA_ARGS__);                   \
+    if (::zcoroutine::should_log(::zlog::LogLevel::value::ERROR)) {                  \
+      auto* zcoroutine_logger__ = ::zcoroutine::get_logger();                         \
+      if (zcoroutine_logger__) {                                                      \
+        zcoroutine_logger__->error(__FILE__, __LINE__, __VA_ARGS__);                 \
+      }                                                                               \
     }                                                                                 \
   } while (0)
 
@@ -146,9 +165,11 @@ inline zlog::Logger::ptr default_logger() {
  */
 #define ZCOROUTINE_LOG_FATAL(...)                                                     \
   do {                                                                                \
-    auto* zcoroutine_logger__ = ::zcoroutine::get_logger();                           \
-    if (zcoroutine_logger__) {                                                        \
-      zcoroutine_logger__->fatal(__FILE__, __LINE__, __VA_ARGS__);                   \
+    if (::zcoroutine::should_log(::zlog::LogLevel::value::FATAL)) {                  \
+      auto* zcoroutine_logger__ = ::zcoroutine::get_logger();                         \
+      if (zcoroutine_logger__) {                                                      \
+        zcoroutine_logger__->fatal(__FILE__, __LINE__, __VA_ARGS__);                 \
+      }                                                                               \
     }                                                                                 \
   } while (0)
 

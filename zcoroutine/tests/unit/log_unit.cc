@@ -39,5 +39,23 @@ TEST_F(LogUnitByHeaderTest, LoggerInitContractsRegisterInZlogManager) {
   ZCOROUTINE_LOG_FATAL("log_unit fatal {}", 5);
 }
 
+TEST_F(LogUnitByHeaderTest, ShouldLogTracksConfiguredLevel) {
+  LoggerInitOptions options;
+  options.level = zlog::LogLevel::value::ERROR;
+  options.async = false;
+  options.formatter = kDefaultFormatter;
+  options.sink = "stdout";
+  init_logger(options);
+
+  EXPECT_FALSE(should_log(zlog::LogLevel::value::DEBUG));
+  EXPECT_FALSE(should_log(zlog::LogLevel::value::WARNING));
+  EXPECT_TRUE(should_log(zlog::LogLevel::value::ERROR));
+  EXPECT_TRUE(should_log(zlog::LogLevel::value::FATAL));
+
+  options.level = zlog::LogLevel::value::OFF;
+  init_logger(options);
+  EXPECT_FALSE(should_log(zlog::LogLevel::value::FATAL));
+}
+
 }  // namespace
 }  // namespace zcoroutine
