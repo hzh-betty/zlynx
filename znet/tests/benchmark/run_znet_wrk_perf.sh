@@ -60,10 +60,33 @@ run_valgrind() {
   local scale_pct="${ZNET_PERF_SCALE_PCT:-25}"
   mkdir -p "${out_dir}"
 
-  ZNET_PERF_SCALE_PCT="${scale_pct}" \
-  valgrind --tool="${tool}" \
-    --cachegrind-out-file="${out_dir}/cachegrind.out" \
-    "${BIN}" "$@" > "${out_dir}/benchmark_output.txt" 2>&1
+  if [[ "${tool}" == "cachegrind" ]]; then
+    ZNET_PERF_SCALE_PCT="${scale_pct}" \
+    valgrind --tool=cachegrind \
+      --trace-children=yes \
+      --trace-children-skip=wrk,/usr/bin/wrk \
+      --child-silent-after-fork=yes \
+      --cache-sim=yes \
+      --branch-sim=yes \
+      --cachegrind-out-file="${out_dir}/cachegrind.out.%p" \
+      "${BIN}" "$@" > "${out_dir}/benchmark_output.txt" 2>&1
+
+    local selected_file=""
+    selected_file="$(
+      find "${out_dir}" -maxdepth 1 -type f -name 'cachegrind.out.*' -printf '%s %p\n' \
+        | sort -nr | head -n1 | cut -d' ' -f2-
+    )"
+    if [[ -n "${selected_file}" ]]; then
+      cp "${selected_file}" "${out_dir}/cachegrind.out"
+      cg_annotate --auto=yes "${selected_file}" > "${out_dir}/cachegrind_report.txt" 2>&1 || true
+      echo "cachegrind selected: ${selected_file}"
+      echo "cachegrind report: ${out_dir}/cachegrind_report.txt"
+    fi
+  else
+    ZNET_PERF_SCALE_PCT="${scale_pct}" \
+    valgrind --tool="${tool}" \
+      "${BIN}" "$@" > "${out_dir}/benchmark_output.txt" 2>&1
+  fi
 
   echo "valgrind output: ${out_dir}/benchmark_output.txt"
   echo "cachegrind file: ${out_dir}/cachegrind.out"
