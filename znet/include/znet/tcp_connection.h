@@ -125,8 +125,6 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>,
   };
 
   struct Event {
-    using ptr = std::shared_ptr<Event>;
-
     explicit Event(EventType t)
         : type(t),
           max_read_bytes(0),
@@ -149,10 +147,12 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>,
   void set_state(State state);
   size_t pending_write_bytes() const;
   uint32_t resolve_write_timeout(uint32_t timeout_ms) const;
+  bool try_begin_inline_actor();
+  void finish_inline_actor();
 
-  ssize_t dispatch_event_and_wait(const Event::ptr& event);
+  ssize_t dispatch_event_and_wait(const std::shared_ptr<Event>& event);
   void drain_mailbox();
-  void process_event(const Event::ptr& event);
+  void process_event(const std::shared_ptr<Event>& event);
 
   ssize_t read_internal(size_t max_read_bytes, uint32_t timeout_ms);
   ssize_t read_tls_internal(size_t max_read_bytes, uint32_t timeout_ms);
@@ -160,7 +160,7 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>,
   ssize_t write_tls_internal(const char* data,
                              size_t length,
                              uint32_t timeout_ms);
-  ssize_t send_internal(const std::string& payload, uint32_t timeout_ms);
+  ssize_t send_internal(const char* data, size_t length, uint32_t timeout_ms);
   void shutdown_tls_internal();
   void close_tls_internal();
   void shutdown_internal();
@@ -183,7 +183,7 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>,
   void* context_;
 
   mutable std::mutex actor_mutex_;
-  std::deque<Event::ptr> mailbox_;
+  std::deque<std::shared_ptr<Event>> mailbox_;
   bool actor_running_; // actor 是否正在运行
   std::thread::id actor_thread_id_;
   zcoroutine::Scheduler* actor_scheduler_;

@@ -252,5 +252,30 @@ TEST_F(TcpConnectionUnitTest, ConnectionWriteTimeoutCanBeConfigured) {
   ::close(pair[1]);
 }
 
+TEST_F(TcpConnectionUnitTest, SendSucceedsInsideCoroutineContext) {
+  zcoroutine::init(1);
+
+  int pair[2] = {-1, -1};
+  ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+
+  auto conn = std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+  ASSERT_NE(conn, nullptr);
+
+  zcoroutine::WaitGroup done(1);
+  zcoroutine::go([&]() {
+    EXPECT_EQ(conn->send("fast", 4), 4);
+    done.done();
+  });
+  done.wait();
+
+  char out[8] = {0};
+  ASSERT_EQ(::recv(pair[1], out, 4, 0), 4);
+  EXPECT_STREQ(out, "fast");
+  EXPECT_EQ(conn->output_buffer().readable_bytes(), 0U);
+
+  conn->close();
+  ::close(pair[1]);
+}
+
 }  // namespace
 }  // namespace znet
