@@ -4,13 +4,13 @@
 
 namespace zlog {
 // 缓冲区大小常量定义
-static constexpr size_t DEFAULT_BUFFER_SIZE =
+static constexpr size_t kDefaultBufferSize =
     1024 * 1024 * 2; // 默认缓冲区大小：2MB
-static constexpr size_t THRESHOLD_BUFFER_SIZE =
+static constexpr size_t kThresholdBufferSize =
     1024 * 1024 * 8; // 阈值缓冲区大小：8MB
-static constexpr size_t INCREMENT_BUFFER_SIZE =
+static constexpr size_t kIncrementBufferSize =
     1024 * 1024 * 1; // 增量缓冲区大小：1MB
-static constexpr size_t MAX_BUFFER_SIZE =
+static constexpr size_t kMaxBufferSize =
     1024 * 1024 * 512; // 最大缓冲区大小：512MB
 
 /**
@@ -49,19 +49,19 @@ public:
    * @brief 返回可写数据的长度
    * @return 可写空间大小
    */
-  size_t writeAbleSize() const;
+  size_t writable_size() const;
 
   /**
    * @brief 返回可读数据的长度
    * @return 可读数据大小
    */
-  size_t readAbleSize() const;
+  size_t readable_size() const;
 
   /**
    * @brief 移动读指针
    * @param len 要移动的长度
    */
-  void moveReader(size_t len);
+  void move_reader(size_t len);
 
   /**
    * @brief 重置读写位置，初始化缓冲区
@@ -85,7 +85,7 @@ public:
    * @param len 需要的空间大小
    * @return 可以容纳返回true，否则返回false
    */
-  bool canAccommodate(size_t len) const;
+  bool can_accommodate(size_t len) const;
 
   /**
    * @brief 获取缓冲区容量
@@ -98,26 +98,26 @@ private:
    * @brief 确保缓冲区有足够空间
    * @param len 需要的空间大小
    */
-  void ensureEnoughSize(size_t len);
+  void ensure_enough_size(size_t len);
 
   /**
    * @brief 计算扩容后的新缓冲区大小
    * @param len 需要额外容纳的空间大小
    * @return 计算得到的新缓冲区大小
    */
-  size_t calculateNewSize(size_t len) const;
+  size_t calculate_new_size(size_t len) const;
 
   /**
    * @brief 移动写指针
    * @param len 要移动的长度
    */
-  void moveWriter(size_t len);
+  void move_writer(size_t len);
 
 private:
   char *data_;       // 缓冲区指针
-  size_t writerIdx_; // 当前可写数据的下标 (热路径)
+  size_t writer_idx_; // 当前可写数据的下标 (热路径)
   size_t capacity_;  // 缓冲区总容量
-  size_t readerIdx_; // 当前可读数据的下标
+  size_t reader_idx_; // 当前可读数据的下标
 };
 } // namespace zlog
 

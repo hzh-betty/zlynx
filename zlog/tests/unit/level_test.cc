@@ -7,31 +7,31 @@ using namespace zlog;
 class LevelTest : public ::testing::Test {};
 
 TEST_F(LevelTest, ToStringDebug) {
-  EXPECT_EQ(LogLevel::toString(LogLevel::value::DEBUG), "DEBUG");
+  EXPECT_EQ(LogLevel::to_string(LogLevel::value::DEBUG), "DEBUG");
 }
 
 TEST_F(LevelTest, ToStringInfo) {
-  EXPECT_EQ(LogLevel::toString(LogLevel::value::INFO), "INFO");
+  EXPECT_EQ(LogLevel::to_string(LogLevel::value::INFO), "INFO");
 }
 
 TEST_F(LevelTest, ToStringWarning) {
-  EXPECT_EQ(LogLevel::toString(LogLevel::value::WARNING), "WARNING");
+  EXPECT_EQ(LogLevel::to_string(LogLevel::value::WARNING), "WARNING");
 }
 
 TEST_F(LevelTest, ToStringError) {
-  EXPECT_EQ(LogLevel::toString(LogLevel::value::ERROR), "ERROR");
+  EXPECT_EQ(LogLevel::to_string(LogLevel::value::ERROR), "ERROR");
 }
 
 TEST_F(LevelTest, ToStringFatal) {
-  EXPECT_EQ(LogLevel::toString(LogLevel::value::FATAL), "FATAL");
+  EXPECT_EQ(LogLevel::to_string(LogLevel::value::FATAL), "FATAL");
 }
 
 TEST_F(LevelTest, ToStringUnknown) {
-  EXPECT_EQ(LogLevel::toString(LogLevel::value::UNKNOWN), "UNKNOWN");
+  EXPECT_EQ(LogLevel::to_string(LogLevel::value::UNKNOWN), "UNKNOWN");
 }
 
 TEST_F(LevelTest, ToStringOff) {
-  EXPECT_EQ(LogLevel::toString(LogLevel::value::OFF), "OFF");
+  EXPECT_EQ(LogLevel::to_string(LogLevel::value::OFF), "OFF");
 }
 
 TEST_F(LevelTest, ComparisonLessThan) {
@@ -80,8 +80,8 @@ TEST_F(LevelTest, LevelOrdering) {
 
   for (size_t i = 0; i < orderedLevels.size() - 1; i++) {
     EXPECT_TRUE(orderedLevels[i] < orderedLevels[i + 1])
-        << "Level " << LogLevel::toString(orderedLevels[i])
-        << " should be less than " << LogLevel::toString(orderedLevels[i + 1]);
+        << "Level " << LogLevel::to_string(orderedLevels[i])
+        << " should be less than " << LogLevel::to_string(orderedLevels[i + 1]);
   }
 }
 

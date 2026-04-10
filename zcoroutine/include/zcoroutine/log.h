@@ -36,17 +36,17 @@ inline void build_sinks(zlog::GlobalLoggerBuilder& builder,
       options.file_path.empty() ? std::string{kDefaultFilePath} : options.file_path;
 
   if (sink == "file") {
-    builder.buildLoggerSink<zlog::FileSink>(path);
+    builder.build_logger_sink<zlog::FileSink>(path);
     return;
   }
 
   if (sink == "both" || sink == "stdout+file" || sink == "file+stdout") {
-    builder.buildLoggerSink<zlog::StdOutSink>();
-    builder.buildLoggerSink<zlog::FileSink>(path);
+    builder.build_logger_sink<zlog::StdOutSink>();
+    builder.build_logger_sink<zlog::FileSink>(path);
     return;
   }
 
-  builder.buildLoggerSink<zlog::StdOutSink>();
+  builder.build_logger_sink<zlog::StdOutSink>();
 }
 
 inline zlog::Logger::ptr& cached_logger() {
@@ -61,16 +61,16 @@ inline std::atomic<int>& cached_logger_level() {
 
 inline void init_logger(const LoggerInitOptions& options) {
   zlog::GlobalLoggerBuilder builder;
-  builder.buildLoggerName(kLoggerName);
-  builder.buildLoggerLevel(options.level);
-  builder.buildLoggerType(options.async ? zlog::LoggerType::LOGGER_ASYNC
+  builder.build_logger_name(kLoggerName);
+  builder.build_logger_level(options.level);
+  builder.build_logger_type(options.async ? zlog::LoggerType::LOGGER_ASYNC
                                         : zlog::LoggerType::LOGGER_SYNC);
-  builder.buildLoggerFormatter(options.formatter.empty() ? kDefaultFormatter
+  builder.build_logger_formatter(options.formatter.empty() ? kDefaultFormatter
                                                          : options.formatter);
   build_sinks(builder, options);
 
   zlog::Logger::ptr logger = builder.build();
-  zlog::LoggerManager::getInstance().upsertLogger(kLoggerName, logger);
+  zlog::LoggerManager::get_instance().upsert_logger(kLoggerName, logger);
   cached_logger() = std::move(logger);
   cached_logger_level().store(static_cast<int>(options.level), std::memory_order_release);
 }

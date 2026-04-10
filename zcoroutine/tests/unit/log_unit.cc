@@ -30,11 +30,11 @@ TEST_F(LogUnitByHeaderTest, LoggerInitContractsRegisterInZlogManager) {
   auto logger = default_logger();
   ASSERT_NE(logger, nullptr);
   EXPECT_EQ(logger.get(), get_logger());
-  EXPECT_EQ(logger, zlog::LoggerManager::getInstance().getLogger(kLoggerName));
+  EXPECT_EQ(logger, zlog::LoggerManager::get_instance().get_logger(kLoggerName));
 
   init_logger(zlog::LogLevel::value::WARNING);
   EXPECT_EQ(default_logger().get(), get_logger());
-  EXPECT_TRUE(zlog::LoggerManager::getInstance().hasLogger(kLoggerName));
+  EXPECT_TRUE(zlog::LoggerManager::get_instance().has_logger(kLoggerName));
 
   ZCOROUTINE_LOG_FATAL("log_unit fatal {}", 5);
 }

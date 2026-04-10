@@ -69,7 +69,7 @@ public:
    * @brief 获取当前系统时间
    * @return 当前时间的时间戳
    */
-  static time_t getCurrentTime();
+  static time_t get_current_time();
 };
 
 /**
@@ -96,14 +96,14 @@ public:
    * @brief 递归创建目录
    * @param pathname 要创建的目录路径
    */
-  static void createDirectory(const std::string &pathname);
+  static void create_directory(const std::string &pathname);
 
 private:
   /**
    * @brief 创建单个目录
    * @param pathname 目录路径
    */
-  static void makeDir(const std::string &pathname);
+  static void make_dir(const std::string &pathname);
 };
 } // namespace zlog
 

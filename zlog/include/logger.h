@@ -29,19 +29,19 @@ public:
 
   /**
    * @brief 构造函数
-   * @param loggerName 日志器名称
-   * @param limitLevel 日志等级限制
+   * @param logger_name 日志器名称
+   * @param limit_level 日志等级限制
    * @param formatter 日志格式化器
    * @param sinks 日志落地器列表
    */
-  Logger(const char *loggerName, LogLevel::value limitLevel,
+  Logger(const char *logger_name, LogLevel::value limit_level,
          Formatter::ptr formatter, std::vector<LogSink::ptr> &sinks);
 
   /**
    * @brief 获取日志器名称
    * @return 日志器名称字符串
    */
-  std::string getName() const { return loggerName_; }
+  std::string get_name() const { return logger_name_; }
 
   /**
    * @brief 日志记录模板接口
@@ -54,9 +54,9 @@ public:
    * @param args 格式化参数
    */
   template <typename Level, typename... Args>
-  void logImpl(Level level, const char *file, size_t line, const char *fmt,
+  void log_impl(Level level, const char *file, size_t line, const char *fmt,
                Args &&...args) {
-    logImplHelper(level, file, line, fmt, std::forward<Args>(args)...);
+    log_impl_helper(level, file, line, fmt, std::forward<Args>(args)...);
   }
 
   /**
@@ -64,7 +64,7 @@ public:
    */
   template <typename... Args>
   void debug(const char *file, size_t line, const char *fmt, Args &&...args) {
-    logImpl(LogLevel::value::DEBUG, file, line, fmt,
+    log_impl(LogLevel::value::DEBUG, file, line, fmt,
             std::forward<Args>(args)...);
   }
 
@@ -73,7 +73,7 @@ public:
    */
   template <typename... Args>
   void info(const char *file, size_t line, const char *fmt, Args &&...args) {
-    logImpl(LogLevel::value::INFO, file, line, fmt,
+    log_impl(LogLevel::value::INFO, file, line, fmt,
             std::forward<Args>(args)...);
   }
 
@@ -82,7 +82,7 @@ public:
    */
   template <typename... Args>
   void warning(const char *file, size_t line, const char *fmt, Args &&...args) {
-    logImpl(LogLevel::value::WARNING, file, line, fmt,
+    log_impl(LogLevel::value::WARNING, file, line, fmt,
             std::forward<Args>(args)...);
   }
 
@@ -91,7 +91,7 @@ public:
    */
   template <typename... Args>
   void error(const char *file, size_t line, const char *fmt, Args &&...args) {
-    logImpl(LogLevel::value::ERROR, file, line, fmt,
+    log_impl(LogLevel::value::ERROR, file, line, fmt,
             std::forward<Args>(args)...);
   }
 
@@ -100,7 +100,7 @@ public:
    */
   template <typename... Args>
   void fatal(const char *file, size_t line, const char *fmt, Args &&...args) {
-    logImpl(LogLevel::value::FATAL, file, line, fmt,
+    log_impl(LogLevel::value::FATAL, file, line, fmt,
             std::forward<Args>(args)...);
   }
 
@@ -115,24 +115,24 @@ protected:
    * @param args 格式化参数
    */
   template <typename... Args>
-  void logImplHelper(const LogLevel::value level, const char *file,
+  void log_impl_helper(const LogLevel::value level, const char *file,
                      const size_t line, const char *fmt, Args &&...args) {
-    if (level < limitLevel_)
+    if (level < limit_level_)
       return;
 
     // 线程局部缓冲区，预分配内存并复用
-    thread_local fmt::memory_buffer fmtBuffer;
-    fmtBuffer.clear(); // 清空旧数据
+    thread_local fmt::memory_buffer fmt_buffer;
+    fmt_buffer.clear(); // 清空旧数据
 
     // 格式化到缓冲区
-    fmt::vformat_to(std::back_inserter(fmtBuffer), fmt,
+    fmt::vformat_to(std::back_inserter(fmt_buffer), fmt,
                     fmt::make_format_args((args)...));
 
     // 添加终止符（如需要C风格字符串）
-    fmtBuffer.push_back('\0');
+    fmt_buffer.push_back('\0');
 
     // 使用缓冲区内容（例如输出或转换为字符串）
-    serialize(level, file, line, fmtBuffer.data());
+    serialize(level, file, line, fmt_buffer.data());
   }
 
   /**
@@ -154,8 +154,8 @@ protected:
 
 protected:
   std::mutex mutex_;                // 互斥锁
-  const char *loggerName_;          // 日志器名称
-  LogLevel::value limitLevel_;      // 日志等级限制
+  const char *logger_name_;          // 日志器名称
+  LogLevel::value limit_level_;      // 日志等级限制
   Formatter::ptr formatter_;        // 日志格式化器
   std::vector<LogSink::ptr> sinks_; // 日志落地器列表
 };
@@ -168,12 +168,12 @@ class SyncLogger final : public Logger {
 public:
   /**
    * @brief 构造函数
-   * @param loggerName 日志器名称
-   * @param limitLevel 日志等级限制
+   * @param logger_name 日志器名称
+   * @param limit_level 日志等级限制
    * @param formatter 日志格式化器
    * @param sinks 日志落地器列表
    */
-  SyncLogger(const char *loggerName, const LogLevel::value limitLevel,
+  SyncLogger(const char *logger_name, const LogLevel::value limit_level,
              const Formatter::ptr &formatter, std::vector<LogSink::ptr> &sinks);
 
 protected:
@@ -193,16 +193,16 @@ class AsyncLogger final : public Logger {
 public:
   /**
    * @brief 构造函数
-   * @param loggerName 日志器名称
-   * @param limitLevel 日志等级限制
+   * @param logger_name 日志器名称
+   * @param limit_level 日志等级限制
    * @param formatter 日志格式化器
    * @param sinks 日志落地器列表
-   * @param looperType 异步类型
+    * @param looper_type 异步类型
    * @param milliseco 最大等待时间
    */
-  AsyncLogger(const char *loggerName, const LogLevel::value limitLevel,
+  AsyncLogger(const char *logger_name, const LogLevel::value limit_level,
               const Formatter::ptr &formatter, std::vector<LogSink::ptr> &sinks,
-              AsyncType looperType, std::chrono::milliseconds milliseco);
+            AsyncType looper_type, std::chrono::milliseconds milliseco);
 
 protected:
   /**
@@ -218,7 +218,7 @@ protected:
    * 将数据从缓冲区中落地到各个sink
    * @param buffer 缓冲区
    */
-  void reLog(const Buffer &buffer) const;
+  void re_log(const Buffer &buffer) const;
 
 protected:
   AsyncLooper::ptr looper_; // 异步循环器
@@ -248,38 +248,38 @@ public:
 
   /**
    * @brief 设置日志器类型
-   * @param loggerType 日志器类型（同步/异步）
+    * @param logger_type 日志器类型（同步/异步）
    */
-  void buildLoggerType(const LoggerType loggerType);
+    void build_logger_type(const LoggerType logger_type);
 
   /**
    * @brief 启用非安全异步模式
    */
-  void buildEnalleUnSafe();
+  void build_enable_unsafe();
 
   /**
    * @brief 设置日志器名称
-   * @param loggerName 日志器名称
+   * @param logger_name 日志器名称
    */
-  void buildLoggerName(const char *loggerName);
+  void build_logger_name(const char *logger_name);
 
   /**
    * @brief 设置日志等级限制
-   * @param limitLevel 日志等级
+   * @param limit_level 日志等级
    */
-  void buildLoggerLevel(LogLevel::value limitLevel);
+  void build_logger_level(LogLevel::value limit_level);
 
   /**
    * @brief 设置异步等待时间
    * @param milliseco 等待时间（毫秒）
    */
-  void buildWaitTime(const std::chrono::milliseconds milliseco);
+  void build_wait_time(const std::chrono::milliseconds milliseco);
 
   /**
    * @brief 设置日志格式化器
    * @param pattern 格式化字符串
    */
-  void buildLoggerFormatter(const std::string &pattern);
+  void build_logger_formatter(const std::string &pattern);
 
   /**
    * @brief 添加日志落地器
@@ -288,7 +288,7 @@ public:
    * @param args 构造参数
    */
   template <typename SinkType, typename... Args>
-  void buildLoggerSink(Args &&...args) {
+  void build_logger_sink(Args &&...args) {
     const LogSink::ptr psink =
         SinkFactory::create<SinkType>(std::forward<Args>(args)...);
     sinks_.push_back(psink);
@@ -301,12 +301,12 @@ public:
   virtual Logger::ptr build() = 0;
 
 protected:
-  LoggerType loggerType_;               // 日志器类型
-  const char *loggerName_ = nullptr;    // 日志器名称
-  LogLevel::value limitLevel_;          // 日志等级限制
+  LoggerType logger_type_;               // 日志器类型
+  const char *logger_name_ = nullptr;    // 日志器名称
+  LogLevel::value limit_level_;          // 日志等级限制
   Formatter::ptr formatter_;            // 日志格式化器
   std::vector<LogSink::ptr> sinks_;     // 日志落地器列表
-  AsyncType looperType_;                // 异步类型
+  AsyncType looper_type_;                // 异步类型
   std::chrono::milliseconds milliseco_; // 最大等待时间
 };
 
@@ -334,7 +334,7 @@ public:
    * @brief 获取单例实例
    * @return 日志器管理器实例引用
    */
-  static LoggerManager &getInstance() {
+  static LoggerManager &get_instance() {
     static LoggerManager eton;
     return eton;
   }
@@ -343,34 +343,34 @@ public:
    * @brief 添加日志器
    * @param logger 日志器智能指针
    */
-  void addLogger(Logger::ptr &logger);
+  void add_logger(Logger::ptr &logger);
 
   /**
    * @brief 新增或替换日志器。
    * @param name 日志器名称
    * @param logger 日志器实例
    */
-  void upsertLogger(const std::string &name, Logger::ptr logger);
+  void upsert_logger(const std::string &name, Logger::ptr logger);
 
   /**
    * @brief 检查日志器是否存在
    * @param name 日志器名称
    * @return 存在返回true，否则返回false
    */
-  bool hasLogger(const std::string &name);
+  bool has_logger(const std::string &name);
 
   /**
    * @brief 获取指定名称的日志器
    * @param name 日志器名称
    * @return 日志器智能指针，不存在则返回空指针
    */
-  Logger::ptr getLogger(const std::string &name);
+  Logger::ptr get_logger(const std::string &name);
 
   /**
    * @brief 获取根日志器
    * @return 根日志器智能指针
    */
-  Logger::ptr rootLogger();
+  Logger::ptr root_logger();
 
 private:
   /**
@@ -381,7 +381,7 @@ private:
 
 private:
   std::mutex mutex_;                                     // 互斥锁
-  Logger::ptr rootLogger_;                               // 默认根日志器
+  Logger::ptr root_logger_;                               // 默认根日志器
   std::unordered_map<std::string, Logger::ptr> loggers_; // 日志器映射表
 };
 

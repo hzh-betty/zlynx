@@ -139,7 +139,7 @@ void test_zlog_sync(int thread_count, size_t message_size) {
   auto result = run_timed_benchmark(
       "Zlog-Sync", thread_count, message_size, [&](int thread_id) {
         (void)thread_id;
-        logger->logImpl(zlog::LogLevel::value::INFO, "", 0, msg.c_str());
+        logger->log_impl(zlog::LogLevel::value::INFO, "", 0, msg.c_str());
       });
 
   g_results.push_back(result);
@@ -166,7 +166,7 @@ void test_zlog_async_safe(int thread_count, size_t message_size) {
   auto result = run_timed_benchmark(
       "Zlog-Async-Safe", thread_count, message_size, [&](int thread_id) {
         (void)thread_id;
-        logger->logImpl(zlog::LogLevel::value::INFO, "", 0, msg.c_str());
+        logger->log_impl(zlog::LogLevel::value::INFO, "", 0, msg.c_str());
       });
 
   g_results.push_back(result);
@@ -195,7 +195,7 @@ void test_zlog_async_unsafe(int thread_count, size_t message_size) {
   auto result = run_timed_benchmark(
       "Zlog-Async-Unsafe", thread_count, message_size, [&](int thread_id) {
         (void)thread_id;
-        logger->logImpl(zlog::LogLevel::value::INFO, "", 0, msg.c_str());
+        logger->log_impl(zlog::LogLevel::value::INFO, "", 0, msg.c_str());
       });
 
   g_results.push_back(result);

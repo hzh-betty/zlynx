@@ -5,8 +5,8 @@
 
 namespace zlog {
 
-thread_local threadId id_cached{};
-thread_local std::string tidStr;
+thread_local ThreadId id_cached{};
+thread_local std::string tid_str;
 
 void MessageFormatItem::format(fmt::memory_buffer &buffer,
                                const LogMessage &msg) {
@@ -17,12 +17,12 @@ void MessageFormatItem::format(fmt::memory_buffer &buffer,
 
 void LevelFormatItem::format(fmt::memory_buffer &buffer,
                              const LogMessage &msg) {
-  std::string levelstr = LogLevel::toString(msg.level_);
+  std::string levelstr = LogLevel::to_string(msg.level_);
   buffer.append(levelstr.data(), levelstr.data() + levelstr.size());
 }
 
-TimeFormatItem::TimeFormatItem(std::string timeFormat)
-    : timeFormat_(std::move(timeFormat)) {}
+TimeFormatItem::TimeFormatItem(std::string time_format)
+  : time_format_(std::move(time_format)) {}
 
 void TimeFormatItem::format(fmt::memory_buffer &buffer, const LogMessage &msg) {
   // 秒级缓存优化
@@ -34,7 +34,7 @@ void TimeFormatItem::format(fmt::memory_buffer &buffer, const LogMessage &msg) {
     struct tm lt {};
     localtime_r(&msg.curtime_, &lt);
     cached_len = strftime(cached_time_str, sizeof(cached_time_str),
-                          timeFormat_.c_str(), &lt);
+                time_format_.c_str(), &lt);
     last_second = msg.curtime_;
   }
 
@@ -64,16 +64,16 @@ void ThreadIdFormatItem::format(fmt::memory_buffer &buffer,
     id_cached = msg.tid_;
     std::stringstream ss;
     ss << id_cached;
-    tidStr = ss.str();
+    tid_str = ss.str();
   }
 
-  buffer.append(tidStr.data(), tidStr.data() + tidStr.size());
+  buffer.append(tid_str.data(), tid_str.data() + tid_str.size());
 }
 
 void LoggerFormatItem::format(fmt::memory_buffer &buffer,
                               const LogMessage &msg) {
-  if (msg.loggerName_) {
-    buffer.append(msg.loggerName_, msg.loggerName_ + strlen(msg.loggerName_));
+  if (msg.logger_name_) {
+    buffer.append(msg.logger_name_, msg.logger_name_ + strlen(msg.logger_name_));
   }
 }
 
@@ -97,7 +97,7 @@ void OtherFormatItem::format(fmt::memory_buffer &buffer,
 }
 
 Formatter::Formatter(std::string pattern) : pattern_(std::move(pattern)) {
-  if (!parsePattern()) {
+  if (!parse_pattern()) {
     ;
   }
 }
@@ -109,7 +109,7 @@ void Formatter::format(fmt::memory_buffer &buffer,
   }
 }
 
-bool Formatter::parsePattern() {
+bool Formatter::parse_pattern() {
   std::vector<std::pair<std::string, std::string>> fmt_order;
   size_t pos = 0;
   std::string key, val;
@@ -178,15 +178,15 @@ bool Formatter::parsePattern() {
       items_.push_back(std::make_shared<OtherFormatItem>(combined_val));
     } else {
       // 是格式化占位符
-      items_.push_back(createItem(fmt_order[i].first, fmt_order[i].second));
+      items_.push_back(create_item(fmt_order[i].first, fmt_order[i].second));
     }
   }
 
   return true;
 }
 
-FormatItem::prt Formatter::createItem(const std::string &key,
-                                      const std::string &val) {
+FormatItem::prt Formatter::create_item(const std::string &key,
+                                       const std::string &val) {
   if (key == "d") {
     if (!val.empty()) {
       return std::make_shared<TimeFormatItem>(val);

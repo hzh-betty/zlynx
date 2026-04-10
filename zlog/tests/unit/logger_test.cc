@@ -30,7 +30,7 @@ TEST_F(LoggerTest, SyncLoggerLog) {
 
   EXPECT_CALL(*mockSink, log(_, _)).Times(1);
 
-  logger.logImpl(LogLevel::value::INFO, __FILE__, __LINE__, "test message");
+  logger.log_impl(LogLevel::value::INFO, __FILE__, __LINE__, "test message");
 }
 
 TEST_F(LoggerTest, AsyncLoggerLog) {
@@ -40,7 +40,7 @@ TEST_F(LoggerTest, AsyncLoggerLog) {
 
   EXPECT_CALL(*mockSink, log(_, _)).Times(testing::AtLeast(1));
 
-  logger.logImpl(LogLevel::value::INFO, __FILE__, __LINE__,
+  logger.log_impl(LogLevel::value::INFO, __FILE__, __LINE__,
                  "async test message");
 
   std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -50,11 +50,11 @@ TEST_F(LoggerTest, LevelFilter) {
   SyncLogger logger("test_filter", LogLevel::value::WARNING, formatter, sinks);
 
   EXPECT_CALL(*mockSink, log(_, _)).Times(0);
-  logger.logImpl(LogLevel::value::INFO, __FILE__, __LINE__,
+  logger.log_impl(LogLevel::value::INFO, __FILE__, __LINE__,
                  "should not be logged");
 
   EXPECT_CALL(*mockSink, log(_, _)).Times(1);
-  logger.logImpl(LogLevel::value::ERROR, __FILE__, __LINE__,
+  logger.log_impl(LogLevel::value::ERROR, __FILE__, __LINE__,
                  "should be logged");
 }
 

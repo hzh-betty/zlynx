@@ -2,7 +2,7 @@
 
 namespace zlog {
 
-std::string LogLevel::toString(const LogLevel::value level) {
+std::string LogLevel::to_string(const LogLevel::value level) {
   switch (level) {
   case LogLevel::value::DEBUG:
     return "DEBUG";

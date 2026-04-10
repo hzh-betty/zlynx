@@ -4,26 +4,26 @@
 
 namespace zlog {
 
-AsyncLooper::AsyncLooper(Functor func, const AsyncType looperType,
+AsyncLooper::AsyncLooper(Functor func, const AsyncType looper_type,
                          const std::chrono::milliseconds milliseco)
-    : looperType_(looperType), stop_(false),
-      thread_(std::thread(&AsyncLooper::threadEntry, this)),
-      callBack_(std::move(func)), milliseco_(milliseco) {}
+    : looper_type_(looper_type), stop_(false),
+      thread_(std::thread(&AsyncLooper::thread_entry, this)),
+      callback_(std::move(func)), milliseco_(milliseco) {}
 
 void AsyncLooper::push(const char *data, const size_t len) {
   std::unique_lock<Spinlock> lock(mutex_);
-  if (looperType_ == AsyncType::ASYNC_SAFE) {
+  if (looper_type_ == AsyncType::ASYNC_SAFE) {
     // 安全模式下等待缓冲区有空闲空间
-    condPro_.wait(lock, [&]() { return proBuf_.writeAbleSize() >= len; });
+    cond_pro_.wait(lock, [&]() { return pro_buf_.writable_size() >= len; });
   } else {
     // UNSAFE模式下，如果扩容会超过最大缓冲区大小，则阻塞等待
-    condPro_.wait(lock, [&]() { return proBuf_.canAccommodate(len); });
+    cond_pro_.wait(lock, [&]() { return pro_buf_.can_accommodate(len); });
   }
 
-  proBuf_.push(data, len); // 向缓冲区推送数据
+  pro_buf_.push(data, len); // 向缓冲区推送数据
 
-  if (proBuf_.readAbleSize() >= FLUSH_BUFFER_SIZE) { // 缓冲区可读空间大于阈值
-    condCon_.notify_one();
+  if (pro_buf_.readable_size() >= kFlushBufferSize) { // 缓冲区可读空间大于阈值
+    cond_con_.notify_one();
   }
 }
 
@@ -31,49 +31,49 @@ AsyncLooper::~AsyncLooper() { stop(); }
 
 void AsyncLooper::stop() {
   stop_ = true;
-  condCon_.notify_all();
+  cond_con_.notify_all();
   if (thread_.joinable()) {
     thread_.join(); // 等待工作线程退出
   }
 }
 
-void AsyncLooper::threadEntry() {
+void AsyncLooper::thread_entry() {
   while (true) {
     {
       // 1. 等待条件满足
       std::unique_lock<Spinlock> lock(mutex_);
 
       // 检查是否需要退出或有数据
-      if (proBuf_.empty() && stop_) {
+      if (pro_buf_.empty() && stop_) {
         break;
       }
 
       // 等待，超时返回
-      condCon_.wait_for(lock, milliseco_, [this]() {
-        return (proBuf_.readAbleSize() >= FLUSH_BUFFER_SIZE) || stop_;
+      cond_con_.wait_for(lock, milliseco_, [this]() {
+        return (pro_buf_.readable_size() >= kFlushBufferSize) || stop_;
       });
 
       // 2. 交换缓冲区
-      if (proBuf_.empty()) {
+      if (pro_buf_.empty()) {
         if (stop_)
           break;
         continue; // 虚假唤醒或超时但无数据
       }
-      conBuf_.swap(proBuf_);
+      con_buf_.swap(pro_buf_);
 
       // 3. 唤醒生产者
-      condPro_.notify_one();
+      cond_pro_.notify_one();
     }
 
     // 4.处理数据并初始化
     try {
-      callBack_(conBuf_);
+      callback_(con_buf_);
     } catch (const std::exception &e) {
       std::cerr << "AsyncLooper callback exception: " << e.what() << std::endl;
     } catch (...) {
       std::cerr << "AsyncLooper callback unknown exception" << std::endl;
     }
-    conBuf_.reset();
+    con_buf_.reset();
   }
 }
 

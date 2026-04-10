@@ -9,15 +9,15 @@ namespace zlog {
  * @param name 日志器名称
  * @return 返回对应名称的日志器智能指针，如果不存在则返回空指针
  */
-inline Logger::ptr getLogger(const std::string &name) {
-  return LoggerManager::getInstance().getLogger(name);
+inline Logger::ptr get_logger(const std::string &name) {
+  return LoggerManager::get_instance().get_logger(name);
 }
 /**
  * @brief 获取root日志器
  * @return 返回root日志器的智能指针
  */
-inline Logger::ptr rootLogger() {
-  return LoggerManager::getInstance().rootLogger();
+inline Logger::ptr root_logger() {
+  return LoggerManager::get_instance().root_logger();
 }
 
 // 2. 通过宏函数对日志器的接口进行代理
@@ -28,11 +28,11 @@ inline Logger::ptr rootLogger() {
 #define ZLOG_FATAL(fmt, ...) fatal(__FILE__, __LINE__, fmt, ##__VA_ARGS__)
 
 // 3. 提供宏函数，直接通过默认日志器打印
-#define DEBUG(fmt, ...) zlog::rootLogger()->ZLOG_DEBUG(fmt, ##__VA_ARGS__)
-#define INFO(fmt, ...) zlog::rootLogger()->ZLOG_INFO(fmt, ##__VA_ARGS__)
-#define WARN(fmt, ...) zlog::rootLogger()->ZLOG_WARN(fmt, ##__VA_ARGS__)
-#define ERROR(fmt, ...) zlog::rootLogger()->ZLOG_ERROR(fmt, ##__VA_ARGS__)
-#define FATAL(fmt, ...) zlog::rootLogger()->ZLOG_FATAL(fmt, ##__VA_ARGS__)
+#define DEBUG(fmt, ...) zlog::root_logger()->ZLOG_DEBUG(fmt, ##__VA_ARGS__)
+#define INFO(fmt, ...) zlog::root_logger()->ZLOG_INFO(fmt, ##__VA_ARGS__)
+#define WARN(fmt, ...) zlog::root_logger()->ZLOG_WARN(fmt, ##__VA_ARGS__)
+#define ERROR(fmt, ...) zlog::root_logger()->ZLOG_ERROR(fmt, ##__VA_ARGS__)
+#define FATAL(fmt, ...) zlog::root_logger()->ZLOG_FATAL(fmt, ##__VA_ARGS__)
 
 } // namespace zlog
 

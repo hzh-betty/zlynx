@@ -44,7 +44,7 @@ public:
   void format(fmt::memory_buffer &buffer, const LogMessage &msg) override;
 };
 
-static const std::string timeFormatDefault = "%H:%M:%S"; // 默认时间输出格式
+static const std::string kTimeFormatDefault = "%H:%M:%S"; // 默认时间输出格式
 
 /**
  * @brief 时间格式化项
@@ -54,14 +54,14 @@ class TimeFormatItem final : public FormatItem {
 public:
   /**
    * @brief 构造函数
-   * @param timeFormat 时间格式字符串，默认为 "%H:%M:%S"
+   * @param time_format 时间格式字符串，默认为 "%H:%M:%S"
    */
-  explicit TimeFormatItem(std::string timeFormat = timeFormatDefault);
+  explicit TimeFormatItem(std::string time_format = kTimeFormatDefault);
 
   void format(fmt::memory_buffer &buffer, const LogMessage &msg) override;
 
 protected:
-  std::string timeFormat_; // 时间格式字符串
+  std::string time_format_; // 时间格式字符串
 };
 
 /**
@@ -174,7 +174,7 @@ protected:
    * @brief 解析格式化字符串
    * @return 解析成功返回true，否则返回false
    */
-  bool parsePattern();
+  bool parse_pattern();
 
   /**
    * @brief 根据格式化字符创建对应的格式化项
@@ -182,8 +182,8 @@ protected:
    * @param val 格式化参数
    * @return 格式化项智能指针
    */
-  static FormatItem::prt createItem(const std::string &key,
-                                    const std::string &val);
+  static FormatItem::prt create_item(const std::string &key,
+                                     const std::string &val);
 
 protected:
   std::string pattern_;                // 格式化字符串

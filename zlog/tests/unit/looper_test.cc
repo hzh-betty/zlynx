@@ -26,7 +26,7 @@ TEST_F(LooperTest, BasicPushAndCallback) {
 
   AsyncLooper looper(
       [&](Buffer &buf) {
-        receivedData = std::string(buf.begin(), buf.readAbleSize());
+        receivedData = std::string(buf.begin(), buf.readable_size());
         callbackInvoked = true;
       },
       AsyncType::ASYNC_SAFE, std::chrono::milliseconds(50));
@@ -47,7 +47,7 @@ TEST_F(LooperTest, MultiplePushes) {
   AsyncLooper looper(
       [&](Buffer &buf) {
         std::lock_guard<std::mutex> lock(mtx);
-        received.push_back(std::string(buf.begin(), buf.readAbleSize()));
+        received.push_back(std::string(buf.begin(), buf.readable_size()));
       },
       AsyncType::ASYNC_UNSAFE, std::chrono::milliseconds(50));
 
@@ -92,7 +92,7 @@ TEST_F(LooperTest, SafeModeBlocking) {
 TEST_F(LooperTest, UnsafeModeNonBlocking) {
   std::atomic<size_t> totalReceived(0);
 
-  AsyncLooper looper([&](Buffer &buf) { totalReceived += buf.readAbleSize(); },
+  AsyncLooper looper([&](Buffer &buf) { totalReceived += buf.readable_size(); },
                      AsyncType::ASYNC_UNSAFE, std::chrono::milliseconds(50));
 
   for (int i = 0; i < 100; i++) {
@@ -133,7 +133,7 @@ TEST_F(LooperTest, EmptyBuffer) {
 TEST_F(LooperTest, LargeDataPush) {
   std::atomic<size_t> receivedBytes(0);
 
-  AsyncLooper looper([&](Buffer &buf) { receivedBytes += buf.readAbleSize(); },
+  AsyncLooper looper([&](Buffer &buf) { receivedBytes += buf.readable_size(); },
                      AsyncType::ASYNC_UNSAFE, std::chrono::milliseconds(100));
 
   std::string largeData(1024 * 1024, 'A'); // 1MB
@@ -148,7 +148,7 @@ TEST_F(LooperTest, LargeDataPush) {
 TEST_F(LooperTest, ConcurrentPushes) {
   std::atomic<size_t> totalReceived(0);
 
-  AsyncLooper looper([&](Buffer &buf) { totalReceived += buf.readAbleSize(); },
+  AsyncLooper looper([&](Buffer &buf) { totalReceived += buf.readable_size(); },
                      AsyncType::ASYNC_UNSAFE, std::chrono::milliseconds(50));
 
   std::vector<std::thread> threads;

@@ -31,7 +31,7 @@ public:
    * @param level 日志级别
    * @return std::string 对应的字符串
    */
-  static std::string toString(LogLevel::value level);
+  static std::string to_string(LogLevel::value level);
 };
 
 inline bool operator<(LogLevel::value lhs, LogLevel::value rhs) {

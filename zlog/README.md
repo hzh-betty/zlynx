@@ -100,48 +100,48 @@ classDiagram
     class Logger {
         <<abstract>>
         #mutex_ : mutex
-        #loggerName_ : const char*
-        #limitLevel_ : LogLevel::value
+        #logger_name_ : const char*
+        #limit_level_ : LogLevel::value
         #formatter_ : Formatter::ptr
         #sinks_ : vector~LogSink::ptr~
-        +Logger(loggerName, limitLevel, formatter, sinks)
+        +Logger(logger_name, limit_level, formatter, sinks)
         +~Logger()
-        +getName() string
-        +logImpl(level, file, line, fmt, args...)
-        #logImplHelper(level, file, line, fmt, args...)
+        +get_name() string
+        +log_impl(level, file, line, fmt, args...)
+        #log_impl_helper(level, file, line, fmt, args...)
         #serialize(level, file, line, data)
         #log(data, len)* void
     }
 
     class SyncLogger {
-        +SyncLogger(loggerName, limitLevel, formatter, sinks)
+        +SyncLogger(logger_name, limit_level, formatter, sinks)
         #log(data, len) void
     }
 
     class AsyncLogger {
         #looper_ : AsyncLooper::ptr
-        +AsyncLogger(loggerName, limitLevel, formatter, sinks, looperType, milliseco)
+        +AsyncLogger(logger_name, limit_level, formatter, sinks, looperType, milliseco)
         #log(data, len) void
-        #reLog(buffer) void
+        #re_log(buffer) void
     }
 
     class LoggerBuilder {
         <<abstract>>
-        #loggerType_ : LoggerType
-        #loggerName_ : const char*
-        #limitLevel_ : LogLevel::value
+        #logger_type_ : LoggerType
+        #logger_name_ : const char*
+        #limit_level_ : LogLevel::value
         #formatter_ : Formatter::ptr
         #sinks_ : vector~LogSink::ptr~
-        #looperType_ : AsyncType
+        #looper_type_ : AsyncType
         #milliseco_ : milliseconds
         +LoggerBuilder()
-        +buildLoggerType(loggerType)
-        +buildEnalleUnSafe()
-        +buildLoggerName(loggerName)
-        +buildLoggerLevel(limitLevel)
-        +buildWaitTime(milliseco)
-        +buildLoggerFormatter(pattern)
-        +buildLoggerSink(args...)
+        +build_logger_type(loggerType)
+        +build_enable_unsafe()
+        +build_logger_name(logger_name)
+        +build_logger_level(limit_level)
+        +build_wait_time(milliseco)
+        +build_logger_formatter(pattern)
+        +build_logger_sink(args...)
         +build()* Logger::ptr
     }
 
@@ -157,54 +157,54 @@ classDiagram
 
     class LoggerManager {
         -mutex_ : mutex
-        -rootLogger_ : Logger::ptr
+        -root_logger_ : Logger::ptr
         -loggers_ : unordered_map~string, Logger::ptr~
-        +getInstance()$ LoggerManager&
-        +addLogger(logger)
-        +hasLogger(name) bool
-        +getLogger(name) Logger::ptr
-        +rootLogger() Logger::ptr
+        +get_instance()$ LoggerManager&
+        +add_logger(logger)
+        +has_logger(name) bool
+        +get_logger(name) Logger::ptr
+        +root_logger() Logger::ptr
         -LoggerManager()
     }
 
     class AsyncLooper {
-        -looperType_ : AsyncType
+        -looper_type_ : AsyncType
         -stop_ : atomic~bool~
-        -proBuf_ : Buffer
-        -conBuf_ : Buffer
+        -pro_buf_ : Buffer
+        -con_buf_ : Buffer
         -mutex_ : Spinlock
-        -condPro_ : condition_variable_any
-        -condCon_ : condition_variable_any
+        -cond_pro_ : condition_variable_any
+        -cond_con_ : condition_variable_any
         -thread_ : thread
-        -callBack_ : Functor
+        -callback_ : Functor
         -milliseco_ : milliseconds
         +AsyncLooper(func, looperType, milliseco)
         +~AsyncLooper()
         +push(data, len)
         +stop()
-        -threadEntry()
+        -thread_entry()
     }
 
     class Buffer {
         -data_ : char*
-        -writerIdx_ : size_t
+        -writer_idx_ : size_t
         -capacity_ : size_t
-        -readerIdx_ : size_t
+        -reader_idx_ : size_t
         +Buffer()
         +~Buffer()
         +push(data, len)
         +begin() const char*
-        +writeAbleSize() size_t
-        +readAbleSize() size_t
-        +moveReader(len)
+        +writable_size() size_t
+        +readable_size() size_t
+        +move_reader(len)
         +reset()
         +swap(buffer)
         +empty() bool
-        +canAccommodate(len) bool
+        +can_accommodate(len) bool
         +capacity() size_t
-        -ensureEnoughSize(len)
-        -calculateNewSize(len) size_t
-        -moveWriter(len)
+        -ensure_enough_size(len)
+        -calculate_new_size(len) size_t
+        -move_writer(len)
     }
 
     class LogSink {
@@ -221,7 +221,7 @@ classDiagram
     class FileSink {
         #pathname_ : string
         #ofs_ : ofstream
-        #autoFlush_ : bool
+        #auto_flush_ : bool
         +FileSink(pathname, autoFlush)
         +log(data, len) void
     }
@@ -229,14 +229,14 @@ classDiagram
     class RollBySizeSink {
         #basename_ : string
         #ofs_ : ofstream
-        #maxSize_ : size_t
-        #curSize_ : size_t
-        #nameCount_ : size_t
-        #autoFlush_ : bool
+        #max_size_ : size_t
+        #cur_size_ : size_t
+        #name_count_ : size_t
+        #auto_flush_ : bool
         +RollBySizeSink(basename, maxSize, autoFlush)
         +log(data, len) void
-        #createNewFile() string
-        #rollOver()
+        #create_new_file() string
+        #roll_over()
     }
 
     class Formatter {
@@ -259,10 +259,10 @@ classDiagram
         +level_ : LogLevel::value
         +file_ : const char*
         +line_ : size_t
-        +tid_ : threadId
+        +tid_ : ThreadId
         +payload_ : const char*
-        +loggerName_ : const char*
-        +LogMessage(level, file, line, payload, loggerName)
+        +logger_name_ : const char*
+        +LogMessage(level, file, line, payload, logger_name)
     }
 
     class LogLevel {
@@ -274,7 +274,7 @@ classDiagram
         ERROR
         FATAL
         OFF
-        +toString(level)$ string
+        +to_string(level)$ string
     }
 
     Logger <|-- SyncLogger
@@ -308,8 +308,8 @@ sequenceDiagram
     participant Sink as LogSink
 
     User->>Macro: INFO("message", args...)
-    Macro->>Logger: logImpl(level, file, line, fmt, args)
-    Logger->>Logger: logImplHelper()
+    Macro->>Logger: log_impl(level, file, line, fmt, args)
+    Logger->>Logger: log_impl_helper()
     Logger->>Logger: fmt::vformat_to() 格式化参数
     Logger->>Logger: serialize(level, file, line, data)
     Logger->>Message: 创建 LogMessage
@@ -336,7 +336,7 @@ sequenceDiagram
     participant Worker as 工作线程
     participant Sink as LogSink
 
-    User->>Logger: logImpl(level, file, line, fmt, args)
+    User->>Logger: log_impl(level, file, line, fmt, args)
     Logger->>Logger: serialize() 序列化消息
     Logger->>Looper: push(data, len)
     
@@ -355,7 +355,7 @@ sequenceDiagram
         Worker->>Looper: 等待条件/超时
         Worker->>ProBuf: swap(ConBuf)
         Worker->>ConBuf: 获取数据
-        Worker->>Logger: reLog(buffer)
+        Worker->>Logger: re_log(buffer)
         loop 遍历所有 Sink
             Logger->>Sink: log(data, len)
         end
@@ -444,14 +444,14 @@ int main() {
     
     // 创建自定义异步日志器
     zlog::GlobalLoggerBuilder builder;
-    builder.buildLoggerName("async_logger");
-    builder.buildLoggerType(zlog::LoggerType::LOGGER_ASYNC);
-    builder.buildLoggerLevel(zlog::LogLevel::value::DEBUG);
-    builder.buildLoggerFormatter("[%d{%H:%M:%S}][%p]%T%m%n");
-    builder.buildLoggerSink<zlog::FileSink>("./logs/app.log");
+    builder.build_logger_name("async_logger");
+    builder.build_logger_type(zlog::LoggerType::LOGGER_ASYNC);
+    builder.build_logger_level(zlog::LogLevel::value::DEBUG);
+    builder.build_logger_formatter("[%d{%H:%M:%S}][%p]%T%m%n");
+    builder.build_logger_sink<zlog::FileSink>("./logs/app.log");
     builder.build();
     
-    auto logger = zlog::getLogger("async_logger");
+    auto logger = zlog::get_logger("async_logger");
     logger->ZLOG_INFO("Async logging: {}", 42);
     
     return 0;

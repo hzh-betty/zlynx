@@ -149,7 +149,7 @@ void runSyncBenchmark(const Config &cfg) {
     threads.push_back(std::thread([&logger, &msg, &stats, &running,
                                    countPerThread]() {
       for (long long i = 0; i < countPerThread && running.load(); i++) {
-        logger->logImpl(LogLevel::value::INFO, __FILE__, __LINE__, msg.c_str());
+        logger->log_impl(LogLevel::value::INFO, __FILE__, __LINE__, msg.c_str());
         stats.successCount++;
       }
     }));
@@ -206,7 +206,7 @@ void runAsyncBenchmark(const Config &cfg, AsyncType asyncType) {
       threads.push_back(
           std::thread([&logger, &msg, &stats, &running, countPerThread]() {
             for (long long i = 0; i < countPerThread && running.load(); i++) {
-              logger->logImpl(LogLevel::value::INFO, __FILE__, __LINE__,
+              logger->log_impl(LogLevel::value::INFO, __FILE__, __LINE__,
                               msg.c_str());
               stats.successCount++;
             }

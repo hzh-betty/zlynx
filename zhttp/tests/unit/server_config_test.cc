@@ -303,9 +303,9 @@ file = "/tmp/znet-builder.log"
   ASSERT_NE(net_logger, nullptr);
   ASSERT_NE(http_logger, nullptr);
 
-  EXPECT_EQ(zcoroutine_logger->getName(), "zcoroutine_logger");
-  EXPECT_EQ(net_logger->getName(), "znet_logger");
-  EXPECT_EQ(http_logger->getName(), "zhttp_logger");
+  EXPECT_EQ(zcoroutine_logger->get_name(), "zcoroutine_logger");
+  EXPECT_EQ(net_logger->get_name(), "znet_logger");
+  EXPECT_EQ(http_logger->get_name(), "zhttp_logger");
 
   EXPECT_NE(dynamic_cast<zlog::AsyncLogger *>(zcoroutine_logger), nullptr);
   EXPECT_EQ(dynamic_cast<zlog::AsyncLogger *>(net_logger), nullptr);

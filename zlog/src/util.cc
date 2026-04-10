@@ -32,7 +32,7 @@ void Spinlock::lock_slow() noexcept {
   }
 }
 
-time_t Date::getCurrentTime() {
+time_t Date::get_current_time() {
   const auto now = std::chrono::system_clock::now();
   const auto time = std::chrono::system_clock::to_time_t(now);
   return time;
@@ -53,7 +53,7 @@ std::string File::path(const std::string &pathname) {
   return pathname.substr(0, pos + 1);
 }
 
-void File::createDirectory(const std::string &pathname) {
+void File::create_directory(const std::string &pathname) {
   // 循环创建目录(mkdir)
   // ./abc/bcd/efg
   size_t pos = 0;
@@ -63,20 +63,20 @@ void File::createDirectory(const std::string &pathname) {
     if (pos == std::string::npos) {
       // 应该创建完整路径而不是原始路径
       if (!exists(pathname)) {
-        makeDir(pathname);
+        make_dir(pathname);
       }
       break;
     }
-    std::string parentPath = pathname.substr(0, pos + 1);
-    if (!exists(parentPath)) {
+    std::string parent_path = pathname.substr(0, pos + 1);
+    if (!exists(parent_path)) {
       // 应该创建父路径而不是原始路径
-      makeDir(parentPath);
+      make_dir(parent_path);
     }
     index = pos + 1;
   }
 }
 
-void File::makeDir(const std::string &pathname) {
+void File::make_dir(const std::string &pathname) {
   mkdir(pathname.c_str(), 0777);
 }
 

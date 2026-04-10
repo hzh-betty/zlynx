@@ -51,16 +51,16 @@ public:
   /**
    * @brief 构造函数
    * @param pathname 文件路径
-   * @param autoFlush 是否每次写入后自动flush，默认false以提高性能
+   * @param auto_flush 是否每次写入后自动flush，默认false以提高性能
    */
-  explicit FileSink(std::string pathname, bool autoFlush = false);
+  explicit FileSink(std::string pathname, bool auto_flush = false);
 
   void log(const char *data, size_t len) override;
 
 protected:
   std::string pathname_; // 文件路径
   std::ofstream ofs_;    // 输出文件流
-  bool autoFlush_;       // 是否自动flush
+  bool auto_flush_;       // 是否自动flush
 };
 
 /**
@@ -72,10 +72,11 @@ public:
   /**
    * @brief 构造函数
    * @param basename 文件基础名称
-   * @param maxSize 最大文件大小（字节）
-   * @param autoFlush 是否每次写入后自动flush，默认false
+   * @param max_size 最大文件大小（字节）
+   * @param auto_flush 是否每次写入后自动flush，默认false
    */
-  RollBySizeSink(std::string basename, size_t maxSize, bool autoFlush = false);
+  RollBySizeSink(std::string basename, size_t max_size,
+                 bool auto_flush = false);
 
   void log(const char *data, size_t len) override;
 
@@ -84,20 +85,20 @@ protected:
    * @brief 创建新文件
    * @return 新文件的完整路径
    */
-  std::string createNewFile();
+  std::string create_new_file();
 
   /**
    * @brief 滚动到新文件
    * 关闭当前文件，创建新文件
    */
-  void rollOver();
+  void roll_over();
 
   std::string basename_; // 文件基础名称
   std::ofstream ofs_;    // 输出文件流
-  size_t maxSize_;       // 最大文件大小
-  size_t curSize_;       // 当前文件大小
-  size_t nameCount_;     // 文件名计数器
-  bool autoFlush_;       // 是否自动flush
+  size_t max_size_;       // 最大文件大小
+  size_t cur_size_;       // 当前文件大小
+  size_t name_count_;     // 文件名计数器
+  bool auto_flush_;       // 是否自动flush
 };
 
 /**

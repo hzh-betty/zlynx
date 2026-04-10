@@ -16,18 +16,18 @@ protected:
 // ===================== 初始状态测试 =====================
 
 TEST_F(BufferTest, InitialState) {
-  EXPECT_EQ(buf.readAbleSize(), 0u);
-  EXPECT_EQ(buf.writeAbleSize(), DEFAULT_BUFFER_SIZE);
+  EXPECT_EQ(buf.readable_size(), 0u);
+  EXPECT_EQ(buf.writable_size(), kDefaultBufferSize);
   EXPECT_TRUE(buf.empty());
-  EXPECT_EQ(buf.capacity(), DEFAULT_BUFFER_SIZE);
+  EXPECT_EQ(buf.capacity(), kDefaultBufferSize);
   EXPECT_NE(buf.begin(), static_cast<const char *>(NULL));
 }
 
 TEST_F(BufferTest, DefaultBufferConstants) {
-  EXPECT_EQ(DEFAULT_BUFFER_SIZE, 1024u * 1024u * 2u);   // 2MB
-  EXPECT_EQ(THRESHOLD_BUFFER_SIZE, 1024u * 1024u * 8u); // 8MB
-  EXPECT_EQ(INCREMENT_BUFFER_SIZE, 1024u * 1024u * 1u); // 1MB
-  EXPECT_EQ(MAX_BUFFER_SIZE, 1024u * 1024u * 512u);     // 512MB
+  EXPECT_EQ(kDefaultBufferSize, 1024u * 1024u * 2u);   // 2MB
+  EXPECT_EQ(kThresholdBufferSize, 1024u * 1024u * 8u); // 8MB
+  EXPECT_EQ(kIncrementBufferSize, 1024u * 1024u * 1u); // 1MB
+  EXPECT_EQ(kMaxBufferSize, 1024u * 1024u * 512u);     // 512MB
 }
 
 // ===================== Push操作测试 =====================
@@ -36,22 +36,22 @@ TEST_F(BufferTest, PushSmallData) {
   const char *data = "hello";
   buf.push(data, 5);
 
-  EXPECT_EQ(buf.readAbleSize(), 5u);
+  EXPECT_EQ(buf.readable_size(), 5u);
   EXPECT_FALSE(buf.empty());
-  EXPECT_EQ(std::string(buf.begin(), buf.readAbleSize()), "hello");
+  EXPECT_EQ(std::string(buf.begin(), buf.readable_size()), "hello");
 }
 
 TEST_F(BufferTest, PushEmptyData) {
   buf.push("", 0);
 
-  EXPECT_EQ(buf.readAbleSize(), 0u);
+  EXPECT_EQ(buf.readable_size(), 0u);
   EXPECT_TRUE(buf.empty());
 }
 
 TEST_F(BufferTest, PushSingleByte) {
   buf.push("X", 1);
 
-  EXPECT_EQ(buf.readAbleSize(), 1u);
+  EXPECT_EQ(buf.readable_size(), 1u);
   EXPECT_EQ(buf.begin()[0], 'X');
 }
 
@@ -59,7 +59,7 @@ TEST_F(BufferTest, PushLargeData) {
   std::vector<char> largeData(1024 * 1024, 'A'); // 1MB
   buf.push(largeData.data(), largeData.size());
 
-  EXPECT_EQ(buf.readAbleSize(), largeData.size());
+  EXPECT_EQ(buf.readable_size(), largeData.size());
   EXPECT_EQ(std::memcmp(buf.begin(), largeData.data(), largeData.size()), 0);
 }
 
@@ -68,8 +68,8 @@ TEST_F(BufferTest, PushMultipleTimes) {
   buf.push(" ", 1);
   buf.push("world", 5);
 
-  EXPECT_EQ(buf.readAbleSize(), 11u);
-  EXPECT_EQ(std::string(buf.begin(), buf.readAbleSize()), "hello world");
+  EXPECT_EQ(buf.readable_size(), 11u);
+  EXPECT_EQ(std::string(buf.begin(), buf.readable_size()), "hello world");
 }
 
 TEST_F(BufferTest, PushBinaryData) {
@@ -77,7 +77,7 @@ TEST_F(BufferTest, PushBinaryData) {
                    static_cast<char>(0xFE)};
   buf.push(binary, 5);
 
-  EXPECT_EQ(buf.readAbleSize(), 5u);
+  EXPECT_EQ(buf.readable_size(), 5u);
   EXPECT_EQ(std::memcmp(buf.begin(), binary, 5), 0);
 }
 
@@ -85,7 +85,7 @@ TEST_F(BufferTest, PushWithNullBytes) {
   const char data[] = "hello\0world";
   buf.push(data, 11);
 
-  EXPECT_EQ(buf.readAbleSize(), 11u);
+  EXPECT_EQ(buf.readable_size(), 11u);
   EXPECT_EQ(std::memcmp(buf.begin(), data, 11), 0);
 }
 
@@ -93,38 +93,38 @@ TEST_F(BufferTest, PushWithNullBytes) {
 
 TEST_F(BufferTest, MoveReaderPartial) {
   buf.push("hello world", 11);
-  buf.moveReader(6);
+  buf.move_reader(6);
 
-  EXPECT_EQ(buf.readAbleSize(), 5u);
-  EXPECT_EQ(std::string(buf.begin(), buf.readAbleSize()), "world");
+  EXPECT_EQ(buf.readable_size(), 5u);
+  EXPECT_EQ(std::string(buf.begin(), buf.readable_size()), "world");
 }
 
 TEST_F(BufferTest, MoveReaderAll) {
   buf.push("hello", 5);
-  buf.moveReader(5);
+  buf.move_reader(5);
 
-  EXPECT_EQ(buf.readAbleSize(), 0u);
+  EXPECT_EQ(buf.readable_size(), 0u);
   EXPECT_TRUE(buf.empty());
 }
 
 TEST_F(BufferTest, MoveReaderZero) {
   buf.push("hello", 5);
-  buf.moveReader(0);
+  buf.move_reader(0);
 
-  EXPECT_EQ(buf.readAbleSize(), 5u);
-  EXPECT_EQ(std::string(buf.begin(), buf.readAbleSize()), "hello");
+  EXPECT_EQ(buf.readable_size(), 5u);
+  EXPECT_EQ(std::string(buf.begin(), buf.readable_size()), "hello");
 }
 
 TEST_F(BufferTest, MoveReaderMultipleTimes) {
   buf.push("abcdefghij", 10);
 
-  buf.moveReader(2);
-  EXPECT_EQ(std::string(buf.begin(), buf.readAbleSize()), "cdefghij");
+  buf.move_reader(2);
+  EXPECT_EQ(std::string(buf.begin(), buf.readable_size()), "cdefghij");
 
-  buf.moveReader(3);
-  EXPECT_EQ(std::string(buf.begin(), buf.readAbleSize()), "fghij");
+  buf.move_reader(3);
+  EXPECT_EQ(std::string(buf.begin(), buf.readable_size()), "fghij");
 
-  buf.moveReader(5);
+  buf.move_reader(5);
   EXPECT_TRUE(buf.empty());
 }
 
@@ -134,24 +134,24 @@ TEST_F(BufferTest, ResetAfterPush) {
   buf.push("hello world", 11);
   buf.reset();
 
-  EXPECT_EQ(buf.readAbleSize(), 0u);
+  EXPECT_EQ(buf.readable_size(), 0u);
   EXPECT_TRUE(buf.empty());
-  EXPECT_EQ(buf.writeAbleSize(), buf.capacity());
+  EXPECT_EQ(buf.writable_size(), buf.capacity());
 }
 
 TEST_F(BufferTest, ResetAfterPartialRead) {
   buf.push("hello world", 11);
-  buf.moveReader(5);
+  buf.move_reader(5);
   buf.reset();
 
-  EXPECT_EQ(buf.readAbleSize(), 0u);
+  EXPECT_EQ(buf.readable_size(), 0u);
   EXPECT_TRUE(buf.empty());
 }
 
 TEST_F(BufferTest, ResetOnEmpty) {
   buf.reset();
 
-  EXPECT_EQ(buf.readAbleSize(), 0u);
+  EXPECT_EQ(buf.readable_size(), 0u);
   EXPECT_TRUE(buf.empty());
 }
 
@@ -160,8 +160,8 @@ TEST_F(BufferTest, PushAfterReset) {
   buf.reset();
   buf.push("second", 6);
 
-  EXPECT_EQ(buf.readAbleSize(), 6u);
-  EXPECT_EQ(std::string(buf.begin(), buf.readAbleSize()), "second");
+  EXPECT_EQ(buf.readable_size(), 6u);
+  EXPECT_EQ(std::string(buf.begin(), buf.readable_size()), "second");
 }
 
 // ===================== Swap测试 =====================
@@ -173,8 +173,8 @@ TEST_F(BufferTest, SwapBothNonEmpty) {
 
   buf.swap(b2);
 
-  EXPECT_EQ(std::string(buf.begin(), buf.readAbleSize()), "world");
-  EXPECT_EQ(std::string(b2.begin(), b2.readAbleSize()), "hello");
+  EXPECT_EQ(std::string(buf.begin(), buf.readable_size()), "world");
+  EXPECT_EQ(std::string(b2.begin(), b2.readable_size()), "hello");
 }
 
 TEST_F(BufferTest, SwapWithEmpty) {
@@ -184,7 +184,7 @@ TEST_F(BufferTest, SwapWithEmpty) {
   buf.swap(b2);
 
   EXPECT_TRUE(buf.empty());
-  EXPECT_EQ(std::string(b2.begin(), b2.readAbleSize()), "hello");
+  EXPECT_EQ(std::string(b2.begin(), b2.readable_size()), "hello");
 }
 
 TEST_F(BufferTest, SwapBothEmpty) {
@@ -208,31 +208,31 @@ TEST_F(BufferTest, SwapDifferentSizes) {
 
   EXPECT_EQ(buf.capacity(), b2Cap);
   EXPECT_EQ(b2.capacity(), bufCap);
-  EXPECT_EQ(buf.readAbleSize(), 5u);
-  EXPECT_EQ(b2.readAbleSize(), largeData.size());
+  EXPECT_EQ(buf.readable_size(), 5u);
+  EXPECT_EQ(b2.readable_size(), largeData.size());
 }
 
 TEST_F(BufferTest, SwapSelf) {
   buf.push("hello", 5);
   buf.swap(buf);
 
-  EXPECT_EQ(std::string(buf.begin(), buf.readAbleSize()), "hello");
+  EXPECT_EQ(std::string(buf.begin(), buf.readable_size()), "hello");
 }
 
 // ===================== 扩容机制测试 =====================
 
 TEST_F(BufferTest, AutoResizeSmall) {
-  std::vector<char> data(DEFAULT_BUFFER_SIZE + 1, 'A');
+  std::vector<char> data(kDefaultBufferSize + 1, 'A');
   buf.push(data.data(), data.size());
 
-  EXPECT_GT(buf.capacity(), DEFAULT_BUFFER_SIZE);
-  EXPECT_EQ(buf.readAbleSize(), data.size());
+  EXPECT_GT(buf.capacity(), kDefaultBufferSize);
+  EXPECT_EQ(buf.readable_size(), data.size());
 }
 
 TEST_F(BufferTest, AutoResizeLarge) {
   std::vector<char> data(1024 * 1024 * 3, 'A'); // 3MB > 2MB
   EXPECT_NO_THROW(buf.push(data.data(), data.size()));
-  EXPECT_EQ(buf.readAbleSize(), data.size());
+  EXPECT_EQ(buf.readable_size(), data.size());
 }
 
 TEST_F(BufferTest, ResizeBelowThreshold) {
@@ -247,48 +247,48 @@ TEST_F(BufferTest, ResizeBelowThreshold) {
 
 TEST_F(BufferTest, ResizeAboveThreshold) {
   // 先扩容到超过阈值
-  std::vector<char> initData(THRESHOLD_BUFFER_SIZE + 100, 'A');
+  std::vector<char> initData(kThresholdBufferSize + 100, 'A');
   buf.push(initData.data(), initData.size());
 
   size_t capBeforeSecond = buf.capacity();
 
   // 再次扩容，超过阈值后按增量扩容
-  std::vector<char> moreData(buf.writeAbleSize() + 100, 'B');
+  std::vector<char> moreData(buf.writable_size() + 100, 'B');
   buf.push(moreData.data(), moreData.size());
 
   // 新容量 = 原容量 + INCREMENT + len
-  EXPECT_GE(buf.capacity(), capBeforeSecond + INCREMENT_BUFFER_SIZE);
+  EXPECT_GE(buf.capacity(), capBeforeSecond + kIncrementBufferSize);
 }
 
 TEST_F(BufferTest, MultipleResizes) {
   for (int i = 0; i < 10; i++) {
-    std::vector<char> data(buf.writeAbleSize() + 1, static_cast<char>('A' + i));
+    std::vector<char> data(buf.writable_size() + 1, static_cast<char>('A' + i));
     buf.push(data.data(), data.size());
   }
 
-  EXPECT_GT(buf.capacity(), DEFAULT_BUFFER_SIZE);
-  EXPECT_GT(buf.readAbleSize(), 0u);
+  EXPECT_GT(buf.capacity(), kDefaultBufferSize);
+  EXPECT_GT(buf.readable_size(), 0u);
 }
 
 // ===================== Capacity测试 =====================
 
 TEST_F(BufferTest, CapacityInitial) {
-  EXPECT_EQ(buf.capacity(), DEFAULT_BUFFER_SIZE);
+  EXPECT_EQ(buf.capacity(), kDefaultBufferSize);
 }
 
 TEST_F(BufferTest, CapacityAfterPush) {
   buf.push("hello", 5);
-  EXPECT_EQ(buf.capacity(), DEFAULT_BUFFER_SIZE); // 不扩容
+  EXPECT_EQ(buf.capacity(), kDefaultBufferSize); // 不扩容
 }
 
 TEST_F(BufferTest, CapacityAfterResize) {
-  std::vector<char> largeData(DEFAULT_BUFFER_SIZE + 1, 'X');
+  std::vector<char> largeData(kDefaultBufferSize + 1, 'X');
   buf.push(largeData.data(), largeData.size());
-  EXPECT_GT(buf.capacity(), DEFAULT_BUFFER_SIZE);
+  EXPECT_GT(buf.capacity(), kDefaultBufferSize);
 }
 
 TEST_F(BufferTest, CapacityUnchangedAfterReset) {
-  std::vector<char> largeData(DEFAULT_BUFFER_SIZE + 1, 'X');
+  std::vector<char> largeData(kDefaultBufferSize + 1, 'X');
   buf.push(largeData.data(), largeData.size());
   size_t expandedCap = buf.capacity();
 
@@ -300,28 +300,28 @@ TEST_F(BufferTest, CapacityUnchangedAfterReset) {
 // ===================== WriteAbleSize测试 =====================
 
 TEST_F(BufferTest, WriteAbleSizeInitial) {
-  EXPECT_EQ(buf.writeAbleSize(), DEFAULT_BUFFER_SIZE);
+  EXPECT_EQ(buf.writable_size(), kDefaultBufferSize);
 }
 
 TEST_F(BufferTest, WriteAbleSizeAfterPush) {
   buf.push("hello", 5);
-  EXPECT_EQ(buf.writeAbleSize(), DEFAULT_BUFFER_SIZE - 5);
+  EXPECT_EQ(buf.writable_size(), kDefaultBufferSize - 5);
 }
 
 TEST_F(BufferTest, WriteAbleSizeAfterReset) {
   buf.push("hello", 5);
   buf.reset();
-  EXPECT_EQ(buf.writeAbleSize(), buf.capacity());
+  EXPECT_EQ(buf.writable_size(), buf.capacity());
 }
 
 // ===================== 边界条件测试 =====================
 
 TEST_F(BufferTest, PushExactCapacity) {
-  std::vector<char> data(DEFAULT_BUFFER_SIZE, 'X');
+  std::vector<char> data(kDefaultBufferSize, 'X');
   buf.push(data.data(), data.size());
 
-  EXPECT_EQ(buf.readAbleSize(), DEFAULT_BUFFER_SIZE);
-  EXPECT_EQ(buf.writeAbleSize(), 0u);
+  EXPECT_EQ(buf.readable_size(), kDefaultBufferSize);
+  EXPECT_EQ(buf.writable_size(), 0u);
 }
 
 TEST_F(BufferTest, BeginPointerConsistency) {
@@ -339,7 +339,7 @@ TEST_F(BufferTest, BeginPointerAfterMoveReader) {
   buf.push("hello world", 11);
   const char *p1 = buf.begin();
 
-  buf.moveReader(6);
+  buf.move_reader(6);
   const char *p2 = buf.begin();
 
   EXPECT_EQ(p2, p1 + 6);
@@ -353,13 +353,13 @@ TEST_F(BufferTest, ManySmallPushes) {
     buf.push("x", 1);
   }
 
-  EXPECT_EQ(buf.readAbleSize(), static_cast<size_t>(iterations));
+  EXPECT_EQ(buf.readable_size(), static_cast<size_t>(iterations));
 }
 
 TEST_F(BufferTest, PushReadPushCycle) {
   for (int cycle = 0; cycle < 100; cycle++) {
     buf.push("test", 4);
-    buf.moveReader(4);
+    buf.move_reader(4);
   }
 
   EXPECT_TRUE(buf.empty());
@@ -382,7 +382,7 @@ TEST_F(BufferTest, DataIntegrityLarge) {
 
   buf.push(original.data(), original.size());
 
-  EXPECT_EQ(buf.readAbleSize(), original.size());
+  EXPECT_EQ(buf.readable_size(), original.size());
   EXPECT_EQ(std::memcmp(buf.begin(), original.data(), original.size()), 0);
 }
 
@@ -391,7 +391,7 @@ TEST_F(BufferTest, DataIntegrityAfterResize) {
   buf.push("prefix_", 7);
 
   // 触发扩容
-  std::vector<char> largeData(DEFAULT_BUFFER_SIZE, 'Y');
+  std::vector<char> largeData(kDefaultBufferSize, 'Y');
   buf.push(largeData.data(), largeData.size());
 
   // 验证prefix仍在
