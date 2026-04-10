@@ -146,6 +146,20 @@ TEST(HttpResponseTest, NoBodyStatusDoesNotEmitChunkedBody) {
   EXPECT_EQ(serialized.find("\r\n\r\nignored"), std::string::npos);
 }
 
+TEST(HttpResponseTest, SerializeToMatchesSerializeOutput) {
+  HttpResponse resp;
+  resp.status(HttpStatus::CREATED)
+      .header("X-Test", "value")
+      .content_type("text/plain")
+      .body("payload");
+  resp.set_keep_alive(false);
+
+  std::string serialized;
+  resp.serialize_to(&serialized);
+
+  EXPECT_EQ(serialized, resp.serialize());
+}
+
 int main(int argc, char **argv) {
   zhttp::init_logger();
   ::testing::InitGoogleTest(&argc, argv);

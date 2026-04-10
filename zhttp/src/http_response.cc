@@ -14,8 +14,44 @@ bool is_body_allowed(HttpStatus status) {
   return code != 204 && code != 304;
 }
 
-bool header_name_equals(const std::string &name, const std::string &target_lower) {
-  return to_lower(name) == target_lower;
+bool ascii_iequals(const std::string &lhs, const char *rhs) {
+  if (!rhs || lhs.size() != std::char_traits<char>::length(rhs)) {
+    return false;
+  }
+
+  for (size_t i = 0; i < lhs.size(); ++i) {
+    if (std::tolower(static_cast<unsigned char>(lhs[i])) !=
+        std::tolower(static_cast<unsigned char>(rhs[i]))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void append_header_line(std::string *out,
+                        const std::string &key,
+                        const std::string &value) {
+  out->append(key);
+  out->append(": ");
+  out->append(value);
+  out->append("\r\n");
+}
+
+size_t estimate_serialized_size(const HttpResponse &response,
+                                bool include_body) {
+  size_t total = 64;
+  if (include_body) {
+    total += response.body_content().size();
+  }
+
+  for (const auto &pair : response.headers()) {
+    total += pair.first.size() + pair.second.size() + 4;
+  }
+  for (const auto &cookie : response.set_cookies()) {
+    total += cookie.size() + 14;
+  }
+
+  return total;
 }
 
 } // namespace
@@ -172,8 +208,16 @@ HttpResponse &HttpResponse::upgrade_to_websocket(
 }
 
 std::string HttpResponse::serialize(bool include_body) const {
-  // HTTP 响应最终就是一段按协议格式拼好的纯文本字节流。
-  std::ostringstream oss;
+  std::string out;
+  serialize_to(&out, include_body);
+  return out;
+}
+
+void HttpResponse::serialize_to(std::string *out, bool include_body) const {
+  if (!out) {
+    return;
+  }
+
   const bool allow_body = is_body_allowed(status_);
   const bool use_chunked =
       allow_body && version_ == HttpVersion::HTTP_1_1 &&
@@ -183,61 +227,71 @@ std::string HttpResponse::serialize(bool include_body) const {
   bool has_connection = false;
   bool has_transfer_encoding = false;
 
-  // 第一行是状态行：版本 + 数字状态码 + 状态短语。
-  oss << version_to_string(version_) << " " << static_cast<int>(status_) << " "
-      << status_to_string(status_) << "\r\n";
+  out->clear();
+  out->reserve(estimate_serialized_size(*this, include_body));
+
+  out->append(version_to_string(version_));
+  out->push_back(' ');
+  out->append(std::to_string(static_cast<int>(status_)));
+  out->push_back(' ');
+  out->append(status_to_string(status_));
+  out->append("\r\n");
 
   // 普通响应头逐项输出。
   for (const auto &pair : headers_) {
-    if (header_name_equals(pair.first, "connection")) {
+    if (ascii_iequals(pair.first, "connection")) {
       has_connection = true;
     }
 
-    if (header_name_equals(pair.first, "content-length")) {
+    if (ascii_iequals(pair.first, "content-length")) {
       if (use_chunked || !allow_body) {
         continue;
       }
       has_content_length = true;
     }
 
-    if (header_name_equals(pair.first, "transfer-encoding")) {
+    if (ascii_iequals(pair.first, "transfer-encoding")) {
       if (!use_chunked || !allow_body) {
         continue;
       }
       has_transfer_encoding = true;
     }
 
-    oss << pair.first << ": " << pair.second << "\r\n";
+    append_header_line(out, pair.first, pair.second);
   }
 
   // Set-Cookie 允许重复多次，所以单独输出每一条。
   for (const auto &val : set_cookies_) {
-    oss << "Set-Cookie: " << val << "\r\n";
+    out->append("Set-Cookie: ");
+    out->append(val);
+    out->append("\r\n");
   }
 
   if (use_chunked && !has_transfer_encoding) {
-    oss << "Transfer-Encoding: chunked\r\n";
+    out->append("Transfer-Encoding: chunked\r\n");
   }
 
   // 如果业务层没手动设置 Content-Length，这里自动补齐，避免客户端无法判断 Body 边界。
   if (allow_body && !use_chunked && !has_content_length) {
-    oss << "Content-Length: " << body_.size() << "\r\n";
+    out->append("Content-Length: ");
+    out->append(std::to_string(body_.size()));
+    out->append("\r\n");
   }
 
   // Connection 头用于告诉客户端当前连接是否还会继续复用。
   if (!has_connection) {
-    oss << "Connection: " << (keep_alive_ ? "keep-alive" : "close") << "\r\n";
+    out->append("Connection: ");
+    out->append(keep_alive_ ? "keep-alive" : "close");
+    out->append("\r\n");
   }
 
   // 头部结束后必须有一个空行，再接 Body。
-  oss << "\r\n";
+  out->append("\r\n");
 
   // 最后直接拼接响应体原始内容。
   if (include_body && allow_body && !use_chunked) {
-    oss << body_;
+    out->append(body_);
   }
-
-  return oss.str();
 }
 
 } // namespace zhttp

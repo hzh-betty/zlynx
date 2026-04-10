@@ -241,6 +241,13 @@ public:
    */
   std::string serialize(bool include_body = true) const;
 
+  /**
+   * @brief 序列化到调用方提供的字符串缓冲区
+   * @param out 输出字符串，函数会覆盖其现有内容
+   * @param include_body 是否拼接响应体
+   */
+  void serialize_to(std::string *out, bool include_body = true) const;
+
 
   /**
    * @brief Cookie 附加选项
