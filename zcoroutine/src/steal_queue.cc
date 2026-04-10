@@ -1,15 +1,17 @@
 #include "zcoroutine/internal/steal_queue.h"
 
 #include <algorithm>
+#include <iterator>
 #include <utility>
 
 namespace zcoroutine {
 
-StealQueue::StealQueue() : mutex_(), tasks_() {}
+StealQueue::StealQueue() : mutex_(), size_(0), tasks_() {}
 
 void StealQueue::push(Task task) {
   std::lock_guard<std::mutex> lock(mutex_);
   tasks_.push_back(std::move(task));
+  size_.store(tasks_.size(), std::memory_order_relaxed);
 }
 
 size_t StealQueue::steal(std::deque<Task>* tasks, size_t max_steal, size_t min_reserve) {
@@ -40,6 +42,7 @@ size_t StealQueue::steal(std::deque<Task>* tasks, size_t max_steal, size_t min_r
     tasks->push_back(std::move(tasks_.back()));
     tasks_.pop_back();
   }
+  size_.store(tasks_.size(), std::memory_order_relaxed);
   return count;
 }
 
@@ -50,6 +53,21 @@ void StealQueue::drain_all(std::deque<Task>* tasks) {
 
   std::lock_guard<std::mutex> lock(mutex_);
   tasks->swap(tasks_);
+  size_.store(tasks_.size(), std::memory_order_relaxed);
+}
+
+void StealQueue::drain_some(std::deque<Task>* tasks, size_t max_count) {
+  if (!tasks || max_count == 0) {
+    return;
+  }
+
+  std::lock_guard<std::mutex> lock(mutex_);
+  const size_t count = std::min(max_count, tasks_.size());
+  for (size_t i = 0; i < count; ++i) {
+    tasks->push_back(std::move(tasks_.front()));
+    tasks_.pop_front();
+  }
+  size_.store(tasks_.size(), std::memory_order_relaxed);
 }
 
 void StealQueue::append(std::deque<Task>* tasks) {
@@ -58,15 +76,12 @@ void StealQueue::append(std::deque<Task>* tasks) {
   }
 
   std::lock_guard<std::mutex> lock(mutex_);
-  while (!tasks->empty()) {
-    tasks_.push_back(std::move(tasks->front()));
-    tasks->pop_front();
-  }
+  tasks_.insert(tasks_.end(), std::make_move_iterator(tasks->begin()),
+                std::make_move_iterator(tasks->end()));
+  tasks->clear();
+  size_.store(tasks_.size(), std::memory_order_relaxed);
 }
 
-size_t StealQueue::size() const {
-  std::lock_guard<std::mutex> lock(mutex_);
-  return tasks_.size();
-}
+size_t StealQueue::size() const { return size_.load(std::memory_order_relaxed); }
 
 }  // namespace zcoroutine

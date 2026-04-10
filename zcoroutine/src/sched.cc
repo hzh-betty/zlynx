@@ -112,7 +112,7 @@ void resume(void* fiber) {
 void* current_coroutine() {
   // 返回逻辑句柄用于跨 API 传递，不暴露 Fiber 对象地址。
   Fiber::ptr fiber = current_fiber_shared();
-  return Runtime::instance().external_handle(fiber.get());
+  return Runtime::instance().external_handle(fiber);
 }
 
 int sched_id() {

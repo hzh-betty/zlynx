@@ -1,6 +1,7 @@
 #ifndef ZCOROUTINE_INTERNAL_STEAL_QUEUE_H_
 #define ZCOROUTINE_INTERNAL_STEAL_QUEUE_H_
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -21,12 +22,15 @@ class StealQueue : public NonCopyable {
 
   void drain_all(std::deque<Task>* tasks);
 
+  void drain_some(std::deque<Task>* tasks, size_t max_count);
+
   void append(std::deque<Task>* tasks);
 
   size_t size() const;
 
  private:
   mutable std::mutex mutex_;
+  std::atomic<size_t> size_;
   std::deque<Task> tasks_;
 };
 

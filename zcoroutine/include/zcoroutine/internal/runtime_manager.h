@@ -168,7 +168,7 @@ class Runtime : public NonCopyable {
   * @param fiber 协程对象。
   * @return 对外可传递句柄，不存在时返回 nullptr。
   */
-  void* external_handle(const Fiber* fiber) const;
+  void* external_handle(const Fiber::ptr& fiber);
 
   /**
   * @brief 确保调度器句柄存在。

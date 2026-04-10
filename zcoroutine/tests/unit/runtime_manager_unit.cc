@@ -396,6 +396,34 @@ TEST_F(RuntimeManagerUnitTest, StaleHandleCannotWakeAnotherCoroutine) {
   EXPECT_TRUE(resumed.load(std::memory_order_acquire));
 }
 
+TEST_F(RuntimeManagerUnitTest, ExternalHandleIsRegisteredLazily) {
+  init(1);
+
+  WaitGroup done(1);
+  std::atomic<uint64_t> handle_id_before_export(UINT64_MAX);
+  std::atomic<uint64_t> handle_id_after_export(0);
+  std::atomic<void*> exported_handle(nullptr);
+
+  go([&done, &handle_id_before_export, &handle_id_after_export, &exported_handle]() {
+    Fiber::ptr fiber = current_fiber_shared();
+    handle_id_before_export.store(fiber ? fiber->external_handle_id() : UINT64_MAX,
+                                  std::memory_order_release);
+
+    void* handle = current_coroutine();
+    exported_handle.store(handle, std::memory_order_release);
+
+    handle_id_after_export.store(fiber ? fiber->external_handle_id() : 0,
+                                 std::memory_order_release);
+    done.done();
+  });
+
+  done.wait();
+
+  EXPECT_EQ(handle_id_before_export.load(std::memory_order_acquire), 0u);
+  EXPECT_NE(exported_handle.load(std::memory_order_acquire), nullptr);
+  EXPECT_NE(handle_id_after_export.load(std::memory_order_acquire), 0u);
+}
+
 TEST_F(RuntimeManagerUnitTest, RandomizedSubmitAndSchedulerDispatchDeterministicSeed) {
   Runtime& runtime = Runtime::instance();
   runtime.init(4);

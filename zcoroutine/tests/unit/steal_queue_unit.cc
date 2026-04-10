@@ -93,5 +93,23 @@ TEST_F(StealQueueUnitTest, DrainAndAppendTransferTasksCorrectly) {
   EXPECT_EQ(target.size(), 4u);
 }
 
+TEST_F(StealQueueUnitTest, DrainSomeTransfersBoundedPrefixAndPreservesRemainder) {
+  StealQueue queue;
+  PushNoopTasks(&queue, 5);
+
+  std::deque<Task> drained;
+  queue.drain_some(&drained, 2);
+  EXPECT_EQ(drained.size(), 2u);
+  EXPECT_EQ(queue.size(), 3u);
+
+  queue.drain_some(&drained, 10);
+  EXPECT_EQ(drained.size(), 5u);
+  EXPECT_EQ(queue.size(), 0u);
+
+  queue.drain_some(nullptr, 3);
+  queue.drain_some(&drained, 0);
+  EXPECT_EQ(drained.size(), 5u);
+}
+
 }  // namespace
 }  // namespace zcoroutine

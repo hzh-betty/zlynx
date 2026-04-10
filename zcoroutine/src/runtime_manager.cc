@@ -361,14 +361,21 @@ void Runtime::unregister_fiber(Fiber* fiber) {
   ZCOROUTINE_LOG_DEBUG("fiber unregistered, fiber_id={}, handle_id={}", fiber->id(), handle_id);
 }
 
-void* Runtime::external_handle(const Fiber* fiber) const {
+void* Runtime::external_handle(const Fiber::ptr& fiber) {
   if (!fiber) {
     return nullptr;
   }
 
-  const uint64_t handle_id = fiber->external_handle_id();
+  uint64_t handle_id = fiber->external_handle_id();
   if (handle_id == 0) {
-    return nullptr;
+    handle_id = fiber_handle_id_gen_.fetch_add(1, std::memory_order_relaxed);
+    handle_id = fiber_handle_registry_.register_fiber(fiber, handle_id);
+    if (handle_id == 0) {
+      handle_id = fiber->external_handle_id();
+      if (handle_id == 0) {
+        return nullptr;
+      }
+    }
   }
   return encode_fiber_handle(handle_id);
 }

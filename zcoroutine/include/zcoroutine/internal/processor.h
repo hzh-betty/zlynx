@@ -265,7 +265,7 @@ class Processor : public NonCopyable {
    */
   void run_ready_tasks();
 
-  bool dequeue_ready_fiber(Fiber::ptr* fiber);
+  size_t drain_ready_fibers(std::deque<Fiber::ptr>* fibers, size_t max_count);
 
   bool recycle_if_done_before_run(const Fiber::ptr& fiber);
 

@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <cstring>
+#include <iterator>
 #include <utility>
 
 #include "zcoroutine/internal/runtime_manager.h"
@@ -113,10 +114,9 @@ void Processor::enqueue_ready_batch(std::deque<Fiber::ptr>* fibers) {
   {
     std::lock_guard<std::mutex> lock(run_queue_mutex_);
     const uint32_t added = static_cast<uint32_t>(fibers->size());
-    while (!fibers->empty()) {
-      run_queue_.push_back(std::move(fibers->front()));
-      fibers->pop_front();
-    }
+    run_queue_.insert(run_queue_.end(), std::make_move_iterator(fibers->begin()),
+                      std::make_move_iterator(fibers->end()));
+    fibers->clear();
     ready_size_.fetch_add(added, std::memory_order_relaxed);
     ZCOROUTINE_LOG_DEBUG("fiber ready batch enqueued, sched_id={}, added={}, ready_size={}", id_,
                          added, run_queue_.size());
@@ -422,8 +422,10 @@ void Processor::wake_loop() {
 }
 
 void Processor::drain_new_tasks() {
+  constexpr size_t kTaskMaterializeBatchLimit = 256;
+
   std::deque<Task> pending;
-  steal_queue_.drain_all(&pending);
+  steal_queue_.drain_some(&pending, kTaskMaterializeBatchLimit);
   if (pending.empty()) {
     return;
   }
@@ -434,7 +436,6 @@ void Processor::drain_new_tasks() {
     Task task = std::move(pending.front());
     pending.pop_front();
     Fiber::ptr fiber = obtain_fiber(std::move(task));
-    Runtime::instance().register_fiber(fiber);
     ZCOROUTINE_LOG_DEBUG("task materialized to fiber, sched_id={}, fiber_id={}", id_, fiber->id());
     ready_batch.push_back(std::move(fiber));
   }
@@ -443,36 +444,45 @@ void Processor::drain_new_tasks() {
 }
 
 void Processor::run_ready_tasks() {
-  Fiber::ptr fiber;
-  while (dequeue_ready_fiber(&fiber)) {
-    if (recycle_if_done_before_run(fiber)) {
-      continue;
-    }
+  constexpr size_t kReadyDispatchBatchLimit = 256;
 
-    Fiber::ptr resumed = switch_to_fiber(std::move(fiber));
-    if (!resumed) {
-      continue;
-    }
+  std::deque<Fiber::ptr> ready_batch;
+  while (drain_ready_fibers(&ready_batch, kReadyDispatchBatchLimit) > 0) {
+    while (!ready_batch.empty()) {
+      Fiber::ptr fiber = std::move(ready_batch.front());
+      ready_batch.pop_front();
+      if (recycle_if_done_before_run(fiber)) {
+        continue;
+      }
 
-    const Fiber::State state = finalize_after_switch(resumed);
-    dispatch_resumed_fiber(std::move(resumed), state);
+      Fiber::ptr resumed = switch_to_fiber(std::move(fiber));
+      if (!resumed) {
+        continue;
+      }
+
+      const Fiber::State state = finalize_after_switch(resumed);
+      dispatch_resumed_fiber(std::move(resumed), state);
+    }
   }
 }
 
-bool Processor::dequeue_ready_fiber(Fiber::ptr* fiber) {
-  if (!fiber) {
-    return false;
+size_t Processor::drain_ready_fibers(std::deque<Fiber::ptr>* fibers, size_t max_count) {
+  if (!fibers || max_count == 0) {
+    return 0;
   }
 
   std::lock_guard<std::mutex> lock(run_queue_mutex_);
   if (run_queue_.empty()) {
-    return false;
+    return 0;
   }
 
-  *fiber = std::move(run_queue_.front());
-  run_queue_.pop_front();
-  ready_size_.fetch_sub(1, std::memory_order_relaxed);
-  return true;
+  const size_t drained = std::min(max_count, run_queue_.size());
+  for (size_t i = 0; i < drained; ++i) {
+    fibers->push_back(std::move(run_queue_.front()));
+    run_queue_.pop_front();
+  }
+  ready_size_.fetch_sub(static_cast<uint32_t>(drained), std::memory_order_relaxed);
+  return drained;
 }
 
 bool Processor::recycle_if_done_before_run(const Fiber::ptr& fiber) {
