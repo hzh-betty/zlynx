@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cstring>
 
 #include "znet/socket.h"
 
@@ -190,8 +191,7 @@ void Buffer::make_space(size_t length) {
 
   // 否则将可读区前移到 prepend 后，复用前部空洞避免扩容。
   const size_t readable = readable_bytes();
-  std::copy(begin() + reader_index_, begin() + writer_index_,
-            begin() + kCheapPrepend);
+  std::memmove(begin() + kCheapPrepend, begin() + reader_index_, readable);
   reader_index_ = kCheapPrepend;
   writer_index_ = reader_index_ + readable;
 }
