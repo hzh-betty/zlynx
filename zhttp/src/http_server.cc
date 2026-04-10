@@ -14,6 +14,11 @@ namespace zhttp {
 
 namespace {
 
+struct HttpConnectionContext {
+  HttpParser parser;
+  std::string remote_addr;
+};
+
 uint32_t clamp_timeout_to_u32(const uint64_t timeout_ms) {
   const uint64_t max_timeout =
       static_cast<uint64_t>(std::numeric_limits<uint32_t>::max()) - 1;
@@ -366,12 +371,18 @@ HttpParser *HttpServer::ensure_parser(const znet::TcpConnection::ptr &conn) {
     return nullptr;
   }
 
-  auto *parser = static_cast<HttpParser *>(conn->context());
-  if (!parser) {
-    parser = new HttpParser();
-    conn->set_context(parser);
+  auto *ctx = static_cast<HttpConnectionContext *>(conn->context());
+  if (!ctx) {
+    ctx = new HttpConnectionContext();
+    if (conn->socket()) {
+      auto remote_addr = conn->socket()->get_remote_address();
+      if (remote_addr) {
+        ctx->remote_addr = remote_addr->to_string();
+      }
+    }
+    conn->set_context(ctx);
   }
-  return parser;
+  return &ctx->parser;
 }
 
 void HttpServer::on_connection(const znet::TcpConnection::ptr &conn) {
@@ -395,8 +406,8 @@ void HttpServer::on_close(const znet::TcpConnection::ptr &conn) {
     websocket_session->on_close();
   }
 
-  auto *parser = static_cast<HttpParser *>(conn->context());
-  delete parser;
+  auto *ctx = static_cast<HttpConnectionContext *>(conn->context());
+  delete ctx;
   conn->set_context(nullptr);
 
   ZHTTP_LOG_DEBUG("Connection closed: fd={}", conn->fd());
@@ -479,10 +490,10 @@ bool HttpServer::handle_request(const znet::TcpConnection::ptr &conn,
                   request->path(), version_to_string(request->version()));
 
   // 把对端地址补进请求对象，便于日志、鉴权、限流等上层逻辑直接读取。
-  if (conn && conn->socket()) {
-    auto remote_addr = conn->socket()->get_remote_address();
-    if (remote_addr) {
-      request->set_remote_addr(remote_addr->to_string());
+  if (conn) {
+    auto *ctx = static_cast<HttpConnectionContext *>(conn->context());
+    if (ctx && !ctx->remote_addr.empty()) {
+      request->set_remote_addr(ctx->remote_addr);
     }
   }
 

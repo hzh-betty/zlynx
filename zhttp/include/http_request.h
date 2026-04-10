@@ -5,6 +5,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -28,6 +29,7 @@ public:
   using Headers = std::unordered_map<std::string, std::string>;
   using Params = std::unordered_map<std::string, std::string>;
   using Json = nlohmann::json;
+  using RemoteAddrResolver = std::function<std::string()>;
 
   HttpRequest() = default;
 
@@ -71,7 +73,7 @@ public:
    * @brief 获取远端地址（例如 "127.0.0.1:12345"）
    * @note 由服务器在接收连接/请求时填充
    */
-  const std::string &remote_addr() const { return remote_addr_; }
+  const std::string &remote_addr() const;
 
   /**
    * @brief 获取所有路径参数
@@ -221,13 +223,19 @@ public:
    * @brief 设置远端地址（服务器使用）
     * @param addr 远端地址字符串
    */
-  void set_remote_addr(const std::string &addr) { remote_addr_ = addr; }
+  void set_remote_addr(const std::string &addr);
 
   /**
    * @brief 设置远端地址（移动语义）
     * @param addr 远端地址字符串
    */
-  void set_remote_addr(std::string &&addr) { remote_addr_ = std::move(addr); }
+  void set_remote_addr(std::string &&addr);
+
+  /**
+   * @brief 延迟设置远端地址解析逻辑
+   * @details 只有第一次访问 remote_addr() 时才真正执行 resolver。
+   */
+  void set_remote_addr_resolver(RemoteAddrResolver resolver);
 
   /**
    * @brief 设置路径参数
@@ -344,8 +352,11 @@ private:
   std::string query_;
   HttpVersion version_ = HttpVersion::HTTP_1_1;
   Headers headers_;
+  Headers normalized_headers_;
   std::string body_;
-  std::string remote_addr_;
+  mutable std::string remote_addr_;
+  mutable bool remote_addr_resolved_ = true;
+  mutable RemoteAddrResolver remote_addr_resolver_;
 
   // 路由和查询参数解析结果。
   Params path_params_;  // 路径参数

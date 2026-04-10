@@ -71,15 +71,13 @@ static void parse_cookie_header(const std::string &cookie_header,
  * 大小写不敏感地读取请求头。
  *
  * 虽然 headers_ 当前按原始 key 保存，但 HTTP 头字段名本身不区分大小写，
- * 因此这里逐项转小写比较，保证 Header、header、HEADER 都能命中。
+ * 因此通过归一化索引做一次查表，保证 Header、header、HEADER 都能命中。
  */
 std::string HttpRequest::header(const std::string &key,
                                 const std::string &default_val) const {
-  std::string lower_key = to_lower(key);
-  for (const auto &pair : headers_) {
-    if (to_lower(pair.first) == lower_key) {
-      return pair.second;
-    }
+  auto it = normalized_headers_.find(to_lower(key));
+  if (it != normalized_headers_.end()) {
+    return it->second;
   }
   return default_val;
 }
@@ -144,12 +142,45 @@ const HttpRequest::Params &HttpRequest::cookies() const {
   return runtime_.cookies;
 }
 
-// 头字段按原始 key 保存，读取时再做大小写不敏感匹配。
+const std::string &HttpRequest::remote_addr() const {
+  if (!remote_addr_resolved_) {
+    remote_addr_resolved_ = true;
+    if (remote_addr_resolver_) {
+      remote_addr_ = remote_addr_resolver_();
+      remote_addr_resolver_ = RemoteAddrResolver();
+    } else {
+      remote_addr_.clear();
+    }
+  }
+  return remote_addr_;
+}
+
+void HttpRequest::set_remote_addr(const std::string &addr) {
+  remote_addr_ = addr;
+  remote_addr_resolved_ = true;
+  remote_addr_resolver_ = RemoteAddrResolver();
+}
+
+void HttpRequest::set_remote_addr(std::string &&addr) {
+  remote_addr_ = std::move(addr);
+  remote_addr_resolved_ = true;
+  remote_addr_resolver_ = RemoteAddrResolver();
+}
+
+void HttpRequest::set_remote_addr_resolver(RemoteAddrResolver resolver) {
+  remote_addr_.clear();
+  remote_addr_resolved_ = false;
+  remote_addr_resolver_ = std::move(resolver);
+}
+
+// 头字段按原始 key 保存，同时维护一份归一化索引加速大小写不敏感查找。
 void HttpRequest::set_header(const std::string &key, const std::string &value) {
+  const std::string normalized_key = to_lower(key);
   headers_[key] = value;
+  normalized_headers_[normalized_key] = value;
 
   // 影响请求体解析语义的头变化后，清理缓存，避免旧结果污染。
-  if (to_lower(key) == "content-type") {
+  if (normalized_key == "content-type") {
     invalidate_body_cache();
   }
 }

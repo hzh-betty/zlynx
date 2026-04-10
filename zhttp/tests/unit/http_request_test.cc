@@ -39,6 +39,14 @@ TEST(HttpRequestTest, HeadersCaseInsensitive) {
   EXPECT_EQ(req.header("NonExistent", "default"), "default");
 }
 
+TEST(HttpRequestTest, HeaderOverwriteUsesLatestValueCaseInsensitively) {
+  HttpRequest req;
+  req.set_header("Content-Type", "application/json");
+  req.set_header("content-type", "text/plain");
+
+  EXPECT_EQ(req.header("Content-Type"), "text/plain");
+}
+
 TEST(HttpRequestTest, PathParams) {
   HttpRequest req;
   req.set_path_param("id", "123");
@@ -142,6 +150,19 @@ TEST(HttpRequestTest, ResetBodyInvalidatesBodyParseCache) {
   ASSERT_TRUE(req.parse_json());
   ASSERT_NE(req.json(), nullptr);
   EXPECT_EQ((*req.json())["v"], 2);
+}
+
+TEST(HttpRequestTest, LazyRemoteAddrResolverRunsOnlyOnce) {
+  HttpRequest req;
+  int calls = 0;
+  req.set_remote_addr_resolver([&calls]() {
+    ++calls;
+    return std::string("127.0.0.1:8080");
+  });
+
+  EXPECT_EQ(req.remote_addr(), "127.0.0.1:8080");
+  EXPECT_EQ(req.remote_addr(), "127.0.0.1:8080");
+  EXPECT_EQ(calls, 1);
 }
 
 int main(int argc, char **argv) {
