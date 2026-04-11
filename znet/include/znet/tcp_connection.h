@@ -2,7 +2,7 @@
 #define ZNET_TCP_CONNECTION_H_
 
 #include "buffer.h"
-#include "noncopyable.h"
+#include "internal/noncopyable.h"
 #include "socket.h"
 #include "zco/wait_group.h"
 

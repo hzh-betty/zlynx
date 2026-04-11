@@ -2,12 +2,12 @@
  * @file central_cache.cc
  * @brief CentralCache 实现
  */
-#include "zmalloc/central_cache.h"
-#include "zmalloc/page_cache.h"
-#include "zmalloc/size_class.h"
-#include "zmalloc/free_list.h"
+#include "zmalloc/internal/central_cache.h"
+#include "zmalloc/internal/page_cache.h"
+#include "zmalloc/internal/size_class.h"
+#include "zmalloc/internal/free_list.h"
 
-#include "zmalloc/zmalloc_config.h"
+#include "zmalloc/internal/zmalloc_config.h"
 
 #include <cassert>
 

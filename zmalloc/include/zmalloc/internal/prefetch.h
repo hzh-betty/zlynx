@@ -1,5 +1,5 @@
-#ifndef ZMALLOC_PREFETCH_H_
-#define ZMALLOC_PREFETCH_H_
+#ifndef ZMALLOC_INTERNAL_PREFETCH_H_
+#define ZMALLOC_INTERNAL_PREFETCH_H_
 
 /**
  * @file prefetch.h
@@ -101,4 +101,4 @@ inline void prefetch_next(const void *next) {
 
 } // namespace zmalloc
 
-#endif // ZMALLOC_PREFETCH_H_
+#endif // ZMALLOC_INTERNAL_PREFETCH_H_

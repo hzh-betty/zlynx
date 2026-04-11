@@ -1,4 +1,4 @@
-#include "zlog/looper.h"
+#include "zlog/internal/looper.h"
 #include <atomic>
 #include <chrono>
 #include <gmock/gmock.h>

@@ -8,10 +8,10 @@
  * 提供高性能的内存分配和释放 API。
  */
 
-#include "zmalloc/zmalloc_config.h"
-#include "page_cache.h"
-#include "size_class.h"
-#include "thread_cache.h"
+#include "zmalloc/internal/zmalloc_config.h"
+#include "zmalloc/internal/page_cache.h"
+#include "zmalloc/internal/size_class.h"
+#include "zmalloc/internal/thread_cache.h"
 
 namespace zmalloc {
 

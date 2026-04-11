@@ -1,5 +1,5 @@
-#ifndef ZLOG_LOOPER_H_
-#define ZLOG_LOOPER_H_
+#ifndef ZLOG_INTERNAL_LOOPER_H_
+#define ZLOG_INTERNAL_LOOPER_H_
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -7,8 +7,8 @@
 #include <memory>
 #include <thread>
 
-#include "zlog/buffer.h"
-#include "zlog/util.h"
+#include "zlog/internal/buffer.h"
+#include "zlog/internal/util.h"
 
 namespace zlog {
 /**
@@ -79,4 +79,4 @@ class AsyncLooper {
 };
 } // namespace zlog
 
-#endif // ZLOG_LOOPER_H_
+#endif // ZLOG_INTERNAL_LOOPER_H_

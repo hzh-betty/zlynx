@@ -2,7 +2,7 @@
 #define ZNET_ACCEPTOR_H_
 
 #include "address.h"
-#include "noncopyable.h"
+#include "internal/noncopyable.h"
 #include "socket.h"
 
 #include <atomic>

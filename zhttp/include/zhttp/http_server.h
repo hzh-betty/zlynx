@@ -1,7 +1,7 @@
 #ifndef ZHTTP_HTTP_SERVER_H_
 #define ZHTTP_HTTP_SERVER_H_
 
-#include "http_parser.h"
+#include "internal/http_parser.h"
 #include "router.h"
 #include "websocket.h"
 #include "znet/address.h"

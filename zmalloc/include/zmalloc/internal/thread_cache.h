@@ -1,5 +1,5 @@
-#ifndef ZMALLOC_THREAD_CACHE_H_
-#define ZMALLOC_THREAD_CACHE_H_
+#ifndef ZMALLOC_INTERNAL_THREAD_CACHE_H_
+#define ZMALLOC_INTERNAL_THREAD_CACHE_H_
 
 /**
  * @file thread_cache.h
@@ -7,7 +7,7 @@
  */
 
 #include "common.h"
-#include "zmalloc/free_list.h"
+#include "zmalloc/internal/free_list.h"
 #include "zmalloc_config.h"
 
 namespace zmalloc {
@@ -103,4 +103,4 @@ ThreadCache *get_thread_cache();
 
 } // namespace zmalloc
 
-#endif // ZMALLOC_THREAD_CACHE_H_
+#endif // ZMALLOC_INTERNAL_THREAD_CACHE_H_

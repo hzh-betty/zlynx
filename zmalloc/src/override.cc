@@ -1,5 +1,5 @@
-#include "zmalloc/page_cache.h"
-#include "zmalloc/system_alloc.h"
+#include "zmalloc/internal/page_cache.h"
+#include "zmalloc/internal/system_alloc.h"
 #include "zmalloc/zmalloc.h"
 
 #include <algorithm>

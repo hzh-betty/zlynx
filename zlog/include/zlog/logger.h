@@ -13,7 +13,7 @@
 
 #include "zlog/format.h"
 #include "zlog/level.h"
-#include "zlog/looper.h"
+#include "zlog/internal/looper.h"
 #include "zlog/sink.h"
 
 namespace zlog {

@@ -1,5 +1,5 @@
-#ifndef ZMALLOC_SYSTEM_ALLOC_H_
-#define ZMALLOC_SYSTEM_ALLOC_H_
+#ifndef ZMALLOC_INTERNAL_SYSTEM_ALLOC_H_
+#define ZMALLOC_INTERNAL_SYSTEM_ALLOC_H_
 
 #include <cstddef>
 
@@ -21,4 +21,4 @@ void system_free(void *ptr, size_t kpage);
 
 } // namespace zmalloc
 
-#endif // ZMALLOC_SYSTEM_ALLOC_H_
+#endif // ZMALLOC_INTERNAL_SYSTEM_ALLOC_H_

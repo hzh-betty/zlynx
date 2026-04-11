@@ -3,9 +3,9 @@
  * @brief PageCache 实现
  */
 
-#include "zmalloc/page_cache.h"
+#include "zmalloc/internal/page_cache.h"
 
-#include "zmalloc/system_alloc.h"
+#include "zmalloc/internal/system_alloc.h"
 
 namespace zmalloc {
 

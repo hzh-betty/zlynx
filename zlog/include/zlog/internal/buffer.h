@@ -1,5 +1,5 @@
-#ifndef ZLOG_BUFFER_H_
-#define ZLOG_BUFFER_H_
+#ifndef ZLOG_INTERNAL_BUFFER_H_
+#define ZLOG_INTERNAL_BUFFER_H_
 #include <cstddef>
 
 namespace zlog {
@@ -121,4 +121,4 @@ class alignas(64) Buffer {
 };
 } // namespace zlog
 
-#endif // ZLOG_BUFFER_H_
+#endif // ZLOG_INTERNAL_BUFFER_H_

@@ -3,7 +3,7 @@
  * @brief ObjectPool 单元测试
  */
 
-#include "zmalloc/object_pool.h"
+#include "zmalloc/internal/object_pool.h"
 #include <gtest/gtest.h>
 
 #include <cstring>

@@ -1,4 +1,4 @@
-#include "zhttp/http_utils.h"
+#include "zhttp/internal/http_utils.h"
 
 #include "zhttp/http_common.h"
 

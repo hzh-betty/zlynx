@@ -1,5 +1,5 @@
-#ifndef ZMALLOC_CENTRAL_CACHE_H_
-#define ZMALLOC_CENTRAL_CACHE_H_
+#ifndef ZMALLOC_INTERNAL_CENTRAL_CACHE_H_
+#define ZMALLOC_INTERNAL_CENTRAL_CACHE_H_
 
 /**
  * @file central_cache.h
@@ -90,4 +90,4 @@ class CentralCache : public NonCopyable {
 
 } // namespace zmalloc
 
-#endif // ZMALLOC_CENTRAL_CACHE_H_
+#endif // ZMALLOC_INTERNAL_CENTRAL_CACHE_H_

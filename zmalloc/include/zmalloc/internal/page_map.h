@@ -1,5 +1,5 @@
-#ifndef ZMALLOC_PAGE_MAP_H_
-#define ZMALLOC_PAGE_MAP_H_
+#ifndef ZMALLOC_INTERNAL_PAGE_MAP_H_
+#define ZMALLOC_INTERNAL_PAGE_MAP_H_
 
 /**
  * @file page_map.h
@@ -295,4 +295,4 @@ using PageMap = PageMap3<48 - PAGE_SHIFT>; // 大多数 64 位系统实际使用
 
 } // namespace zmalloc
 
-#endif // ZMALLOC_PAGE_MAP_H_
+#endif // ZMALLOC_INTERNAL_PAGE_MAP_H_

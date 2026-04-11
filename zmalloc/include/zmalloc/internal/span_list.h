@@ -1,5 +1,5 @@
-#ifndef ZMALLOC_SPAN_LIST_H_
-#define ZMALLOC_SPAN_LIST_H_
+#ifndef ZMALLOC_INTERNAL_SPAN_LIST_H_
+#define ZMALLOC_INTERNAL_SPAN_LIST_H_
 
 #include <cstddef>
 
@@ -49,4 +49,4 @@ class SpanList {
 
 } // namespace zmalloc
 
-#endif // ZMALLOC_SPAN_LIST_H_
+#endif // ZMALLOC_INTERNAL_SPAN_LIST_H_

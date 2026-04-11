@@ -1,4 +1,4 @@
-#include "zlog/util.h"
+#include "zlog/internal/util.h"
 
 #include <chrono>
 #include <thread>

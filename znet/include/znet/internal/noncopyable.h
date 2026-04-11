@@ -1,5 +1,5 @@
-#ifndef ZNET_NONCOPYABLE_H_
-#define ZNET_NONCOPYABLE_H_
+#ifndef ZNET_INTERNAL_NONCOPYABLE_H_
+#define ZNET_INTERNAL_NONCOPYABLE_H_
 
 /**
  * @brief 非拷贝类基类
@@ -20,4 +20,4 @@ class NonCopyable {
 
 } // namespace znet
 
-#endif // ZNET_NONCOPYABLE_H_
+#endif // ZNET_INTERNAL_NONCOPYABLE_H_

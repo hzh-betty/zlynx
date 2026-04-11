@@ -1,5 +1,5 @@
 #include "zlog/message.h"
-#include "zlog/util.h"
+#include "zlog/internal/util.h"
 namespace zlog {
 
 LogMessage::LogMessage(const LogLevel::value level, const char *file,

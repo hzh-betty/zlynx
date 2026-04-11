@@ -3,7 +3,7 @@
  * @brief SizeClass 成员函数实现
  */
 
-#include "zmalloc/size_class.h"
+#include "zmalloc/internal/size_class.h"
 
 #include <cstddef>
 #include <mutex>

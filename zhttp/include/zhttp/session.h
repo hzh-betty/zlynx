@@ -1,7 +1,7 @@
 #ifndef ZHTTP_SESSION_H_
 #define ZHTTP_SESSION_H_
 
-#include "zhttp/http_utils.h"
+#include "zhttp/internal/http_utils.h"
 
 #include <memory>
 #include <mutex>

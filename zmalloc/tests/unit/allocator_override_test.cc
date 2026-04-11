@@ -1,4 +1,4 @@
-#include "zmalloc/page_cache.h"
+#include "zmalloc/internal/page_cache.h"
 
 #include <cstddef>
 #include <cstdint>

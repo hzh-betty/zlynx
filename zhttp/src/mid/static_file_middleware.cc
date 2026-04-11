@@ -1,8 +1,8 @@
 #include "zhttp/mid/static_file_middleware.h"
 
 #include "zhttp/http_common.h"
-#include "zhttp/http_utils.h"
-#include "zhttp/range_parse.h"
+#include "zhttp/internal/http_utils.h"
+#include "zhttp/internal/range_parse.h"
 
 #include <vector>
 

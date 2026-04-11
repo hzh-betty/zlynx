@@ -3,7 +3,7 @@
  * @brief TransferCache 单元测试
  */
 
-#include "zmalloc/transfer_cache.h"
+#include "zmalloc/internal/transfer_cache.h"
 #include <gtest/gtest.h>
 
 #include <atomic>

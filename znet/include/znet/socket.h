@@ -2,7 +2,7 @@
 #define ZNET_SOCKET_H_
 
 #include "address.h"
-#include "noncopyable.h"
+#include "internal/noncopyable.h"
 #include "zco/hook.h"
 #include <cstdint>
 #include <memory>

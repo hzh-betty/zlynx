@@ -1,5 +1,5 @@
-#ifndef ZMALLOC_OBJECT_POOL_H_
-#define ZMALLOC_OBJECT_POOL_H_
+#ifndef ZMALLOC_INTERNAL_OBJECT_POOL_H_
+#define ZMALLOC_INTERNAL_OBJECT_POOL_H_
 
 /**
  * @file object_pool.h
@@ -7,7 +7,7 @@
  */
 
 #include "common.h"
-#include "zmalloc/free_list.h"
+#include "zmalloc/internal/free_list.h"
 #include "system_alloc.h"
 #include "zmalloc_config.h"
 
@@ -102,4 +102,4 @@ template <typename T> class ObjectPool : public NonCopyable {
 
 } // namespace zmalloc
 
-#endif // ZMALLOC_OBJECT_POOL_H_
+#endif // ZMALLOC_INTERNAL_OBJECT_POOL_H_

@@ -1,8 +1,8 @@
-#ifndef ZHTTP_RADIX_TREE_H_
-#define ZHTTP_RADIX_TREE_H_
+#ifndef ZHTTP_INTERNAL_RADIX_TREE_H_
+#define ZHTTP_INTERNAL_RADIX_TREE_H_
 
-#include "http_common.h"
-#include "route_handler.h"
+#include "zhttp/http_common.h"
+#include "zhttp/route_handler.h"
 
 #include <algorithm>
 #include <memory>
@@ -244,4 +244,4 @@ class RadixTree {
 
 } // namespace zhttp
 
-#endif // ZHTTP_RADIX_TREE_H_
+#endif // ZHTTP_INTERNAL_RADIX_TREE_H_

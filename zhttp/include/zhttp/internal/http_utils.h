@@ -1,5 +1,5 @@
-#ifndef ZHTTP_HTTP_UTILS_H_
-#define ZHTTP_HTTP_UTILS_H_
+#ifndef ZHTTP_INTERNAL_HTTP_UTILS_H_
+#define ZHTTP_INTERNAL_HTTP_UTILS_H_
 
 #include <chrono>
 #include <cstdint>
@@ -208,4 +208,4 @@ class FileOperator {
 
 } // namespace zhttp
 
-#endif // ZHTTP_HTTP_UTILS_H_
+#endif // ZHTTP_INTERNAL_HTTP_UTILS_H_

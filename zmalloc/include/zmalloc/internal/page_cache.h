@@ -1,5 +1,5 @@
-#ifndef ZMALLOC_PAGE_CACHE_H_
-#define ZMALLOC_PAGE_CACHE_H_
+#ifndef ZMALLOC_INTERNAL_PAGE_CACHE_H_
+#define ZMALLOC_INTERNAL_PAGE_CACHE_H_
 
 /**
  * @file page_cache.h
@@ -84,4 +84,4 @@ class PageCache : public NonCopyable {
 
 } // namespace zmalloc
 
-#endif // ZMALLOC_PAGE_CACHE_H_
+#endif // ZMALLOC_INTERNAL_PAGE_CACHE_H_

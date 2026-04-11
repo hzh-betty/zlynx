@@ -1,5 +1,5 @@
-#ifndef ZMALLOC_TRANSFER_CACHE_H_
-#define ZMALLOC_TRANSFER_CACHE_H_
+#ifndef ZMALLOC_INTERNAL_TRANSFER_CACHE_H_
+#define ZMALLOC_INTERNAL_TRANSFER_CACHE_H_
 
 /**
  * @file transfer_cache.h
@@ -161,4 +161,4 @@ class TransferCache : public NonCopyable {
 
 } // namespace zmalloc
 
-#endif // ZMALLOC_TRANSFER_CACHE_H_
+#endif // ZMALLOC_INTERNAL_TRANSFER_CACHE_H_

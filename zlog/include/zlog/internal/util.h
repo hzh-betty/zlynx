@@ -1,5 +1,5 @@
-#ifndef ZLOG_UTIL_H_
-#define ZLOG_UTIL_H_
+#ifndef ZLOG_INTERNAL_UTIL_H_
+#define ZLOG_INTERNAL_UTIL_H_
 
 #include <sys/stat.h>
 
@@ -107,4 +107,4 @@ class File {
 };
 } // namespace zlog
 
-#endif // ZLOG_UTIL_H_
+#endif // ZLOG_INTERNAL_UTIL_H_

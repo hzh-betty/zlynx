@@ -3,7 +3,7 @@
  * @brief TransferCache 实现
  */
 
-#include "zmalloc/transfer_cache.h"
+#include "zmalloc/internal/transfer_cache.h"
 
 #include <algorithm>
 #include <cstring>

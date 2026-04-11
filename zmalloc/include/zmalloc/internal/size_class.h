@@ -1,5 +1,5 @@
-#ifndef ZMALLOC_SIZE_CLASS_H_
-#define ZMALLOC_SIZE_CLASS_H_
+#ifndef ZMALLOC_INTERNAL_SIZE_CLASS_H_
+#define ZMALLOC_INTERNAL_SIZE_CLASS_H_
 
 #include <atomic>
 #include <cassert>
@@ -69,4 +69,4 @@ inline const SizeClassLookup &SizeClass::lookup(size_t bytes) {
 
 } // namespace zmalloc
 
-#endif // ZMALLOC_SIZE_CLASS_H_
+#endif // ZMALLOC_INTERNAL_SIZE_CLASS_H_

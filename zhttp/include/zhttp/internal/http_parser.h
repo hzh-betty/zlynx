@@ -1,7 +1,7 @@
-#ifndef ZHTTP_HTTP_PARSER_H_
-#define ZHTTP_HTTP_PARSER_H_
+#ifndef ZHTTP_INTERNAL_HTTP_PARSER_H_
+#define ZHTTP_INTERNAL_HTTP_PARSER_H_
 
-#include "http_request.h"
+#include "zhttp/http_request.h"
 
 #include <string>
 
@@ -170,4 +170,4 @@ class HttpParser {
 
 } // namespace zhttp
 
-#endif // ZHTTP_HTTP_PARSER_H_
+#endif // ZHTTP_INTERNAL_HTTP_PARSER_H_

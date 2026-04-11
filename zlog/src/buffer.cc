@@ -1,4 +1,4 @@
-#include "zlog/buffer.h"
+#include "zlog/internal/buffer.h"
 
 #include <sys/mman.h>
 

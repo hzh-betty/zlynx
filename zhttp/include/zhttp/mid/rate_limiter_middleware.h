@@ -1,7 +1,7 @@
 #ifndef ZHTTP_RATE_LIMITER_MIDDLEWARE_H_
 #define ZHTTP_RATE_LIMITER_MIDDLEWARE_H_
 
-#include "zhttp/http_utils.h"
+#include "zhttp/internal/http_utils.h"
 #include "zhttp/mid/middleware.h"
 
 #include <deque>

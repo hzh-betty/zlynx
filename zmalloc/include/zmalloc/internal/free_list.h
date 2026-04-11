@@ -1,5 +1,5 @@
-#ifndef ZMALLOC_FREE_LIST_H_
-#define ZMALLOC_FREE_LIST_H_
+#ifndef ZMALLOC_INTERNAL_FREE_LIST_H_
+#define ZMALLOC_INTERNAL_FREE_LIST_H_
 
 #include <cstddef>
 
@@ -37,4 +37,4 @@ class FreeList {
 
 } // namespace zmalloc
 
-#endif // ZMALLOC_FREE_LIST_H_
+#endif // ZMALLOC_INTERNAL_FREE_LIST_H_

@@ -1,7 +1,7 @@
 #ifndef ZNET_BUFFER_H_
 #define ZNET_BUFFER_H_
 
-#include "noncopyable.h"
+#include "internal/noncopyable.h"
 
 #include <cstddef>
 #include <memory>

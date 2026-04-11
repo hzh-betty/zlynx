@@ -1,5 +1,5 @@
-#ifndef ZMALLOC_COMMON_H_
-#define ZMALLOC_COMMON_H_
+#ifndef ZMALLOC_INTERNAL_COMMON_H_
+#define ZMALLOC_INTERNAL_COMMON_H_
 
 #include <atomic>
 #include <thread>
@@ -84,4 +84,4 @@ class alignas(64) SpinLock : public NonCopyable {
 
 } // namespace zmalloc
 
-#endif // ZMALLOC_COMMON_H_
+#endif // ZMALLOC_INTERNAL_COMMON_H_

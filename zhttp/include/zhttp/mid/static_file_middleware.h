@@ -1,7 +1,7 @@
 #ifndef ZHHTP_STATIC_OPT_H_
 #define ZHHTP_STATIC_OPT_H_
 
-#include "zhttp/http_utils.h"
+#include "zhttp/internal/http_utils.h"
 #include "zhttp/mid/middleware.h"
 
 #include <mutex>

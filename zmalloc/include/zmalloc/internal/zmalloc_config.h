@@ -1,5 +1,5 @@
-#ifndef ZMALLOC_CONFIG_H_
-#define ZMALLOC_CONFIG_H_
+#ifndef ZMALLOC_INTERNAL_CONFIG_H_
+#define ZMALLOC_INTERNAL_CONFIG_H_
 
 #include <cstddef>
 #include <cstdint>
@@ -39,4 +39,4 @@ using PageId = uintptr_t;
 
 } // namespace zmalloc
 
-#endif // ZMALLOC_CONFIG_H_
+#endif // ZMALLOC_INTERNAL_CONFIG_H_

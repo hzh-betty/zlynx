@@ -1,8 +1,8 @@
-#ifndef ZHTTP_RANGE_PARSE_H_
-#define ZHTTP_RANGE_PARSE_H_
+#ifndef ZHTTP_INTERNAL_RANGE_PARSE_H_
+#define ZHTTP_INTERNAL_RANGE_PARSE_H_
 
-#include "http_request.h"
-#include "http_response.h"
+#include "zhttp/http_request.h"
+#include "zhttp/http_response.h"
 
 #include <cstddef>
 #include <string>
@@ -87,4 +87,4 @@ void write_payload_by_range(const HttpRequest::ptr &request,
 
 } // namespace zhttp
 
-#endif // ZHTTP_RANGE_PARSE_H_
+#endif // ZHTTP_INTERNAL_RANGE_PARSE_H_

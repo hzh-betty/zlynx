@@ -3,7 +3,7 @@
 
 #include "acceptor.h"
 #include "callbacks.h"
-#include "noncopyable.h"
+#include "internal/noncopyable.h"
 #include "tcp_connection.h"
 #include "tls_context.h"
 
