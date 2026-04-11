@@ -1,7 +1,7 @@
 #ifndef ZLOG_ZLOG_H_
 #define ZLOG_ZLOG_H_
-#include "logging_config.h"
 #include "logger.h"
+#include "logging_config.h"
 namespace zlog {
 // 1. 提供获取指定日志器的全局接口--避免用户使用单例对象创建
 /**
@@ -10,14 +10,14 @@ namespace zlog {
  * @return 返回对应名称的日志器智能指针，如果不存在则返回空指针
  */
 inline Logger::ptr get_logger(const std::string &name) {
-  return LoggerManager::get_instance().get_logger(name);
+    return LoggerManager::get_instance().get_logger(name);
 }
 /**
  * @brief 获取root日志器
  * @return 返回root日志器的智能指针
  */
 inline Logger::ptr root_logger() {
-  return LoggerManager::get_instance().root_logger();
+    return LoggerManager::get_instance().root_logger();
 }
 
 // 2. 通过宏函数对日志器的接口进行代理

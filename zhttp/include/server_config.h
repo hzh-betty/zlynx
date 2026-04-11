@@ -13,17 +13,17 @@ namespace zhttp {
  * 独立栈模式更直观；共享栈模式通常更省内存，但对运行时切换策略有额外要求。
  */
 enum class StackMode {
-  INDEPENDENT, // 独立栈模式（默认）
-  SHARED       // 共享栈模式
+    INDEPENDENT, // 独立栈模式（默认）
+    SHARED       // 共享栈模式
 };
 
 struct ModuleLogConfig {
-  std::string level;
-  bool has_async = false;
-  bool async = true;
-  std::string format;
-  std::string sink;
-  std::string file;
+    std::string level;
+    bool has_async = false;
+    bool async = true;
+    std::string format;
+    std::string sink;
+    std::string file;
 };
 
 /**
@@ -33,54 +33,54 @@ struct ModuleLogConfig {
  * 配置加载流程之间的内部承载对象。
  */
 struct ServerConfig {
-  // 网络配置。
-  std::string host = "0.0.0.0";
-  uint16_t port = 8080;
+    // 网络配置。
+    std::string host = "0.0.0.0";
+    uint16_t port = 8080;
 
-  // 线程与协程配置。
-  size_t num_threads = 4;
-  StackMode stack_mode = StackMode::INDEPENDENT;
+    // 线程与协程配置。
+    size_t num_threads = 4;
+    StackMode stack_mode = StackMode::INDEPENDENT;
 
-  // SSL/TLS 配置。
-  bool enable_https = false;
-  std::string cert_file;
-  std::string key_file;
-  bool force_http_to_https = false;
-  uint16_t redirect_http_port = 80;
+    // SSL/TLS 配置。
+    bool enable_https = false;
+    std::string cert_file;
+    std::string key_file;
+    bool force_http_to_https = false;
+    uint16_t redirect_http_port = 80;
 
-  // 服务器行为配置。
-  std::string server_name = "zhttp/1.0";
-  std::string homepage;
-  bool daemon = false;
+    // 服务器行为配置。
+    std::string server_name = "zhttp/1.0";
+    std::string homepage;
+    bool daemon = false;
 
-  // 日志配置。
-  std::string log_level = "info";
-  bool log_async = true;
-  std::string log_format = "[%d{%Y-%m-%d %H:%M:%S}][%c][%p][%t] %m%n";
-  std::string log_sink = "stdout";
-  std::string log_file;
-  ModuleLogConfig zcoroutine_log;
-  ModuleLogConfig znet_log;
-  ModuleLogConfig zhttp_log;
+    // 日志配置。
+    std::string log_level = "info";
+    bool log_async = true;
+    std::string log_format = "[%d{%Y-%m-%d %H:%M:%S}][%c][%p][%t] %m%n";
+    std::string log_sink = "stdout";
+    std::string log_file;
+    ModuleLogConfig zcoroutine_log;
+    ModuleLogConfig znet_log;
+    ModuleLogConfig zhttp_log;
 
-  // 超时配置，单位毫秒。
-  uint64_t read_timeout = 30000;
-  uint64_t write_timeout = 30000;
-  uint64_t keepalive_timeout = 60000;
+    // 超时配置，单位毫秒。
+    uint64_t read_timeout = 30000;
+    uint64_t write_timeout = 30000;
+    uint64_t keepalive_timeout = 60000;
 
-  /**
-   * @brief 从 TOML 文件加载配置
-   * @param filepath TOML 配置文件路径
-   * @return 加载的配置
-   * @throws std::runtime_error 如果文件不存在或解析失败
-   */
-  static ServerConfig from_toml(const std::string &filepath);
+    /**
+     * @brief 从 TOML 文件加载配置
+     * @param filepath TOML 配置文件路径
+     * @return 加载的配置
+     * @throws std::runtime_error 如果文件不存在或解析失败
+     */
+    static ServerConfig from_toml(const std::string &filepath);
 
-  /**
-   * @brief 验证配置有效性
-   * @return true 表示配置组合可用于启动服务
-   */
-  bool validate() const;
+    /**
+     * @brief 验证配置有效性
+     * @return true 表示配置组合可用于启动服务
+     */
+    bool validate() const;
 };
 
 /**

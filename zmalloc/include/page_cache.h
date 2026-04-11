@@ -23,63 +23,63 @@ namespace zmalloc {
  * 管理 Span 的分配和回收，支持 Span 的合并以减少外碎片。
  */
 class PageCache : public NonCopyable {
-public:
-  /**
-   * @brief 获取单例实例
-   */
-  static PageCache &get_instance() {
-    static PageCache instance;
-    return instance;
-  }
+  public:
+    /**
+     * @brief 获取单例实例
+     */
+    static PageCache &get_instance() {
+        static PageCache instance;
+        return instance;
+    }
 
-  /**
-   * @brief 获取 k 页的 Span
-   * @param k 页数
-   * @return Span 指针
-   */
-  Span *new_span(size_t k);
+    /**
+     * @brief 获取 k 页的 Span
+     * @param k 页数
+     * @return Span 指针
+     */
+    Span *new_span(size_t k);
 
-  /**
-   * @brief 根据对象地址获取对应的 Span
-   * @param obj 对象指针
-   * @return Span 指针
-   */
-  inline Span *map_object_to_span(void *obj) {
-    PageId id = reinterpret_cast<PageId>(obj) >> PAGE_SHIFT;
-    Span *ret = static_cast<Span *>(id_span_map_.get(id));
-    assert(ret != nullptr);
-    return ret;
-  }
+    /**
+     * @brief 根据对象地址获取对应的 Span
+     * @param obj 对象指针
+     * @return Span 指针
+     */
+    inline Span *map_object_to_span(void *obj) {
+        PageId id = reinterpret_cast<PageId>(obj) >> PAGE_SHIFT;
+        Span *ret = static_cast<Span *>(id_span_map_.get(id));
+        assert(ret != nullptr);
+        return ret;
+    }
 
-  /**
-   * @brief 安全尝试根据对象地址获取 Span
-   * @param obj 对象指针
-   * @return 找到则返回 Span，否则返回 nullptr
-   */
-  inline Span *try_map_object_to_span(void *obj) {
-    PageId id = reinterpret_cast<PageId>(obj) >> PAGE_SHIFT;
-    return static_cast<Span *>(id_span_map_.get(id));
-  }
+    /**
+     * @brief 安全尝试根据对象地址获取 Span
+     * @param obj 对象指针
+     * @return 找到则返回 Span，否则返回 nullptr
+     */
+    inline Span *try_map_object_to_span(void *obj) {
+        PageId id = reinterpret_cast<PageId>(obj) >> PAGE_SHIFT;
+        return static_cast<Span *>(id_span_map_.get(id));
+    }
 
-  /**
-   * @brief 释放 Span 到 PageCache，并尝试合并相邻 Span
-   * @param span 要释放的 Span
-   */
-  void release_span_to_page_cache(Span *span);
+    /**
+     * @brief 释放 Span 到 PageCache，并尝试合并相邻 Span
+     * @param span 要释放的 Span
+     */
+    void release_span_to_page_cache(Span *span);
 
-  /**
-   * @brief 获取页级别锁
-   */
-  std::mutex &page_mtx() { return page_mtx_; }
+    /**
+     * @brief 获取页级别锁
+     */
+    std::mutex &page_mtx() { return page_mtx_; }
 
-private:
-  PageCache() = default;
+  private:
+    PageCache() = default;
 
-private:
-  SpanList span_lists_[NPAGES]; // 按页数分桶
-  PageMap id_span_map_;         // 页号到 Span 的映射
-  ObjectPool<Span> span_pool_;  // Span 对象池
-  std::mutex page_mtx_;         // 全局锁
+  private:
+    SpanList span_lists_[NPAGES]; // 按页数分桶
+    PageMap id_span_map_;         // 页号到 Span 的映射
+    ObjectPool<Span> span_pool_;  // Span 对象池
+    std::mutex page_mtx_;         // 全局锁
 };
 
 } // namespace zmalloc

@@ -21,7 +21,7 @@ namespace zmalloc {
  */
 inline void prefetch_t0(const void *addr) {
 #if defined(__GNUC__) || defined(__clang__)
-  __builtin_prefetch(addr, 0, 3);
+    __builtin_prefetch(addr, 0, 3);
 #endif
 }
 
@@ -34,7 +34,7 @@ inline void prefetch_t0(const void *addr) {
  */
 inline void prefetch_t1(const void *addr) {
 #if defined(__GNUC__) || defined(__clang__)
-  __builtin_prefetch(addr, 0, 2);
+    __builtin_prefetch(addr, 0, 2);
 #endif
 }
 
@@ -47,7 +47,7 @@ inline void prefetch_t1(const void *addr) {
  */
 inline void prefetch_t2(const void *addr) {
 #if defined(__GNUC__) || defined(__clang__)
-  __builtin_prefetch(addr, 0, 1);
+    __builtin_prefetch(addr, 0, 1);
 #endif
 }
 
@@ -61,7 +61,7 @@ inline void prefetch_t2(const void *addr) {
  */
 inline void prefetch_nta(const void *addr) {
 #if defined(__GNUC__) || defined(__clang__)
-  __builtin_prefetch(addr, 0, 0);
+    __builtin_prefetch(addr, 0, 0);
 #endif
 }
 
@@ -76,10 +76,10 @@ inline void prefetch_nta(const void *addr) {
 inline void prefetch_w(const void *addr) {
 #if defined(__GNUC__) || defined(__clang__)
 #if defined(__x86_64__) && !defined(__PRFCHW__)
-  // x86_64 上手动生成 PREFETCHW 指令
-  asm volatile("prefetchw %0" : : "m"(*static_cast<const char *>(addr)));
+    // x86_64 上手动生成 PREFETCHW 指令
+    asm volatile("prefetchw %0" : : "m"(*static_cast<const char *>(addr)));
 #else
-  __builtin_prefetch(addr, 1, 3);
+    __builtin_prefetch(addr, 1, 3);
 #endif
 #endif
 }
@@ -93,9 +93,9 @@ inline void prefetch_w(const void *addr) {
  */
 inline void prefetch_next(const void *next) {
 #if defined(__GNUC__) || defined(__clang__)
-  if (next != nullptr) {
-    __builtin_prefetch(next, 0, 3);
-  }
+    if (next != nullptr) {
+        __builtin_prefetch(next, 0, 3);
+    }
 #endif
 }
 

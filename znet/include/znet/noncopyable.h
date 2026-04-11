@@ -8,14 +8,14 @@
 namespace znet {
 
 class NonCopyable {
-public:
-  NonCopyable() = default;
-  ~NonCopyable() = default;
+  public:
+    NonCopyable() = default;
+    ~NonCopyable() = default;
 
-  // 禁止拷贝构造
-  NonCopyable(const NonCopyable &) = delete;
-  // 禁止拷贝赋值
-  NonCopyable &operator=(const NonCopyable &) = delete;
+    // 禁止拷贝构造
+    NonCopyable(const NonCopyable &) = delete;
+    // 禁止拷贝赋值
+    NonCopyable &operator=(const NonCopyable &) = delete;
 };
 
 } // namespace znet

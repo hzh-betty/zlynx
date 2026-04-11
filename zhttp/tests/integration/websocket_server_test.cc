@@ -16,184 +16,186 @@ namespace zhttp {
 namespace {
 
 class ScopedServer {
-public:
-  explicit ScopedServer(std::shared_ptr<HttpServer> server)
-      : server_(std::move(server)) {}
+  public:
+    explicit ScopedServer(std::shared_ptr<HttpServer> server)
+        : server_(std::move(server)) {}
 
-  ~ScopedServer() {
-    if (server_) {
-      server_->stop();
+    ~ScopedServer() {
+        if (server_) {
+            server_->stop();
+        }
     }
-  }
 
-private:
-  std::shared_ptr<HttpServer> server_;
+  private:
+    std::shared_ptr<HttpServer> server_;
 };
 
 uint16_t find_free_port() {
-  const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
-  if (fd < 0) {
-    return 0;
-  }
-
-  sockaddr_in addr{};
-  addr.sin_family = AF_INET;
-  addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-  addr.sin_port = 0;
-
-  if (::bind(fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) != 0) {
-    ::close(fd);
-    return 0;
-  }
-
-  socklen_t len = sizeof(addr);
-  if (::getsockname(fd, reinterpret_cast<sockaddr *>(&addr), &len) != 0) {
-    ::close(fd);
-    return 0;
-  }
-
-  const uint16_t port = ntohs(addr.sin_port);
-  ::close(fd);
-  return port;
-}
-
-int connect_with_retry(uint16_t port, int retry_count, int retry_delay_ms) {
-  for (int attempt = 0; attempt < retry_count; ++attempt) {
     const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) {
-      return -1;
+        return 0;
     }
 
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = 0;
 
-    if (::connect(fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) == 0) {
-      return fd;
+    if (::bind(fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) != 0) {
+        ::close(fd);
+        return 0;
     }
 
-    ::close(fd);
-    std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay_ms));
-  }
+    socklen_t len = sizeof(addr);
+    if (::getsockname(fd, reinterpret_cast<sockaddr *>(&addr), &len) != 0) {
+        ::close(fd);
+        return 0;
+    }
 
-  return -1;
+    const uint16_t port = ntohs(addr.sin_port);
+    ::close(fd);
+    return port;
+}
+
+int connect_with_retry(uint16_t port, int retry_count, int retry_delay_ms) {
+    for (int attempt = 0; attempt < retry_count; ++attempt) {
+        const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+        if (fd < 0) {
+            return -1;
+        }
+
+        sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(port);
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+        if (::connect(fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) ==
+            0) {
+            return fd;
+        }
+
+        ::close(fd);
+        std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay_ms));
+    }
+
+    return -1;
 }
 
 bool send_all(int fd, const std::string &data) {
-  size_t sent = 0;
-  while (sent < data.size()) {
-    const ssize_t n = ::send(fd, data.data() + sent, data.size() - sent, 0);
-    if (n <= 0) {
-      return false;
+    size_t sent = 0;
+    while (sent < data.size()) {
+        const ssize_t n = ::send(fd, data.data() + sent, data.size() - sent, 0);
+        if (n <= 0) {
+            return false;
+        }
+        sent += static_cast<size_t>(n);
     }
-    sent += static_cast<size_t>(n);
-  }
-  return true;
+    return true;
 }
 
 std::string recv_once_with_timeout(int fd, int timeout_ms) {
-  pollfd pfd{};
-  pfd.fd = fd;
-  pfd.events = POLLIN | POLLHUP;
+    pollfd pfd{};
+    pfd.fd = fd;
+    pfd.events = POLLIN | POLLHUP;
 
-  if (::poll(&pfd, 1, timeout_ms) <= 0) {
-    return "";
-  }
+    if (::poll(&pfd, 1, timeout_ms) <= 0) {
+        return "";
+    }
 
-  char buffer[2048];
-  const ssize_t n = ::recv(fd, buffer, sizeof(buffer), 0);
-  if (n <= 0) {
-    return "";
-  }
-  return std::string(buffer, static_cast<size_t>(n));
+    char buffer[2048];
+    const ssize_t n = ::recv(fd, buffer, sizeof(buffer), 0);
+    if (n <= 0) {
+        return "";
+    }
+    return std::string(buffer, static_cast<size_t>(n));
 }
 
 std::string build_masked_client_frame(WebSocketOpcode opcode,
                                       const std::string &payload,
                                       bool fin = true) {
-  std::string frame;
-  const uint8_t first = static_cast<uint8_t>((fin ? 0x80 : 0x00) |
-                                             static_cast<uint8_t>(opcode));
-  frame.push_back(static_cast<char>(first));
+    std::string frame;
+    const uint8_t first = static_cast<uint8_t>((fin ? 0x80 : 0x00) |
+                                               static_cast<uint8_t>(opcode));
+    frame.push_back(static_cast<char>(first));
 
-  const uint8_t mask_key[4] = {0x12, 0x34, 0x56, 0x78};
-  frame.push_back(static_cast<char>(0x80 | payload.size()));
-  frame.append(reinterpret_cast<const char *>(mask_key), sizeof(mask_key));
-  for (size_t i = 0; i < payload.size(); ++i) {
-    frame.push_back(static_cast<char>(payload[i] ^ mask_key[i % 4]));
-  }
+    const uint8_t mask_key[4] = {0x12, 0x34, 0x56, 0x78};
+    frame.push_back(static_cast<char>(0x80 | payload.size()));
+    frame.append(reinterpret_cast<const char *>(mask_key), sizeof(mask_key));
+    for (size_t i = 0; i < payload.size(); ++i) {
+        frame.push_back(static_cast<char>(payload[i] ^ mask_key[i % 4]));
+    }
 
-  return frame;
+    return frame;
 }
 
 } // namespace
 
 TEST(WebSocketServerIntegrationTest, UpgradesAndEchoesTextFrame) {
-  const uint16_t port = find_free_port();
-  ASSERT_NE(port, 0);
+    const uint16_t port = find_free_port();
+    ASSERT_NE(port, 0);
 
-  HttpServerBuilder builder;
-  builder.listen("127.0.0.1", port)
-      .threads(1)
-      .log_level("error")
-      .websocket("/ws", WebSocketCallbacks{
-                             {},
-                             [](const WebSocketConnection::ptr &conn,
-                                std::string &&message,
-                                WebSocketMessageType type) {
-                               if (type == WebSocketMessageType::kText) {
-                                 conn->send_text(message);
-                               }
-                             },
-                             {},
-                             {}},
-                  WebSocketOptions{
-                      kDefaultWebSocketMaxMessageSize,
-                      {"superchat", "chat"}});
+    HttpServerBuilder builder;
+    builder.listen("127.0.0.1", port)
+        .threads(1)
+        .log_level("error")
+        .websocket("/ws",
+                   WebSocketCallbacks{
+                       {},
+                       [](const WebSocketConnection::ptr &conn,
+                          std::string &&message, WebSocketMessageType type) {
+                           if (type == WebSocketMessageType::kText) {
+                               conn->send_text(message);
+                           }
+                       },
+                       {},
+                       {}},
+                   WebSocketOptions{kDefaultWebSocketMaxMessageSize,
+                                    {"superchat", "chat"}});
 
-  auto server = builder.build();
-  ASSERT_TRUE(server);
-  ScopedServer guard(server);
-  ASSERT_TRUE(server->start());
+    auto server = builder.build();
+    ASSERT_TRUE(server);
+    ScopedServer guard(server);
+    ASSERT_TRUE(server->start());
 
-  const int client_fd = connect_with_retry(port, 20, 25);
-  ASSERT_GE(client_fd, 0);
+    const int client_fd = connect_with_retry(port, 20, 25);
+    ASSERT_GE(client_fd, 0);
 
-  const std::string handshake_request =
-      "GET /ws HTTP/1.1\r\n"
-      "Host: localhost\r\n"
-      "Upgrade: websocket\r\n"
-      "Connection: Upgrade\r\n"
-      "Sec-WebSocket-Protocol: chat, superchat\r\n"
-      "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
-      "Sec-WebSocket-Version: 13\r\n"
-      "\r\n";
+    const std::string handshake_request =
+        "GET /ws HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Protocol: chat, superchat\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "\r\n";
 
-  ASSERT_TRUE(send_all(client_fd, handshake_request));
-  const std::string handshake_response = recv_once_with_timeout(client_fd, 1000);
-  ASSERT_NE(handshake_response.find("101 Switching Protocols"), std::string::npos)
-      << handshake_response;
-  ASSERT_NE(handshake_response.find("Sec-WebSocket-Protocol: superchat"),
-            std::string::npos)
-      << handshake_response;
+    ASSERT_TRUE(send_all(client_fd, handshake_request));
+    const std::string handshake_response =
+        recv_once_with_timeout(client_fd, 1000);
+    ASSERT_NE(handshake_response.find("101 Switching Protocols"),
+              std::string::npos)
+        << handshake_response;
+    ASSERT_NE(handshake_response.find("Sec-WebSocket-Protocol: superchat"),
+              std::string::npos)
+        << handshake_response;
 
-  ASSERT_TRUE(send_all(client_fd,
-                       build_masked_client_frame(WebSocketOpcode::kText, "hello")));
+    ASSERT_TRUE(send_all(
+        client_fd, build_masked_client_frame(WebSocketOpcode::kText, "hello")));
 
-  const std::string ws_response = recv_once_with_timeout(client_fd, 1000);
-  ASSERT_GE(ws_response.size(), 2u);
-  EXPECT_EQ(static_cast<uint8_t>(ws_response[0]), 0x81);
-  EXPECT_EQ(static_cast<uint8_t>(ws_response[1]), 0x05);
-  EXPECT_EQ(ws_response.substr(2), "hello");
+    const std::string ws_response = recv_once_with_timeout(client_fd, 1000);
+    ASSERT_GE(ws_response.size(), 2u);
+    EXPECT_EQ(static_cast<uint8_t>(ws_response[0]), 0x81);
+    EXPECT_EQ(static_cast<uint8_t>(ws_response[1]), 0x05);
+    EXPECT_EQ(ws_response.substr(2), "hello");
 
-  ::close(client_fd);
+    ::close(client_fd);
 }
 
 } // namespace zhttp
 
 int main(int argc, char **argv) {
-  zhttp::init_logger();
-  ::testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
+    zhttp::init_logger();
+    ::testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
 }

@@ -21,18 +21,18 @@ namespace internal {
 // 快路径分配：直接从 ThreadCache FreeList 弹出（无锁）
 // 返回 nullptr 表示需要走慢路径
 ZM_ALWAYS_INLINE void *fast_alloc(ThreadCache *tc, size_t size) {
-  const SizeClassLookup &e = SizeClass::lookup(size);
-  const size_t index = static_cast<size_t>(e.index);
-  // 直接访问 FreeList 头部 - 这是最热的路径
-  return tc->try_pop_fast(index);
+    const SizeClassLookup &e = SizeClass::lookup(size);
+    const size_t index = static_cast<size_t>(e.index);
+    // 直接访问 FreeList 头部 - 这是最热的路径
+    return tc->try_pop_fast(index);
 }
 
 // 快路径释放：直接压入 ThreadCache FreeList（无锁）
 // 返回 true 表示成功，false 表示需要走慢路径（链表过长）
 ZM_ALWAYS_INLINE bool fast_dealloc(ThreadCache *tc, void *ptr, size_t size) {
-  const SizeClassLookup &e = SizeClass::lookup(size);
-  const size_t index = static_cast<size_t>(e.index);
-  return tc->try_push_fast(ptr, index);
+    const SizeClassLookup &e = SizeClass::lookup(size);
+    const size_t index = static_cast<size_t>(e.index);
+    return tc->try_push_fast(ptr, index);
 }
 
 } // namespace internal
@@ -43,31 +43,31 @@ ZM_ALWAYS_INLINE bool fast_dealloc(ThreadCache *tc, void *ptr, size_t size) {
  * @return 内存指针，失败抛出 std::bad_alloc
  */
 ZM_ALWAYS_INLINE void *zmalloc(size_t size) {
-  if (ZM_UNLIKELY(size == 0)) {
-    return nullptr;
-  }
-
-  if (ZM_LIKELY(size <= MAX_BYTES)) {
-    // 热路径：小对象分配
-    ThreadCache *tc = get_thread_cache();
-    // 尝试快路径（无锁弹出）
-    void *ptr = internal::fast_alloc(tc, size);
-    if (ZM_LIKELY(ptr != nullptr)) {
-      return ptr;
+    if (ZM_UNLIKELY(size == 0)) {
+        return nullptr;
     }
-    // 慢路径：需要从 TransferCache/CentralCache 获取
-    return tc->allocate(size);
-  }
 
-  // 冷路径：大对象分配
-  size_t k_page = (size + PAGE_SIZE - 1) >> PAGE_SHIFT;
-  PageCache &pc = PageCache::get_instance();
-  pc.page_mtx().lock();
-  Span *span = pc.new_span(k_page);
-  span->is_use = true;
-  span->obj_size = size;
-  pc.page_mtx().unlock();
-  return reinterpret_cast<void *>(span->page_id << PAGE_SHIFT);
+    if (ZM_LIKELY(size <= MAX_BYTES)) {
+        // 热路径：小对象分配
+        ThreadCache *tc = get_thread_cache();
+        // 尝试快路径（无锁弹出）
+        void *ptr = internal::fast_alloc(tc, size);
+        if (ZM_LIKELY(ptr != nullptr)) {
+            return ptr;
+        }
+        // 慢路径：需要从 TransferCache/CentralCache 获取
+        return tc->allocate(size);
+    }
+
+    // 冷路径：大对象分配
+    size_t k_page = (size + PAGE_SIZE - 1) >> PAGE_SHIFT;
+    PageCache &pc = PageCache::get_instance();
+    pc.page_mtx().lock();
+    Span *span = pc.new_span(k_page);
+    span->is_use = true;
+    span->obj_size = size;
+    pc.page_mtx().unlock();
+    return reinterpret_cast<void *>(span->page_id << PAGE_SHIFT);
 }
 
 /**
@@ -75,30 +75,30 @@ ZM_ALWAYS_INLINE void *zmalloc(size_t size) {
  * @param ptr 内存指针
  */
 ZM_ALWAYS_INLINE void zfree(void *ptr) {
-  if (ZM_UNLIKELY(ptr == nullptr)) {
-    return;
-  }
-
-  PageCache &pc = PageCache::get_instance();
-  Span *span = pc.map_object_to_span(ptr);
-  const size_t size = span->obj_size;
-
-  if (ZM_LIKELY(size <= MAX_BYTES)) {
-    // 热路径：小对象释放
-    ThreadCache *tc = get_thread_cache();
-    // 尝试快路径（无锁压入，不检查过长）
-    if (ZM_LIKELY(internal::fast_dealloc(tc, ptr, size))) {
-      return;
+    if (ZM_UNLIKELY(ptr == nullptr)) {
+        return;
     }
-    // 慢路径：链表过长，需要回收到 CentralCache
-    tc->deallocate(ptr, size);
-    return;
-  }
 
-  // 冷路径：大对象释放
-  pc.page_mtx().lock();
-  pc.release_span_to_page_cache(span);
-  pc.page_mtx().unlock();
+    PageCache &pc = PageCache::get_instance();
+    Span *span = pc.map_object_to_span(ptr);
+    const size_t size = span->obj_size;
+
+    if (ZM_LIKELY(size <= MAX_BYTES)) {
+        // 热路径：小对象释放
+        ThreadCache *tc = get_thread_cache();
+        // 尝试快路径（无锁压入，不检查过长）
+        if (ZM_LIKELY(internal::fast_dealloc(tc, ptr, size))) {
+            return;
+        }
+        // 慢路径：链表过长，需要回收到 CentralCache
+        tc->deallocate(ptr, size);
+        return;
+    }
+
+    // 冷路径：大对象释放
+    pc.page_mtx().lock();
+    pc.release_span_to_page_cache(span);
+    pc.page_mtx().unlock();
 }
 
 } // namespace zmalloc

@@ -19,10 +19,10 @@ namespace zhttp {
  * - SATISFIABLE：成功解析单范围，应返回 206。
  */
 enum class RangeParseState {
-  NONE,
-  INVALID,
-  NOT_SATISFIABLE,
-  SATISFIABLE,
+    NONE,
+    INVALID,
+    NOT_SATISFIABLE,
+    SATISFIABLE,
 };
 
 /**
@@ -42,12 +42,12 @@ enum class RangeParseState {
  * 2) `write_payload_by_range(...)` 根据 `state` 统一输出 200/206/416。
  */
 struct ParsedRange {
-  /// 解析结果状态，决定响应分支（200/206/416）。
-  RangeParseState state = RangeParseState::NONE;
-  /// 范围起始字节下标（仅在 SATISFIABLE 时有效）。
-  size_t start = 0;
-  /// 范围结束字节下标（仅在 SATISFIABLE 时有效，且为 inclusive）。
-  size_t end = 0;
+    /// 解析结果状态，决定响应分支（200/206/416）。
+    RangeParseState state = RangeParseState::NONE;
+    /// 范围起始字节下标（仅在 SATISFIABLE 时有效）。
+    size_t start = 0;
+    /// 范围结束字节下标（仅在 SATISFIABLE 时有效，且为 inclusive）。
+    size_t end = 0;
 };
 
 /**
@@ -83,8 +83,7 @@ ParsedRange parse_range_request(const HttpRequest::ptr &request,
 void write_payload_by_range(const HttpRequest::ptr &request,
                             HttpResponse &response,
                             const ParsedRange &parsed_range,
-                            size_t content_length,
-                            const std::string &content);
+                            size_t content_length, const std::string &content);
 
 } // namespace zhttp
 

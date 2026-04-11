@@ -36,160 +36,153 @@ class TlsChannel;
  */
 class TcpConnection : public std::enable_shared_from_this<TcpConnection>,
                       public NonCopyable {
- public:
-  using ptr = std::shared_ptr<TcpConnection>;
-  static constexpr uint32_t kUseConnectionWriteTimeout =
-      std::numeric_limits<uint32_t>::max();
+  public:
+    using ptr = std::shared_ptr<TcpConnection>;
+    static constexpr uint32_t kUseConnectionWriteTimeout =
+        std::numeric_limits<uint32_t>::max();
 
-  using WriteCompleteCallback = std::function<void(TcpConnection::ptr)>;
-  using HighWaterMarkCallback = std::function<void(TcpConnection::ptr, size_t)>;
+    using WriteCompleteCallback = std::function<void(TcpConnection::ptr)>;
+    using HighWaterMarkCallback =
+        std::function<void(TcpConnection::ptr, size_t)>;
 
-  enum class State : uint8_t {
-    kDisconnected = 0,
-    kConnecting = 1,
-    kConnected = 2,
-    kDisconnecting = 3,
-  };
+    enum class State : uint8_t {
+        kDisconnected = 0,
+        kConnecting = 1,
+        kConnected = 2,
+        kDisconnecting = 3,
+    };
 
-  explicit TcpConnection(Socket::ptr socket,
-                         zcoroutine::Scheduler* actor_scheduler = nullptr);
+    explicit TcpConnection(Socket::ptr socket,
+                           zcoroutine::Scheduler *actor_scheduler = nullptr);
 
-  ~TcpConnection();
+    ~TcpConnection();
 
-  int fd() const;
+    int fd() const;
 
-  bool connected() const {
-    return static_cast<State>(state_.load(std::memory_order_acquire)) ==
-           State::kConnected;
-  }
+    bool connected() const {
+        return static_cast<State>(state_.load(std::memory_order_acquire)) ==
+               State::kConnected;
+    }
 
-  State state() const {
-    return static_cast<State>(state_.load(std::memory_order_acquire));
-  }
+    State state() const {
+        return static_cast<State>(state_.load(std::memory_order_acquire));
+    }
 
-  Socket::ptr socket() const { return socket_; }
+    Socket::ptr socket() const { return socket_; }
 
-  Buffer& input_buffer() { return input_buffer_; }
-  const Buffer& input_buffer() const { return input_buffer_; }
+    Buffer &input_buffer() { return input_buffer_; }
+    const Buffer &input_buffer() const { return input_buffer_; }
 
-  Buffer& output_buffer() { return output_buffer_; }
-  const Buffer& output_buffer() const { return output_buffer_; }
+    Buffer &output_buffer() { return output_buffer_; }
+    const Buffer &output_buffer() const { return output_buffer_; }
 
-  void set_write_complete_callback(WriteCompleteCallback callback) {
-    write_complete_callback_ = std::move(callback);
-  }
+    void set_write_complete_callback(WriteCompleteCallback callback) {
+        write_complete_callback_ = std::move(callback);
+    }
 
-  void set_high_water_mark_callback(HighWaterMarkCallback callback,
-                                    size_t high_water_mark) {
-    high_water_mark_callback_ = std::move(callback);
-    high_water_mark_ = high_water_mark;
-  }
+    void set_high_water_mark_callback(HighWaterMarkCallback callback,
+                                      size_t high_water_mark) {
+        high_water_mark_callback_ = std::move(callback);
+        high_water_mark_ = high_water_mark;
+    }
 
-  void set_context(void* ctx) { context_ = ctx; }
-  void* context() const { return context_; }
+    void set_context(void *ctx) { context_ = ctx; }
+    void *context() const { return context_; }
 
-  void set_write_timeout(uint32_t timeout_ms) {
-    write_timeout_ms_.store(timeout_ms, std::memory_order_release);
-  }
+    void set_write_timeout(uint32_t timeout_ms) {
+        write_timeout_ms_.store(timeout_ms, std::memory_order_release);
+    }
 
-  uint32_t write_timeout() const {
-    return write_timeout_ms_.load(std::memory_order_acquire);
-  }
+    uint32_t write_timeout() const {
+        return write_timeout_ms_.load(std::memory_order_acquire);
+    }
 
-  ssize_t read(size_t max_read_bytes = 4096, uint32_t timeout_ms = 0);
-  ssize_t flush_output(
-      uint32_t timeout_ms = kUseConnectionWriteTimeout);
-  ssize_t send(const void* data,
-               size_t length,
-               uint32_t timeout_ms = kUseConnectionWriteTimeout);
+    ssize_t read(size_t max_read_bytes = 4096, uint32_t timeout_ms = 0);
+    ssize_t flush_output(uint32_t timeout_ms = kUseConnectionWriteTimeout);
+    ssize_t send(const void *data, size_t length,
+                 uint32_t timeout_ms = kUseConnectionWriteTimeout);
 
-  void shutdown();
-  void close();
+    void shutdown();
+    void close();
 
-  bool is_tls_enabled() const { return tls_channel_ != nullptr; }
+    bool is_tls_enabled() const { return tls_channel_ != nullptr; }
 
- private:
-  friend class TcpServer;
+  private:
+    friend class TcpServer;
 
-  bool enable_tls_server(const std::shared_ptr<TlsContext>& tls_context,
-                         uint32_t handshake_timeout_ms);
+    bool enable_tls_server(const std::shared_ptr<TlsContext> &tls_context,
+                           uint32_t handshake_timeout_ms);
 
-  bool wait_tls_io(bool wait_for_write, uint32_t timeout_ms);
+    bool wait_tls_io(bool wait_for_write, uint32_t timeout_ms);
 
-  enum class EventType : uint8_t {
-    kRead = 0,
-    kSend = 1,
-    kFlush = 2,
-    kShutdown = 3,
-    kClose = 4,
-  };
+    enum class EventType : uint8_t {
+        kRead = 0,
+        kSend = 1,
+        kFlush = 2,
+        kShutdown = 3,
+        kClose = 4,
+    };
 
-  struct Event {
-    explicit Event(EventType t)
-        : type(t),
-          max_read_bytes(0),
-          timeout_ms(0),
-          payload(),
-          result(0),
-          error(0),
-          completion(1) {}
+    struct Event {
+        explicit Event(EventType t)
+            : type(t), max_read_bytes(0), timeout_ms(0), payload(), result(0),
+              error(0), completion(1) {}
 
-    EventType type;
-    size_t max_read_bytes;
-    uint32_t timeout_ms;
-    std::string payload;
-    ssize_t result;
-    int error;
-    zcoroutine::WaitGroup completion;
-  };
+        EventType type;
+        size_t max_read_bytes;
+        uint32_t timeout_ms;
+        std::string payload;
+        ssize_t result;
+        int error;
+        zcoroutine::WaitGroup completion;
+    };
 
- private:
-  void set_state(State state);
-  size_t pending_write_bytes() const;
-  uint32_t resolve_write_timeout(uint32_t timeout_ms) const;
-  bool try_begin_inline_actor();
-  void finish_inline_actor();
+  private:
+    void set_state(State state);
+    size_t pending_write_bytes() const;
+    uint32_t resolve_write_timeout(uint32_t timeout_ms) const;
+    bool try_begin_inline_actor();
+    void finish_inline_actor();
 
-  ssize_t dispatch_event_and_wait(const std::shared_ptr<Event>& event);
-  void drain_mailbox();
-  void process_event(const std::shared_ptr<Event>& event);
+    ssize_t dispatch_event_and_wait(const std::shared_ptr<Event> &event);
+    void drain_mailbox();
+    void process_event(const std::shared_ptr<Event> &event);
 
-  ssize_t read_internal(size_t max_read_bytes, uint32_t timeout_ms);
-  ssize_t read_tls_internal(size_t max_read_bytes, uint32_t timeout_ms);
-  ssize_t flush_output_internal(uint32_t timeout_ms);
-  ssize_t write_tls_internal(const char* data,
-                             size_t length,
-                             uint32_t timeout_ms);
-  ssize_t send_internal(const char* data, size_t length, uint32_t timeout_ms);
-  void shutdown_tls_internal();
-  void close_tls_internal();
-  void shutdown_internal();
-  void close_internal();
+    ssize_t read_internal(size_t max_read_bytes, uint32_t timeout_ms);
+    ssize_t read_tls_internal(size_t max_read_bytes, uint32_t timeout_ms);
+    ssize_t flush_output_internal(uint32_t timeout_ms);
+    ssize_t write_tls_internal(const char *data, size_t length,
+                               uint32_t timeout_ms);
+    ssize_t send_internal(const char *data, size_t length, uint32_t timeout_ms);
+    void shutdown_tls_internal();
+    void close_tls_internal();
+    void shutdown_internal();
+    void close_internal();
 
- private:
-  Socket::ptr socket_;
-  Buffer input_buffer_;
-  Buffer output_buffer_;
+  private:
+    Socket::ptr socket_;
+    Buffer input_buffer_;
+    Buffer output_buffer_;
 
-  std::atomic<uint8_t> state_;
+    std::atomic<uint8_t> state_;
 
-  WriteCompleteCallback write_complete_callback_;
-  HighWaterMarkCallback high_water_mark_callback_;
-  size_t high_water_mark_;
-  std::atomic<uint32_t> write_timeout_ms_;
+    WriteCompleteCallback write_complete_callback_;
+    HighWaterMarkCallback high_water_mark_callback_;
+    size_t high_water_mark_;
+    std::atomic<uint32_t> write_timeout_ms_;
 
-  std::unique_ptr<TlsChannel> tls_channel_;
+    std::unique_ptr<TlsChannel> tls_channel_;
 
-  void* context_;
+    void *context_;
 
-  mutable std::mutex actor_mutex_;
-  std::deque<std::shared_ptr<Event>> mailbox_;
-  bool actor_running_; // actor 是否正在运行
-  std::thread::id actor_thread_id_;
-  zcoroutine::Scheduler* actor_scheduler_;
-  int actor_sched_id_;
+    mutable std::mutex actor_mutex_;
+    std::deque<std::shared_ptr<Event>> mailbox_;
+    bool actor_running_; // actor 是否正在运行
+    std::thread::id actor_thread_id_;
+    zcoroutine::Scheduler *actor_scheduler_;
+    int actor_sched_id_;
 };
 
-}  // namespace znet
+} // namespace znet
 
-#endif  // ZNET_TCP_CONNECTION_H_
+#endif // ZNET_TCP_CONNECTION_H_

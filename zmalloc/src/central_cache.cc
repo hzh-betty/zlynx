@@ -3,8 +3,8 @@
  * @brief CentralCache 实现
  */
 #include "central_cache.h"
-#include "page_cache.h"
 #include "free_list.h"
+#include "page_cache.h"
 #include "size_class.h"
 
 #include "zmalloc_config.h"
@@ -16,236 +16,236 @@ namespace zmalloc {
 namespace {
 
 bool span_freelist_contains(Span *span, void *target) {
-  for (void *it = span->free_list; it != nullptr; it = next_obj(it)) {
-    if (it == target) {
-      return true;
+    for (void *it = span->free_list; it != nullptr; it = next_obj(it)) {
+        if (it == target) {
+            return true;
+        }
     }
-  }
-  return false;
+    return false;
 }
 
 } // namespace
 
 size_t CentralCache::fetch_range_obj(void *&start, void *&end, size_t n,
                                      size_t size) {
-  const size_t index = SizeClass::index_fast(size);
-  return fetch_range_obj(start, end, n, size, index);
+    const size_t index = SizeClass::index_fast(size);
+    return fetch_range_obj(start, end, n, size, index);
 }
 
 size_t CentralCache::fetch_range_obj(void *&start, void *&end, size_t n,
                                      size_t size, size_t index) {
-  CentralFreeList &free_list = free_lists_[index];
+    CentralFreeList &free_list = free_lists_[index];
 
-  // 关键步骤：每个 size class 维护独立桶锁，避免全局锁。
-  // 桶锁保护：
-  // - nonempty/empty 两条 SpanList
-  // - span 在两条链表之间的迁移
-  // - span->free_list / span->use_count 的更新
-  free_list.lock.lock();
+    // 关键步骤：每个 size class 维护独立桶锁，避免全局锁。
+    // 桶锁保护：
+    // - nonempty/empty 两条 SpanList
+    // - span 在两条链表之间的迁移
+    // - span->free_list / span->use_count 的更新
+    free_list.lock.lock();
 
-  // 获取一个非空的 Span
-  Span *span = get_one_span(free_list, size);
-  assert(span);
-  assert(span->free_list);
+    // 获取一个非空的 Span
+    Span *span = get_one_span(free_list, size);
+    assert(span);
+    assert(span->free_list);
 
-  // 关键步骤：从 span->free_list 单链表上切一段出来。
-  // 返回给 ThreadCache 的也是“单链表”，对象的 next 指针存放在对象起始处。
-  // 不变量：切完后必须把 end->next 置空，避免调用方误遍历到 span 内部链表。
-  start = span->free_list;
-  end = start;
-  size_t actual_num = 1;
-  // 优化：大多数情况下 n > 1 且链表有足够对象
-  while (ZM_LIKELY(actual_num < n)) {
-    void *next = next_obj(end);
-    if (ZM_UNLIKELY(next == nullptr)) {
-      break;
+    // 关键步骤：从 span->free_list 单链表上切一段出来。
+    // 返回给 ThreadCache 的也是“单链表”，对象的 next 指针存放在对象起始处。
+    // 不变量：切完后必须把 end->next 置空，避免调用方误遍历到 span 内部链表。
+    start = span->free_list;
+    end = start;
+    size_t actual_num = 1;
+    // 优化：大多数情况下 n > 1 且链表有足够对象
+    while (ZM_LIKELY(actual_num < n)) {
+        void *next = next_obj(end);
+        if (ZM_UNLIKELY(next == nullptr)) {
+            break;
+        }
+        end = next;
+        ++actual_num;
     }
-    end = next;
-    ++actual_num;
-  }
-  span->free_list = next_obj(end);
-  next_obj(end) = nullptr;
-  span->use_count += actual_num;
+    span->free_list = next_obj(end);
+    next_obj(end) = nullptr;
+    span->use_count += actual_num;
 
-  // 关键不变量：
-  // - nonempty：span->free_list != nullptr
-  // - empty：span->free_list == nullptr 且仍有对象在外部（use_count>0）
-  // fetch 后如果该 span 被耗尽，需要从 nonempty 移到 empty。
-  if (ZM_UNLIKELY(span->free_list == nullptr)) {
-    free_list.nonempty.erase(span);
-    free_list.empty.push_front(span);
-  }
+    // 关键不变量：
+    // - nonempty：span->free_list != nullptr
+    // - empty：span->free_list == nullptr 且仍有对象在外部（use_count>0）
+    // fetch 后如果该 span 被耗尽，需要从 nonempty 移到 empty。
+    if (ZM_UNLIKELY(span->free_list == nullptr)) {
+        free_list.nonempty.erase(span);
+        free_list.empty.push_front(span);
+    }
 
-  free_list.lock.unlock();
-  return actual_num;
+    free_list.lock.unlock();
+    return actual_num;
 }
 
 Span *CentralCache::get_one_span(CentralFreeList &free_list, size_t size) {
-  // 1. 热点路径：nonempty 链表首部一定是可用 span（O(1)）。
-  Span *front = free_list.nonempty.begin();
-  if (ZM_LIKELY(front != free_list.nonempty.end())) {
-    assert(front->free_list != nullptr);
-    return front;
-  }
+    // 1. 热点路径：nonempty 链表首部一定是可用 span（O(1)）。
+    Span *front = free_list.nonempty.begin();
+    if (ZM_LIKELY(front != free_list.nonempty.end())) {
+        assert(front->free_list != nullptr);
+        return front;
+    }
 
-  // 2. 没有非空 Span，向 PageCache 申请。
-  // 注意：这里仍保持桶锁持有，确保同一个 size class 下不会并发重复建 span。
-  // 锁顺序固定为：桶锁 -> PageCache 锁（避免死锁）。
-  PageCache::get_instance().page_mtx().lock();
-  // 申请页数直接用查表结果，避免每次 miss 计算。
-  Span *span = PageCache::get_instance().new_span(
-      static_cast<size_t>(SizeClass::lookup(size).num_pages));
-  span->is_use = true;
-  span->obj_size = size;
-  PageCache::get_instance().page_mtx().unlock();
+    // 2. 没有非空 Span，向 PageCache 申请。
+    // 注意：这里仍保持桶锁持有，确保同一个 size class 下不会并发重复建 span。
+    // 锁顺序固定为：桶锁 -> PageCache 锁（避免死锁）。
+    PageCache::get_instance().page_mtx().lock();
+    // 申请页数直接用查表结果，避免每次 miss 计算。
+    Span *span = PageCache::get_instance().new_span(
+        static_cast<size_t>(SizeClass::lookup(size).num_pages));
+    span->is_use = true;
+    span->obj_size = size;
+    PageCache::get_instance().page_mtx().unlock();
 
-  // 计算大块内存的起始地址和字节数
-  char *start = reinterpret_cast<char *>(span->page_id << PAGE_SHIFT);
-  const size_t bytes = span->n << PAGE_SHIFT;
-  char *const obj_end = start + bytes;
+    // 计算大块内存的起始地址和字节数
+    char *start = reinterpret_cast<char *>(span->page_id << PAGE_SHIFT);
+    const size_t bytes = span->n << PAGE_SHIFT;
+    char *const obj_end = start + bytes;
 
-  // 关键步骤：把 [span_start, span_end) 切分成 size 大小对象，构建单链表。
-  // 这里不做额外对齐：align_size 已由 SizeClass 查表保证。
-  const size_t obj_count = bytes / size;
-  assert(obj_count >= 1);
-  span->free_list = start;
-  void *tail = start;
-  start += size;
-
-  for (size_t i = 1; i < obj_count; ++i) {
-    assert(start + size <= obj_end);
-    next_obj(tail) = start;
-    tail = start;
+    // 关键步骤：把 [span_start, span_end) 切分成 size 大小对象，构建单链表。
+    // 这里不做额外对齐：align_size 已由 SizeClass 查表保证。
+    const size_t obj_count = bytes / size;
+    assert(obj_count >= 1);
+    span->free_list = start;
+    void *tail = start;
     start += size;
-  }
-  next_obj(tail) = nullptr;
 
-  // 挂到 nonempty（桶锁已持有，无需再次加锁）
-  free_list.nonempty.push_front(span);
+    for (size_t i = 1; i < obj_count; ++i) {
+        assert(start + size <= obj_end);
+        next_obj(tail) = start;
+        tail = start;
+        start += size;
+    }
+    next_obj(tail) = nullptr;
 
-  return span;
+    // 挂到 nonempty（桶锁已持有，无需再次加锁）
+    free_list.nonempty.push_front(span);
+
+    return span;
 }
 
 void CentralCache::release_list_to_spans(void *start, size_t size) {
-  const size_t index = SizeClass::index_fast(size);
-  release_list_to_spans(start, size, index);
+    const size_t index = SizeClass::index_fast(size);
+    release_list_to_spans(start, size, index);
 }
 
 void CentralCache::release_list_to_spans(void *start, size_t size,
                                          size_t index) {
-  (void)size;
-  CentralFreeList &free_list = free_lists_[index];
-  if (start == nullptr) {
-    return;
-  }
-
-  // 两阶段批处理：减少桶锁持有时间。
-  // 1) 无锁阶段：把对象按 Span 分组 + 本地拼接，减少 PageMap::get 次数。
-  // 2) 持锁阶段：对每个 Span 一次性 splice 链表并批量更新
-  // use_count，缩短桶锁持有时间。
-  //
-  // 注意：ThreadCache 过长回收最多 128 个对象，因此这里固定上限 128。
-  Span *spans[128];
-  void *group_start[128];
-  void *group_end[128];
-  size_t group_count[128];
-  size_t groups = 0;
-
-  // last_span 小优化：回收链表中相邻对象常来自同一 span。
-  // 缓存上一次 span 的页区间，可减少 PageCache::map_object_to_span 调用次数。
-  Span *last_span = nullptr;
-  PageId last_begin = 0;
-  PageId last_end = 0;
-
-  while (start) {
-    void *next = next_obj(start);
-    next_obj(start) = nullptr;
-
-    Span *span = nullptr;
-    const PageId id = reinterpret_cast<PageId>(start) >> PAGE_SHIFT;
-    if (last_span != nullptr && id >= last_begin && id < last_end) {
-      span = last_span;
-    } else {
-      span = PageCache::get_instance().map_object_to_span(start);
-      last_span = span;
-      last_begin = span->page_id;
-      last_end = span->page_id + span->n;
+    (void)size;
+    CentralFreeList &free_list = free_lists_[index];
+    if (start == nullptr) {
+        return;
     }
 
-    // 常见情况：回收链表里相邻对象来自同一个 span
-    size_t gi = static_cast<size_t>(-1);
-    if (groups > 0 && spans[groups - 1] == span) {
-      gi = groups - 1;
-    } else {
-      for (size_t i = 0; i < groups; ++i) {
-        if (spans[i] == span) {
-          gi = i;
-          break;
+    // 两阶段批处理：减少桶锁持有时间。
+    // 1) 无锁阶段：把对象按 Span 分组 + 本地拼接，减少 PageMap::get 次数。
+    // 2) 持锁阶段：对每个 Span 一次性 splice 链表并批量更新
+    // use_count，缩短桶锁持有时间。
+    //
+    // 注意：ThreadCache 过长回收最多 128 个对象，因此这里固定上限 128。
+    Span *spans[128];
+    void *group_start[128];
+    void *group_end[128];
+    size_t group_count[128];
+    size_t groups = 0;
+
+    // last_span 小优化：回收链表中相邻对象常来自同一 span。
+    // 缓存上一次 span 的页区间，可减少 PageCache::map_object_to_span 调用次数。
+    Span *last_span = nullptr;
+    PageId last_begin = 0;
+    PageId last_end = 0;
+
+    while (start) {
+        void *next = next_obj(start);
+        next_obj(start) = nullptr;
+
+        Span *span = nullptr;
+        const PageId id = reinterpret_cast<PageId>(start) >> PAGE_SHIFT;
+        if (last_span != nullptr && id >= last_begin && id < last_end) {
+            span = last_span;
+        } else {
+            span = PageCache::get_instance().map_object_to_span(start);
+            last_span = span;
+            last_begin = span->page_id;
+            last_end = span->page_id + span->n;
         }
-      }
+
+        // 常见情况：回收链表里相邻对象来自同一个 span
+        size_t gi = static_cast<size_t>(-1);
+        if (groups > 0 && spans[groups - 1] == span) {
+            gi = groups - 1;
+        } else {
+            for (size_t i = 0; i < groups; ++i) {
+                if (spans[i] == span) {
+                    gi = i;
+                    break;
+                }
+            }
+        }
+
+        if (gi == static_cast<size_t>(-1)) {
+            // new group
+            spans[groups] = span;
+            group_start[groups] = start;
+            group_end[groups] = start;
+            group_count[groups] = 1;
+            ++groups;
+        } else {
+            next_obj(group_end[gi]) = start;
+            group_end[gi] = start;
+            ++group_count[gi];
+        }
+
+        start = next;
     }
 
-    if (gi == static_cast<size_t>(-1)) {
-      // new group
-      spans[groups] = span;
-      group_start[groups] = start;
-      group_end[groups] = start;
-      group_count[groups] = 1;
-      ++groups;
-    } else {
-      next_obj(group_end[gi]) = start;
-      group_end[gi] = start;
-      ++group_count[gi];
+    // 持锁阶段：对每个 Span 一次性 splice + 批量更新。
+    // 注意：如果某个 span use_count 归零，需要释放回 PageCache。
+    // 释放过程中会获取 PageCache 锁，因此这里采取“临时释放桶锁 -> 释放 ->
+    // 再加锁” 的模式，避免长时间持有桶锁。
+    free_list.lock.lock();
+    for (size_t gi = 0; gi < groups; ++gi) {
+        Span *span = spans[gi];
+        const bool was_empty = (span->free_list == nullptr);
+
+        for (void *it = group_start[gi]; it != nullptr; it = next_obj(it)) {
+            assert(!span_freelist_contains(span, it));
+        }
+
+        // splice: [group_start..group_end] + old span->free_list
+        next_obj(group_end[gi]) = span->free_list;
+        span->free_list = group_start[gi];
+
+        span->use_count -= group_count[gi];
+
+        if (span->use_count == 0) {
+            // Span 全部对象回收，归还 PageCache
+            if (was_empty) {
+                free_list.empty.erase(span);
+            } else {
+                free_list.nonempty.erase(span);
+            }
+            span->free_list = nullptr;
+            span->next = nullptr;
+            span->prev = nullptr;
+
+            free_list.lock.unlock();
+            PageCache::get_instance().page_mtx().lock();
+            PageCache::get_instance().release_span_to_page_cache(span);
+            PageCache::get_instance().page_mtx().unlock();
+            free_list.lock.lock();
+            continue;
+        }
+
+        if (was_empty) {
+            // empty -> nonempty
+            free_list.empty.erase(span);
+            free_list.nonempty.push_front(span);
+        }
     }
-
-    start = next;
-  }
-
-  // 持锁阶段：对每个 Span 一次性 splice + 批量更新。
-  // 注意：如果某个 span use_count 归零，需要释放回 PageCache。
-  // 释放过程中会获取 PageCache 锁，因此这里采取“临时释放桶锁 -> 释放 -> 再加锁”
-  // 的模式，避免长时间持有桶锁。
-  free_list.lock.lock();
-  for (size_t gi = 0; gi < groups; ++gi) {
-    Span *span = spans[gi];
-    const bool was_empty = (span->free_list == nullptr);
-
-    for (void *it = group_start[gi]; it != nullptr; it = next_obj(it)) {
-      assert(!span_freelist_contains(span, it));
-    }
-
-    // splice: [group_start..group_end] + old span->free_list
-    next_obj(group_end[gi]) = span->free_list;
-    span->free_list = group_start[gi];
-
-    span->use_count -= group_count[gi];
-
-    if (span->use_count == 0) {
-      // Span 全部对象回收，归还 PageCache
-      if (was_empty) {
-        free_list.empty.erase(span);
-      } else {
-        free_list.nonempty.erase(span);
-      }
-      span->free_list = nullptr;
-      span->next = nullptr;
-      span->prev = nullptr;
-
-      free_list.lock.unlock();
-      PageCache::get_instance().page_mtx().lock();
-      PageCache::get_instance().release_span_to_page_cache(span);
-      PageCache::get_instance().page_mtx().unlock();
-      free_list.lock.lock();
-      continue;
-    }
-
-    if (was_empty) {
-      // empty -> nonempty
-      free_list.empty.erase(span);
-      free_list.nonempty.push_front(span);
-    }
-  }
-  free_list.lock.unlock();
+    free_list.lock.unlock();
 }
 
 } // namespace zmalloc

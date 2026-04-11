@@ -13,27 +13,27 @@
 namespace zcoroutine {
 
 class StealQueue : public NonCopyable {
- public:
-  StealQueue();
+  public:
+    StealQueue();
 
-  void push(Task task);
+    void push(Task task);
 
-  size_t steal(std::deque<Task>* tasks, size_t max_steal, size_t min_reserve);
+    size_t steal(std::deque<Task> *tasks, size_t max_steal, size_t min_reserve);
 
-  void drain_all(std::deque<Task>* tasks);
+    void drain_all(std::deque<Task> *tasks);
 
-  void drain_some(std::deque<Task>* tasks, size_t max_count);
+    void drain_some(std::deque<Task> *tasks, size_t max_count);
 
-  void append(std::deque<Task>* tasks);
+    void append(std::deque<Task> *tasks);
 
-  size_t size() const;
+    size_t size() const;
 
- private:
-  mutable std::mutex mutex_;
-  std::atomic<size_t> size_;
-  std::deque<Task> tasks_;
+  private:
+    mutable std::mutex mutex_;
+    std::atomic<size_t> size_;
+    std::deque<Task> tasks_;
 };
 
-}  // namespace zcoroutine
+} // namespace zcoroutine
 
-#endif  // ZCOROUTINE_INTERNAL_STEAL_QUEUE_H_
+#endif // ZCOROUTINE_INTERNAL_STEAL_QUEUE_H_

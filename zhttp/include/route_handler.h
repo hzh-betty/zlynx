@@ -19,18 +19,18 @@ namespace zhttp {
  * 第二种方式更适合需要封装状态或复用逻辑的复杂处理器。
  */
 class RouteHandler {
-public:
-  using ptr = std::shared_ptr<RouteHandler>;
+  public:
+    using ptr = std::shared_ptr<RouteHandler>;
 
-  virtual ~RouteHandler() = default;
+    virtual ~RouteHandler() = default;
 
-  /**
-   * @brief 处理 HTTP 请求
-   * @param request HTTP 请求对象
-   * @param response HTTP 响应对象
-   */
-  virtual void handle(const HttpRequest::ptr &request,
-                      HttpResponse &response) = 0;
+    /**
+     * @brief 处理 HTTP 请求
+     * @param request HTTP 请求对象
+     * @param response HTTP 响应对象
+     */
+    virtual void handle(const HttpRequest::ptr &request,
+                        HttpResponse &response) = 0;
 };
 
 /**

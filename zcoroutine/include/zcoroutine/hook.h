@@ -3,18 +3,18 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <sys/uio.h>
 
 #include "zcoroutine/sched.h"
 
 /**
-* @brief 协程友好的系统调用包装。
-* @details 因为协程相关函数必须是非阻塞的，所以提供与系统调用语义一致的接口，
-*  同时集成协程调度逻辑和超时控制。对于不涉及 I/O 的系统调用，
-*  提供协程友好的包装以便在协程中使用。
-*/
+ * @brief 协程友好的系统调用包装。
+ * @details 因为协程相关函数必须是非阻塞的，所以提供与系统调用语义一致的接口，
+ *  同时集成协程调度逻辑和超时控制。对于不涉及 I/O 的系统调用，
+ *  提供协程友好的包装以便在协程中使用。
+ */
 
 namespace zcoroutine {
 
@@ -130,7 +130,7 @@ int co_shutdown(int fd, char how = 'b');
  * @param address_len 地址长度。
  * @return bind 返回值。
  */
-int co_bind(int fd, const struct sockaddr* address, socklen_t address_len);
+int co_bind(int fd, const struct sockaddr *address, socklen_t address_len);
 
 /**
  * @brief 协程友好的 listen 包装。
@@ -143,19 +143,13 @@ int co_listen(int fd, int backlog = 1024);
 /**
  * @brief 协程友好的 getsockopt 包装。
  */
-int co_getsockopt(int fd,
-                  int level,
-                  int option,
-                  void* option_value,
-                  socklen_t* option_len);
+int co_getsockopt(int fd, int level, int option, void *option_value,
+                  socklen_t *option_len);
 
 /**
  * @brief 协程友好的 setsockopt 包装。
  */
-int co_setsockopt(int fd,
-                  int level,
-                  int option,
-                  const void* option_value,
+int co_setsockopt(int fd, int level, int option, const void *option_value,
                   socklen_t option_len);
 
 /**
@@ -210,7 +204,8 @@ void co_set_tcp_nodelay(int fd);
  * @param timeout_ms 超时毫秒。
  * @return 读取结果，与系统调用 read 语义一致。
  */
-ssize_t co_read(int fd, void* buffer, size_t count, uint32_t timeout_ms = kInfiniteTimeoutMs);
+ssize_t co_read(int fd, void *buffer, size_t count,
+                uint32_t timeout_ms = kInfiniteTimeoutMs);
 
 /**
  * @brief 协程友好的 write 包装。必须在协程中调用。
@@ -220,7 +215,8 @@ ssize_t co_read(int fd, void* buffer, size_t count, uint32_t timeout_ms = kInfin
  * @param timeout_ms 超时毫秒。
  * @return 写入结果，与系统调用 write 语义一致。
  */
-ssize_t co_write(int fd, const void* buffer, size_t count, uint32_t timeout_ms = kInfiniteTimeoutMs);
+ssize_t co_write(int fd, const void *buffer, size_t count,
+                 uint32_t timeout_ms = kInfiniteTimeoutMs);
 
 /**
  * @brief 协程友好的 readv 包装。必须在协程中调用。
@@ -230,10 +226,8 @@ ssize_t co_write(int fd, const void* buffer, size_t count, uint32_t timeout_ms =
  * @param timeout_ms 超时毫秒。
  * @return 读取结果，与系统调用 readv 语义一致。
  */
-ssize_t co_readv(int fd,
-                const struct iovec* iov,
-                int iovcnt,
-                uint32_t timeout_ms = kInfiniteTimeoutMs);
+ssize_t co_readv(int fd, const struct iovec *iov, int iovcnt,
+                 uint32_t timeout_ms = kInfiniteTimeoutMs);
 
 /**
  * @brief 协程友好的 writev 包装。
@@ -243,10 +237,8 @@ ssize_t co_readv(int fd,
  * @param timeout_ms 超时毫秒。
  * @return 写入结果，与系统调用 writev 语义一致。
  */
-ssize_t co_writev(int fd,
-                 const struct iovec* iov,
-                 int iovcnt,
-                 uint32_t timeout_ms = kInfiniteTimeoutMs);
+ssize_t co_writev(int fd, const struct iovec *iov, int iovcnt,
+                  uint32_t timeout_ms = kInfiniteTimeoutMs);
 
 /**
  * @brief 协程友好的 recv 包装。必须在协程中调用。
@@ -257,10 +249,7 @@ ssize_t co_writev(int fd,
  * @param timeout_ms 超时毫秒。
  * @return 接收结果。
  */
-ssize_t co_recv(int fd,
-                void* buffer,
-                size_t count,
-                int flags,
+ssize_t co_recv(int fd, void *buffer, size_t count, int flags,
                 uint32_t timeout_ms = kInfiniteTimeoutMs);
 
 /**
@@ -272,10 +261,7 @@ ssize_t co_recv(int fd,
  * @param timeout_ms 超时毫秒。
  * @return 成功返回 count；对端关闭返回 0；失败返回 -1。
  */
-ssize_t co_recvn(int fd,
-                 void* buffer,
-                 size_t count,
-                 int flags = 0,
+ssize_t co_recvn(int fd, void *buffer, size_t count, int flags = 0,
                  uint32_t timeout_ms = kInfiniteTimeoutMs);
 
 /**
@@ -287,10 +273,7 @@ ssize_t co_recvn(int fd,
  * @param timeout_ms 超时毫秒。
  * @return 发送结果。
  */
-ssize_t co_send(int fd,
-                const void* buffer,
-                size_t count,
-                int flags,
+ssize_t co_send(int fd, const void *buffer, size_t count, int flags,
                 uint32_t timeout_ms = kInfiniteTimeoutMs);
 
 /**
@@ -304,12 +287,8 @@ ssize_t co_send(int fd,
  * @param timeout_ms 超时毫秒。
  * @return 接收结果，与系统调用 recvfrom 语义一致。
  */
-ssize_t co_recvfrom(int fd,
-                    void* buffer,
-                    size_t count,
-                    int flags,
-                    struct sockaddr* address,
-                    socklen_t* address_len,
+ssize_t co_recvfrom(int fd, void *buffer, size_t count, int flags,
+                    struct sockaddr *address, socklen_t *address_len,
                     uint32_t timeout_ms = kInfiniteTimeoutMs);
 
 /**
@@ -323,12 +302,8 @@ ssize_t co_recvfrom(int fd,
  * @param timeout_ms 超时毫秒。
  * @return 发送结果，与系统调用 sendto 语义一致。
  */
-ssize_t co_sendto(int fd,
-                  const void* buffer,
-                  size_t count,
-                  int flags,
-                  const struct sockaddr* address,
-                  socklen_t address_len,
+ssize_t co_sendto(int fd, const void *buffer, size_t count, int flags,
+                  const struct sockaddr *address, socklen_t address_len,
                   uint32_t timeout_ms = kInfiniteTimeoutMs);
 
 /**
@@ -339,9 +314,7 @@ ssize_t co_sendto(int fd,
  * @param timeout_ms 超时毫秒。
  * @return 连接结果，与系统调用 connect 语义一致。
  */
-int co_connect(int fd,
-               const struct sockaddr* address,
-               socklen_t address_len,
+int co_connect(int fd, const struct sockaddr *address, socklen_t address_len,
                uint32_t timeout_ms = kInfiniteTimeoutMs);
 
 /**
@@ -352,9 +325,7 @@ int co_connect(int fd,
  * @param timeout_ms 超时毫秒。
  * @return accept 结果，与系统调用 accept 语义一致。
  */
-int co_accept(int fd,
-              struct sockaddr* address,
-              socklen_t* address_len,
+int co_accept(int fd, struct sockaddr *address, socklen_t *address_len,
               uint32_t timeout_ms = kInfiniteTimeoutMs);
 
 /**
@@ -366,12 +337,9 @@ int co_accept(int fd,
  * @param timeout_ms 超时毫秒。
  * @return accept4 结果，与系统调用 accept4 语义一致。
  */
-int co_accept4(int fd,
-               struct sockaddr* address,
-               socklen_t* address_len,
-               int flags,
-               uint32_t timeout_ms = kInfiniteTimeoutMs);
+int co_accept4(int fd, struct sockaddr *address, socklen_t *address_len,
+               int flags, uint32_t timeout_ms = kInfiniteTimeoutMs);
 
-}  // namespace zcoroutine
+} // namespace zcoroutine
 
-#endif  // ZCOROUTINE_HOOK_H_
+#endif // ZCOROUTINE_HOOK_H_

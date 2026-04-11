@@ -16,23 +16,23 @@ inline void *&next_obj(void *ptr) { return *static_cast<void **>(ptr); }
  * @brief 自由链表，管理切分好的小对象
  */
 class FreeList {
-public:
-  void push(void *obj);
-  void *pop();
+  public:
+    void push(void *obj);
+    void *pop();
 
-  void push_range(void *start, void *end, size_t n);
-  void pop_range(void *&start, void *&end, size_t n);
+    void push_range(void *start, void *end, size_t n);
+    void pop_range(void *&start, void *&end, size_t n);
 
-  size_t pop_batch(void **batch, size_t n);
+    size_t pop_batch(void **batch, size_t n);
 
-  bool empty() const;
-  size_t size() const;
-  size_t &max_size();
+    bool empty() const;
+    size_t size() const;
+    size_t &max_size();
 
-private:
-  void *free_list_ = nullptr;
-  size_t size_ = 0;
-  size_t max_size_ = 1;
+  private:
+    void *free_list_ = nullptr;
+    size_t size_ = 0;
+    size_t max_size_ = 1;
 };
 
 } // namespace zmalloc

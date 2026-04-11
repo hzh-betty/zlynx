@@ -23,126 +23,128 @@ namespace zhttp {
  * @brief HTTP 服务器
  * @details
  * HttpServer 复用底层 TcpServer 的连接管理能力，在消息回调里完成 HTTP 解析、
- * 路由分发和响应回写。它关注的是“如何把一个 TCP 字节流变成 HTTP 请求并交给业务”。
+ * 路由分发和响应回写。它关注的是“如何把一个 TCP 字节流变成 HTTP
+ * 请求并交给业务”。
  */
 class HttpServer {
-public:
-  using ptr = std::shared_ptr<HttpServer>;
+  public:
+    using ptr = std::shared_ptr<HttpServer>;
 
-  explicit HttpServer(znet::Address::ptr listen_address,
-                      int backlog = SOMAXCONN);
+    explicit HttpServer(znet::Address::ptr listen_address,
+                        int backlog = SOMAXCONN);
 
-  virtual ~HttpServer();
+    virtual ~HttpServer();
 
-  /**
-   * @brief 获取路由器
-    * @return 内部路由器引用，可用于注册路由和中间件
-   */
-  Router &router() { return router_; }
+    /**
+     * @brief 获取路由器
+     * @return 内部路由器引用，可用于注册路由和中间件
+     */
+    Router &router() { return router_; }
 
-  void set_name(const std::string &name);
+    void set_name(const std::string &name);
 
-  const std::string &name() const { return server_name_; }
+    const std::string &name() const { return server_name_; }
 
-  void set_thread_count(size_t thread_count);
+    void set_thread_count(size_t thread_count);
 
-  void set_recv_timeout(uint64_t timeout_ms);
+    void set_recv_timeout(uint64_t timeout_ms);
 
-  void set_write_timeout(uint64_t timeout_ms);
+    void set_write_timeout(uint64_t timeout_ms);
 
-  void set_keepalive_timeout(uint64_t timeout_ms);
+    void set_keepalive_timeout(uint64_t timeout_ms);
 
-  /**
-   * @brief 启用 HTTPS（TLS）
-   * @param cert_file 证书文件路径
-   * @param key_file 私钥文件路径
-   * @return 是否初始化成功
-   */
-  bool set_ssl_certificate(const std::string &cert_file,
-                           const std::string &key_file);
+    /**
+     * @brief 启用 HTTPS（TLS）
+     * @param cert_file 证书文件路径
+     * @param key_file 私钥文件路径
+     * @return 是否初始化成功
+     */
+    bool set_ssl_certificate(const std::string &cert_file,
+                             const std::string &key_file);
 
-  bool start();
+    bool start();
 
-  void stop();
+    void stop();
 
-  bool is_running() const;
+    bool is_running() const;
 
-protected:
-  znet::TcpServer::ptr tcp_server() const { return tcp_server_; }
+  protected:
+    znet::TcpServer::ptr tcp_server() const { return tcp_server_; }
 
-  uint32_t write_timeout() const {
-    return tcp_server_ ? tcp_server_->write_timeout() : 0;
-  }
+    uint32_t write_timeout() const {
+        return tcp_server_ ? tcp_server_->write_timeout() : 0;
+    }
 
-  virtual void on_connection(const znet::TcpConnection::ptr &conn);
+    virtual void on_connection(const znet::TcpConnection::ptr &conn);
 
-  virtual void on_message(const znet::TcpConnection::ptr &conn,
-                          znet::Buffer &buffer);
+    virtual void on_message(const znet::TcpConnection::ptr &conn,
+                            znet::Buffer &buffer);
 
-  virtual void on_close(const znet::TcpConnection::ptr &conn);
+    virtual void on_close(const znet::TcpConnection::ptr &conn);
 
-  virtual bool handle_request(const znet::TcpConnection::ptr &conn,
-                              const HttpRequest::ptr &request);
+    virtual bool handle_request(const znet::TcpConnection::ptr &conn,
+                                const HttpRequest::ptr &request);
 
-  HttpParser *ensure_parser(const znet::TcpConnection::ptr &conn);
+    HttpParser *ensure_parser(const znet::TcpConnection::ptr &conn);
 
-  /**
-   * @brief 判断连接是否处于异步 chunked 推送中
-   * @details 活跃期间会暂停该连接后续请求解析，避免响应交叉。
-   */
-  bool is_async_stream_active(const znet::TcpConnection::ptr &conn) const;
+    /**
+     * @brief 判断连接是否处于异步 chunked 推送中
+     * @details 活跃期间会暂停该连接后续请求解析，避免响应交叉。
+     */
+    bool is_async_stream_active(const znet::TcpConnection::ptr &conn) const;
 
-  /**
-   * @brief 标记连接进入异步 chunked 推送状态
-   */
-  void mark_async_stream_active(int fd);
+    /**
+     * @brief 标记连接进入异步 chunked 推送状态
+     */
+    void mark_async_stream_active(int fd);
 
-  /**
-   * @brief 清理连接的异步 chunked 推送状态
-   */
-  void mark_async_stream_finished(int fd);
+    /**
+     * @brief 清理连接的异步 chunked 推送状态
+     */
+    void mark_async_stream_finished(int fd);
 
-  /**
-   * @brief 发送异步 chunked 响应
-   * @details 先发送响应头，再由业务层通过 sender 推送 chunk，最终由 closer 结束。
-   */
-  bool send_async_chunked_response(const znet::TcpConnection::ptr &conn,
-                                   const HttpResponse &response);
+    /**
+     * @brief 发送异步 chunked 响应
+     * @details 先发送响应头，再由业务层通过 sender 推送 chunk，最终由 closer
+     * 结束。
+     */
+    bool send_async_chunked_response(const znet::TcpConnection::ptr &conn,
+                                     const HttpResponse &response);
 
-  /**
-   * @brief 判断连接是否已切换到 WebSocket 协议
-   */
-  bool is_websocket_active(const znet::TcpConnection::ptr &conn) const;
+    /**
+     * @brief 判断连接是否已切换到 WebSocket 协议
+     */
+    bool is_websocket_active(const znet::TcpConnection::ptr &conn) const;
 
-  /**
-   * @brief 获取连接对应的 WebSocket 会话
-   */
-  WebSocketSession::ptr find_websocket_session(int fd) const;
+    /**
+     * @brief 获取连接对应的 WebSocket 会话
+     */
+    WebSocketSession::ptr find_websocket_session(int fd) const;
 
-  /**
-   * @brief 注册 WebSocket 会话
-   */
-  void register_websocket_session(int fd, WebSocketSession::ptr session);
+    /**
+     * @brief 注册 WebSocket 会话
+     */
+    void register_websocket_session(int fd, WebSocketSession::ptr session);
 
-  /**
-   * @brief 移除并返回 WebSocket 会话
-   */
-  WebSocketSession::ptr take_websocket_session(int fd);
+    /**
+     * @brief 移除并返回 WebSocket 会话
+     */
+    WebSocketSession::ptr take_websocket_session(int fd);
 
-private:
-  znet::TcpServer::ptr tcp_server_;
+  private:
+    znet::TcpServer::ptr tcp_server_;
 
-  // 负责路径匹配、中间件执行和业务处理器调度。
-  Router router_;
+    // 负责路径匹配、中间件执行和业务处理器调度。
+    Router router_;
 
-  // Server 响应头默认值。
-  std::string server_name_ = "zhttp/1.0";
+    // Server 响应头默认值。
+    std::string server_name_ = "zhttp/1.0";
 
-  mutable std::mutex async_stream_mutex_;
-  std::unordered_set<int> async_stream_fds_;
+    mutable std::mutex async_stream_mutex_;
+    std::unordered_set<int> async_stream_fds_;
 
-  mutable std::mutex websocket_mutex_;
-  std::unordered_map<int, WebSocketSession::ptr> websocket_sessions_;
+    mutable std::mutex websocket_mutex_;
+    std::unordered_map<int, WebSocketSession::ptr> websocket_sessions_;
 };
 
 } // namespace zhttp

@@ -12,3 +12,6 @@ logfile/
 .worktrees/
 *.log
 .codex/
+.claude/
+tmp/
+*.tmp

@@ -19,11 +19,11 @@ namespace zhttp {
  * COMPLETE 和 ERROR 都是终止状态。
  */
 enum class ParseState {
-  REQUEST_LINE, // 解析请求行
-  HEADERS,      // 解析头部
-  BODY,         // 解析 Body
-  COMPLETE,     // 解析完成
-  ERROR         // 解析错误
+    REQUEST_LINE, // 解析请求行
+    HEADERS,      // 解析头部
+    BODY,         // 解析 Body
+    COMPLETE,     // 解析完成
+    ERROR         // 解析错误
 };
 
 /**
@@ -34,10 +34,10 @@ enum class ParseState {
  * 又或者当前请求本身不合法。
  */
 enum class ParseResult {
-  OK,        // 解析成功，可继续
-  COMPLETE,  // 完整请求解析完成
-  NEED_MORE, // 需要更多数据
-  ERROR      // 解析错误
+    OK,        // 解析成功，可继续
+    COMPLETE,  // 完整请求解析完成
+    NEED_MORE, // 需要更多数据
+    ERROR      // 解析错误
 };
 
 /**
@@ -52,119 +52,120 @@ enum class ParseResult {
  * 这种设计适合 Keep-Alive 和分片到达的场景。
  */
 class HttpParser {
-public:
-  HttpParser();
-
-  /**
-   * @brief 解析缓冲区中的数据
-   * @param buffer 网络缓冲区
-   * @return 解析结果：可能是继续解析、等待更多数据、完成或出错
-   */
-  ParseResult parse(znet::Buffer *buffer);
-
-  /**
-   * @brief 获取解析完成的请求
-   * @return 当前正在构建或已经构建完成的请求对象
-   */
-  HttpRequest::ptr request() const { return request_; }
-
-  /**
-   * @brief 重置解析器状态（用于 Keep-Alive 连接）
-   * @details
-   * 一个 TCP 连接上可能连续发送多个 HTTP 请求。处理完一个完整请求后，
-   * 可以调用该函数恢复初始状态，以便继续解析下一个请求。
-   */
-  void reset();
-
-  /**
-   * @brief 获取当前解析状态
-   * @return 当前状态机所处的阶段
-   */
-  ParseState state() const { return state_; }
-
-  /**
-   * @brief 获取错误信息
-   * @return 最近一次解析失败的原因；成功路径下通常为空
-   */
-  const std::string &error() const { return error_; }
-
-private:
-  /**
-   * @brief 解析请求行
-   * @param begin 数据起始指针
-   * @param end 数据结束指针
-    * @return 解析结果
-    * @details
-    * 请求行格式固定为：METHOD SP URI SP VERSION。
-    * 该函数会把 URI 拆成 path 和 query 两部分，并触发查询参数解析。
-   */
-  ParseResult parse_request_line(const char *begin, const char *end);
-
-  /**
-   * @brief 解析头部
-   * @param begin 数据起始指针
-   * @param end 数据结束指针
-    * @return 解析结果
-    * @details
-    * 每次只解析一行头部。空行代表头部结束，此时解析器会根据 Content-Length
-    * 判断是否还需要进入 Body 阶段。
-   */
-  ParseResult parse_headers(const char *begin, const char *end);
-
-  /**
-   * @brief 解析请求体
-   * @param buffer 网络缓冲区
-   * @return 解析结果
-   * @details
-    * 支持两类 Body：
-    * 1. Content-Length 定长读取
-    * 2. Transfer-Encoding: chunked 分块解码
-   */
-  ParseResult parse_body(znet::Buffer *buffer);
+  public:
+    HttpParser();
 
     /**
-    * @brief 解析 chunked 请求体
-    */
+     * @brief 解析缓冲区中的数据
+     * @param buffer 网络缓冲区
+     * @return 解析结果：可能是继续解析、等待更多数据、完成或出错
+     */
+    ParseResult parse(znet::Buffer *buffer);
+
+    /**
+     * @brief 获取解析完成的请求
+     * @return 当前正在构建或已经构建完成的请求对象
+     */
+    HttpRequest::ptr request() const { return request_; }
+
+    /**
+     * @brief 重置解析器状态（用于 Keep-Alive 连接）
+     * @details
+     * 一个 TCP 连接上可能连续发送多个 HTTP 请求。处理完一个完整请求后，
+     * 可以调用该函数恢复初始状态，以便继续解析下一个请求。
+     */
+    void reset();
+
+    /**
+     * @brief 获取当前解析状态
+     * @return 当前状态机所处的阶段
+     */
+    ParseState state() const { return state_; }
+
+    /**
+     * @brief 获取错误信息
+     * @return 最近一次解析失败的原因；成功路径下通常为空
+     */
+    const std::string &error() const { return error_; }
+
+  private:
+    /**
+     * @brief 解析请求行
+     * @param begin 数据起始指针
+     * @param end 数据结束指针
+     * @return 解析结果
+     * @details
+     * 请求行格式固定为：METHOD SP URI SP VERSION。
+     * 该函数会把 URI 拆成 path 和 query 两部分，并触发查询参数解析。
+     */
+    ParseResult parse_request_line(const char *begin, const char *end);
+
+    /**
+     * @brief 解析头部
+     * @param begin 数据起始指针
+     * @param end 数据结束指针
+     * @return 解析结果
+     * @details
+     * 每次只解析一行头部。空行代表头部结束，此时解析器会根据 Content-Length
+     * 判断是否还需要进入 Body 阶段。
+     */
+    ParseResult parse_headers(const char *begin, const char *end);
+
+    /**
+     * @brief 解析请求体
+     * @param buffer 网络缓冲区
+     * @return 解析结果
+     * @details
+     * 支持两类 Body：
+     * 1. Content-Length 定长读取
+     * 2. Transfer-Encoding: chunked 分块解码
+     */
+    ParseResult parse_body(znet::Buffer *buffer);
+
+    /**
+     * @brief 解析 chunked 请求体
+     */
     ParseResult parse_chunked_body(znet::Buffer *buffer);
 
     /**
-    * @brief 当前请求头是否声明了 chunked 传输编码
-    */
+     * @brief 当前请求头是否声明了 chunked 传输编码
+     */
     bool is_chunked_transfer_encoding() const;
 
     /**
-    * @brief 解析 chunk-size 行（支持忽略 chunk-extension）
-    */
-    bool parse_chunk_size_line(const std::string &line, size_t *chunk_size) const;
+     * @brief 解析 chunk-size 行（支持忽略 chunk-extension）
+     */
+    bool parse_chunk_size_line(const std::string &line,
+                               size_t *chunk_size) const;
 
-private:
-  // 当前状态机阶段。
-  ParseState state_ = ParseState::REQUEST_LINE;
+  private:
+    // 当前状态机阶段。
+    ParseState state_ = ParseState::REQUEST_LINE;
 
-  // 当前请求对象，解析过程中逐步填充字段。
-  HttpRequest::ptr request_;
+    // 当前请求对象，解析过程中逐步填充字段。
+    HttpRequest::ptr request_;
 
-  // 最近一次错误的文字描述，便于日志和 400 响应输出。
-  std::string error_;
+    // 最近一次错误的文字描述，便于日志和 400 响应输出。
+    std::string error_;
 
-  // 从 Content-Length 读取出的 Body 长度。
-  size_t content_length_ = 0;
+    // 从 Content-Length 读取出的 Body 长度。
+    size_t content_length_ = 0;
 
-  enum class ChunkParseState {
-    SIZE_LINE,
-    DATA,
-    DATA_CRLF,
-    TRAILERS,
-  };
+    enum class ChunkParseState {
+        SIZE_LINE,
+        DATA,
+        DATA_CRLF,
+        TRAILERS,
+    };
 
-  // 当前请求是否为 chunked 编码。
-  bool chunked_body_ = false;
+    // 当前请求是否为 chunked 编码。
+    bool chunked_body_ = false;
 
-  // chunked 解析阶段。
-  ChunkParseState chunk_state_ = ChunkParseState::SIZE_LINE;
+    // chunked 解析阶段。
+    ChunkParseState chunk_state_ = ChunkParseState::SIZE_LINE;
 
-  // 分块拼装中的请求体缓存。
-  std::string chunked_body_buffer_;
+    // 分块拼装中的请求体缓存。
+    std::string chunked_body_buffer_;
 };
 
 } // namespace zhttp

@@ -16,24 +16,24 @@ using ThreadId = std::thread::id;
  * 包含一条日志记录的所有信息
  */
 struct LogMessage {
-  time_t curtime_;         // 日志输出时间
-  LogLevel::value level_;  // 日志等级
-  const char *file_;       // 源码文件名称
-  size_t line_;            // 源码行号
-  ThreadId tid_;           // 线程ID
-  const char *payload_;    // 日志主体消息
-  const char *logger_name_; // 日志器名称
+    time_t curtime_;          // 日志输出时间
+    LogLevel::value level_;   // 日志等级
+    const char *file_;        // 源码文件名称
+    size_t line_;             // 源码行号
+    ThreadId tid_;            // 线程ID
+    const char *payload_;     // 日志主体消息
+    const char *logger_name_; // 日志器名称
 
-  /**
-   * @brief 构造函数
-   * @param level 日志等级
-   * @param file 源码文件名
-   * @param line 源码行号
-   * @param payload 日志内容
-   * @param logger_name 日志器名称
-   */
-  LogMessage(LogLevel::value level, const char *file, size_t line,
-             const char *payload, const char *logger_name);
+    /**
+     * @brief 构造函数
+     * @param level 日志等级
+     * @param file 源码文件名
+     * @param line 源码行号
+     * @param payload 日志内容
+     * @param logger_name 日志器名称
+     */
+    LogMessage(LogLevel::value level, const char *file, size_t line,
+               const char *payload, const char *logger_name);
 };
 } // namespace zlog
 
