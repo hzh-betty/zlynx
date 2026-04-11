@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
-#include "zhttp/router.h"
 #include "zhttp/mid/session_middleware.h"
+#include "zhttp/router.h"
 #include "zhttp/session.h"
 
 using namespace zhttp;

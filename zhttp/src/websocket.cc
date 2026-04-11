@@ -2,12 +2,12 @@
 
 #include "zhttp/http_common.h"
 
-#include <openssl/evp.h>
-#include <openssl/sha.h>
-
 #include <cctype>
 #include <sstream>
 #include <utility>
+
+#include <openssl/evp.h>
+#include <openssl/sha.h>
 
 namespace zhttp {
 namespace {

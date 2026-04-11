@@ -2,6 +2,7 @@
 #include "zhttp/zhttp_logger.h"
 
 #include <stdexcept>
+
 #include <toml.hpp>
 
 namespace zhttp {

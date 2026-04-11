@@ -37,9 +37,17 @@ class Closure {
 
 namespace detail {
 
+/**
+ * @brief 判断类型是否为任务。
+ * @tparam F 待判断的类型。
+ */
 template <typename F>
 struct is_task : std::is_same<typename std::decay<F>::type, Task> {};
 
+/**
+ * @brief 判断类型是否为 Closure*。
+ * @tparam F 待判断的类型。
+ */
 template <typename F> struct is_closure_pointer {
     using Decayed = typename std::decay<F>::type;
     static constexpr bool value =
@@ -48,11 +56,14 @@ template <typename F> struct is_closure_pointer {
                         typename std::remove_pointer<Decayed>::type>::value;
 };
 
+// SFINAE 辅助类型，用于启用 go() 的泛型版本，仅当 F 既不是 Task 也不是 Closure*
+// 时生效。
 template <typename F>
 using enable_generic_go =
     typename std::enable_if<!is_task<F>::value && !is_closure_pointer<F>::value,
                             int>::type;
 
+// 统一调用可调用对象的接口，支持普通函数对象和指针类型（如成员函数指针）。
 template <
     typename F, typename P,
     typename std::enable_if<
@@ -61,6 +72,7 @@ inline auto invoke_unary(F &fn, P &param) -> decltype(fn(param), void()) {
     fn(param);
 }
 
+// 处理指针类型的可调用对象，如成员函数指针，先解引用再调用。
 template <
     typename F, typename P,
     typename std::enable_if<

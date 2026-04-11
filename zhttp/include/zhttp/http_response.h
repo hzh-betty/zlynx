@@ -1,8 +1,8 @@
 #ifndef ZHTTP_HTTP_RESPONSE_H_
 #define ZHTTP_HTTP_RESPONSE_H_
 
-#include "http_common.h"
-#include "websocket.h"
+#include "zhttp/http_common.h"
+#include "zhttp/websocket.h"
 
 #include <functional>
 #include <memory>

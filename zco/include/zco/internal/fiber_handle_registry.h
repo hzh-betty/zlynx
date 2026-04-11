@@ -19,14 +19,37 @@ class FiberHandleRegistry : public NonCopyable {
   public:
     FiberHandleRegistry();
 
+    /**
+     * @brief 清空注册表
+     */
     void clear();
 
+    /**
+     * @brief 注册 Fiber，返回唯一 handle_id
+     * @param fiber 待注册的 Fiber 对象
+     * @return 成功返回非零 handle_id，失败返回 0
+     */
     uint64_t register_fiber(const Fiber::ptr &fiber, uint64_t handle_id);
 
+    /**
+     * @brief 注销 Fiber，释放 handle_id
+     * @param fiber 待注销的 Fiber 对象
+     * @return 成功返回对应的 handle_id，失败返回 0
+     */
     uint64_t unregister_fiber(Fiber *fiber);
 
+    /**
+     * @brief 根据 handle_id 查找 Fiber
+     * @param handle_id 待查找的 handle_id
+     * @return 成功返回对应的 Fiber 对象，失败返回 nullptr
+     */
     Fiber::ptr find_by_handle(uint64_t handle_id) const;
 
+    /**
+     * @brief 根据 Fiber 查找 handle_id
+     * @param fiber 待查找的 Fiber 对象
+     * @return 成功返回对应的 handle_id，失败返回 0
+     */
     bool try_get_handle_id(const Fiber *fiber, uint64_t *handle_id) const;
 
   private:

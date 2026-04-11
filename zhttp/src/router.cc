@@ -175,7 +175,8 @@ void Router::use(const std::string &path, mid::Middleware::ptr middleware) {
     }
 }
 
-void Router::use_group(const std::string &prefix, mid::Middleware::ptr middleware) {
+void Router::use_group(const std::string &prefix,
+                       mid::Middleware::ptr middleware) {
     if (!middleware) {
         return;
     }

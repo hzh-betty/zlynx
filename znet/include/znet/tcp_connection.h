@@ -1,10 +1,7 @@
 #ifndef ZNET_TCP_CONNECTION_H_
 #define ZNET_TCP_CONNECTION_H_
 
-#include "buffer.h"
-#include "internal/noncopyable.h"
-#include "socket.h"
-#include "zco/wait_group.h"
+#include <sys/types.h>
 
 #include <atomic>
 #include <cstddef>
@@ -15,8 +12,14 @@
 #include <memory>
 #include <mutex>
 #include <string>
-#include <sys/types.h>
+
 #include <thread>
+
+#include "znet/buffer.h"
+#include "znet/internal/noncopyable.h"
+#include "znet/socket.h"
+
+#include "zco/wait_group.h"
 
 namespace zco {
 class Scheduler;

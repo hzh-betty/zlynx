@@ -1,10 +1,10 @@
 #include "zhttp/http_server_builder.h"
-#include "zhttp/mid/request_body_middleware.h"
 #include "zhttp/daemon.h"
+#include "zhttp/mid/request_body_middleware.h"
 #include "zhttp/zhttp_logger.h"
 
-#include "zco/zco_log.h"
 #include "zco/sched.h"
+#include "zco/zco_log.h"
 #include "znet/address.h"
 #include "znet/znet_logger.h"
 
@@ -139,8 +139,8 @@ static void configure_unified_logging(const ServerConfig &config) {
     global.sink = parse_sink_name(config.log_sink);
     global.file_path = config.log_file;
 
-    const UnifiedLoggerOptions zco_options = apply_module_override(
-        global, config.zco_log, "./logfile/zco.log");
+    const UnifiedLoggerOptions zco_options =
+        apply_module_override(global, config.zco_log, "./logfile/zco.log");
     const UnifiedLoggerOptions znet_options =
         apply_module_override(global, config.znet_log, "./logfile/znet.log");
     const UnifiedLoggerOptions zhttp_options =

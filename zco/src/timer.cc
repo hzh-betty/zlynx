@@ -24,8 +24,8 @@ TimerQueue::add_timer(uint32_t milliseconds, std::function<void()> callback) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
         timers_.push(TimerEntry{deadline_ms, seq, token, std::move(callback)});
-        ZCO_LOG_DEBUG("timer queued, delay_ms={}, queue_size={}",
-                             milliseconds, timers_.size());
+        ZCO_LOG_DEBUG("timer queued, delay_ms={}, queue_size={}", milliseconds,
+                      timers_.size());
     }
 
     return token;
@@ -53,8 +53,7 @@ void TimerQueue::process_due() {
         }
 
         if (entry.callback) {
-            ZCO_LOG_DEBUG("timer fired, deadline_ms={}",
-                                 entry.deadline_ms);
+            ZCO_LOG_DEBUG("timer fired, deadline_ms={}", entry.deadline_ms);
             entry.callback();
         }
     }

@@ -1,10 +1,9 @@
 #include "zhttp/mid/auth_middleware.h"
 
+#include <unordered_set>
+
 #include "zhttp/http_common.h"
 #include "zhttp/session.h"
-
-#include <algorithm>
-#include <unordered_set>
 
 namespace zhttp {
 namespace mid {

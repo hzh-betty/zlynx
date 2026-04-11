@@ -1,10 +1,11 @@
 #ifndef ZHTTP_DAEMON_H_
 #define ZHTTP_DAEMON_H_
 
+#include <sys/types.h>
+
 #include <cstdint>
 #include <functional>
 #include <string>
-#include <sys/types.h>
 
 namespace zhttp {
 

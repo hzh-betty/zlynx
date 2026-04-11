@@ -235,18 +235,22 @@ class Fiber : public std::enable_shared_from_this<Fiber>, public NonCopyable {
     Processor *owner_;
     Task task_;
     size_t stack_slot_;
-    bool use_shared_stack_;
+
     char *independent_stack_buffer_;
     size_t independent_stack_size_;
+
     Context context_;
+
+    bool use_shared_stack_;
     char *saved_stack_buffer_;
     size_t saved_stack_size_;
     size_t saved_stack_capacity_;
     uint8_t saved_stack_bucket_;
+
     bool context_initialized_;
     std::atomic<State> state_;
     std::atomic<bool> timed_out_;
-    std::atomic<uint64_t> external_handle_id_;
+    std::atomic<uint64_t> external_handle_id_; // 外部句柄 id，0 表示未注册
 };
 
 } // namespace zco

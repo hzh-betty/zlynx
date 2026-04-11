@@ -5,11 +5,11 @@
 #include "zco/event.h"
 #include "zco/hook.h"
 #include "zco/io_event.h"
-#include "zco/zco_log.h"
 #include "zco/mutex.h"
 #include "zco/pool.h"
 #include "zco/sched.h"
 #include "zco/wait_group.h"
+#include "zco/zco_log.h"
 
 namespace zco {
 

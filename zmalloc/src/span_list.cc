@@ -3,10 +3,11 @@
  * @brief SpanList 成员函数实现
  */
 
+#include "zmalloc/internal/span_list.h"
+
 #include <cassert>
 
 #include "zmalloc/internal/object_pool.h"
-#include "zmalloc/internal/span_list.h"
 
 namespace zmalloc {
 

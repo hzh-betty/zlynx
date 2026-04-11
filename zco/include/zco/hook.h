@@ -1,11 +1,12 @@
 #ifndef ZCO_HOOK_H_
 #define ZCO_HOOK_H_
 
-#include <cstddef>
-#include <cstdint>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/uio.h>
+
+#include <cstddef>
+#include <cstdint>
 
 #include "zco/sched.h"
 

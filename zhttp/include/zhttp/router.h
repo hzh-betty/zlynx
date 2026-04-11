@@ -1,11 +1,11 @@
 #ifndef ZHTTP_ROUTER_H_
 #define ZHTTP_ROUTER_H_
 
-#include "http_request.h"
-#include "http_response.h"
+#include "zhttp/http_request.h"
+#include "zhttp/http_response.h"
+#include "zhttp/internal/radix_tree.h"
 #include "zhttp/mid/middleware.h"
-#include "internal/radix_tree.h"
-#include "route_handler.h"
+#include "zhttp/route_handler.h"
 
 #include <exception>
 #include <functional>

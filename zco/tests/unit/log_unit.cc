@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
 
-#include "zlog/logger.h"
 #include "support/test_fixture.h"
 #include "zco/zco_log.h"
+#include "zlog/logger.h"
 
 namespace zco {
 namespace {

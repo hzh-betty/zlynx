@@ -58,7 +58,7 @@ void Processor::start() {
     running_.store(true, std::memory_order_release);
     worker_ = std::thread(&Processor::run_loop, this);
     ZCO_LOG_INFO("processor started, sched_id={}, stack_size={}", id_,
-                        stack_size_);
+                 stack_size_);
 }
 
 void Processor::stop() {
@@ -76,7 +76,7 @@ void Processor::join() {
 void Processor::enqueue_task(Task task) {
     steal_queue_.push(std::move(task));
     ZCO_LOG_DEBUG("task enqueued, sched_id={}, pending_tasks={}", id_,
-                         steal_queue_.size());
+                  steal_queue_.size());
     wake_loop();
 }
 
@@ -89,8 +89,8 @@ void Processor::enqueue_ready(Fiber::ptr fiber) {
         std::lock_guard<std::mutex> lock(run_queue_mutex_);
         run_queue_.push_back(std::move(fiber));
         ready_size_.fetch_add(1, std::memory_order_relaxed);
-        ZCO_LOG_DEBUG("fiber ready enqueued, sched_id={}, ready_size={}",
-                             id_, run_queue_.size());
+        ZCO_LOG_DEBUG("fiber ready enqueued, sched_id={}, ready_size={}", id_,
+                      run_queue_.size());
     }
 
     wake_loop();
@@ -188,23 +188,21 @@ std::shared_ptr<TimerToken>
 Processor::add_timer(uint32_t milliseconds, std::function<void()> callback) {
     std::shared_ptr<TimerToken> token =
         timer_queue_.add_timer(milliseconds, std::move(callback));
-    ZCO_LOG_DEBUG("timer added, sched_id={}, delay_ms={}", id_,
-                         milliseconds);
+    ZCO_LOG_DEBUG("timer added, sched_id={}, delay_ms={}", id_, milliseconds);
     wake_loop();
     return token;
 }
 
 bool Processor::wait_fd(int fd, uint32_t events, uint32_t milliseconds) {
     if (!current_fiber_) {
-        ZCO_LOG_WARN(
-            "wait_fd called without current fiber, sched_id={}, fd={}", id_,
-            fd);
+        ZCO_LOG_WARN("wait_fd called without current fiber, sched_id={}, fd={}",
+                     id_, fd);
         return false;
     }
 
     ZCO_LOG_DEBUG("wait_fd start, sched_id={}, fiber_id={}, fd={}, "
-                         "events={}, timeout_ms={}",
-                         id_, current_fiber_->id(), fd, events, milliseconds);
+                  "events={}, timeout_ms={}",
+                  id_, current_fiber_->id(), fd, events, milliseconds);
 
     std::shared_ptr<IoWaiter> waiter = std::make_shared<IoWaiter>();
     waiter->fd = fd;
@@ -411,9 +409,8 @@ void Processor::steal_tasks_when_idle() {
         return;
     }
 
-    ZCO_LOG_DEBUG(
-        "tasks stolen by scheduler, thief_sched_id={}, stolen={}", id_,
-        stolen_batch.size());
+    ZCO_LOG_DEBUG("tasks stolen by scheduler, thief_sched_id={}, stolen={}",
+                  id_, stolen_batch.size());
     enqueue_stolen_tasks(&stolen_batch);
 }
 
@@ -453,9 +450,8 @@ void Processor::drain_new_tasks() {
         Task task = std::move(pending.front());
         pending.pop_front();
         Fiber::ptr fiber = obtain_fiber(std::move(task));
-        ZCO_LOG_DEBUG(
-            "task materialized to fiber, sched_id={}, fiber_id={}", id_,
-            fiber->id());
+        ZCO_LOG_DEBUG("task materialized to fiber, sched_id={}, fiber_id={}",
+                      id_, fiber->id());
         ready_batch.push_back(std::move(fiber));
     }
 
@@ -515,8 +511,8 @@ bool Processor::recycle_if_done_before_run(const Fiber::ptr &fiber) {
         return false;
     }
 
-    ZCO_LOG_DEBUG("skip done fiber before run, sched_id={}, fiber_id={}",
-                         id_, fiber->id());
+    ZCO_LOG_DEBUG("skip done fiber before run, sched_id={}, fiber_id={}", id_,
+                  fiber->id());
     Runtime::instance().unregister_fiber(fiber.get());
     recycle_fiber(fiber);
     return true;
@@ -534,7 +530,7 @@ Fiber::ptr Processor::switch_to_fiber(Fiber::ptr fiber) {
     current_fiber_->mark_running();
     Context *fiber_context = current_fiber_->context();
     ZCO_LOG_DEBUG("switch to fiber, sched_id={}, fiber_id={}", id_,
-                         current_fiber_->id());
+                  current_fiber_->id());
     Context::swap_context(&scheduler_context_, fiber_context);
 
     Fiber::ptr resumed = current_fiber_;
@@ -565,9 +561,8 @@ void Processor::dispatch_resumed_fiber(Fiber::ptr fiber, Fiber::State state) {
         return;
     }
 
-    ZCO_LOG_DEBUG(
-        "fiber completed and unregistered, sched_id={}, fiber_id={}", id_,
-        fiber->id());
+    ZCO_LOG_DEBUG("fiber completed and unregistered, sched_id={}, fiber_id={}",
+                  id_, fiber->id());
     Runtime::instance().unregister_fiber(fiber.get());
     recycle_fiber(fiber);
 }
@@ -596,8 +591,8 @@ void Processor::handle_io_ready(const std::shared_ptr<IoWaiter> &waiter,
 
     if (Fiber::ptr fiber = waiter->fiber.lock()) {
         ZCO_LOG_DEBUG("io ready resume fiber, sched_id={}, fd={}, "
-                             "fiber_id={}, ready_events={}",
-                             id_, waiter->fd, fiber->id(), ready_events);
+                      "fiber_id={}, ready_events={}",
+                      id_, waiter->fd, fiber->id(), ready_events);
         resume_fiber(fiber, false);
     }
 }
@@ -619,15 +614,14 @@ void Processor::save_fiber_stack(const Fiber::ptr &fiber) {
     const uintptr_t stack_sp =
         reinterpret_cast<uintptr_t>(fiber->context()->get_stack_pointer());
     if (stack_sp == 0) {
-        ZCO_LOG_WARN(
-            "shared stack save skipped, unsupported architecture");
+        ZCO_LOG_WARN("shared stack save skipped, unsupported architecture");
         return;
     }
 
     if (stack_sp < stack_bottom || stack_sp > stack_top) {
         ZCO_LOG_WARN("shared stack save failed, sp out of range, "
-                            "sched_id={}, fiber_id={}, sp={}",
-                            id_, fiber->id(), stack_sp);
+                     "sched_id={}, fiber_id={}, sp={}",
+                     id_, fiber->id(), stack_sp);
         return;
     }
 
@@ -642,9 +636,8 @@ void Processor::save_fiber_stack(const Fiber::ptr &fiber) {
 
     const size_t used = stack_top - save_begin;
     fiber->save_stack_data(reinterpret_cast<const char *>(save_begin), used);
-    ZCO_LOG_DEBUG(
-        "shared stack saved, sched_id={}, fiber_id={}, used_bytes={}", id_,
-        fiber->id(), used);
+    ZCO_LOG_DEBUG("shared stack saved, sched_id={}, fiber_id={}, used_bytes={}",
+                  id_, fiber->id(), used);
 }
 
 void Processor::restore_fiber_stack(const Fiber::ptr &fiber) {
@@ -662,8 +655,8 @@ void Processor::restore_fiber_stack(const Fiber::ptr &fiber) {
     const size_t used = fiber->saved_stack_size();
     if (used > stack_size) {
         ZCO_LOG_WARN("shared stack restore failed, snapshot too large, "
-                            "sched_id={}, fiber_id={}, used={}, stack={}",
-                            id_, fiber->id(), used, stack_size);
+                     "sched_id={}, fiber_id={}, used={}, stack={}",
+                     id_, fiber->id(), used, stack_size);
         return;
     }
 

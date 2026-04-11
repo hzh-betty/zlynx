@@ -1,12 +1,15 @@
 #ifndef ZNET_SOCKET_H_
 #define ZNET_SOCKET_H_
 
-#include "address.h"
-#include "internal/noncopyable.h"
-#include "zco/hook.h"
+#include <sys/socket.h>
+
 #include <cstdint>
 #include <memory>
-#include <sys/socket.h>
+
+#include "znet/address.h"
+#include "znet/internal/noncopyable.h"
+
+#include "zco/hook.h"
 
 namespace znet {
 
@@ -176,8 +179,7 @@ class Socket : public std::enable_shared_from_this<Socket>, public NonCopyable {
     template <typename T>
     bool set_option(int level, int option, const T &value) {
         return zco::co_setsockopt(sockfd_, level, option, &value,
-                                         static_cast<socklen_t>(sizeof(T))) ==
-               0;
+                                  static_cast<socklen_t>(sizeof(T))) == 0;
     }
 
     /**
@@ -185,8 +187,7 @@ class Socket : public std::enable_shared_from_this<Socket>, public NonCopyable {
      */
     template <typename T> bool get_option(int level, int option, T *value) {
         socklen_t len = sizeof(T);
-        return zco::co_getsockopt(sockfd_, level, option, value, &len) ==
-               0;
+        return zco::co_getsockopt(sockfd_, level, option, value, &len) == 0;
     }
 
     /**

@@ -8,8 +8,8 @@
 #include <thread>
 #include <utility>
 
-#include "zco/zco_log.h"
 #include "zco/sched.h"
+#include "zco/zco_log.h"
 
 namespace zco {
 
@@ -72,8 +72,7 @@ bool Runtime::set_stack_size(size_t stack_size) {
 
     std::lock_guard<std::mutex> lock(stack_config_mutex_);
     if (started_.load(std::memory_order_acquire)) {
-        ZCO_LOG_WARN(
-            "co_stack_size must be called before runtime start");
+        ZCO_LOG_WARN("co_stack_size must be called before runtime start");
         return false;
     }
     stack_size_ = stack_size;
@@ -83,8 +82,7 @@ bool Runtime::set_stack_size(size_t stack_size) {
 bool Runtime::set_stack_model(StackModel stack_model) {
     std::lock_guard<std::mutex> lock(stack_config_mutex_);
     if (started_.load(std::memory_order_acquire)) {
-        ZCO_LOG_WARN(
-            "co_stack_model must be called before runtime start");
+        ZCO_LOG_WARN("co_stack_model must be called before runtime start");
         return false;
     }
     stack_model_ = stack_model;
@@ -173,8 +171,7 @@ void Runtime::init(uint32_t scheduler_count) {
     for (size_t i = 0; i < processors_.size(); ++i) {
         processors_[i]->start();
     }
-    ZCO_LOG_INFO("runtime initialized, scheduler_count={}",
-                        processors_.size());
+    ZCO_LOG_INFO("runtime initialized, scheduler_count={}", processors_.size());
 }
 
 void Runtime::shutdown() {
@@ -239,9 +236,8 @@ void Runtime::submit_to(size_t scheduler_index, Task task) {
 
     const size_t index = scheduler_index % processors_.size();
     // 显式投递仍需取模，防止越界访问。
-    ZCO_LOG_DEBUG(
-        "runtime submit_to task, requested_sched_id={}, sched_id={}",
-        scheduler_index, index);
+    ZCO_LOG_DEBUG("runtime submit_to task, requested_sched_id={}, sched_id={}",
+                  scheduler_index, index);
     processors_[index]->enqueue_task(std::move(task));
 }
 
@@ -354,8 +350,8 @@ void Runtime::register_fiber(const Fiber::ptr &fiber) {
         return;
     }
 
-    ZCO_LOG_DEBUG("fiber registered, fiber_id={}, handle_id={}",
-                         fiber->id(), registered_handle_id);
+    ZCO_LOG_DEBUG("fiber registered, fiber_id={}, handle_id={}", fiber->id(),
+                  registered_handle_id);
 }
 
 void Runtime::unregister_fiber(Fiber *fiber) {
@@ -368,8 +364,8 @@ void Runtime::unregister_fiber(Fiber *fiber) {
         return;
     }
 
-    ZCO_LOG_DEBUG("fiber unregistered, fiber_id={}, handle_id={}",
-                         fiber->id(), handle_id);
+    ZCO_LOG_DEBUG("fiber unregistered, fiber_id={}, handle_id={}", fiber->id(),
+                  handle_id);
 }
 
 void *Runtime::external_handle(const Fiber::ptr &fiber) {
@@ -461,10 +457,9 @@ bool wait_fd(int fd, uint32_t events, uint32_t milliseconds) {
     if (!processor || !processor->current_fiber()) {
         const int saved_errno = EPERM;
         errno = saved_errno;
-        ZCO_LOG_FATAL(
-            "wait_fd must be called in coroutine context, fd={}, "
-            "events={}, timeout_ms={}",
-            fd, events, milliseconds);
+        ZCO_LOG_FATAL("wait_fd must be called in coroutine context, fd={}, "
+                      "events={}, timeout_ms={}",
+                      fd, events, milliseconds);
         errno = saved_errno;
         return false;
     }

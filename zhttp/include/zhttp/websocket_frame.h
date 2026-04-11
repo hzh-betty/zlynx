@@ -1,12 +1,12 @@
 #ifndef ZHTTP_WEBSOCKET_FRAME_H_
 #define ZHTTP_WEBSOCKET_FRAME_H_
 
-#include "znet/buffer.h"
-
 #include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
+
+#include "znet/buffer.h"
 
 namespace zhttp {
 

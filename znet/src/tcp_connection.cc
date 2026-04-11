@@ -8,6 +8,7 @@
 
 #include "zco/io_event.h"
 #include "zco/sched.h"
+
 #include "znet/tls_context.h"
 #include "znet/znet_logger.h"
 
@@ -43,6 +44,7 @@ TcpConnection::TcpConnection(Socket::ptr socket,
     if (actor_scheduler_) {
         actor_sched_id_ = actor_scheduler_->id();
     } else {
+        // 未显式指定时自动选择调度器，优先 next_sched，兜底 main_sched。
         actor_scheduler_ = zco::next_sched();
         if (!actor_scheduler_) {
             actor_scheduler_ = zco::main_sched();
@@ -96,13 +98,11 @@ void TcpConnection::set_state(State state) {
     }
 }
 
-// 事件调度逻辑：
-// 1. 事件通过 dispatch_event_and_wait
-// 投递到连接内部，等待处理完成。事件类型包括读、写、关闭等。
-// 2. 连接内部维护一个 Actor
-// 邮箱，串行处理事件，避免并发访问冲突。处理完成后通过条件变量通知等待的调用方。
-// 3.
-// 事件处理函数根据事件类型执行对应的读写/关闭逻辑，更新连接状态，并设置事件结果和错误码。
+// 连接内部采用 Actor 模型串行化所有读写/关闭事件：
+// 1) 外部线程/协程通过 dispatch_event_and_wait 投递 Event。
+// 2) 事件进入 mailbox_，由单个执行者 drain_mailbox() 依次处理。
+// 3) 处理结果写回 Event(result/error)，唤醒等待方。
+// 该模型的核心目标是：避免同一连接上并发读写导致状态竞争。
 ssize_t
 TcpConnection::dispatch_event_and_wait(const std::shared_ptr<Event> &event) {
     if (!event) {
@@ -110,19 +110,15 @@ TcpConnection::dispatch_event_and_wait(const std::shared_ptr<Event> &event) {
         return -1;
     }
 
-    // 当actor线程首次开启启动时，分发协程来处理事件，
-    // 后续事件由actor线程自己处理，无需每次分发都启动新协程。
+    // actor 尚未运行时，需要决定谁来启动 drain_mailbox。
     bool should_launch_worker = false;
 
-    // 当前是协程上下文且调度器匹配时，直接在当前协程处理事件，避免不必要的协程切换和调度延迟。
-    // 一般是外部使用协程调用 TcpConnection 的公共接口（如
-    // send）时，事件会直接在当前协程处理。
-    // 以次避免在协程上下文中再创建协程处理事件导致的性能损耗和复杂度增加。
+    // 当前就在目标协程调度器上时，可直接 inline 处理，
+    // 避免“再派发一个协程”带来的额外调度开销。
     bool run_inline = false;
 
-    // 是否是 Actor 内部调用（事件处理函数内部再次调用
-    // dispatch_event_and_wait）， 比如 flush 内部调用
-    // send，此时直接处理事件避免死锁。
+    // 重入场景：若当前已在 actor 执行线程内，再次 dispatch 时必须直接执行，
+    // 否则会出现“自己等待自己”的死锁。
     bool reentrant = false;
     {
         std::unique_lock<std::mutex> lock(actor_mutex_);
@@ -202,6 +198,7 @@ void TcpConnection::drain_mailbox() {
         {
             std::unique_lock<std::mutex> lock(actor_mutex_);
             if (mailbox_.empty()) {
+                // 邮箱耗尽后释放 actor_running_，下一个事件可重新拉起 worker。
                 actor_running_ = false;
                 actor_thread_id_ = std::thread::id();
                 return;
@@ -261,6 +258,8 @@ ssize_t TcpConnection::read_internal(size_t max_read_bytes,
     }
 
     if (tls_channel_) {
+        // TLS 已启用时改走 TLS 读路径，由 TLS 层处理解密与
+        // WANT_READ/WANT_WRITE。
         return read_tls_internal(max_read_bytes, timeout_ms);
     }
 
@@ -317,9 +316,9 @@ bool TcpConnection::enable_tls_server(
 }
 
 bool TcpConnection::wait_tls_io(bool wait_for_write, uint32_t timeout_ms) {
-    zco::IoEvent io_event(fd(), wait_for_write
-                                           ? zco::IoEventType::kWrite
-                                           : zco::IoEventType::kRead);
+    // 把 TLS 层“等可读/可写”请求桥接到 zco IoEvent。
+    zco::IoEvent io_event(fd(), wait_for_write ? zco::IoEventType::kWrite
+                                               : zco::IoEventType::kRead);
     const uint32_t wait_timeout_ms =
         timeout_ms == 0 ? zco::kInfiniteTimeoutMs : timeout_ms;
     if (!io_event.wait(wait_timeout_ms)) {
@@ -340,6 +339,8 @@ ssize_t TcpConnection::read_tls_internal(size_t max_read_bytes,
 
     const size_t max_chunk = std::min(
         max_read_bytes, static_cast<size_t>(std::numeric_limits<int>::max()));
+    // TLS 读取落到临时缓冲，再 append 到输入缓冲，保持与非 TLS
+    // 路径一致的消费模型。
     std::vector<char> read_buffer(max_chunk);
 
     const ssize_t n = tls_channel_->read(
@@ -373,6 +374,7 @@ ssize_t TcpConnection::flush_output_internal(uint32_t timeout_ms) {
 
     ssize_t sent_total = 0;
     if (tls_channel_) {
+        // TLS 路径按 output_buffer_ 内容循环写，直到写空或遇到阻塞/错误。
         while (output_buffer_.readable_bytes() > 0) {
             const char *data = output_buffer_.peek();
             const size_t bytes = output_buffer_.readable_bytes();
@@ -417,6 +419,7 @@ ssize_t TcpConnection::flush_output_internal(uint32_t timeout_ms) {
         }
 
         if (saved_errno == EAGAIN || saved_errno == EWOULDBLOCK) {
+            // 非阻塞写暂时不可写，保留剩余数据供后续 flush。
             break;
         }
 
@@ -489,6 +492,7 @@ ssize_t TcpConnection::send_internal(const char *data, size_t length,
 
     const size_t old_pending = pending_write_bytes();
     const size_t projected_pending = old_pending + length;
+    // 高水位回调只在“首次跨线”时触发，避免每次 send 都重复告警。
     if (high_water_mark_callback_ && old_pending < high_water_mark_ &&
         projected_pending >= high_water_mark_) {
         high_water_mark_callback_(shared_from_this(), projected_pending);
@@ -496,6 +500,7 @@ ssize_t TcpConnection::send_internal(const char *data, size_t length,
 
     size_t buffered_offset = 0;
     if (!tls_channel_ && old_pending == 0) {
+        // 非 TLS 且发送队列为空时，尝试一次直写减少内存拷贝。
         const ssize_t direct_sent = socket_->send(data, length, 0, timeout_ms);
         if (direct_sent == static_cast<ssize_t>(length)) {
             if (write_complete_callback_) {
@@ -542,6 +547,7 @@ void TcpConnection::shutdown_internal() {
         set_state(State::kDisconnecting);
     }
 
+    // 半关闭语义：先尽力刷出发送缓冲，再做 TLS shutdown，最后关闭底层 socket。
     (void)flush_output_internal(0);
     shutdown_tls_internal();
     close_internal();
@@ -564,6 +570,7 @@ void TcpConnection::close_internal() {
 
 ssize_t TcpConnection::read(size_t max_read_bytes, uint32_t timeout_ms) {
     if (try_begin_inline_actor()) {
+        // inline 模式下调用者自己暂时承担 actor，结束后必须 drain 剩余邮箱。
         const ssize_t result = read_internal(max_read_bytes, timeout_ms);
         const int saved_errno = errno;
         finish_inline_actor();

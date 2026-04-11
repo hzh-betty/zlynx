@@ -12,8 +12,8 @@
 #include <fmt/format.h>
 
 #include "zlog/format.h"
-#include "zlog/level.h"
 #include "zlog/internal/looper.h"
+#include "zlog/level.h"
 #include "zlog/sink.h"
 
 namespace zlog {

@@ -40,6 +40,11 @@ class Poller : public NonCopyable {
     virtual bool register_waiter(const std::shared_ptr<IoWaiter> &waiter) = 0;
     virtual void unregister_waiter(const std::shared_ptr<IoWaiter> &waiter) = 0;
 
+    /**
+     * @brief 等待 I/O 事件
+     * @param timeout_ms 超时时间（毫秒）
+     * @param on_ready 事件就绪回调函数
+     */
     virtual void wait_events(
         int timeout_ms,
         const std::function<void(const std::shared_ptr<IoWaiter> &waiter,

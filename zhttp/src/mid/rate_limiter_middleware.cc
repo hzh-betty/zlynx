@@ -1,10 +1,10 @@
 #include "zhttp/mid/rate_limiter_middleware.h"
 
-#include "zhttp/http_request.h"
-
 #include <cmath>
 #include <cstdint>
 #include <deque>
+
+#include "zhttp/http_request.h"
 
 namespace zhttp {
 namespace mid {

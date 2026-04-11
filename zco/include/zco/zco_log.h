@@ -116,12 +116,12 @@ inline zlog::Logger::ptr default_logger() {
 /**
  * @brief DEBUG 级别日志宏。
  */
-#define ZCO_LOG_DEBUG(...)                                              \
+#define ZCO_LOG_DEBUG(...)                                                     \
     do {                                                                       \
-        if (::zco::should_log(::zlog::LogLevel::value::DEBUG)) {        \
-            auto *zco_logger__ = ::zco::get_logger();            \
-            if (zco_logger__) {                                         \
-                zco_logger__->debug(__FILE__, __LINE__, __VA_ARGS__);   \
+        if (::zco::should_log(::zlog::LogLevel::value::DEBUG)) {               \
+            auto *zco_logger__ = ::zco::get_logger();                          \
+            if (zco_logger__) {                                                \
+                zco_logger__->debug(__FILE__, __LINE__, __VA_ARGS__);          \
             }                                                                  \
         }                                                                      \
     } while (0)
@@ -129,12 +129,12 @@ inline zlog::Logger::ptr default_logger() {
 /**
  * @brief INFO 级别日志宏。
  */
-#define ZCO_LOG_INFO(...)                                               \
+#define ZCO_LOG_INFO(...)                                                      \
     do {                                                                       \
-        if (::zco::should_log(::zlog::LogLevel::value::INFO)) {         \
-            auto *zco_logger__ = ::zco::get_logger();            \
-            if (zco_logger__) {                                         \
-                zco_logger__->info(__FILE__, __LINE__, __VA_ARGS__);    \
+        if (::zco::should_log(::zlog::LogLevel::value::INFO)) {                \
+            auto *zco_logger__ = ::zco::get_logger();                          \
+            if (zco_logger__) {                                                \
+                zco_logger__->info(__FILE__, __LINE__, __VA_ARGS__);           \
             }                                                                  \
         }                                                                      \
     } while (0)
@@ -142,12 +142,12 @@ inline zlog::Logger::ptr default_logger() {
 /**
  * @brief WARN 级别日志宏。
  */
-#define ZCO_LOG_WARN(...)                                               \
+#define ZCO_LOG_WARN(...)                                                      \
     do {                                                                       \
-        if (::zco::should_log(::zlog::LogLevel::value::WARNING)) {      \
-            auto *zco_logger__ = ::zco::get_logger();            \
-            if (zco_logger__) {                                         \
-                zco_logger__->warning(__FILE__, __LINE__, __VA_ARGS__); \
+        if (::zco::should_log(::zlog::LogLevel::value::WARNING)) {             \
+            auto *zco_logger__ = ::zco::get_logger();                          \
+            if (zco_logger__) {                                                \
+                zco_logger__->warning(__FILE__, __LINE__, __VA_ARGS__);        \
             }                                                                  \
         }                                                                      \
     } while (0)
@@ -155,12 +155,12 @@ inline zlog::Logger::ptr default_logger() {
 /**
  * @brief ERROR 级别日志宏。
  */
-#define ZCO_LOG_ERROR(...)                                              \
+#define ZCO_LOG_ERROR(...)                                                     \
     do {                                                                       \
-        if (::zco::should_log(::zlog::LogLevel::value::ERROR)) {        \
-            auto *zco_logger__ = ::zco::get_logger();            \
-            if (zco_logger__) {                                         \
-                zco_logger__->error(__FILE__, __LINE__, __VA_ARGS__);   \
+        if (::zco::should_log(::zlog::LogLevel::value::ERROR)) {               \
+            auto *zco_logger__ = ::zco::get_logger();                          \
+            if (zco_logger__) {                                                \
+                zco_logger__->error(__FILE__, __LINE__, __VA_ARGS__);          \
             }                                                                  \
         }                                                                      \
     } while (0)
@@ -168,12 +168,12 @@ inline zlog::Logger::ptr default_logger() {
 /**
  * @brief FATAL 级别日志宏。
  */
-#define ZCO_LOG_FATAL(...)                                              \
+#define ZCO_LOG_FATAL(...)                                                     \
     do {                                                                       \
-        if (::zco::should_log(::zlog::LogLevel::value::FATAL)) {        \
-            auto *zco_logger__ = ::zco::get_logger();            \
-            if (zco_logger__) {                                         \
-                zco_logger__->fatal(__FILE__, __LINE__, __VA_ARGS__);   \
+        if (::zco::should_log(::zlog::LogLevel::value::FATAL)) {               \
+            auto *zco_logger__ = ::zco::get_logger();                          \
+            if (zco_logger__) {                                                \
+                zco_logger__->fatal(__FILE__, __LINE__, __VA_ARGS__);          \
             }                                                                  \
         }                                                                      \
     } while (0)

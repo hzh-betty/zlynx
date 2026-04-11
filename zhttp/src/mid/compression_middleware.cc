@@ -1,9 +1,8 @@
 #include "zhttp/mid/compression_middleware.h"
 
-#include "zhttp/http_common.h"
-
 #include <zlib.h>
 
+#include "zhttp/http_common.h"
 #ifdef ZHTTP_USE_BROTLI
 #include <brotli/encode.h>
 #endif

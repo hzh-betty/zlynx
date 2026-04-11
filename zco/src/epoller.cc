@@ -35,9 +35,8 @@ bool Epoller::start() {
     epoll_fd_ = epoll_create1(EPOLL_CLOEXEC);
     wake_fd_ = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
     if (epoll_fd_ < 0 || wake_fd_ < 0) {
-        ZCO_LOG_FATAL(
-            "epoller init failed, epoll_fd={}, wake_fd={}, errno={}", epoll_fd_,
-            wake_fd_, errno);
+        ZCO_LOG_FATAL("epoller init failed, epoll_fd={}, wake_fd={}, errno={}",
+                      epoll_fd_, wake_fd_, errno);
         stop();
         return false;
     }
@@ -47,15 +46,14 @@ bool Epoller::start() {
     wake_ev.events = EPOLLIN;
     wake_ev.data.fd = wake_fd_;
     if (epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, wake_fd_, &wake_ev) != 0) {
-        ZCO_LOG_FATAL(
-            "epoller register wake fd failed, wake_fd={}, errno={}", wake_fd_,
-            errno);
+        ZCO_LOG_FATAL("epoller register wake fd failed, wake_fd={}, errno={}",
+                      wake_fd_, errno);
         stop();
         return false;
     }
 
     ZCO_LOG_INFO("epoller started, epoll_fd={}, wake_fd={}", epoll_fd_,
-                        wake_fd_);
+                 wake_fd_);
     return true;
 }
 
@@ -94,8 +92,8 @@ void Epoller::wake() {
     const ssize_t rc = write(wake_fd_, &value, sizeof(value));
     if (rc < 0 && errno != EAGAIN) {
         wake_pending_.store(false, std::memory_order_release);
-        ZCO_LOG_WARN("epoller wake failed, wake_fd={}, errno={}",
-                            wake_fd_, errno);
+        ZCO_LOG_WARN("epoller wake failed, wake_fd={}, errno={}", wake_fd_,
+                     errno);
     }
 }
 
@@ -198,8 +196,8 @@ bool Epoller::update_interest_locked(int fd, FdWaitState *state) {
         if (state->registered) {
             if (epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr) != 0 &&
                 errno != ENOENT) {
-                ZCO_LOG_WARN("epoll del waiter failed, fd={}, errno={}",
-                                    fd, errno);
+                ZCO_LOG_WARN("epoll del waiter failed, fd={}, errno={}", fd,
+                             errno);
                 return false;
             }
         }
@@ -229,9 +227,8 @@ bool Epoller::update_interest_locked(int fd, FdWaitState *state) {
     }
 
     if (rc != 0) {
-        ZCO_LOG_WARN(
-            "epoll add/mod waiter failed, fd={}, events={}, errno={}", fd,
-            desired_events, errno);
+        ZCO_LOG_WARN("epoll add/mod waiter failed, fd={}, events={}, errno={}",
+                     fd, desired_events, errno);
         return false;
     }
 
@@ -308,9 +305,8 @@ void Epoller::wait_events(
     }
 
     if (event_count > 0) {
-        ZCO_LOG_DEBUG(
-            "epoll wait returned events, count={}, timeout_ms={}", event_count,
-            timeout_ms);
+        ZCO_LOG_DEBUG("epoll wait returned events, count={}, timeout_ms={}",
+                      event_count, timeout_ms);
     }
 }
 

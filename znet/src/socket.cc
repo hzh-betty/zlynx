@@ -1,6 +1,5 @@
 #include "znet/socket.h"
 
-#include <cstring>
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/tcp.h>
@@ -8,8 +7,11 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <cstring>
+
 #include "zco/hook.h"
 #include "zco/sched.h"
+
 #include "znet/znet_logger.h"
 
 namespace {
@@ -23,8 +25,7 @@ bool require_coroutine_context(const char *func_name) {
     }
 
     errno = kCoroutineRequiredErrno;
-    ZNET_LOG_ERROR("{} must be called inside zco::go context",
-                   func_name);
+    ZNET_LOG_ERROR("{} must be called inside zco::go context", func_name);
     return false;
 }
 
@@ -114,8 +115,8 @@ bool Socket::bind(const Address::ptr addr) {
         return false;
     }
 
-    if (zco::co_bind(sockfd_, addr->sockaddr_ptr(),
-                            addr->sockaddr_len()) != 0) {
+    if (zco::co_bind(sockfd_, addr->sockaddr_ptr(), addr->sockaddr_len()) !=
+        0) {
         ZNET_LOG_ERROR("Socket::bind failed: fd={}, errno={}, error={}",
                        sockfd_, errno, strerror(errno));
         return false;
@@ -163,17 +164,15 @@ Socket::ptr Socket::accept(uint64_t timeout_ms) {
 
 #if defined(SOCK_NONBLOCK) && defined(SOCK_CLOEXEC)
     // 优先 accept4 一步设置 NONBLOCK/CLOEXEC，减少额外系统调用。
-    clientfd = zco::co_accept4(
-        sockfd_, reinterpret_cast<sockaddr *>(&addr), &len,
-        SOCK_NONBLOCK | SOCK_CLOEXEC, effective_timeout_ms);
+    clientfd =
+        zco::co_accept4(sockfd_, reinterpret_cast<sockaddr *>(&addr), &len,
+                        SOCK_NONBLOCK | SOCK_CLOEXEC, effective_timeout_ms);
     if (clientfd == -1 && errno == ENOSYS) {
-        clientfd =
-            zco::co_accept(sockfd_, reinterpret_cast<sockaddr *>(&addr),
+        clientfd = zco::co_accept(sockfd_, reinterpret_cast<sockaddr *>(&addr),
                                   &len, effective_timeout_ms);
     }
 #else
-    clientfd =
-        zco::co_accept(sockfd_, reinterpret_cast<sockaddr *>(&addr),
+    clientfd = zco::co_accept(sockfd_, reinterpret_cast<sockaddr *>(&addr),
                               &len, effective_timeout_ms);
 #endif
 
@@ -212,9 +211,8 @@ bool Socket::connect(const Address::ptr addr, uint64_t timeout_ms) {
 
     remote_address_ = addr;
     const uint32_t effective_timeout_ms = normalize_timeout_ms(timeout_ms);
-    if (zco::co_connect(sockfd_, addr->sockaddr_ptr(),
-                               addr->sockaddr_len(),
-                               effective_timeout_ms) != 0) {
+    if (zco::co_connect(sockfd_, addr->sockaddr_ptr(), addr->sockaddr_len(),
+                        effective_timeout_ms) != 0) {
         ZNET_LOG_ERROR(
             "Socket::connect failed: fd={}, addr={}, errno={}, error={}",
             sockfd_, addr->to_string(), errno, strerror(errno));
@@ -286,8 +284,8 @@ ssize_t Socket::send(const void *buffer, size_t length, int flags,
     }
 
     const uint32_t effective_timeout_ms = normalize_timeout_ms(timeout_ms);
-    const ssize_t n = zco::co_send(sockfd_, buffer, length, flags,
-                                          effective_timeout_ms);
+    const ssize_t n =
+        zco::co_send(sockfd_, buffer, length, flags, effective_timeout_ms);
     return n;
 }
 
@@ -303,8 +301,8 @@ ssize_t Socket::recv(void *buffer, size_t length, int flags,
     }
 
     const uint32_t effective_timeout_ms = normalize_timeout_ms(timeout_ms);
-    const ssize_t n = zco::co_recv(sockfd_, buffer, length, flags,
-                                          effective_timeout_ms);
+    const ssize_t n =
+        zco::co_recv(sockfd_, buffer, length, flags, effective_timeout_ms);
     return n;
 }
 
@@ -321,9 +319,9 @@ ssize_t Socket::send_to(const void *buffer, size_t length,
     }
 
     const uint32_t effective_timeout_ms = normalize_timeout_ms(timeout_ms);
-    const ssize_t n = zco::co_sendto(
-        sockfd_, buffer, length, flags, to->sockaddr_ptr(), to->sockaddr_len(),
-        effective_timeout_ms);
+    const ssize_t n =
+        zco::co_sendto(sockfd_, buffer, length, flags, to->sockaddr_ptr(),
+                       to->sockaddr_len(), effective_timeout_ms);
     return n;
 }
 
@@ -341,9 +339,9 @@ ssize_t Socket::recv_from(void *buffer, size_t length, Address::ptr from,
     sockaddr_storage addr;
     socklen_t len = sizeof(addr);
     const uint32_t effective_timeout_ms = normalize_timeout_ms(timeout_ms);
-    const ssize_t ret = zco::co_recvfrom(
-        sockfd_, buffer, length, flags, reinterpret_cast<sockaddr *>(&addr),
-        &len, effective_timeout_ms);
+    const ssize_t ret = zco::co_recvfrom(sockfd_, buffer, length, flags,
+                                         reinterpret_cast<sockaddr *>(&addr),
+                                         &len, effective_timeout_ms);
     if (ret >= 0 && from) {
         // 注意：from 为值传递，此赋值不会回传到调用方。
         from = Address::create(reinterpret_cast<sockaddr *>(&addr), len);

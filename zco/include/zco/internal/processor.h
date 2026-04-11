@@ -273,22 +273,67 @@ class Processor : public NonCopyable {
      */
     void run_ready_tasks();
 
+    /**
+     * @brief 拉取就绪队列中的 Fiber。
+     * @param fibers 输出 Fiber 队列。
+     * @param max_count 最大拉取数量。
+     * @return 实际拉取数量。
+     */
     size_t drain_ready_fibers(std::deque<Fiber::ptr> *fibers, size_t max_count);
 
+    /**
+     * @brief 执行单个 Fiber。
+     * @param fiber 待执行的 Fiber。
+     * @return 无返回值。
+     */
     bool recycle_if_done_before_run(const Fiber::ptr &fiber);
 
+    /**
+     * @brief 切换到指定 Fiber 执行。
+     * @param fiber 目标 Fiber。
+     * @return 切换后当前 Fiber。
+     */
     Fiber::ptr switch_to_fiber(Fiber::ptr fiber);
 
+    /**
+     * @brief 切换后最终化处理。
+     * @param fiber Fiber 对象。
+     * @return 最终化状态。
+     */
     Fiber::State finalize_after_switch(const Fiber::ptr &fiber);
 
+    /**
+     * @brief 分发切换回来后的 Fiber，根据状态决定后续处理。
+     * @param fiber 切换回来的 Fiber。
+     * @param state 切换回来的状态。
+     * @return 无返回值。
+     */
     void dispatch_resumed_fiber(Fiber::ptr fiber, Fiber::State state);
 
+    /**
+     * @brief 检查是否有就绪或待创建任务。
+     * @param 无参数。
+     * @return true 表示有任务，false 表示无任务。
+     */
     bool has_ready_tasks() const;
 
+    /**
+     * @brief 在空闲时等待 IO 事件。
+     * @param 无参数。
+     * @return 无返回值。
+     */
     void wait_io_events_when_idle();
 
+    /**
+     * @brief 在空闲时窃取其他处理器的任务。
+     */
     void steal_tasks_when_idle();
 
+    /**
+     * @brief 更新负载评估指标。
+     * @param loop_ns 本次调度循环耗时（纳秒）。
+     * @return 无返回值。
+     */
     void update_load_metrics(uint64_t loop_ns);
 
     /**
@@ -327,12 +372,32 @@ class Processor : public NonCopyable {
      */
     void restore_fiber_stack(const Fiber::ptr &fiber);
 
+    /**
+     * @brief 获取 Fiber 对象用于执行任务。
+     * @param task 待执行的任务。
+     * @return 可用的 Fiber 对象，如果池中没有可用对象且未达到 max_size
+     * 则创建新对象，否则返回 nullptr
+     */
     Fiber::ptr obtain_fiber(Task task);
 
+    /**
+     * @brief 回收 Fiber 对象
+     * @param fiber 待回收的 Fiber 对象
+     */
     void recycle_fiber(const Fiber::ptr &fiber);
 
+    /**
+     * @brief 将窃取的任务加入待创建队列。
+     * @param tasks 待加入的任务队列。
+     * @return 无返回值。
+     */
     void enqueue_stolen_tasks(std::deque<Task> *tasks);
 
+    /**
+     * @brief 将就绪的 Fiber 批量加入就绪队列。
+     * @param fibers 待加入的 Fiber 队列。
+     * @return 无返回值。
+     */
     void enqueue_ready_batch(std::deque<Fiber::ptr> *fibers);
 
     int id_;
@@ -353,7 +418,8 @@ class Processor : public NonCopyable {
     StealQueue steal_queue_;
 
     FiberPool fiber_pool_;
-    std::atomic<size_t> next_stack_slot_;
+    std::atomic<size_t> next_stack_slot_; // 下一个共享栈槽位，循环使用，配合
+                                          // steal_probe_cursor_ 实现负载均衡
 
     SnapshotBufferPool snapshot_pool_;
 

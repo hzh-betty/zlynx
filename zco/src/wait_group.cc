@@ -21,8 +21,8 @@ void WaitGroup::add(uint32_t count) {
     // add 与 done 可并发执行，因此计数器使用 fetch_add/fetch_sub 保证原子性。
     const int64_t delta = static_cast<int64_t>(count);
     const int64_t previous = count_.fetch_add(delta, std::memory_order_acq_rel);
-    ZCO_LOG_DEBUG("wait_group add, delta={}, previous={}, current={}",
-                         delta, previous, previous + delta);
+    ZCO_LOG_DEBUG("wait_group add, delta={}, previous={}, current={}", delta,
+                  previous, previous + delta);
     if (previous == 0 && delta > 0) {
         // 从 0 变为正值时，说明需要重新进入等待态。
         // 注意：调用方应避免与 wait() 产生业务层竞态（与 Go WaitGroup
@@ -36,8 +36,7 @@ void WaitGroup::done() {
     if (previous <= 0) {
         // done 次数超过 add 累计值属于调用错误，恢复计数并抛异常。
         count_.fetch_add(1, std::memory_order_acq_rel);
-        ZCO_LOG_ERROR(
-            "wait_group done failed, counter would become negative");
+        ZCO_LOG_ERROR("wait_group done failed, counter would become negative");
         throw std::runtime_error("WaitGroup counter becomes negative");
     }
 

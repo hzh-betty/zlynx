@@ -1,15 +1,16 @@
 #ifndef ZHTTP_WEBSOCKET_H_
 #define ZHTTP_WEBSOCKET_H_
 
+#include "zhttp/http_request.h"
 #include "zhttp/websocket_frame.h"
-#include "http_request.h"
-#include "znet/tcp_connection.h"
 
 #include <atomic>
 #include <functional>
 #include <memory>
 #include <string>
 #include <vector>
+
+#include "znet/tcp_connection.h"
 
 namespace zhttp {
 

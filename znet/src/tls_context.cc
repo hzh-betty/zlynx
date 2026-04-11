@@ -16,8 +16,14 @@ namespace znet {
 
 namespace {
 
+// OpenSSL 相关实现集中在本文件：
+// - 进程级初始化（一次）。
+// - TLS 通道读写/握手的状态机封装。
+// - 服务端 TLS context 构建与证书加载。
+
 struct OpenSslInitializer {
     OpenSslInitializer() {
+        // OpenSSL 1.1+ 大多可自动初始化，这里显式调用保证行为稳定。
         OPENSSL_init_ssl(0, nullptr);
         OPENSSL_init_crypto(0, nullptr);
         SSL_load_error_strings();
@@ -27,6 +33,8 @@ struct OpenSslInitializer {
 OpenSslInitializer kOpenSslInitializer;
 
 std::string last_ssl_error_string() {
+    // OpenSSL 错误队列是线程本地的，取一次就会前移，
+    // 因此每次只拼接“最近一个”错误，避免与其他路径串台。
     const unsigned long err = ERR_get_error();
     if (err == 0) {
         return "";
@@ -55,6 +63,9 @@ class OpenSslTlsChannel : public TlsChannel {
             return false;
         }
 
+        // 握手是“需要可读/可写事件驱动的循环过程”：
+        // SSL_accept 可能多次返回 WANT_READ/WANT_WRITE，
+        // 外层需等待 fd 就绪后重试。
         while (true) {
             ERR_clear_error();
             const int ret = SSL_accept(ssl_);
@@ -68,6 +79,7 @@ class OpenSslTlsChannel : public TlsChannel {
                 if (!wait_callback ||
                     !wait_callback(ssl_error == SSL_ERROR_WANT_WRITE,
                                    timeout_ms)) {
+                    // wait_callback 失败通常是超时或外层取消。
                     if (errno == 0) {
                         errno = ETIMEDOUT;
                     }
@@ -95,6 +107,7 @@ class OpenSslTlsChannel : public TlsChannel {
         const int chunk = static_cast<int>(std::min(
             length, static_cast<size_t>(std::numeric_limits<int>::max())));
 
+        // SSL_read 参数是 int，超大请求需要截断到 int 上限。
         while (true) {
             ERR_clear_error();
             const int n = SSL_read(ssl_, buffer, chunk);
@@ -104,6 +117,7 @@ class OpenSslTlsChannel : public TlsChannel {
 
             const int ssl_error = SSL_get_error(ssl_, n);
             if (ssl_error == SSL_ERROR_ZERO_RETURN) {
+                // 对端发送 close_notify，视作 TLS 层 EOF。
                 return 0;
             }
 
@@ -121,6 +135,7 @@ class OpenSslTlsChannel : public TlsChannel {
             }
 
             if (ssl_error == SSL_ERROR_SYSCALL && errno != 0) {
+                // 系统调用层已给出 errno，直接透传更有诊断价值。
                 return -1;
             }
 
@@ -137,6 +152,8 @@ class OpenSslTlsChannel : public TlsChannel {
         }
 
         size_t sent = 0;
+        // 循环直到全部写完或遇到不可恢复错误，
+        // 保持“部分写成功”语义，便于上层决定是否重试。
         while (sent < length) {
             const size_t remaining = length - sent;
             const int chunk = static_cast<int>(
@@ -166,6 +183,7 @@ class OpenSslTlsChannel : public TlsChannel {
             }
 
             if (ssl_error == SSL_ERROR_ZERO_RETURN) {
+                // 对端已关闭写方向，后续发送不可继续。
                 errno = EPIPE;
                 return sent > 0 ? static_cast<ssize_t>(sent) : -1;
             }
@@ -187,6 +205,8 @@ class OpenSslTlsChannel : public TlsChannel {
             return;
         }
 
+        // SSL_shutdown 可能需要双向往返；返回 0 并不代表失败，
+        // 对本项目的“尽力关闭”语义，ret==0 也可直接返回。
         while (true) {
             ERR_clear_error();
             const int ret = SSL_shutdown(ssl_);
@@ -231,6 +251,7 @@ class OpenSslServerTlsContext : public TlsContext {
             return nullptr;
         }
 
+        // SSL 对象和 socket fd 绑定后，后续握手/读写都基于该 fd。
         if (SSL_set_fd(ssl, fd) != 1) {
             SSL_free(ssl);
             errno = EIO;
@@ -250,6 +271,7 @@ TlsContext::ptr create_server_tls_context_openssl(const std::string &cert_file,
                                                   const std::string &key_file,
                                                   std::string *error) {
     ERR_clear_error();
+    // TLS_server_method 支持协商，后续再通过 min proto 限制最低版本。
     SSL_CTX *raw_ctx = SSL_CTX_new(TLS_server_method());
     if (!raw_ctx) {
         if (error) {
@@ -259,6 +281,7 @@ TlsContext::ptr create_server_tls_context_openssl(const std::string &cert_file,
     }
 
     SSL_CTX_set_min_proto_version(raw_ctx, TLS1_2_VERSION);
+    // 证书和私钥加载顺序固定：先证书，再私钥，再做匹配校验。
 
     if (SSL_CTX_use_certificate_file(raw_ctx, cert_file.c_str(),
                                      SSL_FILETYPE_PEM) <= 0) {

@@ -3,6 +3,8 @@
 namespace zco {
 namespace {
 
+// 快照按固定桶大小分配，避免共享栈切换时每次都走不可预测的大块 malloc。
+// 桶越小命中越高，桶越大越容易覆盖长调用栈；超过最大桶则退化为动态分配。
 constexpr size_t kSnapshotBucketSizes[] = {
     4 * 1024,  8 * 1024,   16 * 1024,  32 * 1024,
     64 * 1024, 128 * 1024, 256 * 1024, 512 * 1024,
@@ -36,6 +38,7 @@ char *SnapshotBufferPool::acquire(size_t required_size, size_t *capacity,
 
     const uint8_t picked_bucket = pick_bucket(required_size);
     if (picked_bucket == kDynamicBucket) {
+        // 超出最大桶时不再强行截断，直接按需分配，保证快照完整。
         char *buffer = new char[required_size];
         if (capacity) {
             *capacity = required_size;
@@ -52,6 +55,7 @@ char *SnapshotBufferPool::acquire(size_t required_size, size_t *capacity,
         std::lock_guard<std::mutex> lock(mutex_);
         std::deque<char *> &pool = pools_[picked_bucket];
         if (!pool.empty()) {
+            // 复用已有缓冲区，减少高频保存/恢复栈快照时的分配开销。
             buffer = pool.back();
             pool.pop_back();
         }
@@ -77,12 +81,14 @@ void SnapshotBufferPool::release(char *buffer, uint8_t bucket_index,
     }
 
     if (bucket_index == kDynamicBucket) {
+        // 动态分配的快照不进入池，避免容量多样化导致池内碎片积累。
         delete[] buffer;
         return;
     }
 
     const size_t expected = bucket_size(bucket_index);
     if (expected == 0 || expected != capacity) {
+        // 只有精确匹配的桶缓冲才允许回收，防止错误尺寸污染池子。
         delete[] buffer;
         return;
     }
@@ -90,6 +96,7 @@ void SnapshotBufferPool::release(char *buffer, uint8_t bucket_index,
     std::lock_guard<std::mutex> lock(mutex_);
     std::deque<char *> &pool = pools_[bucket_index];
     if (pool.size() >= kPerBucketLimit) {
+        // 每桶设置上限，避免少量超大栈快照长期占住内存。
         delete[] buffer;
         return;
     }
@@ -100,6 +107,7 @@ void SnapshotBufferPool::release(char *buffer, uint8_t bucket_index,
 uint8_t SnapshotBufferPool::pick_bucket(size_t required_size) {
     for (uint8_t i = 0; i < kBucketCount; ++i) {
         if (required_size <= kSnapshotBucketSizes[i]) {
+            // 选择“刚好够用”的最小桶，兼顾内存占用与复用率。
             return i;
         }
     }

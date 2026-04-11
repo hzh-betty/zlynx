@@ -11,7 +11,6 @@
 
 namespace zmalloc {
 
-// C++11 需要 constexpr 静态成员的类外定义
 constexpr size_t TransferCacheEntry::kMaxCacheSlots;
 
 size_t TransferCacheEntry::insert_range(void *batch[], size_t count) {

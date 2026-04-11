@@ -17,9 +17,9 @@
 
 #include "zco/channel.h"
 #include "zco/hook.h"
-#include "zco/zco_log.h"
 #include "zco/sched.h"
 #include "zco/wait_group.h"
+#include "zco/zco_log.h"
 
 namespace zco {
 namespace {
@@ -175,12 +175,11 @@ int scaled_workload(int base_value, int scale_pct) {
 }
 
 WorkloadConfig load_workload_config() {
-    const int scale_pct =
-        read_env_int("ZCO_PERF_SCALE_PCT", 100, 1, 1000);
+    const int scale_pct = read_env_int("ZCO_PERF_SCALE_PCT", 100, 1, 1000);
 
     WorkloadConfig config;
-    config.scheduler_count = read_env_int("ZCO_PERF_SCHED_COUNT",
-                                          kDefaultSchedulerCount, 1, 256);
+    config.scheduler_count =
+        read_env_int("ZCO_PERF_SCHED_COUNT", kDefaultSchedulerCount, 1, 256);
     config.producer_threads = read_env_int("ZCO_PERF_PRODUCER_THREADS",
                                            kDefaultProducerThreads, 1, 256);
     config.scheduler_tasks =
@@ -189,23 +188,20 @@ WorkloadConfig load_workload_config() {
                         scale_pct);
     config.yield_interval = read_env_int("ZCO_PERF_YIELD_INTERVAL",
                                          kDefaultYieldInterval, 1, INT_MAX);
-    config.stack_size =
-        read_env_size_t("ZCO_PERF_STACK_SIZE", kDefaultStackSize,
-                        16 * 1024, 8 * 1024 * 1024);
-    config.shared_stack_num = read_env_size_t(
-        "ZCO_PERF_SHARED_STACK_NUM", kDefaultSharedStackNum, 1, 1024);
+    config.stack_size = read_env_size_t(
+        "ZCO_PERF_STACK_SIZE", kDefaultStackSize, 16 * 1024, 8 * 1024 * 1024);
+    config.shared_stack_num = read_env_size_t("ZCO_PERF_SHARED_STACK_NUM",
+                                              kDefaultSharedStackNum, 1, 1024);
     config.channel_messages =
         scaled_workload(read_env_int("ZCO_PERF_CHANNEL_MESSAGES",
                                      kDefaultChannelMessages, 1, INT_MAX),
                         scale_pct);
-    config.timer_tasks =
-        scaled_workload(read_env_int("ZCO_PERF_TIMER_TASKS",
-                                     kDefaultTimerTasks, 1, INT_MAX),
-                        scale_pct);
-    config.hook_rounds =
-        scaled_workload(read_env_int("ZCO_PERF_HOOK_ROUNDS",
-                                     kDefaultHookRounds, 1, INT_MAX),
-                        scale_pct);
+    config.timer_tasks = scaled_workload(
+        read_env_int("ZCO_PERF_TIMER_TASKS", kDefaultTimerTasks, 1, INT_MAX),
+        scale_pct);
+    config.hook_rounds = scaled_workload(
+        read_env_int("ZCO_PERF_HOOK_ROUNDS", kDefaultHookRounds, 1, INT_MAX),
+        scale_pct);
     return config;
 }
 

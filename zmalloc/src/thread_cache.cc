@@ -4,14 +4,13 @@
  */
 
 #include "zmalloc/internal/thread_cache.h"
-#include "zmalloc/internal/central_cache.h"
-#include "zmalloc/internal/transfer_cache.h"
-
-#include "zmalloc/internal/size_class.h"
-
-#include <cassert>
 
 #include <algorithm>
+#include <cassert>
+
+#include "zmalloc/internal/central_cache.h"
+#include "zmalloc/internal/size_class.h"
+#include "zmalloc/internal/transfer_cache.h"
 
 namespace zmalloc {
 

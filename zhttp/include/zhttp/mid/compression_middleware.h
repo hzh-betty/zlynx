@@ -1,7 +1,7 @@
 #ifndef ZHTTP_COMPRESSION_MIDDLEWARE_H_
 #define ZHTTP_COMPRESSION_MIDDLEWARE_H_
 
-#include "middleware.h"
+#include "zhttp/mid/middleware.h"
 
 #include <string>
 #include <vector>

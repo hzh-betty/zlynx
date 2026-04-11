@@ -208,10 +208,12 @@ class Runtime : public NonCopyable {
     Runtime();
 
     std::atomic<bool> started_;
-    std::atomic<uint32_t> rr_index_;
-    std::atomic<uint64_t> chooser_seed_;
-    std::atomic<int> fiber_id_gen_;
-    std::atomic<uint64_t> fiber_handle_id_gen_;
+    std::atomic<uint32_t> rr_index_; // 轮询索引，用于简单的轮询负载均衡
+    std::atomic<uint64_t>
+        chooser_seed_; // 选择器种子，用于生成随机数实现负载均衡
+    std::atomic<int> fiber_id_gen_; // Fiber 编号生成器，递增分配唯一编号
+    std::atomic<uint64_t>
+        fiber_handle_id_gen_; // Fiber 句柄 id 生成器，递增分配唯一 id
     std::vector<std::unique_ptr<Processor>> processors_;
 
     mutable std::mutex stack_config_mutex_;

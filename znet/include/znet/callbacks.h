@@ -1,8 +1,9 @@
 #ifndef ZNET_CALLBACKS_H_
 #define ZNET_CALLBACKS_H_
 
-#include "buffer.h"
-#include "tcp_connection.h"
+#include "znet/buffer.h"
+#include "znet/tcp_connection.h"
+
 #include <cstddef>
 #include <functional>
 

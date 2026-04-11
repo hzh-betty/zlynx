@@ -82,9 +82,8 @@ bool Event::wait(uint32_t milliseconds) const {
             impl_->cv.wait_for(lock, std::chrono::milliseconds(milliseconds),
                                [this]() { return impl_->signaled; });
         if (!ok) {
-            ZCO_LOG_DEBUG(
-                "event wait timeout in thread context, timeout_ms={}",
-                milliseconds);
+            ZCO_LOG_DEBUG("event wait timeout in thread context, timeout_ms={}",
+                          milliseconds);
             return false;
         }
 
@@ -129,9 +128,8 @@ bool Event::wait(uint32_t milliseconds) const {
                         : park_current_for(milliseconds);
     if (!ok) {
         active->store(false, std::memory_order_release);
-        ZCO_LOG_DEBUG(
-            "event wait timeout in coroutine context, timeout_ms={}",
-            milliseconds);
+        ZCO_LOG_DEBUG("event wait timeout in coroutine context, timeout_ms={}",
+                      milliseconds);
     }
     return ok;
 }
@@ -181,8 +179,7 @@ void Event::signal() const {
 
     impl_->cv.notify_all();
 
-    ZCO_LOG_DEBUG("event signal wake coroutine count={}",
-                         resume_list.size());
+    ZCO_LOG_DEBUG("event signal wake coroutine count={}", resume_list.size());
     // 协程唤醒放在锁外执行，避免在锁内触发复杂调度链路。
     for (size_t i = 0; i < resume_list.size(); ++i) {
         resume_fiber(resume_list[i], false);
@@ -228,7 +225,7 @@ void Event::notify_all() const {
     impl_->cv.notify_all();
 
     ZCO_LOG_DEBUG("event notify_all wake coroutine count={}",
-                         resume_list.size());
+                  resume_list.size());
     // notify_all 强制唤醒协程等待队列中所有活跃节点。
     for (size_t i = 0; i < resume_list.size(); ++i) {
         resume_fiber(resume_list[i], false);

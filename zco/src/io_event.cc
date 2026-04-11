@@ -19,9 +19,8 @@ IoEvent::IoEvent(int fd, IoEventType event_type)
 IoEvent::~IoEvent() = default;
 
 bool IoEvent::wait(uint32_t milliseconds) {
-    ZCO_LOG_DEBUG(
-        "io_event wait start, fd={}, event_type={}, timeout_ms={}", fd_,
-        static_cast<uint32_t>(event_type_), milliseconds);
+    ZCO_LOG_DEBUG("io_event wait start, fd={}, event_type={}, timeout_ms={}",
+                  fd_, static_cast<uint32_t>(event_type_), milliseconds);
     if (fd_ < 0) {
         const int saved_errno = EBADF;
         errno = saved_errno;
@@ -41,9 +40,8 @@ bool IoEvent::wait(uint32_t milliseconds) {
     default:
         const int saved_errno = EINVAL;
         errno = saved_errno;
-        ZCO_LOG_ERROR(
-            "io_event wait failed, invalid event_type={}, fd={}",
-            static_cast<uint32_t>(event_type_), fd_);
+        ZCO_LOG_ERROR("io_event wait failed, invalid event_type={}, fd={}",
+                      static_cast<uint32_t>(event_type_), fd_);
         errno = saved_errno;
         return false;
     }
@@ -58,8 +56,8 @@ bool IoEvent::wait(uint32_t milliseconds) {
         errno = ETIMEDOUT;
     }
     const int saved_errno = errno;
-    ZCO_LOG_DEBUG("io_event wait result, fd={}, ok={}, errno={}", fd_,
-                         ok, saved_errno);
+    ZCO_LOG_DEBUG("io_event wait result, fd={}, ok={}, errno={}", fd_, ok,
+                  saved_errno);
     errno = saved_errno;
     return ok;
 }

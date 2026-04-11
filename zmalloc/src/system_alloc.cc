@@ -3,11 +3,13 @@
  * @brief 系统内存分配函数实现，使用 mmap + MAP_FIXED_NOREPLACE 保证对齐
  */
 
-#include <cstdint>
-#include <new>
+#include "zmalloc/internal/system_alloc.h"
+
 #include <sys/mman.h>
 
-#include "zmalloc/internal/system_alloc.h"
+#include <cstdint>
+#include <new>
+
 #include "zmalloc/internal/zmalloc_config.h"
 
 // MAP_FIXED_NOREPLACE 可能未定义

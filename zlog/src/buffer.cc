@@ -5,7 +5,6 @@
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
-
 #include <stdexcept>
 
 namespace zlog {
@@ -36,10 +35,8 @@ Buffer::Buffer()
     }
     // 预热内存，避免运行时page fault
     prefault_memory(data_, capacity_);
-#ifdef __linux__
     // 提示内核该内存将被顺序访问
     madvise(data_, capacity_, MADV_SEQUENTIAL);
-#endif
 }
 
 Buffer::~Buffer() {
@@ -117,9 +114,7 @@ void Buffer::ensure_enough_size(size_t len) {
     // 预热新分配的内存区域
     if (new_size > capacity_) {
         prefault_memory(new_data + capacity_, new_size - capacity_);
-#ifdef __linux__
         madvise(new_data, new_size, MADV_SEQUENTIAL);
-#endif
     }
 
     data_ = new_data;

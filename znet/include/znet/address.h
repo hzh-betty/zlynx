@@ -2,11 +2,12 @@
 #define ZNET_ADDRESS_H_
 
 #include <arpa/inet.h>
-#include <memory>
 #include <netinet/in.h>
-#include <string>
 #include <sys/socket.h>
 #include <sys/un.h>
+
+#include <memory>
+#include <string>
 #include <vector>
 
 namespace znet {

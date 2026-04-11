@@ -12,7 +12,6 @@
 
 // 核心组件：请求、响应、解析、路由、中间件等日常 Web 开发常用能力。
 #include "zhttp/http_common.h"
-#include "zhttp/internal/http_parser.h"
 #include "zhttp/http_request.h"
 #include "zhttp/http_response.h"
 #include "zhttp/mid/auth_middleware.h"

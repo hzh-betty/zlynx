@@ -46,7 +46,7 @@ struct Pool::Impl {
             void *element = bucket.back();
             bucket.pop_back();
             ZCO_LOG_DEBUG("pool pop from bucket, remaining_size={}",
-                                 bucket.size());
+                          bucket.size());
             return element;
         }
 
@@ -75,14 +75,13 @@ struct Pool::Impl {
             bucket.size() >= capacity) {
             // 容量受限时即时回收，避免桶无限增长。
             ZCO_LOG_DEBUG("pool push triggers destroy callback, "
-                                 "bucket_size={}, capacity={}",
-                                 bucket.size(), capacity);
+                          "bucket_size={}, capacity={}",
+                          bucket.size(), capacity);
             destroy_cb(element);
             return;
         }
         bucket.push_back(element);
-        ZCO_LOG_DEBUG("pool push success, bucket_size={}",
-                             bucket.size());
+        ZCO_LOG_DEBUG("pool push success, bucket_size={}", bucket.size());
     }
 
     /**
@@ -120,7 +119,7 @@ struct Pool::Impl {
         }
         buckets.clear();
         ZCO_LOG_INFO("pool clear all finished, released_count={}",
-                            release_count);
+                     release_count);
     }
 
     CreateCallback create_cb;

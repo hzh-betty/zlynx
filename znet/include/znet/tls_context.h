@@ -1,12 +1,13 @@
 #ifndef ZNET_TLS_CONTEXT_H_
 #define ZNET_TLS_CONTEXT_H_
 
+#include <sys/types.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
-#include <sys/types.h>
 
 namespace znet {
 

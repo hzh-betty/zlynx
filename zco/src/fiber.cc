@@ -30,7 +30,7 @@ void zco_context_entry() {
     Fiber::ptr holder = processor->current_fiber();
     if (!holder) {
         ZCO_LOG_ERROR("context entry has no current fiber, sched_id={}",
-                             processor->id());
+                      processor->id());
         return;
     }
 
@@ -42,9 +42,10 @@ void zco_context_entry() {
 Fiber::Fiber(int id, Processor *owner, Task task, size_t stack_size,
              size_t stack_slot, bool use_shared_stack)
     : id_(id), owner_(owner), task_(std::move(task)), stack_slot_(stack_slot),
-      use_shared_stack_(use_shared_stack), independent_stack_buffer_(nullptr),
-      independent_stack_size_(0), context_(), saved_stack_buffer_(nullptr),
-      saved_stack_size_(0), saved_stack_capacity_(0),
+      independent_stack_buffer_(nullptr), independent_stack_size_(0),
+      context_(), use_shared_stack_(use_shared_stack),
+      saved_stack_buffer_(nullptr), saved_stack_size_(0),
+      saved_stack_capacity_(0),
       saved_stack_bucket_(kDynamicSnapshotBucketLocal),
       context_initialized_(false), state_(State::kReady), timed_out_(false),
       external_handle_id_(0) {
@@ -64,12 +65,11 @@ Fiber::Fiber(int id, Processor *owner, Task task, size_t stack_size,
             throw std::runtime_error("shared stack is not initialized");
         }
 
-        ZCO_LOG_DEBUG(
-            "fiber created(shared stack lazy init), fiber_id={}, "
-            "sched_id={}, slot={}, "
-            "stack_size={}",
-            id_, owner_ ? owner_->id() : -1, stack_slot_,
-            owner_->shared_stack_size(stack_slot_));
+        ZCO_LOG_DEBUG("fiber created(shared stack lazy init), fiber_id={}, "
+                      "sched_id={}, slot={}, "
+                      "stack_size={}",
+                      id_, owner_ ? owner_->id() : -1, stack_slot_,
+                      owner_->shared_stack_size(stack_slot_));
         return;
     }
 
@@ -180,8 +180,8 @@ void Fiber::run() {
             task_();
         }
     } catch (...) {
-        ZCO_LOG_ERROR(
-            "unhandled exception escaped from fiber, fiber_id={}", id_);
+        ZCO_LOG_ERROR("unhandled exception escaped from fiber, fiber_id={}",
+                      id_);
     }
 
     mark_done();
@@ -199,23 +199,22 @@ void Fiber::initialize_context() {
         // Fiber 使用 Processor 的共享栈，uc_link
         // 指向调度上下文保证自然返回可回收。 这意味着 Fiber
         // 执行结束后不需要手动 longjmp，函数 return 即可回到调度器。
-        context_.make_context(
-            owner_->shared_stack_data(stack_slot_),
-            owner_->shared_stack_size(stack_slot_),
-            reinterpret_cast<void (*)()>(&zco_context_entry),
-            owner_->scheduler_context());
+        context_.make_context(owner_->shared_stack_data(stack_slot_),
+                              owner_->shared_stack_size(stack_slot_),
+                              reinterpret_cast<void (*)()>(&zco_context_entry),
+                              owner_->scheduler_context());
     } else {
-        context_.make_context(
-            independent_stack_buffer_, independent_stack_size_,
-            reinterpret_cast<void (*)()>(&zco_context_entry),
-            owner_->scheduler_context());
+        context_.make_context(independent_stack_buffer_,
+                              independent_stack_size_,
+                              reinterpret_cast<void (*)()>(&zco_context_entry),
+                              owner_->scheduler_context());
     }
 
     context_initialized_ = true;
     ZCO_LOG_DEBUG("fiber context initialized, fiber_id={}, sched_id={}, "
-                         "slot={}, model={}",
-                         id_, owner_ ? owner_->id() : -1, stack_slot_,
-                         use_shared_stack_ ? "shared" : "independent");
+                  "slot={}, model={}",
+                  id_, owner_ ? owner_->id() : -1, stack_slot_,
+                  use_shared_stack_ ? "shared" : "independent");
 }
 
 void Fiber::save_stack_data(const char *data, size_t size) {

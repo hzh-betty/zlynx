@@ -6,6 +6,12 @@
 
 namespace zhttp {
 namespace mid {
+
+/**
+ * @brief 会话中间件
+ * @details
+ * 该中间件在请求前检查是否存在有效会话，并在响应后根据需要创建或更新会话。
+ */
 class SessionMiddleware : public Middleware {
   public:
     struct Options {
@@ -14,7 +20,7 @@ class SessionMiddleware : public Middleware {
 
         std::string cookie_name;
         HttpResponse::CookieOptions cookie;
-        bool create_if_missing;
+        bool create_if_missing; // 是否在请求无会话时自动创建新会话
     };
 
     explicit SessionMiddleware(SessionManager::ptr manager,

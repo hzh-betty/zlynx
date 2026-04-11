@@ -17,6 +17,11 @@ namespace internal {
 
 namespace {
 
+// override.cc 负责把 libc/new/delete 入口统一接到 zmalloc：
+// - 初始化早期或递归进入分配器时，先走 bootstrap allocator 保底。
+// - 正常阶段优先走 zmalloc 管理路径。
+// - 对非 zmalloc 指针提供保守降级（glibc free/realloc）。
+
 #if defined(__GLIBC__)
 extern "C" void __libc_free(void *ptr) noexcept;
 extern "C" void *__libc_realloc(void *ptr, size_t size) noexcept;
@@ -52,6 +57,8 @@ std::atomic<bool> &allocator_ready() {
     return ready;
 }
 
+// 递归保护：malloc/new 可能在初始化或日志路径里再次触发分配。
+// call_depth>0 时强制走 bootstrap，避免 re-enter 主分配器导致死锁。
 thread_local bool tls_initializing_allocator = false;
 thread_local size_t tls_allocator_call_depth = 0;
 
@@ -62,6 +69,7 @@ class AllocatorCallGuard {
 };
 
 size_t bootstrap_mapping_pages(size_t size) {
+    // bootstrap 元信息和用户区放在同一块映射里，便于一次 system_free 回收。
     const size_t total = sizeof(BootstrapAlloc) + size;
     return (total + PAGE_SIZE - 1) >> PAGE_SHIFT;
 }
@@ -73,6 +81,7 @@ void *bootstrap_allocate(size_t size) noexcept {
 
     BootstrapAlloc *alloc = static_cast<BootstrapAlloc *>(
         system_alloc(bootstrap_mapping_pages(size)));
+    // user_ptr 紧跟在元信息之后，避免额外地址映射结构。
     alloc->user_ptr = alloc + 1;
     alloc->user_size = size;
     alloc->mapping_pages = bootstrap_mapping_pages(size);
@@ -163,6 +172,7 @@ void bootstrap_free(void *ptr) noexcept {
     lock.unlock();
 
     if (alloc != nullptr) {
+        // bootstrap 映射不走 span 管理，直接按记录页数归还给 system allocator。
         system_free(alloc, alloc->mapping_pages);
     }
 }
@@ -193,6 +203,7 @@ void ensure_allocator_ready() noexcept {
     }
 
     tls_initializing_allocator = true;
+    // 热身一次主路径，确保后续重入判断可依赖 ready 标记。
     void *warm = zmalloc(8);
     zfree(warm);
     allocator_ready().store(true, std::memory_order_release);
@@ -200,6 +211,9 @@ void ensure_allocator_ready() noexcept {
 }
 
 bool should_use_bootstrap_allocator() noexcept {
+    // 三类场景统一落到 bootstrap：
+    // 1) 正在做 ready 初始化；2) 当前线程已在分配调用栈中；3) allocator 尚未
+    // ready。
     return tls_initializing_allocator || tls_allocator_call_depth != 0 ||
            !allocator_ready().load(std::memory_order_acquire);
 }
@@ -224,10 +238,12 @@ Span *managed_span(void *ptr) {
 
     const uintptr_t offset = addr - span_begin;
     if (span->obj_size > MAX_BYTES) {
+        // 大对象按整 span 管理，只允许块首地址作为合法用户指针。
         return offset == 0 ? span : nullptr;
     }
 
     if (span->obj_size == 0 || offset % span->obj_size != 0) {
+        // 小对象必须落在切分粒度边界上，避免内部地址误判成可释放指针。
         return nullptr;
     }
 
@@ -261,6 +277,7 @@ bool unwrap_aligned_pointer(void *ptr, void **raw_out,
 
     void *raw = header->raw;
     if (!is_bootstrap_pointer(raw) && managed_span(raw) == nullptr) {
+        // header 看起来合法，但 raw 不受管时拒绝解包，防止误解引用外部内存。
         return false;
     }
 
@@ -286,6 +303,7 @@ void *allocate_bytes(size_t size) noexcept {
         return bootstrap_allocate(size);
     }
 
+    // guard 生命周期覆盖 zmalloc 调用，防止调用栈内部再次分配时重入主路径。
     AllocatorCallGuard guard;
     return zmalloc(size);
 }
@@ -302,6 +320,7 @@ void *aligned_allocate_bytes(size_t size, size_t alignment) noexcept {
     const size_t actual = size == 0 ? 1 : size;
     const size_t header_size = sizeof(AlignedHeader);
     if (alignment > std::numeric_limits<size_t>::max() - actual - header_size) {
+        // 防溢出保护：后续 actual+alignment+header_size 需要可表示。
         return nullptr;
     }
 
@@ -313,6 +332,7 @@ void *aligned_allocate_bytes(size_t size, size_t alignment) noexcept {
     uintptr_t start = reinterpret_cast<uintptr_t>(raw) + header_size;
     uintptr_t aligned =
         (start + alignment - 1) & ~(static_cast<uintptr_t>(alignment) - 1);
+    // 在对齐地址前塞回溯头，free/realloc 可从用户指针逆向找回 raw。
     auto *header = reinterpret_cast<AlignedHeader *>(aligned - header_size);
     header->magic = kAlignedAllocMagic;
     header->raw = raw;
@@ -337,10 +357,12 @@ void deallocate_bytes(void *ptr) noexcept {
 
     void *aligned_raw = nullptr;
     if (unwrap_aligned_pointer(ptr, &aligned_raw, nullptr)) {
+        // aligned 指针对应的真实分配块仍由 raw 管理，递归回收 raw 即可。
         deallocate_bytes(aligned_raw);
         return;
     }
 #if defined(__GLIBC__)
+    // 非受管指针兜底交回 glibc，避免破坏外部分配器对象生命周期。
     __libc_free(ptr);
     return;
 #else
@@ -362,6 +384,7 @@ void *reallocate_bytes(void *ptr, size_t size) noexcept {
     }
 
     if (managed_span(ptr) != nullptr) {
+        // zmalloc 内部统一采用“新分配 + 拷贝 + 释放旧块”实现 realloc 语义。
         const size_t old_size = managed_size(ptr);
         void *next = allocate_bytes(size);
         if (next == nullptr) {
@@ -376,6 +399,8 @@ void *reallocate_bytes(void *ptr, size_t size) noexcept {
     void *aligned_raw = nullptr;
     size_t aligned_size = 0;
     if (unwrap_aligned_pointer(ptr, &aligned_raw, &aligned_size)) {
+        // 继续返回“可默认对齐释放”的地址；header 会在 aligned_allocate_bytes
+        // 中重建。
         void *next = aligned_allocate_bytes(size, alignof(std::max_align_t));
         if (next == nullptr) {
             return nullptr;
@@ -507,6 +532,7 @@ extern "C" void *pvalloc(size_t size) noexcept {
     if (__builtin_add_overflow(size, zmalloc::PAGE_SIZE - 1, &rounded)) {
         return nullptr;
     }
+    // pvalloc 语义：按页向上取整后再返回页对齐地址。
     rounded &= ~(zmalloc::PAGE_SIZE - 1);
     return zmalloc::internal::aligned_allocate_bytes(rounded,
                                                      zmalloc::PAGE_SIZE);

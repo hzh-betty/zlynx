@@ -1,7 +1,5 @@
 #include "zhttp/http_server.h"
 
-#include "zhttp/zhttp_logger.h"
-
 #include <atomic>
 #include <cstdio>
 #include <limits>
@@ -9,6 +7,8 @@
 #include <mutex>
 #include <utility>
 #include <vector>
+
+#include "zhttp/zhttp_logger.h"
 
 namespace zhttp {
 

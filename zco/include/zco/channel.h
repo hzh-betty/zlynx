@@ -58,9 +58,8 @@ template <typename T> class Channel {
                     pop_front_locked(&out);
                     done_.store(true, std::memory_order_release);
                     update_events_locked();
-                    ZCO_LOG_DEBUG(
-                        "channel read success, size={}, capacity={}", size_,
-                        capacity_);
+                    ZCO_LOG_DEBUG("channel read success, size={}, capacity={}",
+                                  size_, capacity_);
                     return true;
                 }
 
@@ -77,7 +76,7 @@ template <typename T> class Channel {
             if (!not_empty_.wait(timeout_ms)) {
                 done_.store(false, std::memory_order_release);
                 ZCO_LOG_DEBUG("channel read timeout, timeout_ms={}",
-                                     timeout_ms);
+                              timeout_ms);
                 return false;
             }
         }
@@ -189,9 +188,8 @@ template <typename T> class Channel {
             std::lock_guard<std::mutex> lock(mutex_);
             closed_.store(true, std::memory_order_release);
             update_events_locked();
-            ZCO_LOG_INFO(
-                "channel closed, remaining_size={}, capacity={}", size_,
-                capacity_);
+            ZCO_LOG_INFO("channel closed, remaining_size={}, capacity={}",
+                         size_, capacity_);
         }
         not_empty_.notify_all();
         not_full_.notify_all();
@@ -228,9 +226,8 @@ template <typename T> class Channel {
                     push_back_locked(std::move(value));
                     done_.store(true, std::memory_order_release);
                     update_events_locked();
-                    ZCO_LOG_DEBUG(
-                        "channel write success, size={}, capacity={}", size_,
-                        capacity_);
+                    ZCO_LOG_DEBUG("channel write success, size={}, capacity={}",
+                                  size_, capacity_);
                     return true;
                 }
             }
@@ -238,7 +235,7 @@ template <typename T> class Channel {
             if (!not_full_.wait(timeout_ms)) {
                 done_.store(false, std::memory_order_release);
                 ZCO_LOG_DEBUG("channel write timeout, timeout_ms={}",
-                                     timeout_ms);
+                              timeout_ms);
                 return false;
             }
         }
@@ -301,7 +298,7 @@ template <typename T> class Channel {
     const size_t capacity_;
     const uint32_t timeout_ms_;
     mutable std::mutex mutex_;
-    mutable std::vector<StorageSlot> storage_;
+    mutable std::vector<StorageSlot> storage_; // 固定容量的环形缓冲区
     mutable size_t head_;
     mutable size_t tail_;
     mutable size_t size_;

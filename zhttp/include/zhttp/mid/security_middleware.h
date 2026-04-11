@@ -74,7 +74,6 @@ class SecurityMiddleware : public Middleware {
 
 } // namespace mid
 
-
 } // namespace zhttp
 
 #endif // ZHTTP_SECURITY_MIDDLEWARE_H_

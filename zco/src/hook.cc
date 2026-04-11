@@ -493,8 +493,7 @@ int co_setsockopt(int fd, int level, int option, const void *option_value,
 
 void co_set_nonblock(int fd) {
     if (!force_nonblocking_fd(fd)) {
-        ZCO_LOG_WARN("co_set_nonblock failed, fd={}, errno={}", fd,
-                            errno);
+        ZCO_LOG_WARN("co_set_nonblock failed, fd={}, errno={}", fd, errno);
     }
 }
 

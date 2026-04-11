@@ -1,12 +1,11 @@
 #ifndef ZNET_INTERNAL_NONCOPYABLE_H_
 #define ZNET_INTERNAL_NONCOPYABLE_H_
 
+namespace znet {
 /**
  * @brief 非拷贝类基类
  * 通过继承该类，可以禁止派生类的拷贝构造和赋值操作
  */
-namespace znet {
-
 class NonCopyable {
   public:
     NonCopyable() = default;

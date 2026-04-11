@@ -1,7 +1,7 @@
 #ifndef ZLOG_ZLOG_H_
 #define ZLOG_ZLOG_H_
 #include "zlog/logger.h"
-#include "zlog/logging_config.h"
+
 namespace zlog {
 // 1. 提供获取指定日志器的全局接口--避免用户使用单例对象创建
 /**

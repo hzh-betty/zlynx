@@ -6,16 +6,21 @@
 #include <utility>
 
 #include "zco/sched.h"
+
 #include "znet/socket.h"
 #include "znet/znet_logger.h"
 
 namespace znet {
 
 namespace {
+// 读路径允许重试的系统错误：
+// - EINTR: 被信号打断，重试即可。
+// - EAGAIN/EWOULDBLOCK: 非阻塞 fd 暂时无数据。
 bool is_retryable_read_errno(int err) {
     return err == EINTR || err == EAGAIN || err == EWOULDBLOCK;
 }
 
+// 对端断开或写方向失效时常见错误集合。
 bool is_peer_disconnect_errno(int err) {
     return err == ECONNRESET || err == ENOTCONN || err == EPIPE;
 }
@@ -54,6 +59,7 @@ bool TcpServer::enable_tls(const std::string &cert_file,
 
 bool TcpServer::start() {
     bool expected = false;
+    // CAS 防止重复启动；多线程并发调用 start 时只有一个线程真正执行 do_start。
     if (!running_.compare_exchange_strong(expected, true,
                                           std::memory_order_acq_rel)) {
         ZNET_LOG_DEBUG(
@@ -71,6 +77,7 @@ bool TcpServer::start() {
 
 void TcpServer::stop() {
     bool expected = true;
+    // 与 start 对称，保证 stop 幂等。
     if (!running_.compare_exchange_strong(expected, false,
                                           std::memory_order_acq_rel)) {
         ZNET_LOG_DEBUG("TcpServer::stop skipped because server is not running");
@@ -86,6 +93,7 @@ bool TcpServer::do_start() {
         return false;
     }
 
+    // zco runtime 作为协程执行底座，在 accept 之前初始化。
     zco::init(thread_count_);
     ZNET_LOG_INFO(
         "TcpServer::do_start initialized zco runtime: thread_count={}",
@@ -113,6 +121,8 @@ void TcpServer::do_stop() {
         ConnectionMap snapshot;
         {
             std::lock_guard<std::mutex> lock(connections_mutex_);
+            // 先交换到局部快照，再逐个关闭，
+            // 避免长时间持锁影响并发回调。
             snapshot.swap(connections_);
         }
         for (auto &item : snapshot) {
@@ -143,6 +153,7 @@ void TcpServer::handle_connection(Socket::ptr client) {
         client->fd(), scheduler ? scheduler->id() : -1);
 
     std::shared_ptr<TcpServer> self = shared_from_this();
+    // 每个连接由一个协程串行处理，避免同一连接多协程并发读写。
     auto run_connection = [self, scheduler,
                            client = std::move(client)]() mutable {
         ZNET_LOG_INFO("TcpServer::handle_connection begin: client_fd={}",
@@ -161,6 +172,7 @@ void TcpServer::handle_connection(Socket::ptr client) {
         }
 
         if (self->tls_context_) {
+            // 若启用了 TLS，先完成握手再进入业务读循环。
             if (!connection->enable_tls_server(
                     self->tls_context_, self->tls_handshake_timeout_ms_)) {
                 ZNET_LOG_WARN(
@@ -178,6 +190,10 @@ void TcpServer::handle_connection(Socket::ptr client) {
         }
 
         uint64_t idle_elapsed_ms = 0;
+        // 主读循环：
+        // - 正常读到数据：回调业务并重置空闲计时。
+        // - 超时：用于 keepalive 空闲踢断。
+        // - 其他错误：按可重试/断连/异常分类处理。
         while (self->is_running() && connection->connected()) {
             const uint32_t read_timeout_ms = self->read_timeout_ms_;
             const ssize_t n = connection->read(4096, read_timeout_ms);
@@ -198,6 +214,7 @@ void TcpServer::handle_connection(Socket::ptr client) {
 
             const int read_err = errno;
             if (read_err == ETIMEDOUT) {
+                // 读超时不直接断开，只有累计空闲时间超过 keepalive 才关闭。
                 if (self->keepalive_timeout_ms_ > 0 && read_timeout_ms > 0) {
                     idle_elapsed_ms += read_timeout_ms;
                     if (idle_elapsed_ms >= self->keepalive_timeout_ms_) {
@@ -240,6 +257,7 @@ void TcpServer::handle_connection(Socket::ptr client) {
     };
 
     if (!scheduler) {
+        // 无调度器时退化为当前线程直接执行，保证功能可用。
         run_connection();
         return;
     }

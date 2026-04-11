@@ -4,8 +4,8 @@
 #include <cstdint>
 
 #include "zmalloc/internal/span_list.h"
-#include "zmalloc/internal/zmalloc_config.h"
 #include "zmalloc/internal/system_alloc.h"
+#include "zmalloc/internal/zmalloc_config.h"
 
 // 先包含基础头，避免 private->public 影响标准库头
 #define private public

@@ -1,10 +1,10 @@
 #include "zhttp/mid/static_file_middleware.h"
 
+#include <vector>
+
 #include "zhttp/http_common.h"
 #include "zhttp/internal/http_utils.h"
 #include "zhttp/internal/range_parse.h"
-
-#include <vector>
 
 namespace zhttp {
 namespace mid {

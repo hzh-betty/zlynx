@@ -6,13 +6,13 @@
  * @brief 定长内存池，用于高效分配固定大小的对象（如 Span）
  */
 
-#include "common.h"
-#include "zmalloc/internal/free_list.h"
-#include "system_alloc.h"
-#include "zmalloc_config.h"
-
 #include <algorithm>
 #include <cstdint>
+
+#include "common.h"
+#include "system_alloc.h"
+#include "zmalloc/internal/free_list.h"
+#include "zmalloc_config.h"
 
 namespace zmalloc {
 

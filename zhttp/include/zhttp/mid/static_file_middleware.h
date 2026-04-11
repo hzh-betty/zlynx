@@ -115,7 +115,6 @@ class StaticFileMiddleware : public Middleware {
 
 } // namespace mid
 
-
 } // namespace zhttp
 
 #endif // ZHHTP_STATIC_OPT_H_

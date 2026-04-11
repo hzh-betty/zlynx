@@ -6,7 +6,6 @@
 using namespace zhttp;
 using namespace zhttp::mid;
 
-
 class RateLimiterTest : public ::testing::Test {
   protected:
     using Clock = RateLimiter::Clock;

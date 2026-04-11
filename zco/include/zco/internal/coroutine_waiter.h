@@ -11,11 +11,20 @@
 
 namespace zco {
 
+/**
+ * @brief 协程等待器条目
+ * @details 封装协程和其活跃状态
+ */
 struct CoroutineWaiterEntry {
     std::weak_ptr<Fiber> coroutine;
     std::shared_ptr<std::atomic<bool>> active;
 };
 
+/**
+ * @brief 检查等待器条目是否有效
+ * @param waiter 等待器条目
+ * @return 有效返回 true，否则返回 false
+ */
 inline bool is_waiter_entry_valid(const CoroutineWaiterEntry &waiter) {
     if (!waiter.active) {
         return false;
@@ -26,6 +35,10 @@ inline bool is_waiter_entry_valid(const CoroutineWaiterEntry &waiter) {
     return !waiter.coroutine.expired();
 }
 
+/**
+ * @brief 清理无效的等待器条目
+ * @param waiters 等待器条目列表
+ */
 inline void cleanup_waiters(std::vector<CoroutineWaiterEntry> *waiters) {
     if (!waiters) {
         return;
@@ -38,6 +51,10 @@ inline void cleanup_waiters(std::vector<CoroutineWaiterEntry> *waiters) {
                    waiters->end());
 }
 
+/**
+ * @brief 从前面清理无效的等待器条目，直到遇到第一个有效条目
+ * @param waiters 等待器条目列表
+ */
 inline void cleanup_waiters_front(std::deque<CoroutineWaiterEntry> *waiters) {
     if (!waiters) {
         return;
@@ -50,6 +67,12 @@ inline void cleanup_waiters_front(std::deque<CoroutineWaiterEntry> *waiters) {
         waiters->pop_front();
     }
 }
+
+/**
+ * @brief 申请等待器
+ * @param waiter 等待器条目
+ * @return 协程指针
+ */
 
 inline Fiber::ptr claim_waiter(CoroutineWaiterEntry *waiter) {
     if (!waiter || !waiter->active) {
