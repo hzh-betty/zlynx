@@ -4,14 +4,14 @@
 #include <cstdint>
 #include <vector>
 
-#include "size_class.h"
-#include "zmalloc_config.h"
+#include "zmalloc/size_class.h"
+#include "zmalloc/zmalloc_config.h"
 // 先 include 基础头，避免 private->public 影响标准库头
 #define private public
-#include "thread_cache.h"
+#include "zmalloc/thread_cache.h"
 #undef private
 
-#include "zmalloc.h"
+#include "zmalloc/zmalloc.h"
 
 namespace {
 

@@ -1,7 +1,7 @@
 #ifndef ZNET_LOGGER_H_
 #define ZNET_LOGGER_H_
 
-#include "logger.h"
+#include "zlog/logger.h"
 
 #include <string>
 #include <utility>

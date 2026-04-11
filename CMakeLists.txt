@@ -30,14 +30,14 @@ find_package(Threads REQUIRED)
 # 子模块构建顺序（按依赖关系）
 # zmalloc: 无依赖，最底层
 # zlog: 无依赖
-# zcoroutine: 依赖 zlog
-# znet: 依赖 zcoroutine, zlog
-# zhttp: 依赖 znet, zcoroutine, zlog
+# zco: 依赖 zlog
+# znet: 依赖 zco, zlog
+# zhttp: 依赖 znet, zco, zlog
 enable_testing()
 
 add_subdirectory(zmalloc)
 add_subdirectory(zlog)
-add_subdirectory(zcoroutine)
+add_subdirectory(zco)
 add_subdirectory(znet)
 add_subdirectory(zhttp)
 
@@ -48,8 +48,8 @@ if(ZLYNX_USE_ZMALLOC_OVERRIDE)
     if(TARGET zlog_static)
         target_link_libraries(zlog_static PUBLIC zmalloc_override)
     endif()
-    if(TARGET zcoroutine)
-        target_link_libraries(zcoroutine PUBLIC zmalloc_override)
+    if(TARGET zco)
+        target_link_libraries(zco PUBLIC zmalloc_override)
     endif()
     if(TARGET znet)
         target_link_libraries(znet PUBLIC zmalloc_override)
@@ -73,7 +73,7 @@ message(STATUS "")
 message(STATUS "Submodules:")
 message(STATUS "  - zmalloc")
 message(STATUS "  - zlog")
-message(STATUS "  - zcoroutine")
+message(STATUS "  - zco")
 message(STATUS "  - znet")
 message(STATUS "  - zhttp")
 message(STATUS "==============================")

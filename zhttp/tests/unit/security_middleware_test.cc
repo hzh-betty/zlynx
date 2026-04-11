@@ -1,8 +1,9 @@
-#include "security_middleware.h"
+#include "zhttp/mid/security_middleware.h"
 
 #include <gtest/gtest.h>
 
 using namespace zhttp;
+using namespace zhttp::mid;
 
 TEST(SecurityMiddlewareTest, AddDefaultSecurityHeaders) {
     SecurityMiddleware middleware;

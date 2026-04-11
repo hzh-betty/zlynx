@@ -107,8 +107,8 @@ cmake --build build-zhttp-perf -j --target \
 
 优化后仍然靠前的热点：
 
-- `zcoroutine::co_recv(...)`：3.20%
-- `zcoroutine::co_send(...)`：2.84%
+- `zco::co_recv(...)`：3.20%
+- `zco::co_send(...)`：2.84%
 - `zhttp::HttpResponse::serialize_to(...)`：2.47%
 
 结论：

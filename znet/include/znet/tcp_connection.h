@@ -4,7 +4,7 @@
 #include "buffer.h"
 #include "noncopyable.h"
 #include "socket.h"
-#include "zcoroutine/wait_group.h"
+#include "zco/wait_group.h"
 
 #include <atomic>
 #include <cstddef>
@@ -18,7 +18,7 @@
 #include <sys/types.h>
 #include <thread>
 
-namespace zcoroutine {
+namespace zco {
 class Scheduler;
 }
 
@@ -53,7 +53,7 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>,
     };
 
     explicit TcpConnection(Socket::ptr socket,
-                           zcoroutine::Scheduler *actor_scheduler = nullptr);
+                           zco::Scheduler *actor_scheduler = nullptr);
 
     ~TcpConnection();
 
@@ -134,7 +134,7 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>,
         std::string payload;
         ssize_t result;
         int error;
-        zcoroutine::WaitGroup completion;
+        zco::WaitGroup completion;
     };
 
   private:
@@ -179,7 +179,7 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>,
     std::deque<std::shared_ptr<Event>> mailbox_;
     bool actor_running_; // actor 是否正在运行
     std::thread::id actor_thread_id_;
-    zcoroutine::Scheduler *actor_scheduler_;
+    zco::Scheduler *actor_scheduler_;
     int actor_sched_id_;
 };
 

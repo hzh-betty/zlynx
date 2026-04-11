@@ -1,4 +1,4 @@
-#include "zcoroutine/log.h"
+#include "zco/zco_log.h"
 #include "znet/address.h"
 #include "znet/buffer.h"
 #include "znet/tcp_connection.h"
@@ -556,7 +556,7 @@ int run_server_process(const BenchConfig &cfg, const int ready_fd) {
     std::signal(SIGINT, server_signal_handler);
     std::signal(SIGPIPE, SIG_IGN);
 
-    zcoroutine::init_logger(zlog::LogLevel::value::ERROR);
+    zco::init_logger(zlog::LogLevel::value::ERROR);
     znet::init_logger(zlog::LogLevel::value::ERROR);
 
     auto address = std::make_shared<znet::IPv4Address>(

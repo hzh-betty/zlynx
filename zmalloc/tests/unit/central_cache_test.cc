@@ -5,15 +5,15 @@
 #include <cstdint>
 #include <vector>
 
-#include "free_list.h"
-#include "page_cache.h"
-#include "size_class.h"
-#include "span_list.h"
-#include "zmalloc_config.h"
+#include "zmalloc/page_cache.h"
+#include "zmalloc/size_class.h"
+#include "zmalloc/zmalloc_config.h"
+#include "zmalloc/free_list.h"
+#include "zmalloc/span_list.h"
 
 // 先 include 基础头/page_cache，避免 private->public 影响标准库头
 #define private public
-#include "central_cache.h"
+#include "zmalloc/central_cache.h"
 #undef private
 
 namespace {

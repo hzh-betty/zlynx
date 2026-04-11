@@ -7,8 +7,8 @@
 #include <new>
 #include <sys/mman.h>
 
-#include "system_alloc.h"
-#include "zmalloc_config.h"
+#include "zmalloc/system_alloc.h"
+#include "zmalloc/zmalloc_config.h"
 
 // MAP_FIXED_NOREPLACE 可能未定义
 #ifndef MAP_FIXED_NOREPLACE

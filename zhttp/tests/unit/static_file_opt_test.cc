@@ -1,7 +1,7 @@
-#include "http_request.h"
-#include "http_response.h"
-#include "static_file_opt.h"
-#include "zhttp_logger.h"
+#include "zhttp/mid/static_file_middleware.h"
+#include "zhttp/http_request.h"
+#include "zhttp/http_response.h"
+#include "zhttp/zhttp_logger.h"
 
 #include <cstdio>
 #include <fstream>
@@ -13,6 +13,7 @@
 #include <vector>
 
 using namespace zhttp;
+using namespace zhttp::mid;
 
 namespace {
 

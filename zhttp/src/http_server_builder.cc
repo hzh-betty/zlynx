@@ -1,10 +1,10 @@
-#include "http_server_builder.h"
-#include "daemon.h"
-#include "request_body_middleware.h"
-#include "zhttp_logger.h"
+#include "zhttp/http_server_builder.h"
+#include "zhttp/mid/request_body_middleware.h"
+#include "zhttp/daemon.h"
+#include "zhttp/zhttp_logger.h"
 
-#include "zcoroutine/log.h"
-#include "zcoroutine/sched.h"
+#include "zco/zco_log.h"
+#include "zco/sched.h"
 #include "znet/address.h"
 #include "znet/znet_logger.h"
 
@@ -98,9 +98,9 @@ apply_module_override(const UnifiedLoggerOptions &base,
     return options;
 }
 
-static zcoroutine::LoggerInitOptions
+static zco::LoggerInitOptions
 to_coroutine_options(const UnifiedLoggerOptions &options) {
-    zcoroutine::LoggerInitOptions converted;
+    zco::LoggerInitOptions converted;
     converted.level = options.level;
     converted.async = options.async;
     converted.formatter = options.formatter;
@@ -139,14 +139,14 @@ static void configure_unified_logging(const ServerConfig &config) {
     global.sink = parse_sink_name(config.log_sink);
     global.file_path = config.log_file;
 
-    const UnifiedLoggerOptions zcoroutine_options = apply_module_override(
-        global, config.zcoroutine_log, "./logfile/zcoroutine.log");
+    const UnifiedLoggerOptions zco_options = apply_module_override(
+        global, config.zco_log, "./logfile/zco.log");
     const UnifiedLoggerOptions znet_options =
         apply_module_override(global, config.znet_log, "./logfile/znet.log");
     const UnifiedLoggerOptions zhttp_options =
         apply_module_override(global, config.zhttp_log, "./logfile/zhttp.log");
 
-    zcoroutine::init_logger(to_coroutine_options(zcoroutine_options));
+    zco::init_logger(to_coroutine_options(zco_options));
     znet::init_logger(to_znet_options(znet_options));
     zhttp::init_logger(to_zhttp_options(zhttp_options));
 }
@@ -299,7 +299,7 @@ HttpServerBuilder &HttpServerBuilder::force_https_redirect(bool enable,
     return *this;
 }
 
-HttpServerBuilder &HttpServerBuilder::use(Middleware::ptr middleware) {
+HttpServerBuilder &HttpServerBuilder::use(mid::Middleware::ptr middleware) {
     if (middleware) {
         middlewares_.push_back(std::move(middleware));
     }
@@ -445,9 +445,9 @@ std::shared_ptr<HttpServer> HttpServerBuilder::build() {
     configure_unified_logging(config_);
 
     if (config_.stack_mode == StackMode::SHARED) {
-        zcoroutine::co_stack_model(zcoroutine::StackModel::kShared);
+        zco::co_stack_model(zco::StackModel::kShared);
     } else {
-        zcoroutine::co_stack_model(zcoroutine::StackModel::kIndependent);
+        zco::co_stack_model(zco::StackModel::kIndependent);
     }
 
     ZHTTP_LOG_INFO("Creating server with {} threads, stack_mode={}",
@@ -478,7 +478,7 @@ std::shared_ptr<HttpServer> HttpServerBuilder::build() {
     }
 
     // 默认启用请求体解析：JSON / x-www-form-urlencoded / multipart。
-    server->router().use(std::make_shared<RequestBodyMiddleware>());
+    server->router().use(std::make_shared<mid::RequestBodyMiddleware>());
 
     // 注册中间件
     for (auto &mw : middlewares_) {

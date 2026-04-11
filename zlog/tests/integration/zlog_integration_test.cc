@@ -2,9 +2,9 @@
  * @brief zlog集成测试
  * 测试同步/异步日志器的完整工作流程
  */
-#include "logger.h"
-#include "sink.h"
-#include "zlog.h"
+#include "zlog/logger.h"
+#include "zlog/sink.h"
+#include "zlog/zlog.h"
 #include <atomic>
 #include <chrono>
 #include <dirent.h>

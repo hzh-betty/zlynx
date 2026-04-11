@@ -5,8 +5,8 @@
 
 #include <cassert>
 
-#include "free_list.h"
-#include "prefetch.h"
+#include "zmalloc/free_list.h"
+#include "zmalloc/prefetch.h"
 
 namespace zmalloc {
 

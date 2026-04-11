@@ -13,9 +13,9 @@ option(ZNET_BUILD_TESTS "Build znet tests" ON)
 
 find_package(OpenSSL REQUIRED)
 
-if(NOT TARGET zcoroutine)
-  set(ZCOROUTINE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../zcoroutine ${CMAKE_BINARY_DIR}/zcoroutine)
+if(NOT TARGET zco)
+  set(ZCO_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../zco ${CMAKE_BINARY_DIR}/zco)
 endif()
 
 add_library(znet STATIC
@@ -36,7 +36,7 @@ target_include_directories(znet
 
 target_link_libraries(znet
   PUBLIC
-    zcoroutine
+    zco
     OpenSSL::SSL
     OpenSSL::Crypto
 )

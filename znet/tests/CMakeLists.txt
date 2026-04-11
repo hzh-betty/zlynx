@@ -6,7 +6,7 @@ function(add_znet_unit_test target_name src_file)
   target_link_libraries(${target_name}
     PRIVATE
       znet
-      zcoroutine
+      zco
       GTest::gtest
       GTest::gtest_main
       Threads::Threads
@@ -34,7 +34,7 @@ add_executable(znet_wrk_benchmark
 target_link_libraries(znet_wrk_benchmark
   PRIVATE
     znet
-    zcoroutine
+    zco
     Threads::Threads
 )
 

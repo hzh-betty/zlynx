@@ -1,9 +1,10 @@
-#include "cors_middleware.h"
-#include "zhttp_logger.h"
+#include "zhttp/mid/cors_middleware.h"
+#include "zhttp/zhttp_logger.h"
 
 #include <gtest/gtest.h>
 
 using namespace zhttp;
+using namespace zhttp::mid;
 
 TEST(CorsMiddlewareTest, PreflightShortCircuitAndReflectRequestHeaders) {
     CorsMiddleware::Options opt;

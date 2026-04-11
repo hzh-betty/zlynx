@@ -3,7 +3,7 @@
  * @brief SizeClass 单元测试
  */
 
-#include "size_class.h"
+#include "zmalloc/size_class.h"
 #include <gtest/gtest.h>
 
 namespace zmalloc {

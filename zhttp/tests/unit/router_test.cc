@@ -1,10 +1,11 @@
-#include "router.h"
-#include "zhttp_logger.h"
+#include "zhttp/router.h"
+#include "zhttp/zhttp_logger.h"
 
 #include <gtest/gtest.h>
 #include <stdexcept>
 
 using namespace zhttp;
+using namespace zhttp::mid;
 
 class RouterTest : public ::testing::Test {
   protected:

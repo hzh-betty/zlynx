@@ -15,7 +15,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace zcoroutine {
+namespace zco {
 class Scheduler;
 }
 

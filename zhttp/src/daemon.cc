@@ -1,5 +1,5 @@
-#include "daemon.h"
-#include "zhttp_logger.h"
+#include "zhttp/daemon.h"
+#include "zhttp/zhttp_logger.h"
 
 #include <fcntl.h>
 #include <signal.h>

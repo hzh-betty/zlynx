@@ -35,7 +35,7 @@ foreach(test_name ${UNIT_TESTS})
     target_link_libraries(${test_name}
         zhttp
         znet
-        zcoroutine
+        zco
         zlog_static
         GTest::gtest
         pthread
@@ -51,7 +51,7 @@ add_executable(http_server_test integration/http_server_test.cc)
 target_link_libraries(http_server_test
     zhttp
     znet
-    zcoroutine
+    zco
     zlog_static
     GTest::gtest
     pthread
@@ -65,7 +65,7 @@ add_executable(websocket_server_test integration/websocket_server_test.cc)
 target_link_libraries(websocket_server_test
     zhttp
     znet
-    zcoroutine
+    zco
     zlog_static
     GTest::gtest
     pthread
@@ -80,7 +80,7 @@ add_executable(zhttp_benchmark benchmark/zhttp_benchmark.cc)
 target_link_libraries(zhttp_benchmark
     zhttp
     znet
-    zcoroutine
+    zco
     zlog_static
     pthread
 )

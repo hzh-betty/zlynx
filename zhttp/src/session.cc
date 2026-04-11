@@ -1,6 +1,4 @@
-#include "session.h"
-
-#include "http_request.h"
+#include "zhttp/session.h"
 
 #include <random>
 
@@ -151,60 +149,6 @@ void SessionManager::cleanup_expired_locked(TimerHelper::SteadyTimePoint now) {
         } else {
             ++it;
         }
-    }
-}
-
-SessionMiddleware::SessionMiddleware(SessionManager::ptr manager,
-                                     SessionMiddleware::Options opt)
-    : manager_(std::move(manager)), options_(std::move(opt)) {}
-
-bool SessionMiddleware::before(const HttpRequest::ptr &request,
-                               HttpResponse & /*response*/) {
-    if (!manager_) {
-        return true;
-    }
-
-    // 优先尝试复用客户端已携带的 session id。
-    std::string sid = request->cookie(options_.cookie_name);
-    Session::ptr s;
-    if (!sid.empty()) {
-        s = manager_->load(sid);
-    }
-
-    // 可选地为匿名新请求创建会话，便于处理登录态、购物车等场景。
-    if (!s && options_.create_if_missing) {
-        s = manager_->create();
-    }
-
-    if (s) {
-        // 将会话对象挂到请求上，供后续中间件和业务处理器共享。
-        request->set_session(s);
-    }
-
-    return true;
-}
-
-void SessionMiddleware::after(const HttpRequest::ptr &request,
-                              HttpResponse &response) {
-    if (!manager_) {
-        return;
-    }
-
-    auto s = request->session();
-    if (!s) {
-        return;
-    }
-
-    if (s->is_new() || s->modified()) {
-        // 保存发生在 set_cookie 之前：确保客户端拿到的 id 在服务端已经可用。
-        manager_->save(*s);
-
-        HttpResponse::CookieOptions cookie_opt = options_.cookie;
-        cookie_opt.max_age = static_cast<int>(manager_->options().ttl.count());
-
-        // 仅在新建或发生修改时回写 Cookie，减少无意义的响应头噪声。
-        response.set_cookie(options_.cookie_name, s->id(), cookie_opt);
-        s->mark_persisted();
     }
 }
 

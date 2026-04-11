@@ -5,7 +5,7 @@
 #include <string>
 #include <utility>
 
-#include "zcoroutine/sched.h"
+#include "zco/sched.h"
 #include "znet/socket.h"
 #include "znet/znet_logger.h"
 
@@ -86,9 +86,9 @@ bool TcpServer::do_start() {
         return false;
     }
 
-    zcoroutine::init(thread_count_);
+    zco::init(thread_count_);
     ZNET_LOG_INFO(
-        "TcpServer::do_start initialized zcoroutine runtime: thread_count={}",
+        "TcpServer::do_start initialized zco runtime: thread_count={}",
         thread_count_);
 
     acceptor_->set_accept_callback(
@@ -136,7 +136,7 @@ void TcpServer::handle_connection(Socket::ptr client) {
         return;
     }
 
-    zcoroutine::Scheduler *scheduler = zcoroutine::next_sched();
+    zco::Scheduler *scheduler = zco::next_sched();
 
     ZNET_LOG_DEBUG(
         "TcpServer::handle_connection dispatch: client_fd={}, sched_id={}",

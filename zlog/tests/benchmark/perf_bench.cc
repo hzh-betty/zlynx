@@ -10,8 +10,8 @@
  *   -s <size>      日志消息大小(字节) (默认: 128)
  *   -o <output>    输出目录 (默认: perf_bench_logs)
  */
-#include "logger.h"
-#include "sink.h"
+#include "zlog/logger.h"
+#include "zlog/sink.h"
 
 #include <atomic>
 #include <chrono>

@@ -1,4 +1,4 @@
-#include "sink.h"
+#include "zlog/sink.h"
 #include <cstdio>
 #include <dirent.h>
 #include <fstream>

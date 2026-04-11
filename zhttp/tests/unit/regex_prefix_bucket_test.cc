@@ -1,5 +1,5 @@
-#include "router.h"
-#include "zhttp_logger.h"
+#include "zhttp/router.h"
+#include "zhttp/zhttp_logger.h"
 #include <gtest/gtest.h>
 
 class RegexPrefixBucketTest : public ::testing::Test {

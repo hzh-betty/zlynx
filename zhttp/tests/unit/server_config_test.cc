@@ -1,7 +1,7 @@
-#include "http_server_builder.h"
-#include "server_config.h"
-#include "zcoroutine/log.h"
-#include "zhttp_logger.h"
+#include "zhttp/http_server_builder.h"
+#include "zhttp/server_config.h"
+#include "zhttp/zhttp_logger.h"
+#include "zco/zco_log.h"
 #include "znet/znet_logger.h"
 
 #include <cstdio>
@@ -227,7 +227,7 @@ format = "[%p] %m%n"
 sink = "both"
 file = "/tmp/zhttp-all.log"
 
-[logging.modules.zcoroutine]
+[logging.modules.zco]
 level = "debug"
 async = true
 format = "%m%n"
@@ -252,10 +252,10 @@ sink = "stdout"
     EXPECT_EQ(config.log_sink, "both");
     EXPECT_EQ(config.log_file, "/tmp/zhttp-all.log");
 
-    EXPECT_EQ(config.zcoroutine_log.level, "debug");
-    EXPECT_TRUE(config.zcoroutine_log.has_async);
-    EXPECT_TRUE(config.zcoroutine_log.async);
-    EXPECT_EQ(config.zcoroutine_log.format, "%m%n");
+    EXPECT_EQ(config.zco_log.level, "debug");
+    EXPECT_TRUE(config.zco_log.has_async);
+    EXPECT_TRUE(config.zco_log.async);
+    EXPECT_EQ(config.zco_log.format, "%m%n");
 
     EXPECT_EQ(config.znet_log.level, "error");
     EXPECT_TRUE(config.znet_log.has_async);
@@ -296,19 +296,19 @@ file = "/tmp/znet-builder.log"
     auto server = builder.build();
     ASSERT_TRUE(server);
 
-    auto *zcoroutine_logger = zcoroutine::get_logger();
+    auto *zco_logger = zco::get_logger();
     auto *net_logger = znet::get_logger();
     auto *http_logger = zhttp::get_logger();
 
-    ASSERT_NE(zcoroutine_logger, nullptr);
+    ASSERT_NE(zco_logger, nullptr);
     ASSERT_NE(net_logger, nullptr);
     ASSERT_NE(http_logger, nullptr);
 
-    EXPECT_EQ(zcoroutine_logger->get_name(), "zcoroutine_logger");
+    EXPECT_EQ(zco_logger->get_name(), "zco_logger");
     EXPECT_EQ(net_logger->get_name(), "znet_logger");
     EXPECT_EQ(http_logger->get_name(), "zhttp_logger");
 
-    EXPECT_NE(dynamic_cast<zlog::AsyncLogger *>(zcoroutine_logger), nullptr);
+    EXPECT_NE(dynamic_cast<zlog::AsyncLogger *>(zco_logger), nullptr);
     EXPECT_EQ(dynamic_cast<zlog::AsyncLogger *>(net_logger), nullptr);
     EXPECT_NE(dynamic_cast<zlog::AsyncLogger *>(http_logger), nullptr);
 }

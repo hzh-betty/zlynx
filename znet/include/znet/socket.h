@@ -3,7 +3,7 @@
 
 #include "address.h"
 #include "noncopyable.h"
-#include "zcoroutine/hook.h"
+#include "zco/hook.h"
 #include <cstdint>
 #include <memory>
 #include <sys/socket.h>
@@ -175,7 +175,7 @@ class Socket : public std::enable_shared_from_this<Socket>, public NonCopyable {
      */
     template <typename T>
     bool set_option(int level, int option, const T &value) {
-        return zcoroutine::co_setsockopt(sockfd_, level, option, &value,
+        return zco::co_setsockopt(sockfd_, level, option, &value,
                                          static_cast<socklen_t>(sizeof(T))) ==
                0;
     }
@@ -185,7 +185,7 @@ class Socket : public std::enable_shared_from_this<Socket>, public NonCopyable {
      */
     template <typename T> bool get_option(int level, int option, T *value) {
         socklen_t len = sizeof(T);
-        return zcoroutine::co_getsockopt(sockfd_, level, option, value, &len) ==
+        return zco::co_getsockopt(sockfd_, level, option, value, &len) ==
                0;
     }
 

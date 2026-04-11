@@ -3,7 +3,7 @@
  * @brief zmalloc 核心接口单元测试
  */
 
-#include "zmalloc.h"
+#include "zmalloc/zmalloc.h"
 #include <gtest/gtest.h>
 
 #include <cstring>

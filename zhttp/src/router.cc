@@ -1,5 +1,5 @@
-#include "router.h"
-#include "zhttp_logger.h"
+#include "zhttp/router.h"
+#include "zhttp/zhttp_logger.h"
 
 #include <exception>
 #include <utility>
@@ -163,19 +163,19 @@ void Router::set_homepage(const std::string &homepage) {
     homepage_ = normalize_homepage(homepage);
 }
 
-void Router::use(Middleware::ptr middleware) {
+void Router::use(mid::Middleware::ptr middleware) {
     if (middleware) {
         global_middlewares_.push_back(std::move(middleware));
     }
 }
 
-void Router::use(const std::string &path, Middleware::ptr middleware) {
+void Router::use(const std::string &path, mid::Middleware::ptr middleware) {
     if (middleware) {
         route_middlewares_[path].push_back(std::move(middleware));
     }
 }
 
-void Router::use_group(const std::string &prefix, Middleware::ptr middleware) {
+void Router::use_group(const std::string &prefix, mid::Middleware::ptr middleware) {
     if (!middleware) {
         return;
     }
@@ -223,9 +223,9 @@ bool Router::is_group_prefix_match(const std::string &prefix,
     return path[prefix.size()] == '/';
 }
 
-std::vector<Middleware::ptr>
+std::vector<mid::Middleware::ptr>
 Router::collect_group_middlewares(const std::string &path) const {
-    std::vector<Middleware::ptr> middlewares;
+    std::vector<mid::Middleware::ptr> middlewares;
     std::string normalized_path = path;
 
     // 请求路径同样做尾随 / 归一化，和注册侧保持一致。
@@ -348,7 +348,7 @@ bool Router::route(const HttpRequest::ptr &request, HttpResponse &response) {
     }
 
     // 中间件执行顺序是：全局 -> 组前缀 -> 精确路径 -> 匹配结果附带中间件。
-    MiddlewareChain chain;
+    mid::MiddlewareChain chain;
 
     // 先追加全局中间件。
     for (const auto &mw : global_middlewares_) {
@@ -358,7 +358,7 @@ bool Router::route(const HttpRequest::ptr &request, HttpResponse &response) {
     // 命中业务路由后，再按请求路径收集组中间件（浅层前缀优先）。
     if (ctx.found) {
         // 组中间件不参与 404 流程，这样“某前缀下的一组业务路由”语义更明确。
-        std::vector<Middleware::ptr> group_middlewares =
+        std::vector<mid::Middleware::ptr> group_middlewares =
             collect_group_middlewares(request->path());
         for (const auto &mw : group_middlewares) {
             chain.add(mw);

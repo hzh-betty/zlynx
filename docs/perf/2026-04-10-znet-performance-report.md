@@ -123,7 +123,7 @@ bash znet/tests/benchmark/run_znet_wrk_perf.sh valgrind
 |---|---:|---:|---:|
 | `znet::TcpConnection::drain_mailbox()` | 2.71% | 1.66% | -38.7% |
 | `znet::TcpConnection::dispatch_event_and_wait(...)` | 1.36% | 0.60% | -55.9% |
-| `zcoroutine::Event::wait(unsigned int) const` | 1.90% | 0.15% | -92.1% |
+| `zco::Event::wait(unsigned int) const` | 1.90% | 0.15% | -92.1% |
 | `znet::TcpConnection::read(...)` | 1.63% | 1.05% | -35.6% |
 | `__memmove_avx_unaligned_erms` | 5.42% | 4.22% | -22.1% |
 

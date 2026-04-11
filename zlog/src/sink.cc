@@ -1,6 +1,6 @@
-#include "sink.h"
+#include "zlog/sink.h"
 
-#include "util.h"
+#include "zlog/util.h"
 namespace zlog {
 
 void StdOutSink::log(const char *data, size_t len) {

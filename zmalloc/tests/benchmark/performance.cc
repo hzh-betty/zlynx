@@ -10,7 +10,7 @@
  * - --touch 会写入 1 字节，避免某些场景下分配后不触碰内存带来的偏差。
  */
 
-#include "zmalloc.h"
+#include "zmalloc/zmalloc.h"
 
 #include <atomic>
 #include <cerrno>

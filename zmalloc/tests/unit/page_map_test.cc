@@ -2,9 +2,9 @@
 
 #include <cstdint>
 
-#include "page_map.h"
+#include "zmalloc/page_map.h"
 
-#include "zmalloc_config.h"
+#include "zmalloc/zmalloc_config.h"
 
 namespace {
 

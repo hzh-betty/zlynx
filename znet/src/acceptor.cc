@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <utility>
 
-#include "zcoroutine/sched.h"
+#include "zco/sched.h"
 #include "znet/znet_logger.h"
 
 namespace znet {
@@ -64,7 +64,7 @@ bool Acceptor::start() {
     try {
         // 协程中持有 self，确保 accept_loop 生命周期内对象不被提前释放。
         auto self = shared_from_this();
-        zcoroutine::go([self]() { self->accept_loop(); });
+        zco::go([self]() { self->accept_loop(); });
     } catch (const std::bad_weak_ptr &) {
         ZNET_LOG_ERROR("Acceptor::start must be called on shared_ptr instance");
         listen_socket_->close();
@@ -126,7 +126,7 @@ void Acceptor::accept_loop() {
             ZNET_LOG_WARN("Acceptor::accept_loop accept failed: errno={}",
                           errno);
             // 非可重试错误走短暂退避，避免异常场景下 busy loop 与日志风暴。
-            zcoroutine::sleep_for(kAcceptErrorBackoffMs);
+            zco::sleep_for(kAcceptErrorBackoffMs);
             continue;
         }
 

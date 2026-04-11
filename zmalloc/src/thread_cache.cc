@@ -3,11 +3,11 @@
  * @brief ThreadCache 实现
  */
 
-#include "thread_cache.h"
-#include "central_cache.h"
-#include "transfer_cache.h"
+#include "zmalloc/thread_cache.h"
+#include "zmalloc/central_cache.h"
+#include "zmalloc/transfer_cache.h"
 
-#include "size_class.h"
+#include "zmalloc/size_class.h"
 
 #include <cassert>
 

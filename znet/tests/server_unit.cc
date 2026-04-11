@@ -3,18 +3,18 @@
 
 #include <gtest/gtest.h>
 
-#include "zcoroutine/sched.h"
+#include "zco/sched.h"
 
 namespace znet {
 namespace {
 
 class TcpServerLifecycleUnitTest : public ::testing::Test {
   public:
-    void TearDown() override { zcoroutine::shutdown(); }
+    void TearDown() override { zco::shutdown(); }
 };
 
 TEST_F(TcpServerLifecycleUnitTest, StartStopTransitionsState) {
-    zcoroutine::init(2);
+    zco::init(2);
     auto server = std::make_shared<TcpServer>(
         std::make_shared<IPv4Address>("127.0.0.1", 0), 16);
     ASSERT_NE(server, nullptr);
@@ -39,7 +39,7 @@ TEST_F(TcpServerLifecycleUnitTest, FailedStartRollsBackRunningState) {
 }
 
 TEST_F(TcpServerLifecycleUnitTest, RepeatedStartStopIsIdempotent) {
-    zcoroutine::init(1);
+    zco::init(1);
     auto server = std::make_shared<TcpServer>(
         std::make_shared<IPv4Address>("127.0.0.1", 0), 16);
     ASSERT_NE(server, nullptr);

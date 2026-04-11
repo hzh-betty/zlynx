@@ -1,5 +1,5 @@
-#include "server_config.h"
-#include "zhttp_logger.h"
+#include "zhttp/server_config.h"
+#include "zhttp/zhttp_logger.h"
 
 #include <stdexcept>
 #include <toml.hpp>
@@ -150,7 +150,7 @@ void parse_logging_section(const toml::value &data, ServerConfig &config) {
         }
     };
 
-    parse_module("zcoroutine", config.zcoroutine_log);
+    parse_module("zco", config.zco_log);
     parse_module("znet", config.znet_log);
     parse_module("zhttp", config.zhttp_log);
 }

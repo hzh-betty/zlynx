@@ -3,13 +3,13 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "span_list.h"
-#include "system_alloc.h"
-#include "zmalloc_config.h"
+#include "zmalloc/span_list.h"
+#include "zmalloc/zmalloc_config.h"
+#include "zmalloc/system_alloc.h"
 
 // 先包含基础头，避免 private->public 影响标准库头
 #define private public
-#include "page_cache.h"
+#include "zmalloc/page_cache.h"
 #undef private
 
 namespace {

@@ -1,10 +1,11 @@
 #include <gtest/gtest.h>
 
-#include "auth_middleware.h"
-#include "router.h"
-#include "session.h"
+#include "zhttp/mid/auth_middleware.h"
+#include "zhttp/router.h"
+#include "zhttp/session.h"
 
 using namespace zhttp;
+using namespace zhttp::mid;
 
 namespace {
 

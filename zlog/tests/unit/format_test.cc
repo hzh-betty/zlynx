@@ -1,5 +1,5 @@
-#include "format.h"
-#include "message.h"
+#include "zlog/format.h"
+#include "zlog/message.h"
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <regex>

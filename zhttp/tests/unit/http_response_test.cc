@@ -1,5 +1,5 @@
-#include "http_response.h"
-#include "zhttp_logger.h"
+#include "zhttp/http_response.h"
+#include "zhttp/zhttp_logger.h"
 
 #include <gtest/gtest.h>
 

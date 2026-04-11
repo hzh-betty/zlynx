@@ -1,4 +1,4 @@
-#include "timeout_middleware.h"
+#include "zhttp/mid/timeout_middleware.h"
 
 #include <gtest/gtest.h>
 
@@ -6,6 +6,7 @@
 #include <thread>
 
 using namespace zhttp;
+using namespace zhttp::mid;
 
 TEST(TimeoutMiddlewareTest, OverrideResponseWhenTimeoutExceeded) {
     TimeoutMiddleware::Options options;

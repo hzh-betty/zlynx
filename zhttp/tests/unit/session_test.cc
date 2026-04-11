@@ -1,9 +1,11 @@
 #include <gtest/gtest.h>
 
-#include "router.h"
-#include "session.h"
+#include "zhttp/router.h"
+#include "zhttp/mid/session_middleware.h"
+#include "zhttp/session.h"
 
 using namespace zhttp;
+using namespace zhttp::mid;
 
 static std::string extract_sid(const std::string &set_cookie_value) {
     // ZHTTPSESSID=<id>; ...

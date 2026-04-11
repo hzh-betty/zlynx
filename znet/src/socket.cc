@@ -8,8 +8,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "zcoroutine/hook.h"
-#include "zcoroutine/sched.h"
+#include "zco/hook.h"
+#include "zco/sched.h"
 #include "znet/znet_logger.h"
 
 namespace {
@@ -18,12 +18,12 @@ constexpr int kCoroutineRequiredErrno = EPERM;
 
 // 统一检查：I/O 接口必须在协程上下文内调用。
 bool require_coroutine_context(const char *func_name) {
-    if (zcoroutine::in_coroutine()) {
+    if (zco::in_coroutine()) {
         return true;
     }
 
     errno = kCoroutineRequiredErrno;
-    ZNET_LOG_ERROR("{} must be called inside zcoroutine::go context",
+    ZNET_LOG_ERROR("{} must be called inside zco::go context",
                    func_name);
     return false;
 }
@@ -31,10 +31,10 @@ bool require_coroutine_context(const char *func_name) {
 // 用户传 0 表示无限等待；超大值钳制到框架支持范围内。
 uint32_t normalize_timeout_ms(uint64_t timeout_ms) {
     if (timeout_ms == 0) {
-        return zcoroutine::kInfiniteTimeoutMs;
+        return zco::kInfiniteTimeoutMs;
     }
-    if (timeout_ms >= static_cast<uint64_t>(zcoroutine::kInfiniteTimeoutMs)) {
-        return zcoroutine::kInfiniteTimeoutMs - 1;
+    if (timeout_ms >= static_cast<uint64_t>(zco::kInfiniteTimeoutMs)) {
+        return zco::kInfiniteTimeoutMs - 1;
     }
     return static_cast<uint32_t>(timeout_ms);
 }
@@ -114,7 +114,7 @@ bool Socket::bind(const Address::ptr addr) {
         return false;
     }
 
-    if (zcoroutine::co_bind(sockfd_, addr->sockaddr_ptr(),
+    if (zco::co_bind(sockfd_, addr->sockaddr_ptr(),
                             addr->sockaddr_len()) != 0) {
         ZNET_LOG_ERROR("Socket::bind failed: fd={}, errno={}, error={}",
                        sockfd_, errno, strerror(errno));
@@ -134,7 +134,7 @@ bool Socket::listen(int backlog) {
         return false;
     }
 
-    if (zcoroutine::co_listen(sockfd_, backlog) != 0) {
+    if (zco::co_listen(sockfd_, backlog) != 0) {
         ZNET_LOG_ERROR("Socket::listen failed: fd={}, errno={}, error={}",
                        sockfd_, errno, strerror(errno));
         return false;
@@ -145,7 +145,7 @@ bool Socket::listen(int backlog) {
     return true;
 }
 
-// 协程版 accept：直接复用 zcoroutine 的 co_accept/co_accept4 语义。
+// 协程版 accept：直接复用 zco 的 co_accept/co_accept4 语义。
 Socket::ptr Socket::accept(uint64_t timeout_ms) {
     if (!require_coroutine_context("Socket::accept")) {
         return nullptr;
@@ -163,17 +163,17 @@ Socket::ptr Socket::accept(uint64_t timeout_ms) {
 
 #if defined(SOCK_NONBLOCK) && defined(SOCK_CLOEXEC)
     // 优先 accept4 一步设置 NONBLOCK/CLOEXEC，减少额外系统调用。
-    clientfd = zcoroutine::co_accept4(
+    clientfd = zco::co_accept4(
         sockfd_, reinterpret_cast<sockaddr *>(&addr), &len,
         SOCK_NONBLOCK | SOCK_CLOEXEC, effective_timeout_ms);
     if (clientfd == -1 && errno == ENOSYS) {
         clientfd =
-            zcoroutine::co_accept(sockfd_, reinterpret_cast<sockaddr *>(&addr),
+            zco::co_accept(sockfd_, reinterpret_cast<sockaddr *>(&addr),
                                   &len, effective_timeout_ms);
     }
 #else
     clientfd =
-        zcoroutine::co_accept(sockfd_, reinterpret_cast<sockaddr *>(&addr),
+        zco::co_accept(sockfd_, reinterpret_cast<sockaddr *>(&addr),
                               &len, effective_timeout_ms);
 #endif
 
@@ -212,7 +212,7 @@ bool Socket::connect(const Address::ptr addr, uint64_t timeout_ms) {
 
     remote_address_ = addr;
     const uint32_t effective_timeout_ms = normalize_timeout_ms(timeout_ms);
-    if (zcoroutine::co_connect(sockfd_, addr->sockaddr_ptr(),
+    if (zco::co_connect(sockfd_, addr->sockaddr_ptr(),
                                addr->sockaddr_len(),
                                effective_timeout_ms) != 0) {
         ZNET_LOG_ERROR(
@@ -246,7 +246,7 @@ bool Socket::close() {
     }
 
     is_connected_ = false;
-    if (zcoroutine::co_close(sockfd_) != 0) {
+    if (zco::co_close(sockfd_) != 0) {
         ZNET_LOG_ERROR("Socket::close failed: fd={}, errno={}, error={}",
                        sockfd_, errno, strerror(errno));
         return false;
@@ -261,7 +261,7 @@ bool Socket::shutdown_write() {
         return true;
     }
 
-    if (zcoroutine::co_shutdown(sockfd_, 'w') != 0) {
+    if (zco::co_shutdown(sockfd_, 'w') != 0) {
         const int err = errno;
         ZNET_LOG_ERROR(
             "Socket::shutdown_write failed: fd={}, errno={}, error={}", sockfd_,
@@ -286,7 +286,7 @@ ssize_t Socket::send(const void *buffer, size_t length, int flags,
     }
 
     const uint32_t effective_timeout_ms = normalize_timeout_ms(timeout_ms);
-    const ssize_t n = zcoroutine::co_send(sockfd_, buffer, length, flags,
+    const ssize_t n = zco::co_send(sockfd_, buffer, length, flags,
                                           effective_timeout_ms);
     return n;
 }
@@ -303,7 +303,7 @@ ssize_t Socket::recv(void *buffer, size_t length, int flags,
     }
 
     const uint32_t effective_timeout_ms = normalize_timeout_ms(timeout_ms);
-    const ssize_t n = zcoroutine::co_recv(sockfd_, buffer, length, flags,
+    const ssize_t n = zco::co_recv(sockfd_, buffer, length, flags,
                                           effective_timeout_ms);
     return n;
 }
@@ -321,7 +321,7 @@ ssize_t Socket::send_to(const void *buffer, size_t length,
     }
 
     const uint32_t effective_timeout_ms = normalize_timeout_ms(timeout_ms);
-    const ssize_t n = zcoroutine::co_sendto(
+    const ssize_t n = zco::co_sendto(
         sockfd_, buffer, length, flags, to->sockaddr_ptr(), to->sockaddr_len(),
         effective_timeout_ms);
     return n;
@@ -341,7 +341,7 @@ ssize_t Socket::recv_from(void *buffer, size_t length, Address::ptr from,
     sockaddr_storage addr;
     socklen_t len = sizeof(addr);
     const uint32_t effective_timeout_ms = normalize_timeout_ms(timeout_ms);
-    const ssize_t ret = zcoroutine::co_recvfrom(
+    const ssize_t ret = zco::co_recvfrom(
         sockfd_, buffer, length, flags, reinterpret_cast<sockaddr *>(&addr),
         &len, effective_timeout_ms);
     if (ret >= 0 && from) {
@@ -390,7 +390,7 @@ bool Socket::set_keep_alive(bool on) {
 // 切换 fd 的 O_NONBLOCK 标志。
 bool Socket::set_non_blocking(bool on) {
     if (on) {
-        zcoroutine::co_set_nonblock(sockfd_);
+        zco::co_set_nonblock(sockfd_);
         const int flags = ::fcntl(sockfd_, F_GETFL, 0);
         if (flags == -1 || (flags & O_NONBLOCK) == 0) {
             ZNET_LOG_ERROR(
@@ -474,7 +474,7 @@ bool Socket::init_sock() {
         return false;
     }
 
-    zcoroutine::co_set_cloexec(sockfd_);
+    zco::co_set_cloexec(sockfd_);
 
     // REUSEADDR 可降低服务重启时端口占用带来的 bind 失败概率。
     (void)set_reuse_addr(true);
@@ -487,7 +487,7 @@ bool Socket::init_sock() {
 
 // 创建底层 fd 并完成初始化，失败时保证资源回收干净。
 bool Socket::new_sock() {
-    sockfd_ = zcoroutine::co_socket(family_, type_, protocol_);
+    sockfd_ = zco::co_socket(family_, type_, protocol_);
     if (sockfd_ == -1) {
         ZNET_LOG_ERROR(
             "Socket::new_sock failed: family={}, type={}, protocol={}, "

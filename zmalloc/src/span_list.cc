@@ -5,8 +5,8 @@
 
 #include <cassert>
 
-#include "object_pool.h"
-#include "span_list.h"
+#include "zmalloc/object_pool.h"
+#include "zmalloc/span_list.h"
 
 namespace zmalloc {
 

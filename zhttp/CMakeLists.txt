@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(zhttp VERSION 1.0.0 LANGUAGES CXX)
+project(include/zhttp VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -21,20 +21,21 @@ set(ZHTTP_SOURCES
     src/http_response.cc
     src/http_parser.cc
     src/multipart.cc
-    src/middleware.cc
     src/radix_tree.cc
     src/router.cc
-    src/rate_limiter.cc
     src/http_utils.cc
     src/range_parse.cc
-    src/static_file_opt.cc
-    src/auth_middleware.cc
-    src/cors_middleware.cc
-    src/compression_middleware.cc
-    src/error_middleware.cc
-    src/request_body_middleware.cc
-    src/timeout_middleware.cc
-    src/security_middleware.cc
+    src/mid/middleware.cc
+    src/mid/rate_limiter_middleware.cc
+    src/mid/static_file_middleware.cc
+    src/mid/auth_middleware.cc
+    src/mid/cors_middleware.cc
+    src/mid/compression_middleware.cc
+    src/mid/error_middleware.cc
+    src/mid/request_body_middleware.cc
+    src/mid/timeout_middleware.cc
+    src/mid/security_middleware.cc
+    src/mid/session_middleware.cc
     src/http_server.cc
     src/websocket_frame.cc
     src/websocket.cc
@@ -51,14 +52,14 @@ add_library(zhttp STATIC ${ZHTTP_SOURCES})
 target_include_directories(zhttp PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/zlog/include
-    ${CMAKE_SOURCE_DIR}/zcoroutine/include
+    ${CMAKE_SOURCE_DIR}/zco/include
     ${CMAKE_SOURCE_DIR}/znet/include
 )
 
 # 链接依赖库
 target_link_libraries(zhttp PUBLIC
     znet
-    zcoroutine
+    zco
     zlog_static
     OpenSSL::SSL
     OpenSSL::Crypto

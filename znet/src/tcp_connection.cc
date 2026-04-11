@@ -6,8 +6,8 @@
 #include <utility>
 #include <vector>
 
-#include "zcoroutine/io_event.h"
-#include "zcoroutine/sched.h"
+#include "zco/io_event.h"
+#include "zco/sched.h"
 #include "znet/tls_context.h"
 #include "znet/znet_logger.h"
 
@@ -32,7 +32,7 @@ const char *state_to_string(TcpConnection::State state) {
 } // namespace
 
 TcpConnection::TcpConnection(Socket::ptr socket,
-                             zcoroutine::Scheduler *actor_scheduler)
+                             zco::Scheduler *actor_scheduler)
     : socket_(std::move(socket)), input_buffer_(), output_buffer_(),
       state_(static_cast<uint8_t>(State::kConnecting)),
       write_complete_callback_(), high_water_mark_callback_(),
@@ -43,9 +43,9 @@ TcpConnection::TcpConnection(Socket::ptr socket,
     if (actor_scheduler_) {
         actor_sched_id_ = actor_scheduler_->id();
     } else {
-        actor_scheduler_ = zcoroutine::next_sched();
+        actor_scheduler_ = zco::next_sched();
         if (!actor_scheduler_) {
-            actor_scheduler_ = zcoroutine::main_sched();
+            actor_scheduler_ = zco::main_sched();
         }
         if (actor_scheduler_) {
             actor_sched_id_ = actor_scheduler_->id();
@@ -132,9 +132,9 @@ TcpConnection::dispatch_event_and_wait(const std::shared_ptr<Event> &event) {
             mailbox_.push_back(event);
             if (!actor_running_) {
                 actor_running_ = true;
-                if (zcoroutine::in_coroutine() &&
+                if (zco::in_coroutine() &&
                     (actor_sched_id_ < 0 ||
-                     zcoroutine::sched_id() == actor_sched_id_)) {
+                     zco::sched_id() == actor_sched_id_)) {
                     run_inline = true;
                 } else {
                     should_launch_worker = true;
@@ -158,7 +158,7 @@ TcpConnection::dispatch_event_and_wait(const std::shared_ptr<Event> &event) {
         if (actor_scheduler_) {
             actor_scheduler_->go([self]() { self->drain_mailbox(); });
         } else {
-            zcoroutine::go([self]() { self->drain_mailbox(); });
+            zco::go([self]() { self->drain_mailbox(); });
         }
     }
 
@@ -171,11 +171,11 @@ TcpConnection::dispatch_event_and_wait(const std::shared_ptr<Event> &event) {
 }
 
 bool TcpConnection::try_begin_inline_actor() {
-    if (!zcoroutine::in_coroutine()) {
+    if (!zco::in_coroutine()) {
         return false;
     }
 
-    if (actor_sched_id_ >= 0 && zcoroutine::sched_id() != actor_sched_id_) {
+    if (actor_sched_id_ >= 0 && zco::sched_id() != actor_sched_id_) {
         return false;
     }
 
@@ -317,13 +317,13 @@ bool TcpConnection::enable_tls_server(
 }
 
 bool TcpConnection::wait_tls_io(bool wait_for_write, uint32_t timeout_ms) {
-    zcoroutine::IoEvent io_event(fd(), wait_for_write
-                                           ? zcoroutine::IoEventType::kWrite
-                                           : zcoroutine::IoEventType::kRead);
+    zco::IoEvent io_event(fd(), wait_for_write
+                                           ? zco::IoEventType::kWrite
+                                           : zco::IoEventType::kRead);
     const uint32_t wait_timeout_ms =
-        timeout_ms == 0 ? zcoroutine::kInfiniteTimeoutMs : timeout_ms;
+        timeout_ms == 0 ? zco::kInfiniteTimeoutMs : timeout_ms;
     if (!io_event.wait(wait_timeout_ms)) {
-        if (errno == 0 && zcoroutine::timeout()) {
+        if (errno == 0 && zco::timeout()) {
             errno = ETIMEDOUT;
         }
         return false;

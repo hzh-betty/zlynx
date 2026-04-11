@@ -1,8 +1,8 @@
-# zcoroutine 性能测试与优化报告
+# zco 性能测试与优化报告
 
 ## 1. 目标与范围
 
-本次工作按两个方向对 `zcoroutine` 做性能优化，并输出可复现实验结果：
+本次工作按两个方向对 `zco` 做性能优化，并输出可复现实验结果：
 
 1. 使用 `perf record/report` 定位 CPU 热点并做热点优化。
 2. 使用 `valgrind --tool=cachegrind` 分析缓存与分支行为，并针对缓存友好性做代码优化。
@@ -10,28 +10,28 @@
 另外按补充要求，对性能测试入口做了两项调整：
 
 1. 压测入口改为独立 benchmark，可直接运行，不再依赖 gtest。
-2. benchmark 启动时显式关闭 `zcoroutine` 日志，避免日志开销污染结果。
+2. benchmark 启动时显式关闭 `zco` 日志，避免日志开销污染结果。
 
-本次 workload 使用 `zcoroutine/tests/stress/stack_model_perf.cc`。
+本次 workload 使用 `zco/tests/stress/stack_model_perf.cc`。
 
 ## 2. 环境与构建
 
 - 日期：2026-04-10
-- 工作目录：`/home/betty/repositories/zlynx/.worktrees/zcoroutine-perf`
-- 构建目录：`build-zcoroutine-perf-nooverride`
+- 工作目录：`/home/betty/repositories/zlynx/.worktrees/zco-perf`
+- 构建目录：`build-zco-perf-nooverride`
 - 构建类型：`RelWithDebInfo`
 - 关键 CMake 选项：
-  - `-DZCOROUTINE_BUILD_TESTS=ON`
+  - `-DZCO_BUILD_TESTS=ON`
   - `-DZLYNX_USE_ZMALLOC_OVERRIDE=OFF`
 
 构建命令：
 
 ```bash
-cmake -S . -B build-zcoroutine-perf-nooverride \
+cmake -S . -B build-zco-perf-nooverride \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-  -DZCOROUTINE_BUILD_TESTS=ON \
+  -DZCO_BUILD_TESTS=ON \
   -DZLYNX_USE_ZMALLOC_OVERRIDE=OFF
-cmake --build build-zcoroutine-perf-nooverride --target stack_model_perf -j
+cmake --build build-zco-perf-nooverride --target stack_model_perf -j
 ```
 
 说明：
@@ -45,50 +45,50 @@ cmake --build build-zcoroutine-perf-nooverride --target stack_model_perf -j
 基线：
 
 ```bash
-BUILD_DIR=/home/betty/repositories/zlynx/.worktrees/zcoroutine-perf/build-zcoroutine-perf-nooverride \
-bash zcoroutine/tests/stress/run_stack_model_perf_profile.sh baseline
+BUILD_DIR=/home/betty/repositories/zlynx/.worktrees/zco-perf/build-zco-perf-nooverride \
+bash zco/tests/stress/run_stack_model_perf_profile.sh baseline
 ```
 
 热点采样：
 
 ```bash
-BUILD_DIR=/home/betty/repositories/zlynx/.worktrees/zcoroutine-perf/build-zcoroutine-perf-nooverride \
-bash zcoroutine/tests/stress/run_stack_model_perf_profile.sh perf
+BUILD_DIR=/home/betty/repositories/zlynx/.worktrees/zco-perf/build-zco-perf-nooverride \
+bash zco/tests/stress/run_stack_model_perf_profile.sh perf
 ```
 
 缓存分析：
 
 ```bash
-BUILD_DIR=/home/betty/repositories/zlynx/.worktrees/zcoroutine-perf/build-zcoroutine-perf-nooverride \
-ZCOROUTINE_PERF_SCALE_PCT=5 \
-bash zcoroutine/tests/stress/run_stack_model_perf_profile.sh valgrind
+BUILD_DIR=/home/betty/repositories/zlynx/.worktrees/zco-perf/build-zco-perf-nooverride \
+ZCO_PERF_SCALE_PCT=5 \
+bash zco/tests/stress/run_stack_model_perf_profile.sh valgrind
 ```
 
 最终采用的主要 artifact：
 
-- baseline: `zcoroutine/tests/stress/perf_results/baseline_20260410_013102`
-- perf: `zcoroutine/tests/stress/perf_results/perf_20260410_013102`
-- valgrind: `zcoroutine/tests/stress/perf_results/valgrind_20260410_013102`
+- baseline: `zco/tests/stress/perf_results/baseline_20260410_013102`
+- perf: `zco/tests/stress/perf_results/perf_20260410_013102`
+- valgrind: `zco/tests/stress/perf_results/valgrind_20260410_013102`
 
 优化前对照组：
 
-- baseline: `zcoroutine/tests/stress/perf_results/baseline_20260410_005510`
-- perf: `zcoroutine/tests/stress/perf_results/perf_20260410_005510`
-- valgrind: `zcoroutine/tests/stress/perf_results/valgrind_20260410_005510`
+- baseline: `zco/tests/stress/perf_results/baseline_20260410_005510`
+- perf: `zco/tests/stress/perf_results/perf_20260410_005510`
+- valgrind: `zco/tests/stress/perf_results/valgrind_20260410_005510`
 
 ## 4. 代码改动摘要
 
 ### 4.1 性能测试改造
 
-- `zcoroutine/tests/stress/stack_model_perf.cc`
+- `zco/tests/stress/stack_model_perf.cc`
   - 从 gtest 压测改成独立 `main()` benchmark。
   - 增加参数读取、结果打印和失败退出。
   - benchmark 启动时关闭日志。
-- `zcoroutine/tests/CMakeLists.txt`
+- `zco/tests/CMakeLists.txt`
   - 增加 benchmark 目标，保留 smoke 级 ctest。
-- `zcoroutine/tests/stress/run_stack_model_perf_profile.sh`
+- `zco/tests/stress/run_stack_model_perf_profile.sh`
   - 改为直接运行 benchmark 二进制。
-  - 支持显式 `BUILD_DIR` 和 `ZCOROUTINE_PERF_SCALE_PCT`。
+  - 支持显式 `BUILD_DIR` 和 `ZCO_PERF_SCALE_PCT`。
 
 ### 4.2 perf 热点优化
 
@@ -96,7 +96,7 @@ bash zcoroutine/tests/stress/run_stack_model_perf_profile.sh valgrind
   - `Runtime::register_fiber()` 不再在任务 materialize 时无条件执行。
   - 只有 `current_coroutine()` 需要对外句柄时才注册映射。
 - 日志快路径：
-  - 在 `zcoroutine/log.h` 中增加缓存日志级别。
+  - 在 `zco/zco_log.h` 中增加缓存日志级别。
   - 日志宏先走 `should_log()`，避免热路径反复进入 `get_logger()`。
 - `StealQueue::size()` 改为原子快照：
   - 读负载统计时避免每次拿互斥锁。
@@ -204,9 +204,9 @@ hook_socketpair/shared       1,101,336.75 ops/s
 执行过的验证命令：
 
 ```bash
-ctest --test-dir build-zcoroutine-perf-nooverride -L quick --output-on-failure
-ctest --test-dir build-zcoroutine-perf-nooverride -R '^(runtime_stress|stack_model_perf_smoke)$' --output-on-failure
-build-zcoroutine-perf-nooverride/zcoroutine/tests/stack_model_perf
+ctest --test-dir build-zco-perf-nooverride -L quick --output-on-failure
+ctest --test-dir build-zco-perf-nooverride -R '^(runtime_stress|stack_model_perf_smoke)$' --output-on-failure
+build-zco-perf-nooverride/zco/tests/stack_model_perf
 ```
 
 结果：

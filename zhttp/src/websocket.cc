@@ -1,6 +1,6 @@
-#include "websocket.h"
+#include "zhttp/websocket.h"
 
-#include "http_common.h"
+#include "zhttp/http_common.h"
 
 #include <openssl/evp.h>
 #include <openssl/sha.h>

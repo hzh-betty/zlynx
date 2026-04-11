@@ -13,7 +13,7 @@
 
 #include <gtest/gtest.h>
 
-#include "zcoroutine/sched.h"
+#include "zco/sched.h"
 
 namespace znet {
 namespace {
@@ -24,11 +24,11 @@ bool is_timeout_errno(int err) {
 
 class TcpConnectionUnitTest : public ::testing::Test {
   protected:
-    void TearDown() override { zcoroutine::shutdown(); }
+    void TearDown() override { zco::shutdown(); }
 };
 
 TEST_F(TcpConnectionUnitTest, ReadIntoInputBufferAndFlushOutputBuffer) {
-    zcoroutine::init(2);
+    zco::init(2);
 
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
@@ -66,7 +66,7 @@ TEST_F(TcpConnectionUnitTest,
 }
 
 TEST_F(TcpConnectionUnitTest, ConcurrentSendIsSerializedByActorMailbox) {
-    zcoroutine::init(1);
+    zco::init(1);
 
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
@@ -125,7 +125,7 @@ TEST_F(TcpConnectionUnitTest, ConcurrentSendIsSerializedByActorMailbox) {
 
 TEST_F(TcpConnectionUnitTest,
        SendSucceedsWhenActorSchedulerIsNullInThreadContext) {
-    zcoroutine::init(1);
+    zco::init(1);
 
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
@@ -226,7 +226,7 @@ TEST_F(TcpConnectionUnitTest, ShutdownClosesConnectionIdempotently) {
 }
 
 TEST_F(TcpConnectionUnitTest, ReadTimeoutIsReportedAsEtimedout) {
-    zcoroutine::init(1);
+    zco::init(1);
 
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
@@ -267,7 +267,7 @@ TEST_F(TcpConnectionUnitTest, ConnectionWriteTimeoutCanBeConfigured) {
 }
 
 TEST_F(TcpConnectionUnitTest, SendSucceedsInsideCoroutineContext) {
-    zcoroutine::init(1);
+    zco::init(1);
 
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
@@ -276,8 +276,8 @@ TEST_F(TcpConnectionUnitTest, SendSucceedsInsideCoroutineContext) {
         std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
     ASSERT_NE(conn, nullptr);
 
-    zcoroutine::WaitGroup done(1);
-    zcoroutine::go([&]() {
+    zco::WaitGroup done(1);
+    zco::go([&]() {
         EXPECT_EQ(conn->send("fast", 4), 4);
         done.done();
     });

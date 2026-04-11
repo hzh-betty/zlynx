@@ -1,9 +1,11 @@
 #include <gtest/gtest.h>
 
-#include "rate_limiter.h"
-#include "router.h"
+#include "zhttp/mid/rate_limiter_middleware.h"
+#include "zhttp/router.h"
 
 using namespace zhttp;
+using namespace zhttp::mid;
+
 
 class RateLimiterTest : public ::testing::Test {
   protected:

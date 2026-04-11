@@ -1,9 +1,10 @@
-#include "middleware.h"
-#include "zhttp_logger.h"
+#include "zhttp/mid/middleware.h"
+#include "zhttp/zhttp_logger.h"
 
 #include <gtest/gtest.h>
 
 using namespace zhttp;
+using namespace zhttp::mid;
 
 // 测试中间件：记录调用顺序
 class OrderTrackingMiddleware : public Middleware {

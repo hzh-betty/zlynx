@@ -18,7 +18,7 @@ namespace {
 
 class TcpServerUnitTest : public ::testing::Test {
   protected:
-    void TearDown() override { zcoroutine::shutdown(); }
+    void TearDown() override { zco::shutdown(); }
 };
 
 TEST_F(TcpServerUnitTest, EnableTlsRejectsInvalidCertificatePaths) {
@@ -31,7 +31,7 @@ TEST_F(TcpServerUnitTest, EnableTlsRejectsInvalidCertificatePaths) {
 }
 
 TEST_F(TcpServerUnitTest, AcceptsConnectionAndConsumesBufferMessages) {
-    zcoroutine::init(3);
+    zco::init(3);
 
     auto listen_addr = std::make_shared<IPv4Address>("127.0.0.1", 0);
     auto server = std::make_shared<TcpServer>(listen_addr, 16);
@@ -89,7 +89,7 @@ TEST_F(TcpServerUnitTest, AcceptsConnectionAndConsumesBufferMessages) {
 }
 
 TEST_F(TcpServerUnitTest, OnMessageCallbackUsesConnectionAndBuffer) {
-    zcoroutine::init(3);
+    zco::init(3);
 
     auto listen_addr = std::make_shared<IPv4Address>("127.0.0.1", 0);
     auto server = std::make_shared<TcpServer>(listen_addr, 16);
@@ -144,7 +144,7 @@ TEST_F(TcpServerUnitTest, OnMessageCallbackUsesConnectionAndBuffer) {
 }
 
 TEST_F(TcpServerUnitTest, ConnectAndCloseCallbacksAreIndependent) {
-    zcoroutine::init(2);
+    zco::init(2);
 
     auto listen_addr = std::make_shared<IPv4Address>("127.0.0.1", 0);
     auto server = std::make_shared<TcpServer>(listen_addr, 16);
@@ -193,7 +193,7 @@ TEST_F(TcpServerUnitTest, ConnectAndCloseCallbacksAreIndependent) {
 }
 
 TEST_F(TcpServerUnitTest, SnakeCaseMessageCallbackReceivesBuffer) {
-    zcoroutine::init(2);
+    zco::init(2);
 
     auto listen_addr = std::make_shared<IPv4Address>("127.0.0.1", 0);
     auto server = std::make_shared<TcpServer>(listen_addr, 16);
@@ -245,7 +245,7 @@ TEST_F(TcpServerUnitTest, SnakeCaseMessageCallbackReceivesBuffer) {
 }
 
 TEST_F(TcpServerUnitTest, KeepsConnectionOpenUntilPeerCloses) {
-    zcoroutine::init(2);
+    zco::init(2);
 
     auto listen_addr = std::make_shared<IPv4Address>("127.0.0.1", 0);
     auto server = std::make_shared<TcpServer>(listen_addr, 16);
@@ -306,7 +306,7 @@ TEST_F(TcpServerUnitTest, KeepsConnectionOpenUntilPeerCloses) {
 }
 
 TEST_F(TcpServerUnitTest, StopReturnsPromptlyWhenConnectionIsIdle) {
-    zcoroutine::init(2);
+    zco::init(2);
 
     auto listen_addr = std::make_shared<IPv4Address>("127.0.0.1", 0);
     auto server = std::make_shared<TcpServer>(listen_addr, 16);
@@ -375,7 +375,7 @@ TEST_F(TcpServerUnitTest, StopReturnsPromptlyWhenConnectionIsIdle) {
 }
 
 TEST_F(TcpServerUnitTest, WriteTimeoutIsAppliedToAcceptedConnection) {
-    zcoroutine::init(2);
+    zco::init(2);
 
     auto listen_addr = std::make_shared<IPv4Address>("127.0.0.1", 0);
     auto server = std::make_shared<TcpServer>(listen_addr, 16);

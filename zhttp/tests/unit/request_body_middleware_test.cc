@@ -1,8 +1,9 @@
-#include "request_body_middleware.h"
+#include "zhttp/mid/request_body_middleware.h"
 
 #include <gtest/gtest.h>
 
 using namespace zhttp;
+using namespace zhttp::mid;
 
 TEST(RequestBodyMiddlewareTest, RejectInvalidJsonByDefault) {
     RequestBodyMiddleware middleware;

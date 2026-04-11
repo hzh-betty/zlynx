@@ -1,5 +1,5 @@
-#include "compression_middleware.h"
-#include "zhttp_logger.h"
+#include "zhttp/mid/compression_middleware.h"
+#include "zhttp/zhttp_logger.h"
 
 #include <gtest/gtest.h>
 #include <zlib.h>
@@ -9,6 +9,7 @@
 #endif
 
 using namespace zhttp;
+using namespace zhttp::mid;
 
 namespace {
 

@@ -1,5 +1,5 @@
-#include "websocket_frame.h"
-#include "zhttp_logger.h"
+#include "zhttp/websocket_frame.h"
+#include "zhttp/zhttp_logger.h"
 
 #include <gtest/gtest.h>
 
