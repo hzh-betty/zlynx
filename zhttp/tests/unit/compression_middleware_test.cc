@@ -1,12 +1,8 @@
 #include "zhttp/mid/compression_middleware.h"
-#include "zhttp/zhttp_logger.h"
 
 #include <gtest/gtest.h>
 #include <zlib.h>
-
-#ifdef ZHTTP_USE_BROTLI
 #include <brotli/decode.h>
-#endif
 
 using namespace zhttp;
 using namespace zhttp::mid;
@@ -58,28 +54,35 @@ std::string gzip_decompress_for_test(const std::string &data) {
     }
 }
 
-#ifdef ZHTTP_USE_BROTLI
-std::string brotli_decompress_for_test(const std::string &data) {
+std::string brotli_decompress_for_test(const std::string &data,
+                                       size_t expected_size) {
     if (data.empty()) {
         return {};
     }
 
-    std::string output;
-    output.resize(data.size() * 6 + 256);
-    size_t output_size = output.size();
+    size_t output_size = expected_size + 64;
+    for (int i = 0; i < 4; ++i) {
+        std::string output;
+        output.resize(output_size);
 
-    BrotliDecoderResult rc = BrotliDecoderDecompress(
-        data.size(), reinterpret_cast<const uint8_t *>(data.data()),
-        &output_size, reinterpret_cast<uint8_t *>(&output[0]));
+        size_t decoded_size = output.size();
+        BrotliDecoderResult rc = BrotliDecoderDecompress(
+            data.size(), reinterpret_cast<const uint8_t *>(data.data()),
+            &decoded_size, reinterpret_cast<uint8_t *>(&output[0]));
 
-    if (rc != BROTLI_DECODER_RESULT_SUCCESS) {
-        return {};
+        if (rc == BROTLI_DECODER_RESULT_SUCCESS) {
+            output.resize(decoded_size);
+            return output;
+        }
+        if (rc != BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT) {
+            return {};
+        }
+
+        output_size *= 2;
     }
 
-    output.resize(output_size);
-    return output;
+    return {};
 }
-#endif
 
 std::string large_text_payload() {
     std::string payload;
@@ -169,7 +172,6 @@ TEST(CompressionMiddlewareTest, SkipCompressionForChunkedResponse) {
     EXPECT_EQ(resp.body_content(), plain);
 }
 
-#ifdef ZHTTP_USE_BROTLI
 TEST(CompressionMiddlewareTest, PreferBrotliWhenClientSupportsBoth) {
     CompressionMiddleware::Options opt;
     opt.enable_br = true;
@@ -190,13 +192,11 @@ TEST(CompressionMiddlewareTest, PreferBrotliWhenClientSupportsBoth) {
 
     EXPECT_EQ(resp.headers().at("Content-Encoding"), "br");
     const std::string decompressed =
-        brotli_decompress_for_test(resp.body_content());
+        brotli_decompress_for_test(resp.body_content(), plain.size());
     EXPECT_EQ(decompressed, plain);
 }
-#endif
 
 int main(int argc, char **argv) {
-    zhttp::init_logger();
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }

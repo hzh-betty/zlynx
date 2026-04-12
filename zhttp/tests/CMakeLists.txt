@@ -1,4 +1,5 @@
 find_package(GTest REQUIRED)
+find_library(BROTLI_DEC_LIBRARY NAMES brotlidec REQUIRED)
 
 # 单元测试列表
 set(UNIT_TESTS
@@ -45,6 +46,10 @@ foreach(test_name ${UNIT_TESTS})
     )
     add_test(NAME ${test_name} COMMAND ${test_name})
 endforeach()
+
+target_link_libraries(compression_middleware_test
+    ${BROTLI_DEC_LIBRARY}
+)
 
 # 集成测试
 add_executable(http_server_test integration/http_server_test.cc)

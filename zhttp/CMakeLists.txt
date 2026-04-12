@@ -11,7 +11,7 @@ find_package(fmt REQUIRED)
 find_package(ZLIB REQUIRED)
 find_package(nlohmann_json REQUIRED)
 
-find_library(BROTLI_ENC_LIBRARY NAMES brotlienc)
+find_library(BROTLI_ENC_LIBRARY NAMES brotlienc REQUIRED)
 
 # zhttp 库源文件
 set(ZHTTP_SOURCES
@@ -67,12 +67,8 @@ target_link_libraries(zhttp PUBLIC
     ZLIB::ZLIB
     nlohmann_json::nlohmann_json
     pthread
+    ${BROTLI_ENC_LIBRARY}
 )
-
-if(BROTLI_ENC_LIBRARY)
-    target_link_libraries(zhttp PUBLIC ${BROTLI_ENC_LIBRARY})
-    target_compile_definitions(zhttp PUBLIC ZHTTP_USE_BROTLI=1)
-endif()
 
 # 测试选项
 option(BUILD_ZHTTP_TESTS "Build zhttp tests" ON)

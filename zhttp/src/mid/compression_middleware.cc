@@ -1,11 +1,9 @@
 #include "zhttp/mid/compression_middleware.h"
 
 #include <zlib.h>
+#include <brotli/encode.h>
 
 #include "zhttp/http_common.h"
-#ifdef ZHTTP_USE_BROTLI
-#include <brotli/encode.h>
-#endif
 
 namespace zhttp {
 namespace mid {
@@ -190,7 +188,6 @@ bool CompressionMiddleware::compress_with_gzip(const std::string &input,
 
 bool CompressionMiddleware::compress_with_brotli(const std::string &input,
                                                  std::string &output) const {
-#ifdef ZHTTP_USE_BROTLI
     if (input.empty()) {
         output.clear();
         return true;
@@ -224,11 +221,6 @@ bool CompressionMiddleware::compress_with_brotli(const std::string &input,
 
     output.resize(compressed_size);
     return true;
-#else
-    (void)input;
-    output.clear();
-    return false;
-#endif
 }
 
 void CompressionMiddleware::append_vary_accept_encoding(
