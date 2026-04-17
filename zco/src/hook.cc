@@ -10,7 +10,6 @@
 #include <unistd.h>
 
 #include <array>
-#include <cassert>
 #include <chrono>
 #include <cstring>
 #include <mutex>
@@ -102,22 +101,14 @@ FdMetadataStore g_fd_metadata_store;
 
 bool is_retryable_errno(int err) { return err == EAGAIN || err == EWOULDBLOCK; }
 
-bool strict_contract_failure(const char *func_name, const char *message,
-                             int err) {
-    errno = err;
-    ZCO_LOG_FATAL("{} contract violation: {}", func_name, message);
-#ifndef NDEBUG
-    assert(false && "zco co_* contract violation");
-#endif
-    return false;
-}
-
 bool require_coroutine_context(const char *func_name) {
     if (in_coroutine()) {
         return true;
     }
-    return strict_contract_failure(
-        func_name, "must be called in coroutine context", EPERM);
+    errno = EPERM;
+    ZCO_LOG_FATAL("{} contract violation: must be called in coroutine context",
+                  func_name);
+    return false;
 }
 
 bool force_nonblocking_fd(int fd) {
@@ -151,8 +142,9 @@ bool require_nonblocking_fd(const char *func_name, int fd) {
         return true;
     }
 
-    return strict_contract_failure(func_name, "fd must be non-blocking",
-                                   EINVAL);
+    errno = EINVAL;
+    ZCO_LOG_FATAL("{} contract violation: fd must be non-blocking", func_name);
+    return false;
 }
 
 uint32_t timeval_to_milliseconds(const timeval &timeout) {

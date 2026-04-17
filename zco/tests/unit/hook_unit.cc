@@ -208,5 +208,56 @@ TEST_F(HookUnitByHeaderTest, CloseWithDelayInCoroutinePathWorks) {
     ::close(pair[1]);
 }
 
+TEST_F(HookUnitByHeaderTest, DupApisCreateValidDescriptors) {
+    int fd = co_socket(AF_INET, SOCK_STREAM, 0);
+    ASSERT_GE(fd, 0);
+
+    int dup_fd = co_dup(fd);
+    ASSERT_GE(dup_fd, 0);
+
+    int probe = ::dup(fd);
+    ASSERT_GE(probe, 0);
+    ASSERT_EQ(::close(probe), 0);
+
+    const int dup2_fd = co_dup2(fd, probe);
+    ASSERT_EQ(dup2_fd, probe);
+
+#if defined(__linux__)
+    const int dup3_target = probe + 1;
+    (void)::close(dup3_target);
+    const int dup3_fd = co_dup3(fd, dup3_target, O_CLOEXEC);
+    ASSERT_EQ(dup3_fd, dup3_target);
+    EXPECT_EQ(::fcntl(dup3_fd, F_GETFD, 0) & FD_CLOEXEC, FD_CLOEXEC);
+    EXPECT_EQ(co_close(dup3_fd), 0);
+#endif
+
+    EXPECT_EQ(co_close(dup2_fd), 0);
+    EXPECT_EQ(co_close(dup_fd), 0);
+    EXPECT_EQ(co_close(fd), 0);
+}
+
+TEST_F(HookUnitByHeaderTest, OutsideCoroutineIoHooksFailWithEperm) {
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+    ASSERT_EQ(
+        ::fcntl(pair[0], F_SETFL, ::fcntl(pair[0], F_GETFL, 0) | O_NONBLOCK),
+        0);
+    ASSERT_EQ(
+        ::fcntl(pair[1], F_SETFL, ::fcntl(pair[1], F_GETFL, 0) | O_NONBLOCK),
+        0);
+
+    char buffer[4] = {0};
+    errno = 0;
+    EXPECT_EQ(co_read(pair[0], buffer, sizeof(buffer), 10), -1);
+    EXPECT_EQ(errno, EPERM);
+
+    errno = 0;
+    EXPECT_EQ(co_send(pair[0], "x", 1, 0, 10), -1);
+    EXPECT_EQ(errno, EPERM);
+
+    ::close(pair[0]);
+    ::close(pair[1]);
+}
+
 } // namespace
 } // namespace zco
