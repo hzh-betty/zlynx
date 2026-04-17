@@ -1,3 +1,5 @@
+#include <atomic>
+
 #include <gtest/gtest.h>
 
 #include "support/test_fixture.h"
@@ -17,6 +19,22 @@ TEST_F(TimerUnitByHeaderTest, NowMsIsMonotonic) {
     }
 
     EXPECT_GE(end, begin);
+}
+
+TEST_F(TimerUnitByHeaderTest, AddTimerAndProcessDueExecutesCallback) {
+    TimerQueue queue;
+    std::atomic<bool> fired(false);
+
+    std::shared_ptr<TimerToken> token =
+        queue.add_timer(1, [&fired]() { fired.store(true, std::memory_order_release); });
+    ASSERT_NE(token, nullptr);
+
+    const uint64_t deadline = now_ms() + 100;
+    while (!fired.load(std::memory_order_acquire) && now_ms() < deadline) {
+        queue.process_due();
+    }
+
+    EXPECT_TRUE(fired.load(std::memory_order_acquire));
 }
 
 } // namespace

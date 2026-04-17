@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <vector>
 
 #include "support/test_fixture.h"
 #include "zco/internal/snapshot_buffer_pool.h"
@@ -69,6 +70,41 @@ TEST_F(SnapshotBufferPoolUnitTest,
     ASSERT_NE(buffer, nullptr);
 
     pool.release(buffer, bucket, capacity + 1);
+}
+
+TEST_F(SnapshotBufferPoolUnitTest, ReleaseWithInvalidBucketIndexDeletesBuffer) {
+    SnapshotBufferPool pool;
+
+    char *raw = new char[64];
+    pool.release(raw, static_cast<uint8_t>(250), 64);
+}
+
+TEST_F(SnapshotBufferPoolUnitTest, PerBucketLimitDropsOverflowBuffers) {
+    SnapshotBufferPool pool;
+
+    size_t capacity = 0;
+    uint8_t bucket = 0;
+    char *seed = pool.acquire(1024, &capacity, &bucket);
+    ASSERT_NE(seed, nullptr);
+
+    // Keep exactly one canonical buffer in pool for later reuse check.
+    pool.release(seed, bucket, capacity);
+
+    std::vector<char *> buffers;
+    buffers.reserve(300);
+    for (int i = 0; i < 300; ++i) {
+        size_t cap = 0;
+        uint8_t b = 0;
+        char *buf = pool.acquire(1024, &cap, &b);
+        ASSERT_NE(buf, nullptr);
+        ASSERT_EQ(cap, capacity);
+        ASSERT_EQ(b, bucket);
+        buffers.push_back(buf);
+    }
+
+    for (char *buf : buffers) {
+        pool.release(buf, bucket, capacity);
+    }
 }
 
 } // namespace

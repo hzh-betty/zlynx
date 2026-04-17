@@ -51,6 +51,19 @@ TEST_F(SharedStackBufferUnitTest, MoveAssignmentTransfersOwnership) {
     EXPECT_EQ(right.size(), 0u);
 }
 
+TEST_F(SharedStackBufferUnitTest, MoveAssignmentSelfIsNoOp) {
+    SharedStackBuffer buffer(256);
+    char *data_before = buffer.data();
+    char *bp_before = buffer.stack_bp();
+    const size_t size_before = buffer.size();
+
+    buffer = std::move(buffer);
+
+    EXPECT_EQ(buffer.data(), data_before);
+    EXPECT_EQ(buffer.stack_bp(), bp_before);
+    EXPECT_EQ(buffer.size(), size_before);
+}
+
 TEST_F(SharedStackBufferUnitTest, OccupyFiberSetterAndGetterWork) {
     SharedStackBuffer buffer(256);
 
@@ -71,6 +84,14 @@ TEST_F(SharedStackBufferUnitTest, SharedStackPoolAccessAndBounds) {
 
     EXPECT_EQ(pool.data(9), nullptr);
     EXPECT_EQ(pool.size(9), 0u);
+}
+
+TEST_F(SharedStackBufferUnitTest, ConstAccessorsExposeSamePointers) {
+    SharedStackBuffer buffer(128);
+    const SharedStackBuffer &const_ref = buffer;
+
+    EXPECT_EQ(const_ref.data(), buffer.data());
+    EXPECT_EQ(const_ref.stack_bp(), buffer.stack_bp());
 }
 
 } // namespace
