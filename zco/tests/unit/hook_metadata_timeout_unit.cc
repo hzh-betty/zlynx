@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <string>
 #include <sys/un.h>
 #include <sys/socket.h>
 #include <sys/time.h>
@@ -858,6 +859,159 @@ TEST_F(HookMetadataTimeoutUnitTest, SendtoNullAddressWithNonzeroLengthFailsFast)
     done.wait();
 
     ::close(fd);
+}
+
+TEST_F(HookMetadataTimeoutUnitTest, RecvnZeroCountReturnsImmediately) {
+    init(1);
+
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+    ASSERT_EQ(
+        ::fcntl(pair[0], F_SETFL, ::fcntl(pair[0], F_GETFL, 0) | O_NONBLOCK),
+        0);
+    ASSERT_EQ(
+        ::fcntl(pair[1], F_SETFL, ::fcntl(pair[1], F_GETFL, 0) | O_NONBLOCK),
+        0);
+
+    WaitGroup done(1);
+    go([&done, fd = pair[0]]() {
+        char sink = 0;
+        EXPECT_EQ(co_recvn(fd, &sink, 0, 0, 20), 0);
+        done.done();
+    });
+    done.wait();
+
+    ::close(pair[0]);
+    ::close(pair[1]);
+}
+
+TEST_F(HookMetadataTimeoutUnitTest, RecvnReturnsZeroWhenPeerClosesBeforeFullRead) {
+    init(2);
+
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+    ASSERT_EQ(
+        ::fcntl(pair[0], F_SETFL, ::fcntl(pair[0], F_GETFL, 0) | O_NONBLOCK),
+        0);
+    ASSERT_EQ(
+        ::fcntl(pair[1], F_SETFL, ::fcntl(pair[1], F_GETFL, 0) | O_NONBLOCK),
+        0);
+
+    WaitGroup done(2);
+    go([&done, fd = pair[0]]() {
+        char out[8] = {0};
+        EXPECT_EQ(co_recvn(fd, out, sizeof(out), 0, 100), 0);
+        done.done();
+    });
+
+    go([&done, fd = pair[1]]() {
+        const char payload[3] = {'a', 'b', 'c'};
+        EXPECT_EQ(co_send(fd, payload, sizeof(payload), send_nosignal_flags_for_unit(),
+                          50),
+                  3);
+        ::close(fd);
+        done.done();
+    });
+
+    done.wait();
+    ::close(pair[0]);
+}
+
+TEST_F(HookMetadataTimeoutUnitTest, CoSendTimesOutWhenPeerNeverReads) {
+    init(1);
+
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+    ASSERT_EQ(
+        ::fcntl(pair[0], F_SETFL, ::fcntl(pair[0], F_GETFL, 0) | O_NONBLOCK),
+        0);
+    ASSERT_EQ(
+        ::fcntl(pair[1], F_SETFL, ::fcntl(pair[1], F_GETFL, 0) | O_NONBLOCK),
+        0);
+
+    const int small = 1024;
+    ASSERT_EQ(::setsockopt(pair[0], SOL_SOCKET, SO_SNDBUF, &small, sizeof(small)),
+              0);
+
+    WaitGroup done(1);
+    go([&done, fd = pair[0]]() {
+        std::string payload(4 * 1024 * 1024, 'x');
+        errno = 0;
+        EXPECT_EQ(co_send(fd, payload.data(), payload.size(),
+                          send_nosignal_flags_for_unit(), 20),
+                  -1);
+        EXPECT_TRUE(errno == ETIMEDOUT || errno == EAGAIN ||
+                    errno == EWOULDBLOCK);
+        done.done();
+    });
+    done.wait();
+
+    ::close(pair[0]);
+    ::close(pair[1]);
+}
+
+TEST_F(HookMetadataTimeoutUnitTest, InvalidFdForRecvnSendAndSendtoReturnEbadf) {
+    init(1);
+
+    WaitGroup done(1);
+    go([&done]() {
+        char buffer[4] = {0};
+        sockaddr_in addr;
+        std::memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        addr.sin_port = htons(9);
+
+        errno = 0;
+        EXPECT_EQ(co_recvn(-1, buffer, sizeof(buffer), 0, 10), -1);
+        EXPECT_EQ(errno, EBADF);
+
+        errno = 0;
+        EXPECT_EQ(co_send(-1, "x", 1, send_nosignal_flags_for_unit(), 10), -1);
+        EXPECT_EQ(errno, EBADF);
+
+        errno = 0;
+        EXPECT_EQ(co_sendto(-1, "x", 1, 0, reinterpret_cast<const sockaddr *>(&addr),
+                            static_cast<socklen_t>(sizeof(addr)), 10),
+                  -1);
+        EXPECT_EQ(errno, EBADF);
+
+        done.done();
+    });
+    done.wait();
+}
+
+TEST_F(HookMetadataTimeoutUnitTest,
+       SendtoNullAddressAndZeroLengthFallsBackToConnectedSendPath) {
+    init(2);
+
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+    ASSERT_EQ(
+        ::fcntl(pair[0], F_SETFL, ::fcntl(pair[0], F_GETFL, 0) | O_NONBLOCK),
+        0);
+    ASSERT_EQ(
+        ::fcntl(pair[1], F_SETFL, ::fcntl(pair[1], F_GETFL, 0) | O_NONBLOCK),
+        0);
+
+    WaitGroup done(2);
+    go([&done, fd = pair[0]]() {
+        EXPECT_EQ(co_sendto(fd, "xy", 2, send_nosignal_flags_for_unit(), nullptr,
+                            0, 100),
+                  2);
+        done.done();
+    });
+
+    go([&done, fd = pair[1]]() {
+        char out[3] = {0};
+        EXPECT_EQ(co_recv(fd, out, 2, 0, 100), 2);
+        EXPECT_STREQ(out, "xy");
+        done.done();
+    });
+
+    done.wait();
+    ::close(pair[0]);
+    ::close(pair[1]);
 }
 
 } // namespace
