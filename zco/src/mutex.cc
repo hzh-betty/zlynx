@@ -51,20 +51,6 @@ void Mutex::lock() const {
     }
 
     Fiber::ptr coroutine = current_fiber_shared();
-    if (!coroutine) {
-        ZCO_LOG_WARN(
-            "mutex lock fallback to thread path, no current coroutine");
-        std::unique_lock<std::mutex> lock(impl_->mutex);
-        for (;;) {
-            impl_->cleanup_waiters_locked();
-            if (!impl_->locked && impl_->coroutine_waiters.empty()) {
-                impl_->locked = true;
-                return;
-            }
-            impl_->cv.wait(lock);
-        }
-    }
-
     std::shared_ptr<std::atomic<bool>> active =
         std::make_shared<std::atomic<bool>>(true);
     {

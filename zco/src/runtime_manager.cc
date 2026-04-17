@@ -104,18 +104,11 @@ StackModel Runtime::stack_model() const {
     return stack_model_;
 }
 
-bool Runtime::ensure_started() {
+void Runtime::ensure_started() {
     // 保持延迟启动语义：首次 submit/main_sched/next_sched 时自动 init。
     if (!started_.load(std::memory_order_acquire)) {
         init(0);
     }
-
-    if (processors_.empty()) {
-        ZCO_LOG_ERROR("runtime unavailable, processor list is empty");
-        return false;
-    }
-
-    return true;
 }
 
 Scheduler *Runtime::ensure_scheduler_handle(size_t scheduler_index) {
@@ -152,13 +145,6 @@ void Runtime::init(uint32_t scheduler_count) {
         stack_num = stack_num_;
         stack_size = stack_size_;
         stack_model = stack_model_;
-    }
-
-    if (stack_num == 0) {
-        stack_num = 1;
-    }
-    if (stack_size == 0) {
-        stack_size = kDefaultStackSize;
     }
 
     processors_.reserve(final_count);
@@ -214,9 +200,7 @@ void Runtime::submit(Task task) {
         return;
     }
 
-    if (!ensure_started()) {
-        return;
-    }
+    ensure_started();
 
     const size_t index = pick_processor_index();
     // 轮询基线 + 轻量负载感知，避免单点热点。
@@ -230,9 +214,7 @@ void Runtime::submit_to(size_t scheduler_index, Task task) {
         return;
     }
 
-    if (!ensure_started()) {
-        return;
-    }
+    ensure_started();
 
     const size_t index = scheduler_index % processors_.size();
     // 显式投递仍需取模，防止越界访问。
@@ -242,16 +224,12 @@ void Runtime::submit_to(size_t scheduler_index, Task task) {
 }
 
 Scheduler *Runtime::main_scheduler() {
-    if (!ensure_started()) {
-        return nullptr;
-    }
+    ensure_started();
     return ensure_scheduler_handle(0);
 }
 
 Scheduler *Runtime::next_scheduler() {
-    if (!ensure_started()) {
-        return nullptr;
-    }
+    ensure_started();
 
     const size_t index = pick_processor_index();
     return ensure_scheduler_handle(index);

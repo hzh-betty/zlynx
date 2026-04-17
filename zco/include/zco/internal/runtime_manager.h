@@ -180,9 +180,9 @@ class Runtime : public NonCopyable {
     /**
      * @brief 确保运行时已启动。
      * @param 无参数。
-     * @return true 表示可用。
+     * @return 无返回值。
      */
-    bool ensure_started();
+    void ensure_started();
 
     /**
      * @brief 选择任务投递目标处理器索引。

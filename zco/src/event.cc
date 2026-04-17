@@ -96,12 +96,6 @@ bool Event::wait(uint32_t milliseconds) const {
     // 协程模式：将当前协程登记到 waiters，随后挂起，等待 signal/notify_all
     // 或超时。
     Fiber::ptr coroutine = current_fiber_shared();
-    if (!coroutine) {
-        ZCO_LOG_WARN(
-            "event wait in coroutine context but no current coroutine");
-        return false;
-    }
-
     std::shared_ptr<std::atomic<bool>> active =
         std::make_shared<std::atomic<bool>>(true);
     {

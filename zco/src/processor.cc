@@ -590,10 +590,6 @@ void Processor::handle_io_ready(const std::shared_ptr<IoWaiter> &waiter,
 }
 
 void Processor::save_fiber_stack(const Fiber::ptr &fiber) {
-    if (!fiber) {
-        return;
-    }
-
     const size_t stack_slot = fiber->stack_slot();
     const size_t stack_size = shared_stacks_.size(stack_slot);
     void *stack_data = shared_stacks_.data(stack_slot);
@@ -633,7 +629,7 @@ void Processor::save_fiber_stack(const Fiber::ptr &fiber) {
 }
 
 void Processor::restore_fiber_stack(const Fiber::ptr &fiber) {
-    if (!fiber || !fiber->has_saved_stack()) {
+    if (!fiber->has_saved_stack()) {
         return;
     }
 
@@ -662,8 +658,7 @@ void Processor::restore_fiber_stack(const Fiber::ptr &fiber) {
 Fiber::ptr Processor::obtain_fiber(Task task) {
     size_t stack_slot = 0;
     if (stack_model_ == StackModel::kShared) {
-        const size_t stack_count =
-            shared_stacks_.count() == 0 ? 1 : shared_stacks_.count();
+        const size_t stack_count = shared_stacks_.count();
         stack_slot = next_stack_slot_.fetch_add(1, std::memory_order_relaxed) %
                      stack_count;
     }
