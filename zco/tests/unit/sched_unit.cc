@@ -153,5 +153,69 @@ TEST_F(SchedUnitByHeaderTest, GoSupportsMemberFunctionWithOneArgument) {
     EXPECT_EQ(counter.load(std::memory_order_relaxed), 1);
 }
 
+TEST_F(SchedUnitByHeaderTest, SchedulerClosurePointerAndIdWork) {
+    init(2);
+
+    Scheduler *scheduler = next_sched();
+    ASSERT_NE(scheduler, nullptr);
+    EXPECT_GE(scheduler->id(), 0);
+
+    WaitGroup done(1);
+    std::atomic<int> counter(0);
+    scheduler->go(new IncrementClosure(&counter, &done));
+
+    done.wait();
+    EXPECT_EQ(counter.load(std::memory_order_relaxed), 1);
+}
+
+TEST_F(SchedUnitByHeaderTest, NullClosurePointersAreIgnored) {
+    init(1);
+
+    go(static_cast<Closure *>(nullptr));
+    Scheduler *scheduler = main_sched();
+    ASSERT_NE(scheduler, nullptr);
+    scheduler->go(static_cast<Closure *>(nullptr));
+
+    WaitGroup done(1);
+    std::atomic<int> ran(0);
+    go([&done, &ran]() {
+        ran.fetch_add(1, std::memory_order_relaxed);
+        done.done();
+    });
+    done.wait();
+    EXPECT_EQ(ran.load(std::memory_order_relaxed), 1);
+}
+
+TEST_F(SchedUnitByHeaderTest, SleepForZeroInCoroutineActsLikeYield) {
+    init(1);
+
+    WaitGroup done(2);
+    std::atomic<int> counter(0);
+
+    go([&done, &counter]() {
+        counter.fetch_add(1, std::memory_order_relaxed);
+        sleep_for(0);
+        counter.fetch_add(1, std::memory_order_relaxed);
+        done.done();
+    });
+
+    go([&done, &counter]() {
+        counter.fetch_add(1, std::memory_order_relaxed);
+        done.done();
+    });
+
+    done.wait();
+    EXPECT_EQ(counter.load(std::memory_order_relaxed), 3);
+}
+
+TEST_F(SchedUnitByHeaderTest, StopSchedsIsIdempotent) {
+    init(1);
+    stop_scheds();
+    stop_scheds();
+
+    init(1);
+    EXPECT_GE(scheduler_count(), 1u);
+}
+
 } // namespace
 } // namespace zco

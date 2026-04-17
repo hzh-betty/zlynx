@@ -175,6 +175,22 @@ lcov --remove zco-src.info '/usr/*' '*/extern/*' --output-file zco-src.info
 genhtml zco-src.info --output-directory coverage-zco-src
 ```
 
+### gcovr Alternative (No lcov Installed)
+
+```bash
+# Branch-focused summary for zco/src
+gcovr --root . --filter '^zco/src/' \
+  --exclude '^.*/(usr|extern|third_party|_deps)/.*' \
+  --object-directory build-cov \
+  --txt --txt-metric branch --sort uncovered-number --print-summary
+
+# Decision summary (cleanup temp gcov files first for stability)
+find build-cov -name '*.gcov' -delete
+gcovr --root . --filter '^zco/src/' --object-directory build-cov \
+  --exclude '^.*/(usr|extern|third_party|_deps)/.*' \
+  --txt --decisions --sort uncovered-number --print-summary
+```
+
 ### Notes
 
 - Metrics scope is restricted to `zco/src`.

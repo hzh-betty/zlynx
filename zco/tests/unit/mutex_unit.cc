@@ -1,4 +1,5 @@
 #include <atomic>
+#include <chrono>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -74,6 +75,16 @@ TEST_F(MutexUnitByHeaderTest, GuardWithNullPointerIsSafeNoop) {
     SUCCEED();
 }
 
+TEST_F(MutexUnitByHeaderTest, GuardWithValidPointerLocksAndUnlocks) {
+    Mutex mutex;
+    {
+        MutexGuard guard(&mutex);
+        EXPECT_FALSE(mutex.try_lock());
+    }
+    EXPECT_TRUE(mutex.try_lock());
+    mutex.unlock();
+}
+
 TEST_F(MutexUnitByHeaderTest, CoroutineWaiterGetsLockBeforeThreadWaiter) {
     init(1);
 
@@ -113,6 +124,78 @@ TEST_F(MutexUnitByHeaderTest, CoroutineWaiterGetsLockBeforeThreadWaiter) {
     ASSERT_EQ(order.size(), 2u);
     EXPECT_EQ(order[0], 1);
     EXPECT_EQ(order[1], 2);
+}
+
+TEST_F(MutexUnitByHeaderTest, CoroutineLockUnlockFastPathWorksWhenUnlocked) {
+    init(1);
+
+    Mutex mutex;
+    WaitGroup done(1);
+    std::atomic<bool> got_lock(false);
+
+    go([&]() {
+        mutex.lock();
+        got_lock.store(true, std::memory_order_release);
+        mutex.unlock();
+        done.done();
+    });
+
+    done.wait();
+    EXPECT_TRUE(got_lock.load(std::memory_order_acquire));
+    EXPECT_TRUE(mutex.try_lock());
+    mutex.unlock();
+}
+
+TEST_F(MutexUnitByHeaderTest, ThreadWaiterCanProceedAfterCoroutineHandoffCompletes) {
+    init(1);
+
+    Mutex mutex;
+    mutex.lock();
+
+    WaitGroup coroutine_started(1);
+    WaitGroup done(2);
+    std::atomic<bool> coroutine_done(false);
+    std::atomic<bool> thread_done(false);
+
+    go([&]() {
+        coroutine_started.done();
+        MutexGuard guard(mutex);
+        coroutine_done.store(true, std::memory_order_release);
+        done.done();
+    });
+
+    coroutine_started.wait();
+    std::thread waiter([&]() {
+        MutexGuard guard(mutex);
+        thread_done.store(true, std::memory_order_release);
+        done.done();
+    });
+
+    mutex.unlock();
+    done.wait();
+    waiter.join();
+
+    EXPECT_TRUE(coroutine_done.load(std::memory_order_acquire));
+    EXPECT_TRUE(thread_done.load(std::memory_order_acquire));
+}
+
+TEST_F(MutexUnitByHeaderTest, ThreadLockBlocksUntilOwnerUnlocks) {
+    Mutex mutex;
+    mutex.lock();
+
+    std::atomic<bool> thread_acquired(false);
+    std::thread waiter([&]() {
+        mutex.lock();
+        thread_acquired.store(true, std::memory_order_release);
+        mutex.unlock();
+    });
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    EXPECT_FALSE(thread_acquired.load(std::memory_order_acquire));
+
+    mutex.unlock();
+    waiter.join();
+    EXPECT_TRUE(thread_acquired.load(std::memory_order_acquire));
 }
 
 } // namespace

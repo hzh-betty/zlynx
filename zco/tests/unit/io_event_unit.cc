@@ -139,5 +139,45 @@ TEST_F(IoEventUnitTest, CoroutineTimeoutKeepsTimeoutStateAndPropagatesErrno) {
     ::close(pair[1]);
 }
 
+TEST_F(IoEventUnitTest, CoroutineWaitOnClosedFdFailsWithEbadf) {
+    init(1);
+
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+    ASSERT_EQ(::close(pair[0]), 0);
+
+    WaitGroup done(1);
+    go([&done, fd = pair[0]]() {
+        IoEvent event(fd, IoEventType::kRead);
+        errno = 0;
+        EXPECT_FALSE(event.wait(10));
+        EXPECT_TRUE(errno == EINVAL || errno == EBADF);
+        done.done();
+    });
+    done.wait();
+
+    ::close(pair[1]);
+}
+
+TEST_F(IoEventUnitTest, CoroutineZeroTimeoutWithoutReadyEventReturnsEtimedout) {
+    init(1);
+
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+
+    WaitGroup done(1);
+    go([&done, fd = pair[1]]() {
+        IoEvent event(fd, IoEventType::kRead);
+        errno = 0;
+        EXPECT_FALSE(event.wait(0));
+        EXPECT_EQ(errno, ETIMEDOUT);
+        done.done();
+    });
+    done.wait();
+
+    ::close(pair[0]);
+    ::close(pair[1]);
+}
+
 } // namespace
 } // namespace zco

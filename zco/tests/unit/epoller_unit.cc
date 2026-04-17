@@ -131,5 +131,204 @@ TEST_F(EpollerUnitTest, RegisterSameWaiterTwiceIsIdempotent) {
     epoller.stop();
 }
 
+TEST_F(EpollerUnitTest, RegisterBeforeStartFailsWithEinval) {
+    Epoller epoller;
+    std::shared_ptr<IoWaiter> waiter = std::make_shared<IoWaiter>();
+    waiter->fd = 1;
+    waiter->events = EPOLLIN;
+    waiter->active.store(true, std::memory_order_release);
+
+    errno = 0;
+    EXPECT_FALSE(epoller.register_waiter(waiter));
+    EXPECT_EQ(errno, EINVAL);
+}
+
+TEST_F(EpollerUnitTest, InactiveWaiterRegistersAsNoInterestAndCanUnregister) {
+    Epoller epoller;
+    ASSERT_TRUE(epoller.start());
+
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+
+    std::shared_ptr<IoWaiter> waiter = std::make_shared<IoWaiter>();
+    waiter->fd = pair[0];
+    waiter->events = EPOLLIN;
+    waiter->active.store(false, std::memory_order_release);
+
+    EXPECT_TRUE(epoller.register_waiter(waiter));
+    epoller.unregister_waiter(waiter);
+    epoller.unregister_waiter(waiter);
+
+    ::close(pair[0]);
+    ::close(pair[1]);
+    epoller.stop();
+}
+
+TEST_F(EpollerUnitTest, ReadAndWriteWaitersOnSameFdCanBothBeDispatched) {
+    Epoller epoller;
+    ASSERT_TRUE(epoller.start());
+
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+
+    std::shared_ptr<IoWaiter> read_waiter = std::make_shared<IoWaiter>();
+    read_waiter->fd = pair[1];
+    read_waiter->events = EPOLLIN;
+    read_waiter->active.store(true, std::memory_order_release);
+
+    std::shared_ptr<IoWaiter> write_waiter = std::make_shared<IoWaiter>();
+    write_waiter->fd = pair[1];
+    write_waiter->events = EPOLLOUT;
+    write_waiter->active.store(true, std::memory_order_release);
+
+    ASSERT_TRUE(epoller.register_waiter(read_waiter));
+    ASSERT_TRUE(epoller.register_waiter(write_waiter));
+
+    const char marker = 'q';
+    ASSERT_EQ(::write(pair[0], &marker, 1), 1);
+
+    std::atomic<bool> read_seen(false);
+    std::atomic<bool> write_seen(false);
+    epoller.wait_events(100, [&](const std::shared_ptr<IoWaiter> &ready,
+                                 uint32_t events) {
+        if (ready.get() == read_waiter.get()) {
+            read_seen.store(true, std::memory_order_release);
+            EXPECT_NE(events & (EPOLLIN | EPOLLHUP | EPOLLERR), 0u);
+        }
+        if (ready.get() == write_waiter.get()) {
+            write_seen.store(true, std::memory_order_release);
+            EXPECT_NE(events & (EPOLLOUT | EPOLLHUP | EPOLLERR), 0u);
+        }
+    });
+
+    EXPECT_TRUE(read_seen.load(std::memory_order_acquire));
+    EXPECT_TRUE(write_seen.load(std::memory_order_acquire));
+
+    ::close(pair[0]);
+    ::close(pair[1]);
+    epoller.stop();
+}
+
+TEST_F(EpollerUnitTest, WaitEventsWithoutCallbackStillConsumesReadyEvents) {
+    Epoller epoller;
+    ASSERT_TRUE(epoller.start());
+
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+
+    std::shared_ptr<IoWaiter> waiter = std::make_shared<IoWaiter>();
+    waiter->fd = pair[1];
+    waiter->events = EPOLLIN;
+    waiter->active.store(true, std::memory_order_release);
+    ASSERT_TRUE(epoller.register_waiter(waiter));
+
+    const char marker = 'm';
+    ASSERT_EQ(::write(pair[0], &marker, 1), 1);
+    epoller.wait_events(100, std::function<void(const std::shared_ptr<IoWaiter> &,
+                                                uint32_t)>());
+
+    // Should be removable cleanly after callback-less dispatch.
+    epoller.unregister_waiter(waiter);
+
+    ::close(pair[0]);
+    ::close(pair[1]);
+    epoller.stop();
+}
+
+TEST_F(EpollerUnitTest, WakeAndWaitBeforeStartAreNoop) {
+    Epoller epoller;
+    epoller.wake();
+    int callback_count = 0;
+    epoller.wait_events(
+        1, [&callback_count](const std::shared_ptr<IoWaiter> &waiter,
+                             uint32_t events) {
+            (void)waiter;
+            (void)events;
+            ++callback_count;
+        });
+    EXPECT_EQ(callback_count, 0);
+}
+
+TEST_F(EpollerUnitTest, RegisterNegativeFdFailsWithEinval) {
+    Epoller epoller;
+    ASSERT_TRUE(epoller.start());
+
+    std::shared_ptr<IoWaiter> waiter = std::make_shared<IoWaiter>();
+    waiter->fd = -1;
+    waiter->events = EPOLLIN;
+    waiter->active.store(true, std::memory_order_release);
+
+    errno = 0;
+    EXPECT_FALSE(epoller.register_waiter(waiter));
+    EXPECT_EQ(errno, EINVAL);
+    epoller.stop();
+}
+
+TEST_F(EpollerUnitTest, WriteWaiterConflictReturnsEbusy) {
+    Epoller epoller;
+    ASSERT_TRUE(epoller.start());
+
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+
+    std::shared_ptr<IoWaiter> write1 = std::make_shared<IoWaiter>();
+    write1->fd = pair[0];
+    write1->events = EPOLLOUT;
+    write1->active.store(true, std::memory_order_release);
+    ASSERT_TRUE(epoller.register_waiter(write1));
+
+    std::shared_ptr<IoWaiter> write2 = std::make_shared<IoWaiter>();
+    write2->fd = pair[0];
+    write2->events = EPOLLOUT;
+    write2->active.store(true, std::memory_order_release);
+    errno = 0;
+    EXPECT_FALSE(epoller.register_waiter(write2));
+    EXPECT_EQ(errno, EBUSY);
+
+    epoller.unregister_waiter(write1);
+    ::close(pair[0]);
+    ::close(pair[1]);
+    epoller.stop();
+}
+
+TEST_F(EpollerUnitTest, UnregisterWithMismatchedEventsDoesNotClearReadWaiter) {
+    Epoller epoller;
+    ASSERT_TRUE(epoller.start());
+
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+
+    std::shared_ptr<IoWaiter> read_waiter = std::make_shared<IoWaiter>();
+    read_waiter->fd = pair[1];
+    read_waiter->events = EPOLLIN;
+    read_waiter->active.store(true, std::memory_order_release);
+    ASSERT_TRUE(epoller.register_waiter(read_waiter));
+
+    std::shared_ptr<IoWaiter> mismatched = std::make_shared<IoWaiter>();
+    mismatched->fd = pair[1];
+    mismatched->events = EPOLLOUT;
+    mismatched->active.store(true, std::memory_order_release);
+    epoller.unregister_waiter(mismatched);
+
+    const char marker = 'x';
+    ASSERT_EQ(::write(pair[0], &marker, 1), 1);
+
+    int callback_count = 0;
+    epoller.wait_events(
+        100, [&callback_count, read_waiter](const std::shared_ptr<IoWaiter> &w,
+                                            uint32_t events) {
+            ++callback_count;
+            EXPECT_EQ(w.get(), read_waiter.get());
+            EXPECT_NE(events & (EPOLLIN | EPOLLHUP | EPOLLERR), 0u);
+        });
+
+    EXPECT_EQ(callback_count, 1);
+
+    epoller.unregister_waiter(read_waiter);
+    ::close(pair[0]);
+    ::close(pair[1]);
+    epoller.stop();
+}
+
 } // namespace
 } // namespace zco

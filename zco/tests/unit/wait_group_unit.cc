@@ -1,4 +1,5 @@
 #include <atomic>
+#include <chrono>
 #include <stdexcept>
 #include <thread>
 
@@ -121,6 +122,55 @@ TEST_F(WaitGroupUnitByHeaderTest, ConcurrentDoneWakesWaitAndGroupCanBeReused) {
     group.add(1);
     go([&group]() { group.done(); });
     group.wait();
+}
+
+TEST_F(WaitGroupUnitByHeaderTest, ThreadWaitBlocksUntilDone) {
+    WaitGroup group(1);
+    std::atomic<bool> finished(false);
+
+    std::thread waiter([&group, &finished]() {
+        group.wait();
+        finished.store(true, std::memory_order_release);
+    });
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    EXPECT_FALSE(finished.load(std::memory_order_acquire));
+
+    group.done();
+    waiter.join();
+    EXPECT_TRUE(finished.load(std::memory_order_acquire));
+}
+
+TEST_F(WaitGroupUnitByHeaderTest, DoneExceptionDoesNotCorruptCounterState) {
+    WaitGroup group(1);
+    group.done();
+    EXPECT_THROW(group.done(), std::runtime_error);
+
+    group.add(1);
+    group.done();
+    group.wait();
+}
+
+TEST_F(WaitGroupUnitByHeaderTest, AddOnNonZeroCountExtendsWaitUntilAllDone) {
+    WaitGroup group(1);
+    group.add(1);
+
+    std::atomic<bool> released(false);
+    std::thread waiter([&group, &released]() {
+        group.wait();
+        released.store(true, std::memory_order_release);
+    });
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    EXPECT_FALSE(released.load(std::memory_order_acquire));
+
+    group.done();
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    EXPECT_FALSE(released.load(std::memory_order_acquire));
+
+    group.done();
+    waiter.join();
+    EXPECT_TRUE(released.load(std::memory_order_acquire));
 }
 
 } // namespace

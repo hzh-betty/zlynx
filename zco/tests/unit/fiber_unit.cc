@@ -192,5 +192,30 @@ TEST_F(FiberUnitTest, IndependentStackAllowsOutOfRangeStackSlot) {
     EXPECT_TRUE(fiber->context_initialized());
 }
 
+TEST_F(FiberUnitTest, NullOwnerIsRejected) {
+    EXPECT_THROW(
+        {
+            Fiber::ptr fiber = std::make_shared<Fiber>(
+                21, nullptr, Task([]() {}), 64 * 1024, 0, true);
+            (void)fiber;
+        },
+        std::runtime_error);
+}
+
+TEST_F(FiberUnitTest, TrySetExternalHandleRejectsInvalidInputs) {
+    Processor processor(0, 64 * 1024);
+    Fiber::ptr fiber = test::MakeFiberForTest(&processor, 22, 0);
+    ASSERT_NE(fiber, nullptr);
+
+    uint64_t effective = 0;
+    EXPECT_FALSE(fiber->try_set_external_handle_id(0, &effective));
+    EXPECT_FALSE(fiber->try_set_external_handle_id(123, nullptr));
+    EXPECT_EQ(fiber->external_handle_id(), 0u);
+
+    EXPECT_TRUE(fiber->try_set_external_handle_id(123, &effective));
+    EXPECT_EQ(effective, 123u);
+    EXPECT_EQ(fiber->external_handle_id(), 123u);
+}
+
 } // namespace
 } // namespace zco
