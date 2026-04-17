@@ -632,11 +632,6 @@ ssize_t co_send(int fd, const void *buffer, size_t count, int flags,
             continue;
         }
 
-        if (rc == 0) {
-            errno = EPIPE;
-            return -1;
-        }
-
         if (!is_retryable_errno(errno)) {
             return -1;
         }
@@ -697,11 +692,6 @@ ssize_t co_sendto(int fd, const void *buffer, size_t count, int flags,
             sent += static_cast<size_t>(rc);
             current += rc;
             continue;
-        }
-
-        if (rc == 0) {
-            errno = EPIPE;
-            return -1;
         }
 
         if (!is_retryable_errno(errno)) {

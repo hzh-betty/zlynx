@@ -3,8 +3,10 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <sys/un.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <sys/uio.h>
 #include <unistd.h>
 
 #include <gtest/gtest.h>
@@ -15,6 +17,14 @@ namespace zco {
 namespace {
 
 class HookMetadataTimeoutUnitTest : public test::RuntimeTestBase {};
+
+int send_nosignal_flags_for_unit() {
+#if defined(MSG_NOSIGNAL)
+    return MSG_NOSIGNAL;
+#else
+    return 0;
+#endif
+}
 
 TEST_F(HookMetadataTimeoutUnitTest, InvalidFdReadWriteFailWithEbadf) {
     init(1);
@@ -542,6 +552,312 @@ TEST_F(HookMetadataTimeoutUnitTest, DupAndCloseInvalidFdReturnErrors) {
     errno = 0;
     EXPECT_EQ(co_close(-1), -1);
     EXPECT_EQ(errno, EBADF);
+}
+
+TEST_F(HookMetadataTimeoutUnitTest, InvalidFdInCoroutineReturnsEbadfForHooks) {
+    init(1);
+
+    WaitGroup done(1);
+    go([&done]() {
+        errno = 0;
+        EXPECT_EQ(co_connect(-1, nullptr, 0, 10), -1);
+        EXPECT_EQ(errno, EBADF);
+
+        socklen_t addr_len = 0;
+        errno = 0;
+        EXPECT_EQ(co_accept(-1, nullptr, &addr_len, 10), -1);
+        EXPECT_EQ(errno, EBADF);
+
+        errno = 0;
+        EXPECT_EQ(co_accept4(-1, nullptr, &addr_len, 0, 10), -1);
+        EXPECT_EQ(errno, EBADF);
+        done.done();
+    });
+    done.wait();
+}
+
+TEST_F(HookMetadataTimeoutUnitTest, ConnectWithMismatchedAddressFamilyFailsFast) {
+    init(1);
+
+    const int fd = co_socket(AF_INET, SOCK_STREAM, 0);
+    ASSERT_GE(fd, 0);
+
+    WaitGroup done(1);
+    go([&done, fd]() {
+        sockaddr_un addr;
+        std::memset(&addr, 0, sizeof(addr));
+        addr.sun_family = AF_UNIX;
+        std::strncpy(addr.sun_path, "/tmp/zco-unused.sock",
+                     sizeof(addr.sun_path) - 1);
+
+        errno = 0;
+        EXPECT_EQ(co_connect(fd, reinterpret_cast<const sockaddr *>(&addr),
+                             static_cast<socklen_t>(sizeof(addr)), 30),
+                  -1);
+        EXPECT_TRUE(errno == EAFNOSUPPORT || errno == EINVAL ||
+                    errno == ENOTSOCK);
+        done.done();
+    });
+    done.wait();
+
+    ::close(fd);
+}
+
+TEST_F(HookMetadataTimeoutUnitTest,
+       CoSendOnDisconnectedPeerReturnsPipeLikeError) {
+    init(1);
+
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+    ASSERT_EQ(
+        ::fcntl(pair[0], F_SETFL, ::fcntl(pair[0], F_GETFL, 0) | O_NONBLOCK),
+        0);
+    ASSERT_EQ(
+        ::fcntl(pair[1], F_SETFL, ::fcntl(pair[1], F_GETFL, 0) | O_NONBLOCK),
+        0);
+
+    ASSERT_EQ(::close(pair[1]), 0);
+
+    WaitGroup done(1);
+    go([&done, fd = pair[0]]() {
+        errno = 0;
+        EXPECT_EQ(co_send(fd, "x", 1, send_nosignal_flags_for_unit(), 50), -1);
+        EXPECT_TRUE(errno == EPIPE || errno == ECONNRESET || errno == ENOTCONN);
+        done.done();
+    });
+    done.wait();
+
+    ::close(pair[0]);
+}
+
+TEST_F(HookMetadataTimeoutUnitTest, SendtoWithInvalidAddressLengthFailsFast) {
+    init(1);
+
+    const int fd = co_socket(AF_INET, SOCK_DGRAM, 0);
+    ASSERT_GE(fd, 0);
+
+    sockaddr_in addr;
+    std::memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = htons(9);
+
+    WaitGroup done(1);
+    go([&done, fd, addr]() {
+        errno = 0;
+        EXPECT_EQ(co_sendto(fd, "x", 1, 0,
+                            reinterpret_cast<const sockaddr *>(&addr),
+                            static_cast<socklen_t>(1), 50),
+                  -1);
+        EXPECT_TRUE(errno == EINVAL || errno == EFAULT ||
+                    errno == EDESTADDRREQ || errno == ENOTSOCK);
+        done.done();
+    });
+    done.wait();
+
+    ::close(fd);
+}
+
+TEST_F(HookMetadataTimeoutUnitTest, ReadvAndWritevTransferFragmentsAcrossSocketPair) {
+    init(2);
+
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+    ASSERT_EQ(
+        ::fcntl(pair[0], F_SETFL, ::fcntl(pair[0], F_GETFL, 0) | O_NONBLOCK),
+        0);
+    ASSERT_EQ(
+        ::fcntl(pair[1], F_SETFL, ::fcntl(pair[1], F_GETFL, 0) | O_NONBLOCK),
+        0);
+
+    WaitGroup done(2);
+    go([&done, fd = pair[0]]() {
+        char left[] = "ab";
+        char right[] = "cd";
+        iovec iov[2];
+        iov[0].iov_base = left;
+        iov[0].iov_len = 2;
+        iov[1].iov_base = right;
+        iov[1].iov_len = 2;
+        EXPECT_EQ(co_writev(fd, iov, 2, 100), 4);
+        done.done();
+    });
+
+    go([&done, fd = pair[1]]() {
+        char left[3] = {0};
+        char right[3] = {0};
+        iovec iov[2];
+        iov[0].iov_base = left;
+        iov[0].iov_len = 2;
+        iov[1].iov_base = right;
+        iov[1].iov_len = 2;
+        EXPECT_EQ(co_readv(fd, iov, 2, 100), 4);
+        EXPECT_STREQ(left, "ab");
+        EXPECT_STREQ(right, "cd");
+        done.done();
+    });
+
+    done.wait();
+    ::close(pair[0]);
+    ::close(pair[1]);
+}
+
+TEST_F(HookMetadataTimeoutUnitTest, RecvfromReturnsPeerAddressAndPayload) {
+    init(2);
+
+    int recv_fd = co_socket(AF_INET, SOCK_DGRAM, 0);
+    ASSERT_GE(recv_fd, 0);
+    int send_fd = co_socket(AF_INET, SOCK_DGRAM, 0);
+    ASSERT_GE(send_fd, 0);
+
+    sockaddr_in recv_addr;
+    std::memset(&recv_addr, 0, sizeof(recv_addr));
+    recv_addr.sin_family = AF_INET;
+    recv_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    recv_addr.sin_port = 0;
+    ASSERT_EQ(::bind(recv_fd, reinterpret_cast<sockaddr *>(&recv_addr),
+                     sizeof(recv_addr)),
+              0);
+    socklen_t recv_addr_len = sizeof(recv_addr);
+    ASSERT_EQ(::getsockname(recv_fd, reinterpret_cast<sockaddr *>(&recv_addr),
+                            &recv_addr_len),
+              0);
+
+    WaitGroup done(2);
+    go([&done, fd = send_fd, recv_addr]() {
+        EXPECT_EQ(co_sendto(fd, "udp", 3, 0,
+                            reinterpret_cast<const sockaddr *>(&recv_addr),
+                            static_cast<socklen_t>(sizeof(recv_addr)), 100),
+                  3);
+        done.done();
+    });
+
+    go([&done, fd = recv_fd]() {
+        char out[4] = {0};
+        sockaddr_storage peer;
+        std::memset(&peer, 0, sizeof(peer));
+        socklen_t peer_len = sizeof(peer);
+        EXPECT_EQ(co_recvfrom(fd, out, 3, 0, reinterpret_cast<sockaddr *>(&peer),
+                              &peer_len, 100),
+                  3);
+        EXPECT_STREQ(out, "udp");
+        EXPECT_EQ(peer.ss_family, AF_INET);
+        EXPECT_GT(peer_len, 0);
+        done.done();
+    });
+
+    done.wait();
+    ::close(send_fd);
+    ::close(recv_fd);
+}
+
+TEST_F(HookMetadataTimeoutUnitTest, AcceptTimesOutWhenNoClientArrives) {
+    init(1);
+
+    int listen_fd = co_socket(AF_INET, SOCK_STREAM, 0);
+    ASSERT_GE(listen_fd, 0);
+    co_set_reuseaddr(listen_fd);
+
+    sockaddr_in listen_addr;
+    std::memset(&listen_addr, 0, sizeof(listen_addr));
+    listen_addr.sin_family = AF_INET;
+    listen_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    listen_addr.sin_port = 0;
+    ASSERT_EQ(::bind(listen_fd, reinterpret_cast<sockaddr *>(&listen_addr),
+                     sizeof(listen_addr)),
+              0);
+    ASSERT_EQ(::listen(listen_fd, 4), 0);
+
+    WaitGroup done(1);
+    go([&done, listen_fd]() {
+        sockaddr_storage addr;
+        std::memset(&addr, 0, sizeof(addr));
+        socklen_t addr_len = sizeof(addr);
+        errno = 0;
+        EXPECT_EQ(co_accept(listen_fd, reinterpret_cast<sockaddr *>(&addr),
+                            &addr_len, 30),
+                  -1);
+        EXPECT_TRUE(errno == ETIMEDOUT || errno == EAGAIN ||
+                    errno == EWOULDBLOCK);
+        done.done();
+    });
+    done.wait();
+
+    ::close(listen_fd);
+}
+
+TEST_F(HookMetadataTimeoutUnitTest, AcceptReturnsNonblockingClientFd) {
+    init(2);
+
+    int listen_fd = co_socket(AF_INET, SOCK_STREAM, 0);
+    ASSERT_GE(listen_fd, 0);
+    co_set_reuseaddr(listen_fd);
+
+    sockaddr_in listen_addr;
+    std::memset(&listen_addr, 0, sizeof(listen_addr));
+    listen_addr.sin_family = AF_INET;
+    listen_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    listen_addr.sin_port = 0;
+    ASSERT_EQ(::bind(listen_fd, reinterpret_cast<sockaddr *>(&listen_addr),
+                     sizeof(listen_addr)),
+              0);
+    ASSERT_EQ(::listen(listen_fd, 4), 0);
+    socklen_t listen_len = sizeof(listen_addr);
+    ASSERT_EQ(::getsockname(listen_fd,
+                            reinterpret_cast<sockaddr *>(&listen_addr),
+                            &listen_len),
+              0);
+
+    WaitGroup done(2);
+    go([&done, listen_fd]() {
+        sockaddr_storage peer_addr;
+        std::memset(&peer_addr, 0, sizeof(peer_addr));
+        socklen_t peer_len = sizeof(peer_addr);
+        const int accepted_fd =
+            co_accept(listen_fd, reinterpret_cast<sockaddr *>(&peer_addr),
+                      &peer_len, 1000);
+        EXPECT_GE(accepted_fd, 0);
+        if (accepted_fd >= 0) {
+            const int flags = ::fcntl(accepted_fd, F_GETFL, 0);
+            EXPECT_GE(flags, 0);
+            EXPECT_NE(flags & O_NONBLOCK, 0);
+            EXPECT_EQ(co_close(accepted_fd), 0);
+        }
+        done.done();
+    });
+
+    go([&done, listen_addr]() {
+        const int client_fd = co_socket(AF_INET, SOCK_STREAM, 0);
+        ASSERT_GE(client_fd, 0);
+        ASSERT_EQ(co_connect(client_fd,
+                             reinterpret_cast<const sockaddr *>(&listen_addr),
+                             sizeof(listen_addr), 1000),
+                  0);
+        EXPECT_EQ(co_close(client_fd), 0);
+        done.done();
+    });
+
+    done.wait();
+    ::close(listen_fd);
+}
+
+TEST_F(HookMetadataTimeoutUnitTest, SendtoNullAddressWithNonzeroLengthFailsFast) {
+    init(1);
+
+    const int fd = co_socket(AF_INET, SOCK_DGRAM, 0);
+    ASSERT_GE(fd, 0);
+
+    WaitGroup done(1);
+    go([&done, fd]() {
+        errno = 0;
+        EXPECT_EQ(co_sendto(fd, "x", 1, 0, nullptr, 1, 30), -1);
+        EXPECT_TRUE(errno == EDESTADDRREQ || errno == EINVAL ||
+                    errno == EFAULT || errno == ENOTCONN);
+        done.done();
+    });
+    done.wait();
+
+    ::close(fd);
 }
 
 } // namespace
