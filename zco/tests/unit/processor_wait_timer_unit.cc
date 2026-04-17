@@ -81,6 +81,41 @@ TEST_F(ProcessorWaitTimerUnitTest, WaitFdInCoroutineHandlesReadableAndTimeout) {
     ::close(pair[1]);
 }
 
+TEST_F(ProcessorWaitTimerUnitTest, WaitFdWithInfiniteTimeoutReturnsOnReadReady) {
+    init(2);
+
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+    ASSERT_EQ(
+        ::fcntl(pair[0], F_SETFL, ::fcntl(pair[0], F_GETFL, 0) | O_NONBLOCK),
+        0);
+    ASSERT_EQ(
+        ::fcntl(pair[1], F_SETFL, ::fcntl(pair[1], F_GETFL, 0) | O_NONBLOCK),
+        0);
+
+    WaitGroup done(2);
+    go([&done, fd = pair[1]]() {
+        EXPECT_TRUE(wait_fd(fd, EPOLLIN, kInfiniteTimeoutMs));
+        EXPECT_FALSE(timeout());
+
+        char out = 0;
+        ASSERT_EQ(::read(fd, &out, 1), 1);
+        EXPECT_EQ(out, 'q');
+        done.done();
+    });
+
+    go([&done, fd = pair[0]]() {
+        co_sleep_for(10);
+        const char marker = 'q';
+        ASSERT_EQ(::write(fd, &marker, 1), 1);
+        done.done();
+    });
+
+    done.wait();
+    ::close(pair[0]);
+    ::close(pair[1]);
+}
+
 TEST_F(ProcessorWaitTimerUnitTest, WaitFdWithNoEventsInCoroutineReturnsEinval) {
     init(1);
 

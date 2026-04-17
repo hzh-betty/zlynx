@@ -314,11 +314,6 @@ void Runtime::resume_external(void *handle) {
         return;
     }
 
-    if (!holder) {
-        ZCO_LOG_WARN("resume_external failed, fiber already released");
-        return;
-    }
-
     resume_fiber(holder, false);
 }
 
@@ -346,9 +341,6 @@ void Runtime::register_fiber(const Fiber::ptr &fiber) {
     // 记录句柄映射，供 current_coroutine()/resume(void*) 跨 API 使用。
     const uint64_t registered_handle_id =
         fiber_handle_registry_.register_fiber(fiber, handle_id);
-    if (registered_handle_id == 0) {
-        return;
-    }
 
     ZCO_LOG_DEBUG("fiber registered, fiber_id={}, handle_id={}", fiber->id(),
                   registered_handle_id);
@@ -378,12 +370,6 @@ void *Runtime::external_handle(const Fiber::ptr &fiber) {
         handle_id =
             fiber_handle_id_gen_.fetch_add(1, std::memory_order_relaxed);
         handle_id = fiber_handle_registry_.register_fiber(fiber, handle_id);
-        if (handle_id == 0) {
-            handle_id = fiber->external_handle_id();
-            if (handle_id == 0) {
-                return nullptr;
-            }
-        }
     }
     return encode_fiber_handle(handle_id);
 }
@@ -408,15 +394,8 @@ void resume_fiber(const Fiber::ptr &fiber, bool timed_out) {
         return;
     }
 
-    Processor *owner = fiber->owner();
-    if (!owner) {
-        ZCO_LOG_WARN(
-            "resume_fiber failed, owner processor missing, fiber_id={}",
-            fiber->id());
-        return;
-    }
-
-    owner->enqueue_ready(fiber);
+    // Fiber 构造时 owner 必填且生命周期由运行时管理，这里直接使用即可。
+    fiber->owner()->enqueue_ready(fiber);
 }
 
 void prepare_current_wait() {

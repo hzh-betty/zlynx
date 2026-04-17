@@ -471,10 +471,6 @@ void Processor::run_ready_tasks() {
             }
 
             Fiber::ptr resumed = switch_to_fiber(std::move(fiber));
-            if (!resumed) {
-                continue;
-            }
-
             const Fiber::State state = finalize_after_switch(resumed);
             dispatch_resumed_fiber(std::move(resumed), state);
         }
@@ -503,10 +499,6 @@ size_t Processor::drain_ready_fibers(std::deque<Fiber::ptr> *fibers,
 }
 
 bool Processor::recycle_if_done_before_run(const Fiber::ptr &fiber) {
-    if (!fiber) {
-        return true;
-    }
-
     if (fiber->state() != Fiber::State::kDone) {
         return false;
     }

@@ -1,6 +1,9 @@
 #include <atomic>
 #include <cstdint>
+#include <errno.h>
+#include <memory>
 #include <random>
+#include <sys/epoll.h>
 #include <thread>
 #include <unordered_set>
 #include <vector>
@@ -169,6 +172,88 @@ TEST_F(RuntimeManagerUnitTest, NextFiberIdIsMonotonic) {
 
     EXPECT_LT(first, second);
     EXPECT_LT(second, third);
+}
+
+TEST_F(RuntimeManagerUnitTest, StackConfigGettersReflectPreStartOverrides) {
+    Runtime &runtime = Runtime::instance();
+    runtime.shutdown();
+
+    EXPECT_TRUE(runtime.set_stack_num(6));
+    EXPECT_TRUE(runtime.set_stack_size(96 * 1024));
+    EXPECT_TRUE(runtime.set_stack_model(StackModel::kIndependent));
+
+    EXPECT_EQ(runtime.stack_num(), 6u);
+    EXPECT_EQ(runtime.stack_size(), 96u * 1024u);
+    EXPECT_EQ(runtime.stack_model(), StackModel::kIndependent);
+}
+
+TEST_F(RuntimeManagerUnitTest, NullFiberRegistrationAndHandleApisAreNoop) {
+    Runtime &runtime = Runtime::instance();
+    runtime.init(1);
+
+    runtime.register_fiber(Fiber::ptr());
+    runtime.unregister_fiber(nullptr);
+    EXPECT_EQ(runtime.external_handle(Fiber::ptr()), nullptr);
+}
+
+TEST_F(RuntimeManagerUnitTest, RegisterFiberAndExternalHandleRoundTrip) {
+    Runtime &runtime = Runtime::instance();
+    runtime.init(1);
+
+    Processor owner(77, 64 * 1024);
+    Fiber::ptr fiber = std::make_shared<Fiber>(1001, &owner, []() {},
+                                               64 * 1024, 0, true);
+    ASSERT_NE(fiber, nullptr);
+    EXPECT_EQ(fiber->external_handle_id(), 0u);
+
+    runtime.register_fiber(fiber);
+    const uint64_t first_id = fiber->external_handle_id();
+    EXPECT_NE(first_id, 0u);
+
+    void *handle = runtime.external_handle(fiber);
+    ASSERT_NE(handle, nullptr);
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(handle),
+              static_cast<uintptr_t>(first_id));
+
+    runtime.register_fiber(fiber);
+    EXPECT_EQ(fiber->external_handle_id(), first_id);
+
+    fiber->mark_waiting();
+    runtime.resume_external(handle);
+    EXPECT_EQ(fiber->state(), Fiber::State::kReady);
+    EXPECT_FALSE(fiber->timed_out());
+
+    runtime.unregister_fiber(fiber.get());
+    EXPECT_EQ(fiber->external_handle_id(), 0u);
+}
+
+TEST_F(RuntimeManagerUnitTest, ThreadContextRuntimeHelpersReturnSafeDefaults) {
+    Runtime &runtime = Runtime::instance();
+    runtime.init(1);
+
+    prepare_current_wait();
+    EXPECT_FALSE(park_current());
+    EXPECT_FALSE(park_current_for(1));
+    EXPECT_EQ(add_timer(1, []() {}), nullptr);
+
+    errno = 0;
+    EXPECT_FALSE(wait_fd(0, EPOLLIN, 1));
+    EXPECT_EQ(errno, EPERM);
+}
+
+TEST_F(RuntimeManagerUnitTest, ResumeFiberNullInputIsNoOp) {
+    resume_fiber(Fiber::ptr(), false);
+
+    Runtime &runtime = Runtime::instance();
+    runtime.init(1);
+    WaitGroup done(1);
+    std::atomic<int> counter(0);
+    runtime.submit([&counter, &done]() {
+        counter.fetch_add(1, std::memory_order_relaxed);
+        done.done();
+    });
+    done.wait();
+    EXPECT_EQ(counter.load(std::memory_order_relaxed), 1);
 }
 
 TEST_F(RuntimeManagerUnitTest, StackConfigDefaultsToSharedMode) {
@@ -502,6 +587,37 @@ TEST_F(RuntimeManagerUnitTest,
 
     EXPECT_EQ(total_hits, kTotal);
     EXPECT_GE(active_schedulers, 2);
+}
+
+TEST_F(RuntimeManagerUnitTest, RuntimeInitAndShutdownAreIdempotent) {
+    Runtime &runtime = Runtime::instance();
+    runtime.shutdown();
+
+    runtime.init(1);
+    const size_t first_count = runtime.scheduler_count();
+    ASSERT_GE(first_count, 1u);
+
+    runtime.init(4);
+    EXPECT_EQ(runtime.scheduler_count(), first_count);
+
+    runtime.shutdown();
+    EXPECT_EQ(runtime.scheduler_count(), 0u);
+
+    runtime.shutdown();
+    EXPECT_EQ(runtime.scheduler_count(), 0u);
+}
+
+TEST_F(RuntimeManagerUnitTest, WaitFdRejectsZeroEventsInsideCoroutine) {
+    init(1);
+
+    WaitGroup done(1);
+    go([&done]() {
+        errno = 0;
+        EXPECT_FALSE(wait_fd(-1, 0, 10));
+        EXPECT_EQ(errno, EINVAL);
+        done.done();
+    });
+    done.wait();
 }
 
 } // namespace
