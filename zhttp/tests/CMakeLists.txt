@@ -4,8 +4,10 @@ find_library(BROTLI_DEC_LIBRARY NAMES brotlidec REQUIRED)
 # 单元测试列表
 set(UNIT_TESTS
     http_parser_test
+    http_common_test
     http_request_test
     http_response_test
+    http_utils_test
     websocket_frame_test
     websocket_handshake_test
     multipart_test
@@ -23,11 +25,12 @@ set(UNIT_TESTS
     security_middleware_test
     static_file_opt_test
     http_server_context_test
-    http_parser_detailed_test
     router_detailed_test
     regex_prefix_bucket_test
-    router_comprehensive_test
-    router_comprehensive_test2
+    range_parse_test
+    zhttp_logger_test
+    daemon_test
+    http_server_builder_test
 )
 
 # 为每个单元测试创建可执行文件
