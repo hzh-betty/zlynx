@@ -5,6 +5,7 @@
 #include <arpa/inet.h>
 #include <chrono>
 #include <cstdio>
+#include <csignal>
 #include <cstring>
 #include <fstream>
 #include <gtest/gtest.h>
@@ -13,6 +14,7 @@
 #include <poll.h>
 #include <sys/socket.h>
 #include <thread>
+#include <atomic>
 #include <unistd.h>
 #include <vector>
 
@@ -538,6 +540,98 @@ TEST(HttpServerIntegrationTest, SendsAsyncChunkedStreamResponse) {
         << response;
 }
 
+int bind_and_listen_port(uint16_t port) {
+    const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) {
+        return -1;
+    }
+
+    int reuse = 1;
+    ::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+    if (::bind(fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) != 0) {
+        ::close(fd);
+        return -1;
+    }
+    if (::listen(fd, 16) != 0) {
+        ::close(fd);
+        return -1;
+    }
+    return fd;
+}
+
+TEST(HttpServerIntegrationTest, ReturnsBadRequestForMalformedHttpRequest) {
+    const uint16_t port = find_free_port();
+    ASSERT_NE(port, 0);
+
+    HttpServerBuilder builder;
+    builder.listen("127.0.0.1", port)
+        .threads(1)
+        .log_level("error")
+        .get("/ok", [](const HttpRequest::ptr &, HttpResponse &resp) {
+            resp.status(HttpStatus::OK).text("ok");
+        });
+
+    auto server = builder.build();
+    ASSERT_TRUE(server);
+    ScopedServer guard(server);
+    ASSERT_TRUE(server->start());
+
+    const int client_fd = connect_with_retry(port, 20, 25);
+    ASSERT_GE(client_fd, 0);
+
+    // Host 头缺少 ':'，应触发解析错误并返回 400。
+    const std::string malformed = "GET /ok HTTP/1.1\r\n"
+                                  "Host localhost\r\n"
+                                  "Connection: close\r\n"
+                                  "\r\n";
+
+    ASSERT_TRUE(send_all(client_fd, malformed));
+    const std::string response = recv_until_close(client_fd, 1000);
+    ::close(client_fd);
+
+    EXPECT_NE(response.find("400 Bad Request"), std::string::npos) << response;
+    EXPECT_NE(response.find("Bad Request"), std::string::npos) << response;
+}
+
+TEST(HttpServerIntegrationTest, DoesNotUseChunkedForNoContentStatus) {
+    const uint16_t port = find_free_port();
+    ASSERT_NE(port, 0);
+
+    HttpServerBuilder builder;
+    builder.listen("127.0.0.1", port)
+        .threads(1)
+        .log_level("error")
+        .get("/no-content", [](const HttpRequest::ptr &, HttpResponse &resp) {
+            resp.status(HttpStatus::NO_CONTENT).body("ignored").enable_chunked();
+        });
+
+    auto server = builder.build();
+    ASSERT_TRUE(server);
+    ScopedServer guard(server);
+    ASSERT_TRUE(server->start());
+
+    const int client_fd = connect_with_retry(port, 20, 25);
+    ASSERT_GE(client_fd, 0);
+
+    const std::string request = "GET /no-content HTTP/1.1\r\n"
+                                "Host: localhost\r\n"
+                                "Connection: close\r\n"
+                                "\r\n";
+    ASSERT_TRUE(send_all(client_fd, request));
+    const std::string response = recv_until_close(client_fd, 1000);
+    ::close(client_fd);
+
+    EXPECT_NE(response.find("204 No Content"), std::string::npos) << response;
+    EXPECT_EQ(response.find("Transfer-Encoding: chunked"), std::string::npos)
+        << response;
+}
+
 TEST(HttpServerIntegrationTest, HttpsRoundTripWithRealTlsHandshake) {
     const uint16_t port = find_free_port();
     ASSERT_NE(port, 0);
@@ -613,6 +707,185 @@ TEST(HttpServerIntegrationTest, HttpsRoundTripWithRealTlsHandshake) {
 
     EXPECT_NE(response.find("HTTP/1.1 200 OK"), std::string::npos) << response;
     EXPECT_NE(response.find("secure-ok"), std::string::npos) << response;
+}
+
+TEST(HttpServerIntegrationTest, ForceHttpsRedirectBuildsExpectedLocation) {
+    const uint16_t https_port = find_free_port();
+    const uint16_t redirect_port = find_free_port();
+    ASSERT_NE(https_port, 0);
+    ASSERT_NE(redirect_port, 0);
+    ASSERT_NE(https_port, redirect_port);
+
+    ScopedTlsPemFiles pem_files;
+    ASSERT_FALSE(pem_files.cert_path().empty());
+    ASSERT_FALSE(pem_files.key_path().empty());
+
+    HttpServerBuilder builder;
+    builder.listen("127.0.0.1", https_port)
+        .threads(1)
+        .log_level("error")
+        .daemon(false)
+        .enable_https(pem_files.cert_path(), pem_files.key_path())
+        .force_https_redirect(true, redirect_port)
+        .get("/secure", [](const HttpRequest::ptr &, HttpResponse &resp) {
+            resp.status(HttpStatus::OK).text("secure");
+        });
+
+    std::atomic<bool> stopped{false};
+    std::string run_error;
+    std::thread server_thread([&] {
+        try {
+            builder.run();
+        } catch (const std::exception &ex) {
+            run_error = ex.what();
+        }
+        stopped.store(true, std::memory_order_release);
+    });
+
+    const int fd1 = connect_with_retry(redirect_port, 40, 25);
+    ASSERT_GE(fd1, 0);
+    const std::string req1 = "GET /secure?x=1 HTTP/1.1\r\n"
+                             "Host: example.com:8080\r\n"
+                             "Connection: close\r\n\r\n";
+    ASSERT_TRUE(send_all(fd1, req1));
+    const std::string resp1 = recv_until_close(fd1, 1000);
+    ::close(fd1);
+    EXPECT_NE(resp1.find("308"), std::string::npos) << resp1;
+    EXPECT_NE(resp1.find("Location: https://example.com:" +
+                             std::to_string(https_port) + "/secure?x=1"),
+              std::string::npos)
+        << resp1;
+
+    const int fd2 = connect_with_retry(redirect_port, 40, 25);
+    ASSERT_GE(fd2, 0);
+    const std::string req2 = "GET /v6 HTTP/1.1\r\n"
+                             "Host: [::1]:8080\r\n"
+                             "Connection: close\r\n\r\n";
+    ASSERT_TRUE(send_all(fd2, req2));
+    const std::string resp2 = recv_until_close(fd2, 1000);
+    ::close(fd2);
+    EXPECT_NE(resp2.find("Location: https://[::1]:" + std::to_string(https_port) +
+                             "/v6"),
+              std::string::npos)
+        << resp2;
+
+    ::raise(SIGINT);
+    server_thread.join();
+    EXPECT_TRUE(stopped.load(std::memory_order_acquire));
+    EXPECT_TRUE(run_error.empty()) << run_error;
+}
+
+TEST(HttpServerIntegrationTest, RunFailsWhenRedirectPortAlreadyInUse) {
+    const uint16_t https_port = find_free_port();
+    const uint16_t redirect_port = find_free_port();
+    ASSERT_NE(https_port, 0);
+    ASSERT_NE(redirect_port, 0);
+    ASSERT_NE(https_port, redirect_port);
+
+    const int occupied_fd = bind_and_listen_port(redirect_port);
+    ASSERT_GE(occupied_fd, 0);
+
+    ScopedTlsPemFiles pem_files;
+    ASSERT_FALSE(pem_files.cert_path().empty());
+    ASSERT_FALSE(pem_files.key_path().empty());
+
+    HttpServerBuilder builder;
+    builder.listen("127.0.0.1", https_port)
+        .threads(1)
+        .daemon(false)
+        .log_level("error")
+        .enable_https(pem_files.cert_path(), pem_files.key_path())
+        .force_https_redirect(true, redirect_port);
+
+    EXPECT_THROW(builder.run(), std::runtime_error);
+    ::close(occupied_fd);
+}
+
+TEST(HttpServerIntegrationTest,
+     RunFailsWhenHttpsPortInUseAfterRedirectServerStarted) {
+    const uint16_t https_port = find_free_port();
+    const uint16_t redirect_port = find_free_port();
+    ASSERT_NE(https_port, 0);
+    ASSERT_NE(redirect_port, 0);
+    ASSERT_NE(https_port, redirect_port);
+
+    const int occupied_https_fd = bind_and_listen_port(https_port);
+    ASSERT_GE(occupied_https_fd, 0);
+
+    ScopedTlsPemFiles pem_files;
+    ASSERT_FALSE(pem_files.cert_path().empty());
+    ASSERT_FALSE(pem_files.key_path().empty());
+
+    HttpServerBuilder builder;
+    builder.listen("127.0.0.1", https_port)
+        .threads(1)
+        .daemon(false)
+        .log_level("error")
+        .enable_https(pem_files.cert_path(), pem_files.key_path())
+        .force_https_redirect(true, redirect_port);
+
+    EXPECT_THROW(builder.run(), std::runtime_error);
+    ::close(occupied_https_fd);
+}
+
+TEST(HttpServerIntegrationTest, HandlesAsyncAndStreamErrorPaths) {
+    const uint16_t port = find_free_port();
+    ASSERT_NE(port, 0);
+
+    HttpServerBuilder builder;
+    builder.listen("127.0.0.1", port)
+        .threads(1)
+        .log_level("error")
+        .get("/chunked-async-throw",
+             [](const HttpRequest::ptr &, HttpResponse &resp) {
+                 resp.status(HttpStatus::OK).content_type("text/plain").async_stream(
+                     [](HttpResponse::AsyncChunkSender, HttpResponse::AsyncStreamCloser) {
+                         throw std::runtime_error("async boom");
+                     });
+             })
+        .get("/chunked-stream-oversize",
+             [](const HttpRequest::ptr &, HttpResponse &resp) {
+                 resp.status(HttpStatus::OK).content_type("text/plain").stream(
+                     [](char *, size_t size) -> size_t {
+                         return size + 1;
+                     });
+             });
+
+    auto server = builder.build();
+    ASSERT_TRUE(server);
+    ScopedServer guard(server);
+    ASSERT_TRUE(server->start());
+
+    {
+        const int client_fd = connect_with_retry(port, 20, 25);
+        ASSERT_GE(client_fd, 0);
+        const std::string request = "GET /chunked-async-throw HTTP/1.1\r\n"
+                                    "Host: localhost\r\n"
+                                    "Connection: close\r\n\r\n";
+        ASSERT_TRUE(send_all(client_fd, request));
+        const std::string response = recv_until_close(client_fd, 1000);
+        ::close(client_fd);
+        EXPECT_NE(response.find("HTTP/1.1 200 OK"), std::string::npos) << response;
+        EXPECT_NE(response.find("Transfer-Encoding: chunked"), std::string::npos)
+            << response;
+        EXPECT_EQ(response.find("0\r\n\r\n"), std::string::npos) << response;
+    }
+
+    {
+        const int client_fd = connect_with_retry(port, 20, 25);
+        ASSERT_GE(client_fd, 0);
+        const std::string request =
+            "GET /chunked-stream-oversize HTTP/1.1\r\n"
+            "Host: localhost\r\n"
+            "Connection: close\r\n\r\n";
+        ASSERT_TRUE(send_all(client_fd, request));
+        const std::string response = recv_until_close(client_fd, 1000);
+        ::close(client_fd);
+        EXPECT_NE(response.find("HTTP/1.1 200 OK"), std::string::npos) << response;
+        EXPECT_NE(response.find("Transfer-Encoding: chunked"), std::string::npos)
+            << response;
+        EXPECT_EQ(response.find("0\r\n\r\n"), std::string::npos) << response;
+    }
 }
 
 int main(int argc, char **argv) {
