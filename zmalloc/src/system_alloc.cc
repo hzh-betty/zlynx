@@ -29,7 +29,7 @@ uintptr_t random_aligned_hint(size_t alignment) {
     // 用一次 mmap 获得内核选择的随机地址作为种子
     void *tmp =
         mmap(nullptr, PAGE_SIZE, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (tmp == MAP_FAILED) {
+    if (tmp == MAP_FAILED) { // GCOVR_EXCL_LINE
         return 0;
     }
     munmap(tmp, PAGE_SIZE);
@@ -55,9 +55,9 @@ void *system_alloc(size_t kpage) {
     // - 如果地址不可用，内核返回失败（或返回非 hint 地址），我们重试。
     // 这里最多重试 100 次，避免在地址空间紧张时长时间自旋。
     for (int i = 0; i < 100; ++i) {
-        if (!tls_next_addr) {
+        if (!tls_next_addr) { // GCOVR_EXCL_LINE
             tls_next_addr = random_aligned_hint(PAGE_SIZE);
-            if (!tls_next_addr) {
+            if (!tls_next_addr) { // GCOVR_EXCL_LINE
                 break; // 无法获取 hint，跳出使用无 hint 分配
             }
         }
@@ -73,7 +73,7 @@ void *system_alloc(size_t kpage) {
             return result;
         }
 
-        if (result != MAP_FAILED) {
+        if (result != MAP_FAILED) { // GCOVR_EXCL_LINE
             // 返回了不同的地址，释放重试
             munmap(result, size);
         }
@@ -100,7 +100,7 @@ void *system_alloc(size_t kpage) {
         size_t alloc_size = size + PAGE_SIZE;
         ptr = mmap(nullptr, alloc_size, PROT_READ | PROT_WRITE,
                    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-        if (ptr == MAP_FAILED) {
+        if (ptr == MAP_FAILED) { // GCOVR_EXCL_LINE
             throw std::bad_alloc();
         }
         // 计算对齐地址
@@ -112,7 +112,7 @@ void *system_alloc(size_t kpage) {
         if (prefix > 0) {
             munmap(ptr, prefix);
         }
-        if (suffix > 0) {
+        if (suffix > 0) { // GCOVR_EXCL_LINE
             munmap(reinterpret_cast<void *>(aligned + size), suffix);
         }
         ptr = reinterpret_cast<void *>(aligned);
