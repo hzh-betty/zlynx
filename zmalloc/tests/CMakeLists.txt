@@ -26,6 +26,8 @@ set(UNIT_TESTS
     page_cache_test
     central_cache_test
     thread_cache_test
+    system_alloc_test
+    override_whitebox_test
 )
 
 foreach(TEST_NAME ${UNIT_TESTS})
