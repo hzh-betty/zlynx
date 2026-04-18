@@ -66,5 +66,21 @@ TEST_F(FiberHandleRegistryUnitTest, InvalidInputsAndClearAreSafe) {
     EXPECT_EQ(registry.find_by_handle(321), nullptr);
 }
 
+TEST_F(FiberHandleRegistryUnitTest,
+       TryGetHandleIdRejectsNullOutputAndDoubleUnregisterIsSafe) {
+    FiberHandleRegistry registry;
+    Processor processor(0, 64 * 1024);
+    Fiber::ptr fiber = test::MakeFiberForTest(&processor, 9, 0);
+    ASSERT_NE(fiber, nullptr);
+
+    ASSERT_EQ(registry.register_fiber(fiber, 777), 777u);
+    EXPECT_FALSE(registry.try_get_handle_id(fiber.get(), nullptr));
+
+    uint64_t handle_id = 0;
+    EXPECT_EQ(registry.unregister_fiber(fiber.get()), 777u);
+    EXPECT_EQ(registry.unregister_fiber(fiber.get()), 0u);
+    EXPECT_FALSE(registry.try_get_handle_id(fiber.get(), &handle_id));
+}
+
 } // namespace
 } // namespace zco
