@@ -196,6 +196,171 @@ TEST(CompressionMiddlewareTest, PreferBrotliWhenClientSupportsBoth) {
     EXPECT_EQ(decompressed, plain);
 }
 
+TEST(CompressionMiddlewareTest, SkipCompressionForHeadRequest) {
+    CompressionMiddleware::Options opt;
+    opt.enable_gzip = true;
+    opt.enable_br = false;
+    opt.min_compress_size = 32;
+
+    CompressionMiddleware middleware(opt);
+
+    auto req = std::make_shared<HttpRequest>();
+    req->set_method(HttpMethod::HEAD);
+    req->set_header("Accept-Encoding", "gzip");
+
+    HttpResponse resp;
+    const std::string plain = large_text_payload();
+    resp.status(HttpStatus::OK).content_type("text/plain").body(plain);
+
+    middleware.after(req, resp);
+    EXPECT_EQ(resp.headers().count("Content-Encoding"), 0U);
+    EXPECT_EQ(resp.body_content(), plain);
+}
+
+TEST(CompressionMiddlewareTest, SkipCompressionForPreEncodedOrStreamingResponse) {
+    CompressionMiddleware::Options opt;
+    opt.enable_gzip = true;
+    opt.enable_br = false;
+    opt.min_compress_size = 32;
+    CompressionMiddleware middleware(opt);
+
+    auto req = std::make_shared<HttpRequest>();
+    req->set_method(HttpMethod::GET);
+    req->set_header("Accept-Encoding", "gzip");
+    const std::string plain = large_text_payload();
+
+    {
+        HttpResponse already_encoded;
+        already_encoded.status(HttpStatus::OK)
+            .content_type("text/plain")
+            .header("Content-Encoding", "br")
+            .body(plain);
+        middleware.after(req, already_encoded);
+        EXPECT_EQ(already_encoded.headers().at("Content-Encoding"), "br");
+    }
+
+    {
+        HttpResponse streaming;
+        streaming.status(HttpStatus::OK)
+            .content_type("text/plain")
+            .body(plain)
+            .stream([](char *, size_t) { return 0U; });
+        middleware.after(req, streaming);
+        EXPECT_EQ(streaming.headers().count("Content-Encoding"), 0U);
+    }
+}
+
+TEST(CompressionMiddlewareTest,
+     GzipNegotiationSupportsQValuesAndIgnoresNonExactTokens) {
+    CompressionMiddleware::Options opt;
+    opt.enable_gzip = true;
+    opt.enable_br = false;
+    opt.min_compress_size = 32;
+    opt.gzip_level = 99;
+
+    CompressionMiddleware middleware(opt);
+
+    auto req = std::make_shared<HttpRequest>();
+    req->set_method(HttpMethod::GET);
+    req->set_header("Accept-Encoding", "x-gzip, gzip;q=0.7");
+
+    HttpResponse resp;
+    const std::string plain = large_text_payload();
+    resp.status(HttpStatus::OK).content_type("text/plain").body(plain);
+
+    middleware.after(req, resp);
+    EXPECT_EQ(resp.headers().at("Content-Encoding"), "gzip");
+    EXPECT_EQ(gzip_decompress_for_test(resp.body_content()), plain);
+}
+
+TEST(CompressionMiddlewareTest,
+     CanCompressErrorResponsesWhenOnlySuccessConstraintDisabled) {
+    CompressionMiddleware::Options opt;
+    opt.enable_gzip = true;
+    opt.enable_br = false;
+    opt.only_compress_success_response = false;
+    opt.min_compress_size = 32;
+    opt.gzip_level = -5;
+
+    CompressionMiddleware middleware(opt);
+    auto req = std::make_shared<HttpRequest>();
+    req->set_method(HttpMethod::GET);
+    req->set_header("Accept-Encoding", "gzip");
+
+    HttpResponse resp;
+    const std::string plain = large_text_payload();
+    resp.status(HttpStatus::INTERNAL_SERVER_ERROR)
+        .content_type("text/plain")
+        .body(plain);
+
+    middleware.after(req, resp);
+    EXPECT_EQ(resp.headers().at("Content-Encoding"), "gzip");
+    EXPECT_EQ(gzip_decompress_for_test(resp.body_content()), plain);
+}
+
+TEST(CompressionMiddlewareTest,
+     SkipCompressionWhenTypeNotCompressibleAndAllowMissingTypeByDefault) {
+    CompressionMiddleware::Options opt;
+    opt.enable_gzip = true;
+    opt.enable_br = false;
+    opt.min_compress_size = 32;
+    CompressionMiddleware middleware(opt);
+
+    auto req = std::make_shared<HttpRequest>();
+    req->set_method(HttpMethod::GET);
+    req->set_header("Accept-Encoding", "gzip");
+    const std::string plain = large_text_payload();
+
+    {
+        HttpResponse image_resp;
+        image_resp.status(HttpStatus::OK)
+            .content_type("image/png")
+            .body(plain);
+        middleware.after(req, image_resp);
+        EXPECT_EQ(image_resp.headers().count("Content-Encoding"), 0U);
+    }
+
+    {
+        HttpResponse no_type_resp;
+        no_type_resp.status(HttpStatus::OK).body(plain);
+        middleware.after(req, no_type_resp);
+        EXPECT_EQ(no_type_resp.headers().at("Content-Encoding"), "gzip");
+    }
+}
+
+TEST(CompressionMiddlewareTest, VaryHeaderIsAppendedOrKeptWithoutDuplicate) {
+    CompressionMiddleware::Options opt;
+    opt.enable_gzip = true;
+    opt.enable_br = false;
+    opt.min_compress_size = 32;
+    CompressionMiddleware middleware(opt);
+
+    auto req = std::make_shared<HttpRequest>();
+    req->set_method(HttpMethod::GET);
+    req->set_header("Accept-Encoding", "gzip");
+    const std::string plain = large_text_payload();
+
+    {
+        HttpResponse resp;
+        resp.status(HttpStatus::OK)
+            .content_type("text/plain")
+            .header("Vary", "Origin")
+            .body(plain);
+        middleware.after(req, resp);
+        EXPECT_EQ(resp.headers().at("Vary"), "Origin, Accept-Encoding");
+    }
+
+    {
+        HttpResponse resp;
+        resp.status(HttpStatus::OK)
+            .content_type("text/plain")
+            .header("Vary", "origin, ACCEPT-ENCODING")
+            .body(plain);
+        middleware.after(req, resp);
+        EXPECT_EQ(resp.headers().at("Vary"), "origin, ACCEPT-ENCODING");
+    }
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
