@@ -8,7 +8,9 @@
 #include <gtest/gtest.h>
 
 #include "support/test_fixture.h"
+#define private public
 #include "zco/internal/epoller.h"
+#undef private
 
 namespace zco {
 namespace {
@@ -328,6 +330,48 @@ TEST_F(EpollerUnitTest, UnregisterWithMismatchedEventsDoesNotClearReadWaiter) {
     ::close(pair[0]);
     ::close(pair[1]);
     epoller.stop();
+}
+
+TEST_F(EpollerUnitTest, InternalGuardBranchesHandleInvalidStateAndFdFailures) {
+    Epoller epoller;
+    ASSERT_TRUE(epoller.start());
+
+    errno = 0;
+    EXPECT_FALSE(epoller.update_interest_locked(42, nullptr));
+    EXPECT_EQ(errno, EINVAL);
+
+    const int closed_wake_fd = epoller.wake_fd_;
+    ASSERT_GE(closed_wake_fd, 0);
+    ASSERT_EQ(::close(closed_wake_fd), 0);
+
+    epoller.wake();
+    EXPECT_FALSE(epoller.wake_pending_.load(std::memory_order_acquire));
+    epoller.wake_fd_ = -1;
+
+    const int closed_epoll_fd = epoller.epoll_fd_;
+    ASSERT_GE(closed_epoll_fd, 0);
+    ASSERT_EQ(::close(closed_epoll_fd), 0);
+
+    int callback_count = 0;
+    epoller.wait_events(
+        1, [&callback_count](const std::shared_ptr<IoWaiter> &waiter,
+                             uint32_t events) {
+            (void)waiter;
+            (void)events;
+            ++callback_count;
+        });
+    EXPECT_EQ(callback_count, 0);
+
+    epoller.epoll_fd_ = -1;
+    epoller.stop();
+}
+
+TEST_F(EpollerUnitTest, ConsumeWakeupFdNoopWhenWakeFdInvalid) {
+    Epoller epoller;
+    epoller.wake_pending_.store(true, std::memory_order_release);
+    epoller.wake_fd_ = -1;
+    epoller.consume_wakeup_fd();
+    EXPECT_TRUE(epoller.wake_pending_.load(std::memory_order_acquire));
 }
 
 } // namespace
