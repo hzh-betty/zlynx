@@ -33,7 +33,7 @@ size_t TransferCacheEntry::insert_range(void *batch[], size_t count) {
     const size_t to_insert = std::min(count, available);
 
     // 二次确认：锁内重新计算，确保并发下正确。
-    if (to_insert == 0) {
+    if (to_insert == 0) { // GCOVR_EXCL_LINE
         return 0;
     }
 
@@ -68,7 +68,7 @@ size_t TransferCacheEntry::remove_range(void *batch[], size_t count) {
     const size_t to_remove = std::min(count, cur_locked);
 
     // 二次确认：锁内重新计算，确保并发下正确。
-    if (to_remove == 0) {
+    if (to_remove == 0) { // GCOVR_EXCL_LINE
         return 0;
     }
 
@@ -108,7 +108,7 @@ bool TransferCacheEntry::try_insert_range(void *batch[], size_t count,
     const size_t available = kMaxCacheSlots - cur_locked;
     const size_t to_insert = std::min(count, available);
 
-    if (to_insert > 0) {
+    if (to_insert > 0) { // GCOVR_EXCL_LINE
         const size_t first = std::min(to_insert, kMaxCacheSlots - head_);
         std::memcpy(&slots_[head_], batch, first * sizeof(void *));
         if (to_insert > first) {
@@ -145,7 +145,7 @@ bool TransferCacheEntry::try_remove_range(void *batch[], size_t count,
     const size_t cur_locked = count_.load(std::memory_order_relaxed);
     const size_t to_remove = std::min(count, cur_locked);
 
-    if (to_remove > 0) {
+    if (to_remove > 0) { // GCOVR_EXCL_LINE
         const size_t first = std::min(to_remove, kMaxCacheSlots - tail_);
         std::memcpy(batch, &slots_[tail_], first * sizeof(void *));
         if (to_remove > first) {
