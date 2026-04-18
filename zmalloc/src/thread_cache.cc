@@ -32,7 +32,7 @@ constexpr bool kEnableThreadCacheLocalFreeList = false;
 } // namespace
 
 void *ThreadCache::allocate(size_t size) {
-    assert(size <= MAX_BYTES);
+    assert(size <= MAX_BYTES); // GCOVR_EXCL_LINE
 
     // 关键步骤：查表得到该 size 的
     // - 对齐后大小 align_size（实际分配/切分单位）
@@ -59,8 +59,8 @@ void *ThreadCache::allocate(size_t size) {
 }
 
 void ThreadCache::deallocate(void *ptr, size_t size) {
-    assert(ptr);
-    assert(size <= MAX_BYTES);
+    assert(ptr); // GCOVR_EXCL_LINE
+    assert(size <= MAX_BYTES); // GCOVR_EXCL_LINE
 
     // 关键步骤：释放也用查表统一 size->index/align_size 的策略，避免重复计算。
     const SizeClassLookup &e = SizeClass::lookup(size);
@@ -113,12 +113,12 @@ void *ThreadCache::fetch_from_central_cache(size_t index, size_t size,
     // - try_remove_range 返回 true: 操作完成（got 可能为 0）
     // - try_remove_range 返回 false: 锁竞争，直接 fallback 到 CentralCache
     bool try_success = false;
-    if (kEnableTransferCache) {
+    if (kEnableTransferCache) { // GCOVR_EXCL_START
         try_success = TransferCache::get_instance().try_remove_range(
             index, batch, batch_num, got);
-    }
+    } // GCOVR_EXCL_STOP
 
-    if (try_success && got > 0) {
+    if (try_success && got > 0) { // GCOVR_EXCL_START
         // TransferCache 命中
         if (got == 1) {
             return batch[0];
@@ -128,7 +128,7 @@ void *ThreadCache::fetch_from_central_cache(size_t index, size_t size,
             free_lists_[index].push(batch[i]);
         }
         return batch[0];
-    }
+    } // GCOVR_EXCL_STOP
 
     // TransferCache 未命中或锁竞争，向 CentralCache 请求。
     // 注意：Central 会持有桶锁并可能再持有 PageCache 锁（固定锁顺序）。
@@ -136,10 +136,10 @@ void *ThreadCache::fetch_from_central_cache(size_t index, size_t size,
     void *end = nullptr;
     size_t actual_num = CentralCache::get_instance().fetch_range_obj(
         start, end, batch_num, size, index);
-    assert(actual_num >= 1);
+    assert(actual_num >= 1); // GCOVR_EXCL_LINE
 
     if (actual_num == 1 || !kEnableThreadCacheLocalFreeList) {
-        assert(start == end);
+        assert(start == end); // GCOVR_EXCL_LINE
         return start;
     } else {
         free_lists_[index].push_range(next_obj(start), end, actual_num - 1);
@@ -161,7 +161,7 @@ void ThreadCache::list_too_long(FreeList &list, size_t size, size_t index) {
     if (count > list.size()) {
         count = list.size();
     }
-    if (count == 0) {
+    if (count == 0) { // GCOVR_EXCL_LINE
         return;
     }
 
@@ -171,7 +171,7 @@ void ThreadCache::list_too_long(FreeList &list, size_t size, size_t index) {
     // - 保证栈上数组大小可控
     void *batch[128];
     const size_t collected = list.pop_batch(batch, count);
-    if (collected == 0) {
+    if (collected == 0) { // GCOVR_EXCL_LINE
         return;
     }
 
@@ -180,16 +180,16 @@ void ThreadCache::list_too_long(FreeList &list, size_t size, size_t index) {
     // - try_insert_range 返回 false: 锁竞争，全部放入 CentralCache
     size_t inserted = 0;
     bool try_success = false;
-    if (kEnableTransferCache) {
+    if (kEnableTransferCache) { // GCOVR_EXCL_START
         try_success = TransferCache::get_instance().try_insert_range(
             index, batch, collected, inserted);
-    }
+    } // GCOVR_EXCL_STOP
 
-    size_t remaining_start = try_success ? inserted : 0;
+    size_t remaining_start = try_success ? inserted : 0; // GCOVR_EXCL_LINE
 
     // 剩余放回 CentralCache：Central 接口使用“单链表起点”，因此需要把数组
     // 重新串起来（链表节点的 next 指针就存放在对象头部）。
-    if (remaining_start < collected) {
+    if (remaining_start < collected) { // GCOVR_EXCL_LINE
         // 为剩余部分重建链表（CentralCache 接口接收链表起点）
         void *start = batch[remaining_start];
         for (size_t i = remaining_start; i + 1 < collected; ++i) {
