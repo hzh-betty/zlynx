@@ -164,9 +164,76 @@ TEST_F(ThreadCacheTest, TouchingMemoryDoesNotCrash) {
     tc->deallocate(p, 128);
 }
 
-// ------------------------------
-// 大量 size 覆盖（每个都是独立用例）
-// ------------------------------
+TEST_F(ThreadCacheTest, FetchFromCentralCacheWrapperReturnsObject) {
+    const zmalloc::SizeClassLookup &e = zmalloc::SizeClass::lookup(64);
+    void *p = tc->fetch_from_central_cache(static_cast<size_t>(e.index),
+                                           static_cast<size_t>(e.align_size));
+    ASSERT_NE(p, nullptr);
+    tc->deallocate(p, 64);
+}
+
+TEST_F(ThreadCacheTest, ListTooLongHandlesEmptyListAndReturnsEarly) {
+    const size_t size = 64;
+    const size_t index = zmalloc::SizeClass::index_fast(size);
+    zmalloc::FreeList &list = tc->free_lists_[index];
+
+    size_t old_max = list.max_size();
+    list.max_size() = 1; // count = max/2 == 0 -> 经修正后可能回到 0 并早退
+    tc->list_too_long(list, size, index);
+    EXPECT_TRUE(list.empty());
+    list.max_size() = old_max;
+}
+
+TEST_F(ThreadCacheTest, ListTooLongClampsCountAndReleasesBatch) {
+    const size_t size = 64;
+    const size_t index = zmalloc::SizeClass::index_fast(size);
+    zmalloc::FreeList &list = tc->free_lists_[index];
+    const size_t old_max = list.max_size();
+    list.max_size() = 400; // count 先到 200，再被 clamp 到 128
+
+    std::vector<void *> objs;
+    objs.reserve(140);
+    for (size_t i = 0; i < 140; ++i) {
+        void *p = tc->allocate(size);
+        ASSERT_NE(p, nullptr);
+        objs.push_back(p);
+    }
+    for (void *p : objs) {
+        list.push(p);
+    }
+    ASSERT_GE(list.size(), 128u);
+
+    tc->list_too_long(list, size, index);
+
+    EXPECT_LT(list.size(), 140u);
+    while (!list.empty()) {
+        void *p = list.pop();
+        tc->deallocate(p, size);
+    }
+    list.max_size() = old_max;
+}
+
+TEST_F(ThreadCacheTest, ListTooLongWhenCountExceedsListSize) {
+    const size_t size = 64;
+    const size_t index = zmalloc::SizeClass::index_fast(size);
+    zmalloc::FreeList &list = tc->free_lists_[index];
+    const size_t old_max = list.max_size();
+    list.max_size() = 100; // count = 50
+
+    void *p1 = tc->allocate(size);
+    void *p2 = tc->allocate(size);
+    ASSERT_NE(p1, nullptr);
+    ASSERT_NE(p2, nullptr);
+    list.push(p1);
+    list.push(p2);
+    ASSERT_EQ(list.size(), 2u);
+
+    tc->list_too_long(list, size, index);
+
+    EXPECT_EQ(list.size(), 0u);
+    list.max_size() = old_max;
+}
+
 
 #define ZMALLOC_TC_ALLOC_FREE_CASE(SZ)                                         \
     TEST_F(ThreadCacheTest, AllocFree_Size_##SZ) { AllocTouchFree(tc, SZ); }
