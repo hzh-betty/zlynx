@@ -84,8 +84,8 @@ TEST_F(HookMetadataTimeoutUnitTest, ExplicitTimeoutOverridesSocketTimeout) {
     });
     done.wait();
 
-    ::close(pair[0]);
-    ::close(pair[1]);
+    co_close(pair[0]);
+    co_close(pair[1]);
 }
 
 TEST_F(HookMetadataTimeoutUnitTest, InfiniteTimeoutFallsBackToSocketTimeout) {
@@ -125,8 +125,8 @@ TEST_F(HookMetadataTimeoutUnitTest, InfiniteTimeoutFallsBackToSocketTimeout) {
     });
     done.wait();
 
-    ::close(pair[0]);
-    ::close(pair[1]);
+    co_close(pair[0]);
+    co_close(pair[1]);
 }
 
 TEST_F(HookMetadataTimeoutUnitTest, DupMetadataSyncAndClosePathWorks) {
@@ -182,8 +182,8 @@ TEST_F(HookMetadataTimeoutUnitTest, DupMetadataSyncAndClosePathWorks) {
     EXPECT_EQ(co_close(api_dup), 0);
     EXPECT_EQ(co_close(dup2_target), 0);
 
-    ::close(pair[0]);
-    ::close(pair[1]);
+    co_close(pair[0]);
+    co_close(pair[1]);
 }
 
 TEST_F(HookMetadataTimeoutUnitTest,
@@ -216,8 +216,8 @@ TEST_F(HookMetadataTimeoutUnitTest,
 
     done.wait();
 
-    ::close(pair[0]);
-    ::close(pair[1]);
+    co_close(pair[0]);
+    co_close(pair[1]);
 }
 
 TEST_F(HookMetadataTimeoutUnitTest,
@@ -245,8 +245,8 @@ TEST_F(HookMetadataTimeoutUnitTest,
     });
     done.wait();
 
-    ::close(pair[0]);
-    ::close(pair[1]);
+    co_close(pair[0]);
+    co_close(pair[1]);
 }
 
 TEST_F(HookMetadataTimeoutUnitTest,
@@ -284,7 +284,7 @@ TEST_F(HookMetadataTimeoutUnitTest,
     });
     done.wait();
 
-    ::close(listen_fd);
+    co_close(listen_fd);
 }
 
 TEST_F(HookMetadataTimeoutUnitTest, RecvnAggregatesFragmentsUntilFullLength) {
@@ -316,8 +316,8 @@ TEST_F(HookMetadataTimeoutUnitTest, RecvnAggregatesFragmentsUntilFullLength) {
     });
 
     done.wait();
-    ::close(pair[0]);
-    ::close(pair[1]);
+    co_close(pair[0]);
+    co_close(pair[1]);
 }
 
 TEST_F(HookMetadataTimeoutUnitTest,
@@ -350,7 +350,7 @@ TEST_F(HookMetadataTimeoutUnitTest,
     });
 
     done.wait();
-    ::close(pair[1]);
+    co_close(pair[1]);
 }
 
 TEST_F(HookMetadataTimeoutUnitTest,
@@ -381,8 +381,8 @@ TEST_F(HookMetadataTimeoutUnitTest,
     });
 
     done.wait();
-    ::close(pair[0]);
-    ::close(pair[1]);
+    co_close(pair[0]);
+    co_close(pair[1]);
 }
 
 TEST_F(HookMetadataTimeoutUnitTest,
@@ -407,8 +407,8 @@ TEST_F(HookMetadataTimeoutUnitTest,
     });
     done.wait();
 
-    ::close(pair[0]);
-    ::close(pair[1]);
+    co_close(pair[0]);
+    co_close(pair[1]);
 }
 
 TEST_F(HookMetadataTimeoutUnitTest, SendtoExplicitAddressZeroCountReturnsZero) {
@@ -442,8 +442,8 @@ TEST_F(HookMetadataTimeoutUnitTest, SendtoExplicitAddressZeroCountReturnsZero) {
     });
     done.wait();
 
-    ::close(send_fd);
-    ::close(recv_fd);
+    co_close(send_fd);
+    co_close(recv_fd);
 }
 
 TEST_F(HookMetadataTimeoutUnitTest,
@@ -503,7 +503,7 @@ TEST_F(HookMetadataTimeoutUnitTest,
     });
 
     done.wait();
-    ::close(listen_fd);
+    co_close(listen_fd);
 }
 
 TEST_F(HookMetadataTimeoutUnitTest, RecvfromTimesOutWhenNoDatagramArrives) {
@@ -536,7 +536,7 @@ TEST_F(HookMetadataTimeoutUnitTest, RecvfromTimesOutWhenNoDatagramArrives) {
     });
     done.wait();
 
-    ::close(recv_fd);
+    co_close(recv_fd);
 }
 
 TEST_F(HookMetadataTimeoutUnitTest, DupAndCloseInvalidFdReturnErrors) {
@@ -601,7 +601,7 @@ TEST_F(HookMetadataTimeoutUnitTest, ConnectWithMismatchedAddressFamilyFailsFast)
     });
     done.wait();
 
-    ::close(fd);
+    co_close(fd);
 }
 
 TEST_F(HookMetadataTimeoutUnitTest,
@@ -617,7 +617,7 @@ TEST_F(HookMetadataTimeoutUnitTest,
         ::fcntl(pair[1], F_SETFL, ::fcntl(pair[1], F_GETFL, 0) | O_NONBLOCK),
         0);
 
-    ASSERT_EQ(::close(pair[1]), 0);
+    ASSERT_EQ(co_close(pair[1]), 0);
 
     WaitGroup done(1);
     go([&done, fd = pair[0]]() {
@@ -628,7 +628,7 @@ TEST_F(HookMetadataTimeoutUnitTest,
     });
     done.wait();
 
-    ::close(pair[0]);
+    co_close(pair[0]);
 }
 
 TEST_F(HookMetadataTimeoutUnitTest, SendtoWithInvalidAddressLengthFailsFast) {
@@ -656,7 +656,7 @@ TEST_F(HookMetadataTimeoutUnitTest, SendtoWithInvalidAddressLengthFailsFast) {
     });
     done.wait();
 
-    ::close(fd);
+    co_close(fd);
 }
 
 TEST_F(HookMetadataTimeoutUnitTest, ReadvAndWritevTransferFragmentsAcrossSocketPair) {
@@ -699,8 +699,8 @@ TEST_F(HookMetadataTimeoutUnitTest, ReadvAndWritevTransferFragmentsAcrossSocketP
     });
 
     done.wait();
-    ::close(pair[0]);
-    ::close(pair[1]);
+    co_close(pair[0]);
+    co_close(pair[1]);
 }
 
 TEST_F(HookMetadataTimeoutUnitTest, RecvfromReturnsPeerAddressAndPayload) {
@@ -748,8 +748,8 @@ TEST_F(HookMetadataTimeoutUnitTest, RecvfromReturnsPeerAddressAndPayload) {
     });
 
     done.wait();
-    ::close(send_fd);
-    ::close(recv_fd);
+    co_close(send_fd);
+    co_close(recv_fd);
 }
 
 TEST_F(HookMetadataTimeoutUnitTest, AcceptTimesOutWhenNoClientArrives) {
@@ -784,7 +784,7 @@ TEST_F(HookMetadataTimeoutUnitTest, AcceptTimesOutWhenNoClientArrives) {
     });
     done.wait();
 
-    ::close(listen_fd);
+    co_close(listen_fd);
 }
 
 TEST_F(HookMetadataTimeoutUnitTest, AcceptReturnsNonblockingClientFd) {
@@ -839,7 +839,7 @@ TEST_F(HookMetadataTimeoutUnitTest, AcceptReturnsNonblockingClientFd) {
     });
 
     done.wait();
-    ::close(listen_fd);
+    co_close(listen_fd);
 }
 
 TEST_F(HookMetadataTimeoutUnitTest, SendtoNullAddressWithNonzeroLengthFailsFast) {
@@ -858,7 +858,7 @@ TEST_F(HookMetadataTimeoutUnitTest, SendtoNullAddressWithNonzeroLengthFailsFast)
     });
     done.wait();
 
-    ::close(fd);
+    co_close(fd);
 }
 
 TEST_F(HookMetadataTimeoutUnitTest, RecvnZeroCountReturnsImmediately) {
@@ -881,8 +881,8 @@ TEST_F(HookMetadataTimeoutUnitTest, RecvnZeroCountReturnsImmediately) {
     });
     done.wait();
 
-    ::close(pair[0]);
-    ::close(pair[1]);
+    co_close(pair[0]);
+    co_close(pair[1]);
 }
 
 TEST_F(HookMetadataTimeoutUnitTest, RecvnReturnsZeroWhenPeerClosesBeforeFullRead) {
@@ -909,12 +909,12 @@ TEST_F(HookMetadataTimeoutUnitTest, RecvnReturnsZeroWhenPeerClosesBeforeFullRead
         EXPECT_EQ(co_send(fd, payload, sizeof(payload), send_nosignal_flags_for_unit(),
                           50),
                   3);
-        ::close(fd);
+        co_close(fd);
         done.done();
     });
 
     done.wait();
-    ::close(pair[0]);
+    co_close(pair[0]);
 }
 
 TEST_F(HookMetadataTimeoutUnitTest, CoSendTimesOutWhenPeerNeverReads) {
@@ -946,8 +946,8 @@ TEST_F(HookMetadataTimeoutUnitTest, CoSendTimesOutWhenPeerNeverReads) {
     });
     done.wait();
 
-    ::close(pair[0]);
-    ::close(pair[1]);
+    co_close(pair[0]);
+    co_close(pair[1]);
 }
 
 TEST_F(HookMetadataTimeoutUnitTest, InvalidFdForRecvnSendAndSendtoReturnEbadf) {
@@ -1010,9 +1010,270 @@ TEST_F(HookMetadataTimeoutUnitTest,
     });
 
     done.wait();
-    ::close(pair[0]);
-    ::close(pair[1]);
+    co_close(pair[0]);
+    co_close(pair[1]);
 }
+
+TEST_F(HookMetadataTimeoutUnitTest,
+       BlockingDescriptorsAreRejectedInsideCoroutineWithEinval) {
+    init(1);
+
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+
+    const int left_flags = ::fcntl(pair[0], F_GETFL, 0);
+    const int right_flags = ::fcntl(pair[1], F_GETFL, 0);
+    ASSERT_GE(left_flags, 0);
+    ASSERT_GE(right_flags, 0);
+    ASSERT_EQ(::fcntl(pair[0], F_SETFL, left_flags & ~O_NONBLOCK), 0);
+    ASSERT_EQ(::fcntl(pair[1], F_SETFL, right_flags & ~O_NONBLOCK), 0);
+
+    WaitGroup done(1);
+    go([&done, left = pair[0], right = pair[1]]() {
+        char buffer[2] = {0};
+        errno = 0;
+        EXPECT_EQ(co_read(left, buffer, sizeof(buffer), 10), -1);
+        EXPECT_EQ(errno, EINVAL);
+
+        errno = 0;
+        EXPECT_EQ(co_send(right, "x", 1, send_nosignal_flags_for_unit(), 10),
+                  -1);
+        EXPECT_EQ(errno, EINVAL);
+        done.done();
+    });
+    done.wait();
+
+    co_close(pair[0]);
+    co_close(pair[1]);
+}
+
+TEST_F(HookMetadataTimeoutUnitTest, SyncMetadataOnDupWithClosedTargetIsSafe) {
+    const int fd = co_tcp_socket(AF_INET);
+    ASSERT_GE(fd, 0);
+
+    const int duplicated = ::dup(fd);
+    ASSERT_GE(duplicated, 0);
+    ASSERT_EQ(co_close(duplicated), 0);
+
+    sync_fd_metadata_on_dup(-1, duplicated);
+    EXPECT_EQ(co_close(fd), 0);
+}
+
+TEST_F(HookMetadataTimeoutUnitTest, RecvnWithInvalidFlagsReturnsEinval) {
+    init(1);
+
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+    ASSERT_EQ(
+        ::fcntl(pair[0], F_SETFL, ::fcntl(pair[0], F_GETFL, 0) | O_NONBLOCK),
+        0);
+    ASSERT_EQ(
+        ::fcntl(pair[1], F_SETFL, ::fcntl(pair[1], F_GETFL, 0) | O_NONBLOCK),
+        0);
+
+    WaitGroup done(1);
+    go([&done, fd = pair[0]]() {
+        char out[4] = {0};
+        errno = 0;
+        EXPECT_EQ(co_recvn(fd, out, 1, -1, 30), -1);
+        EXPECT_EQ(errno, EINVAL);
+        done.done();
+    });
+    done.wait();
+
+    co_close(pair[0]);
+    co_close(pair[1]);
+}
+
+TEST_F(HookMetadataTimeoutUnitTest, RecvnWithZeroTimeoutReturnsEtimedout) {
+    init(1);
+
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+    ASSERT_EQ(
+        ::fcntl(pair[0], F_SETFL, ::fcntl(pair[0], F_GETFL, 0) | O_NONBLOCK),
+        0);
+    ASSERT_EQ(
+        ::fcntl(pair[1], F_SETFL, ::fcntl(pair[1], F_GETFL, 0) | O_NONBLOCK),
+        0);
+
+    WaitGroup done(1);
+    go([&done, fd = pair[1]]() {
+        char out[4] = {0};
+        errno = 0;
+        EXPECT_EQ(co_recvn(fd, out, 1, 0, 0), -1);
+        EXPECT_EQ(errno, ETIMEDOUT);
+        done.done();
+    });
+    done.wait();
+
+    co_close(pair[0]);
+    co_close(pair[1]);
+}
+
+TEST_F(HookMetadataTimeoutUnitTest, CoSendWithZeroTimeoutFailsWhenWriteWouldBlock) {
+    init(1);
+
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+    ASSERT_EQ(
+        ::fcntl(pair[0], F_SETFL, ::fcntl(pair[0], F_GETFL, 0) | O_NONBLOCK),
+        0);
+    ASSERT_EQ(
+        ::fcntl(pair[1], F_SETFL, ::fcntl(pair[1], F_GETFL, 0) | O_NONBLOCK),
+        0);
+
+    const int small = 1024;
+    ASSERT_EQ(::setsockopt(pair[0], SOL_SOCKET, SO_SNDBUF, &small, sizeof(small)),
+              0);
+
+    WaitGroup done(1);
+    go([&done, fd = pair[0]]() {
+        std::string payload(4 * 1024 * 1024, 'x');
+        errno = 0;
+        EXPECT_EQ(co_send(fd, payload.data(), payload.size(),
+                          send_nosignal_flags_for_unit(), 0),
+                  -1);
+        EXPECT_TRUE(errno == ETIMEDOUT || errno == EAGAIN ||
+                    errno == EWOULDBLOCK);
+        done.done();
+    });
+    done.wait();
+
+    co_close(pair[0]);
+    co_close(pair[1]);
+}
+
+TEST_F(HookMetadataTimeoutUnitTest,
+       ConnectAndAcceptWithZeroTimeoutCoverImmediateTimeoutPaths) {
+    init(2);
+
+    const int listen_fd = co_tcp_socket(AF_INET);
+    ASSERT_GE(listen_fd, 0);
+    co_set_reuseaddr(listen_fd);
+
+    sockaddr_in listen_addr;
+    std::memset(&listen_addr, 0, sizeof(listen_addr));
+    listen_addr.sin_family = AF_INET;
+    listen_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    listen_addr.sin_port = 0;
+    ASSERT_EQ(::bind(listen_fd, reinterpret_cast<sockaddr *>(&listen_addr),
+                     sizeof(listen_addr)),
+              0);
+    ASSERT_EQ(::listen(listen_fd, 8), 0);
+    socklen_t listen_len = sizeof(listen_addr);
+    ASSERT_EQ(::getsockname(listen_fd, reinterpret_cast<sockaddr *>(&listen_addr),
+                            &listen_len),
+              0);
+
+    WaitGroup done(2);
+    go([&done, listen_fd]() {
+        sockaddr_storage peer;
+        std::memset(&peer, 0, sizeof(peer));
+        socklen_t peer_len = sizeof(peer);
+        errno = 0;
+        EXPECT_EQ(co_accept(listen_fd, reinterpret_cast<sockaddr *>(&peer),
+                            &peer_len, 0),
+                  -1);
+        EXPECT_EQ(errno, ETIMEDOUT);
+        done.done();
+    });
+
+    go([&done, listen_addr]() {
+        const int client_fd = co_tcp_socket(AF_INET);
+        ASSERT_GE(client_fd, 0);
+        errno = 0;
+        EXPECT_EQ(co_connect(client_fd,
+                             reinterpret_cast<const sockaddr *>(&listen_addr),
+                             static_cast<socklen_t>(sizeof(listen_addr)), 0),
+                  -1);
+        EXPECT_TRUE(errno == ETIMEDOUT || errno == EINPROGRESS ||
+                    errno == EALREADY || errno == EAGAIN ||
+                    errno == EWOULDBLOCK);
+        EXPECT_EQ(co_close(client_fd), 0);
+        done.done();
+    });
+
+    done.wait();
+    co_close(listen_fd);
+}
+
+TEST_F(HookMetadataTimeoutUnitTest, AcceptOnNonListeningSocketReturnsError) {
+    init(1);
+
+    const int fd = co_tcp_socket(AF_INET);
+    ASSERT_GE(fd, 0);
+
+    WaitGroup done(1);
+    go([&done, fd]() {
+        sockaddr_storage peer;
+        std::memset(&peer, 0, sizeof(peer));
+        socklen_t peer_len = sizeof(peer);
+        errno = 0;
+        EXPECT_EQ(co_accept(fd, reinterpret_cast<sockaddr *>(&peer), &peer_len,
+                            50),
+                  -1);
+        EXPECT_TRUE(errno == EINVAL || errno == ENOTSOCK || errno == EBADF ||
+                    errno == EOPNOTSUPP);
+        done.done();
+    });
+    done.wait();
+
+    co_close(fd);
+}
+
+#if defined(__linux__)
+TEST_F(HookMetadataTimeoutUnitTest, Accept4TimeoutAndErrorPathsAreCovered) {
+    init(1);
+
+    const int listen_fd = co_tcp_socket(AF_INET);
+    ASSERT_GE(listen_fd, 0);
+    co_set_reuseaddr(listen_fd);
+
+    sockaddr_in listen_addr;
+    std::memset(&listen_addr, 0, sizeof(listen_addr));
+    listen_addr.sin_family = AF_INET;
+    listen_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    listen_addr.sin_port = 0;
+    ASSERT_EQ(::bind(listen_fd, reinterpret_cast<sockaddr *>(&listen_addr),
+                     sizeof(listen_addr)),
+              0);
+    ASSERT_EQ(::listen(listen_fd, 4), 0);
+
+    WaitGroup timeout_done(1);
+    go([&timeout_done, listen_fd]() {
+        sockaddr_storage peer;
+        std::memset(&peer, 0, sizeof(peer));
+        socklen_t peer_len = sizeof(peer);
+        errno = 0;
+        EXPECT_EQ(co_accept4(listen_fd, reinterpret_cast<sockaddr *>(&peer),
+                             &peer_len, 0, 0),
+                  -1);
+        EXPECT_EQ(errno, ETIMEDOUT);
+        timeout_done.done();
+    });
+    timeout_done.wait();
+    co_close(listen_fd);
+
+    const int plain_fd = co_tcp_socket(AF_INET);
+    ASSERT_GE(plain_fd, 0);
+    WaitGroup invalid_done(1);
+    go([&invalid_done, plain_fd]() {
+        sockaddr_storage peer;
+        std::memset(&peer, 0, sizeof(peer));
+        socklen_t peer_len = sizeof(peer);
+        errno = 0;
+        EXPECT_EQ(co_accept4(plain_fd, reinterpret_cast<sockaddr *>(&peer),
+                             &peer_len, 0, 50),
+                  -1);
+        EXPECT_TRUE(errno == EINVAL || errno == ENOTSOCK || errno == EBADF ||
+                    errno == EOPNOTSUPP);
+        invalid_done.done();
+    });
+    invalid_done.wait();
+    co_close(plain_fd);
+}
+#endif
 
 } // namespace
 } // namespace zco
