@@ -17,8 +17,6 @@ class FormatTest : public ::testing::Test {
     std::shared_ptr<LogMessage> msg;
 };
 
-// ===================== FormatItem Tests =====================
-
 TEST_F(FormatTest, MessageFormatItem) {
     MessageFormatItem item;
     fmt::memory_buffer buffer;
@@ -166,8 +164,6 @@ TEST_F(FormatTest, OtherFormatItem) {
     std::string result(buffer.data(), buffer.size());
     EXPECT_EQ(result, "[PREFIX]");
 }
-
-// ===================== Formatter Tests =====================
 
 TEST_F(FormatTest, FormatterDefault) {
     Formatter formatter;
