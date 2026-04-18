@@ -1,4 +1,6 @@
+#define private public
 #include "znet/tcp_server.h"
+#undef private
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -7,14 +9,40 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstring>
+#include <cstdlib>
 #include <mutex>
 #include <string>
 #include <thread>
 
 #include <gtest/gtest.h>
 
+#include "znet/tls_context.h"
+
 namespace znet {
 namespace {
+
+class AlwaysFailTlsContext : public TlsContext {
+  public:
+    std::unique_ptr<TlsChannel> create_server_channel(int) const override {
+        errno = EIO;
+        return nullptr;
+    }
+};
+
+std::pair<std::string, std::string> create_temp_cert_pair() {
+    char dir_template[] = "/tmp/znet-server-tls-XXXXXX";
+    char *dir = ::mkdtemp(dir_template);
+    EXPECT_NE(dir, nullptr);
+    const std::string cert = std::string(dir ? dir : "/tmp") + "/cert.pem";
+    const std::string key = std::string(dir ? dir : "/tmp") + "/key.pem";
+    const std::string cmd =
+        "openssl req -x509 -nodes -newkey rsa:2048 -days 1 "
+        "-subj '/CN=localhost' -keyout " +
+        key + " -out " + cert + " >/dev/null 2>&1";
+    EXPECT_EQ(std::system(cmd.c_str()), 0);
+    return {cert, key};
+}
 
 class TcpServerUnitTest : public ::testing::Test {
   protected:
@@ -418,6 +446,147 @@ TEST_F(TcpServerUnitTest, WriteTimeoutIsAppliedToAcceptedConnection) {
 
     ::close(client_fd);
     server->stop();
+}
+
+TEST_F(TcpServerUnitTest, DoStartFailsWhenAcceptorIsNull) {
+    auto server = std::make_shared<TcpServer>(Address::ptr{}, 16);
+    ASSERT_NE(server, nullptr);
+
+    server->acceptor_.reset();
+    EXPECT_FALSE(server->do_start());
+}
+
+TEST_F(TcpServerUnitTest, RegisterAndRemoveConnectionHandleNullAndErase) {
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+
+    auto server = std::make_shared<TcpServer>(
+        std::make_shared<IPv4Address>("127.0.0.1", 0), 16);
+    ASSERT_NE(server, nullptr);
+
+    server->register_connection(nullptr);
+    EXPECT_TRUE(server->connections_.empty());
+
+    auto conn =
+        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    ASSERT_NE(conn, nullptr);
+    const int fd = conn->fd();
+    server->register_connection(conn);
+    ASSERT_EQ(server->connections_.size(), 1U);
+
+    server->remove_connection(fd);
+    EXPECT_TRUE(server->connections_.empty());
+
+    conn->close();
+    ::close(pair[1]);
+}
+
+TEST_F(TcpServerUnitTest, HandleConnectionIgnoresNullClient) {
+    auto server = std::make_shared<TcpServer>(
+        std::make_shared<IPv4Address>("127.0.0.1", 0), 16);
+    ASSERT_NE(server, nullptr);
+
+    server->handle_connection(nullptr);
+    EXPECT_TRUE(server->connections_.empty());
+}
+
+TEST_F(TcpServerUnitTest, DoStopClearsTrackedConnections) {
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+
+    auto server = std::make_shared<TcpServer>(
+        std::make_shared<IPv4Address>("127.0.0.1", 0), 16);
+    ASSERT_NE(server, nullptr);
+
+    auto conn =
+        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    ASSERT_NE(conn, nullptr);
+    server->connections_[conn->fd()] = conn;
+
+    server->do_stop();
+    EXPECT_TRUE(server->connections_.empty());
+
+    ::close(pair[1]);
+}
+
+TEST_F(TcpServerUnitTest, HandleConnectionDirectPathCoversTlsHandshakeFailure) {
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+
+    auto server = std::make_shared<TcpServer>(
+        std::make_shared<IPv4Address>("127.0.0.1", 0), 16);
+    ASSERT_NE(server, nullptr);
+    server->running_.store(true, std::memory_order_release);
+    server->tls_context_ = std::make_shared<AlwaysFailTlsContext>();
+    server->tls_handshake_timeout_ms_ = 5;
+
+    server->handle_connection(std::make_shared<Socket>(pair[0]));
+    EXPECT_TRUE(server->connections_.empty());
+
+    ::close(pair[1]);
+}
+
+TEST_F(TcpServerUnitTest, WriteCompleteAndHighWaterCallbacksAreApplied) {
+    zco::init(2);
+
+    auto server = std::make_shared<TcpServer>(
+        std::make_shared<IPv4Address>("127.0.0.1", 0), 16);
+    ASSERT_NE(server, nullptr);
+
+    std::atomic<int> conn_count{0};
+    server->set_on_connection([&](const TcpConnection::ptr &conn) {
+        ASSERT_NE(conn, nullptr);
+        conn_count.fetch_add(1, std::memory_order_relaxed);
+    });
+    server->set_on_write_complete(
+        [](const TcpConnection::ptr &conn) { ASSERT_NE(conn, nullptr); });
+    server->set_on_high_water_mark(
+        [](const TcpConnection::ptr &conn, size_t bytes) {
+            ASSERT_NE(conn, nullptr);
+            EXPECT_GE(bytes, 1U);
+        },
+        1);
+
+    ASSERT_TRUE(server->start());
+    auto bound_addr = std::dynamic_pointer_cast<IPv4Address>(
+        server->acceptor()->listen_socket()->get_local_address());
+    ASSERT_NE(bound_addr, nullptr);
+
+    int client_fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    ASSERT_GE(client_fd, 0);
+
+    sockaddr_in addr;
+    std::memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(bound_addr->port());
+    ASSERT_EQ(::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr), 1);
+    ASSERT_EQ(
+        ::connect(client_fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)),
+        0);
+    ::close(client_fd);
+
+    for (int i = 0; i < 100 && conn_count.load(std::memory_order_relaxed) < 1;
+         ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_GE(conn_count.load(std::memory_order_relaxed), 1);
+
+    server->stop();
+}
+
+TEST_F(TcpServerUnitTest, EnableTlsSuccessPathSetsTlsState) {
+    if (std::system("openssl version >/dev/null 2>&1") != 0) {
+        GTEST_SKIP() << "openssl command is required";
+    }
+
+    auto cert_pair = create_temp_cert_pair();
+    auto server = std::make_shared<TcpServer>(
+        std::make_shared<IPv4Address>("127.0.0.1", 0), 16);
+    ASSERT_NE(server, nullptr);
+
+    EXPECT_TRUE(server->enable_tls(cert_pair.first, cert_pair.second, 321));
+    EXPECT_TRUE(server->tls_enabled());
+    EXPECT_EQ(server->tls_handshake_timeout_ms_, 321U);
 }
 
 } // namespace
