@@ -37,5 +37,42 @@ TEST_F(TimerUnitByHeaderTest, AddTimerAndProcessDueExecutesCallback) {
     EXPECT_TRUE(fired.load(std::memory_order_acquire));
 }
 
+TEST_F(TimerUnitByHeaderTest, CancelledTimerIsSkippedDuringProcessDue) {
+    TimerQueue queue;
+    std::atomic<bool> fired(false);
+
+    std::shared_ptr<TimerToken> token =
+        queue.add_timer(1, [&fired]() { fired.store(true, std::memory_order_release); });
+    ASSERT_NE(token, nullptr);
+    token->cancelled.store(true, std::memory_order_release);
+
+    const uint64_t deadline = now_ms() + 100;
+    while (now_ms() < deadline) {
+        queue.process_due();
+    }
+
+    EXPECT_FALSE(fired.load(std::memory_order_acquire));
+}
+
+TEST_F(TimerUnitByHeaderTest, EmptyAndFutureQueueTimeoutsFollowContract) {
+    TimerQueue queue;
+    EXPECT_EQ(queue.next_timeout_ms(), 1000);
+
+    queue.add_timer(5000, []() {});
+    const int timeout_ms = queue.next_timeout_ms();
+    EXPECT_GE(timeout_ms, 0);
+    EXPECT_LE(timeout_ms, 1000);
+}
+
+TEST_F(TimerUnitByHeaderTest, DueTimerMakesNextTimeoutZeroAndNullCallbackIsSafe) {
+    TimerQueue queue;
+    std::shared_ptr<TimerToken> token = queue.add_timer(0, std::function<void()>());
+    ASSERT_NE(token, nullptr);
+
+    EXPECT_EQ(queue.next_timeout_ms(), 0);
+    queue.process_due();
+    EXPECT_EQ(queue.next_timeout_ms(), 1000);
+}
+
 } // namespace
 } // namespace zco
