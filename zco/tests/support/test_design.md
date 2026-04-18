@@ -191,6 +191,14 @@ gcovr --root . --filter '^zco/src/' --object-directory build-cov \
   --txt --decisions --sort uncovered-number --print-summary
 ```
 
+### 5-Run Seeded Coverage Gate (Average)
+
+```bash
+# Fixed seeds: 101/202/303/404/505
+# Scope: zco/src, excludes system & third-party paths
+zco/tests/support/run_zco_coverage_gate.sh build-cov
+```
+
 ### Notes
 
 - Metrics scope is restricted to `zco/src`.
