@@ -76,6 +76,21 @@ TEST(HttpRequestTest, ParseQueryParamsWithUrlEncoding) {
     EXPECT_EQ(req.query_param("msg"), "Hello World");
 }
 
+TEST(HttpRequestTest, ParseQueryParamsHandlesEmptySegmentsAndClearsOnReparse) {
+    HttpRequest req;
+    req.set_query("a=1&&flag&k=&encoded=%2B+");
+    req.parse_query_params();
+
+    EXPECT_EQ(req.query_param("a"), "1");
+    EXPECT_EQ(req.query_param("flag"), "");
+    EXPECT_EQ(req.query_param("k"), "");
+    EXPECT_EQ(req.query_param("encoded"), "+ ");
+
+    req.set_query("");
+    req.parse_query_params();
+    EXPECT_EQ(req.query_param("a", "none"), "none");
+}
+
 TEST(HttpRequestTest, KeepAliveHttp11Default) {
     HttpRequest req;
     req.set_version(HttpVersion::HTTP_1_1);
@@ -102,6 +117,12 @@ TEST(HttpRequestTest, ContentLength) {
     EXPECT_EQ(req.content_length(), 1024u);
 }
 
+TEST(HttpRequestTest, ContentLengthInvalidValueFallsBackToZero) {
+    HttpRequest req;
+    req.set_header("Content-Length", "invalid");
+    EXPECT_EQ(req.content_length(), 0u);
+}
+
 TEST(HttpRequestTest, ParseJsonBodySuccess) {
     HttpRequest req;
     req.set_header("Content-Type", "application/json; charset=utf-8");
@@ -126,6 +147,25 @@ TEST(HttpRequestTest, ParseJsonBodyInvalid) {
     EXPECT_FALSE(req.json_error().empty());
 }
 
+TEST(HttpRequestTest, ParseJsonCoversNonJsonEmptyBodyAndCachedFailure) {
+    HttpRequest req;
+    req.set_header("Content-Type", "text/plain");
+    req.set_body("plain");
+    EXPECT_TRUE(req.parse_json());
+    EXPECT_EQ(req.json(), nullptr);
+    EXPECT_TRUE(req.json_error().empty());
+
+    req.set_header("Content-Type", "application/json");
+    req.set_body("");
+    EXPECT_FALSE(req.parse_json());
+    EXPECT_EQ(req.json(), nullptr);
+    EXPECT_EQ(req.json_error(), "Empty JSON body");
+
+    // 第二次调用直接命中缓存失败分支。
+    EXPECT_FALSE(req.parse_json());
+    EXPECT_EQ(req.json_error(), "Empty JSON body");
+}
+
 TEST(HttpRequestTest, ParseFormUrlencodedBody) {
     HttpRequest req;
     req.set_header("Content-Type", "application/x-www-form-urlencoded");
@@ -137,6 +177,65 @@ TEST(HttpRequestTest, ParseFormUrlencodedBody) {
     EXPECT_EQ(req.form_param("city"), "ShenZhen");
     EXPECT_EQ(req.form_param("flag"), "");
     EXPECT_EQ(req.form_param("missing", "default"), "default");
+}
+
+TEST(HttpRequestTest, ParseFormUrlencodedCoversNonFormEmptyAndCache) {
+    HttpRequest req;
+    req.set_header("Content-Type", "text/plain");
+    req.set_body("name=ignored");
+    EXPECT_TRUE(req.parse_form_urlencoded());
+    EXPECT_TRUE(req.form_params().empty());
+
+    req.set_header("Content-Type", "application/x-www-form-urlencoded");
+    req.set_body("");
+    EXPECT_TRUE(req.parse_form_urlencoded());
+    EXPECT_TRUE(req.form_params().empty());
+    EXPECT_TRUE(req.parse_form_urlencoded());
+
+    req.set_body("name=Alice&flag");
+    EXPECT_TRUE(req.parse_form_urlencoded());
+    EXPECT_EQ(req.form_param("name"), "Alice");
+    EXPECT_EQ(req.form_param("flag"), "");
+}
+
+TEST(HttpRequestTest, CookieParsingHandlesFlagsAndMalformedPairs) {
+    HttpRequest req;
+    req.set_header("Cookie",
+                   "a=1; theme=dark ; flag ; =skip ; ; spaced = value ;multi=a=b");
+
+    EXPECT_EQ(req.cookie("a"), "1");
+    EXPECT_EQ(req.cookie("theme"), "dark");
+    EXPECT_EQ(req.cookie("flag"), "");
+    EXPECT_EQ(req.cookie("spaced"), "value");
+    EXPECT_EQ(req.cookie("multi"), "a=b");
+    EXPECT_EQ(req.cookie("missing", "default"), "default");
+
+    const auto &cookies = req.cookies();
+    EXPECT_EQ(cookies.count(""), 0u);
+
+    HttpRequest no_cookie;
+    EXPECT_TRUE(no_cookie.cookies().empty());
+    EXPECT_EQ(no_cookie.cookie("none", "fallback"), "fallback");
+}
+
+TEST(HttpRequestTest, ParseMultipartCoversFailureCacheAndContentTypeInvalidation) {
+    HttpRequest req;
+    req.set_header("Content-Type", "application/json");
+    req.set_body("{}");
+    EXPECT_TRUE(req.parse_multipart());
+    EXPECT_EQ(req.multipart(), nullptr);
+
+    req.set_header("Content-Type", "multipart/form-data; boundary=b");
+    req.set_body("no-boundary");
+    EXPECT_FALSE(req.parse_multipart());
+    EXPECT_EQ(req.multipart(), nullptr);
+    EXPECT_FALSE(req.multipart_error().empty());
+    EXPECT_FALSE(req.parse_multipart());
+
+    req.set_header("Content-Type", "application/json");
+    EXPECT_TRUE(req.parse_multipart());
+    EXPECT_EQ(req.multipart(), nullptr);
+    EXPECT_TRUE(req.multipart_error().empty());
 }
 
 TEST(HttpRequestTest, ResetBodyInvalidatesBodyParseCache) {
@@ -162,6 +261,23 @@ TEST(HttpRequestTest, LazyRemoteAddrResolverRunsOnlyOnce) {
 
     EXPECT_EQ(req.remote_addr(), "127.0.0.1:8080");
     EXPECT_EQ(req.remote_addr(), "127.0.0.1:8080");
+    EXPECT_EQ(calls, 1);
+}
+
+TEST(HttpRequestTest, RemoteAddrSettersAndFallbackPaths) {
+    HttpRequest req;
+    EXPECT_EQ(req.remote_addr(), "");
+
+    req.set_remote_addr(std::string("10.0.0.1:1000"));
+    EXPECT_EQ(req.remote_addr(), "10.0.0.1:1000");
+
+    int calls = 0;
+    req.set_remote_addr_resolver([&calls]() {
+        ++calls;
+        return std::string("192.168.1.10:8080");
+    });
+    EXPECT_EQ(req.remote_addr(), "192.168.1.10:8080");
+    EXPECT_EQ(req.remote_addr(), "192.168.1.10:8080");
     EXPECT_EQ(calls, 1);
 }
 
