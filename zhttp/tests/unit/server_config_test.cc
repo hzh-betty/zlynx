@@ -193,6 +193,78 @@ redirect_http_port = 18080
     EXPECT_EQ(config.redirect_http_port, 18080);
 }
 
+TEST(ServerConfigTest, SupportsForceRedirectAliasAndSharedStackMode) {
+    TempTomlFile config_file(R"(
+[server]
+port = 19443
+name = "svc"
+homepage = "/portal"
+daemon = true
+
+[threads]
+count = 3
+stack_mode = "SHARED"
+
+[ssl]
+enabled = true
+cert_file = "/tmp/cert.pem"
+key_file = "/tmp/key.pem"
+force_redirect = true
+redirect_http_port = 19080
+)");
+
+    const zhttp::ServerConfig config =
+        zhttp::ServerConfig::from_toml(config_file.path());
+
+    EXPECT_EQ(config.port, 19443);
+    EXPECT_EQ(config.server_name, "svc");
+    EXPECT_EQ(config.homepage, "/portal");
+    EXPECT_TRUE(config.daemon);
+    EXPECT_EQ(config.num_threads, 3U);
+    EXPECT_EQ(config.stack_mode, zhttp::StackMode::SHARED);
+    EXPECT_TRUE(config.enable_https);
+    EXPECT_TRUE(config.force_http_to_https);
+    EXPECT_EQ(config.redirect_http_port, 19080);
+}
+
+TEST(ServerConfigTest, UsesDefaultsWhenSectionsAreMissing) {
+    TempTomlFile config_file("# empty config\n");
+
+    const zhttp::ServerConfig config =
+        zhttp::ServerConfig::from_toml(config_file.path());
+
+    EXPECT_EQ(config.host, "0.0.0.0");
+    EXPECT_EQ(config.port, 8080);
+    EXPECT_EQ(config.num_threads, 4U);
+    EXPECT_EQ(config.stack_mode, zhttp::StackMode::INDEPENDENT);
+    EXPECT_FALSE(config.enable_https);
+}
+
+TEST(ServerConfigTest, RejectsInvalidPortAndThreadCountValues) {
+    TempTomlFile invalid_port_file(R"(
+[server]
+port = 70000
+)");
+    EXPECT_THROW((void)zhttp::ServerConfig::from_toml(invalid_port_file.path()),
+                 std::runtime_error);
+
+    TempTomlFile negative_port_file(R"(
+[ssl]
+redirect_http_port = -1
+)");
+    EXPECT_THROW(
+        (void)zhttp::ServerConfig::from_toml(negative_port_file.path()),
+        std::runtime_error);
+
+    TempTomlFile invalid_threads_file(R"(
+[threads]
+count = -1
+)");
+    EXPECT_THROW(
+        (void)zhttp::ServerConfig::from_toml(invalid_threads_file.path()),
+        std::runtime_error);
+}
+
 TEST(ServerConfigTest, RejectsHttpsRedirectWhenHttpsIsDisabled) {
     zhttp::ServerConfig config;
     config.enable_https = false;
@@ -200,6 +272,51 @@ TEST(ServerConfigTest, RejectsHttpsRedirectWhenHttpsIsDisabled) {
     config.redirect_http_port = 8080;
 
     EXPECT_FALSE(config.validate());
+}
+
+TEST(ServerConfigTest, ValidateRejectsHttpsMissingCertificateOrKey) {
+    zhttp::ServerConfig missing_cert;
+    missing_cert.enable_https = true;
+    missing_cert.key_file = "/tmp/k.pem";
+    EXPECT_FALSE(missing_cert.validate());
+
+    zhttp::ServerConfig missing_key;
+    missing_key.enable_https = true;
+    missing_key.cert_file = "/tmp/c.pem";
+    EXPECT_FALSE(missing_key.validate());
+}
+
+TEST(ServerConfigTest, ValidateRejectsRedirectPortLoopAndHomepageLoop) {
+    zhttp::ServerConfig same_port;
+    same_port.enable_https = true;
+    same_port.cert_file = "/tmp/c.pem";
+    same_port.key_file = "/tmp/k.pem";
+    same_port.force_http_to_https = true;
+    same_port.redirect_http_port = same_port.port;
+    EXPECT_FALSE(same_port.validate());
+
+    zhttp::ServerConfig zero_redirect = same_port;
+    zero_redirect.redirect_http_port = 0;
+    EXPECT_FALSE(zero_redirect.validate());
+
+    zhttp::ServerConfig bad_homepage = same_port;
+    bad_homepage.force_http_to_https = false;
+    bad_homepage.homepage = "/home";
+    EXPECT_FALSE(bad_homepage.validate());
+}
+
+TEST(ServerConfigTest, ValidateAcceptsWellFormedHttpsAndRedirectConfig) {
+    zhttp::ServerConfig config;
+    config.port = 19443;
+    config.num_threads = 2;
+    config.enable_https = true;
+    config.cert_file = "/tmp/server.crt";
+    config.key_file = "/tmp/server.key";
+    config.force_http_to_https = true;
+    config.redirect_http_port = 18080;
+    config.homepage = "/welcome";
+
+    EXPECT_TRUE(config.validate());
 }
 
 TEST(ServerConfigTest, BuilderSupportsHttpsRedirectChaining) {
@@ -311,6 +428,35 @@ file = "/tmp/znet-builder.log"
     EXPECT_NE(dynamic_cast<zlog::AsyncLogger *>(zco_logger), nullptr);
     EXPECT_EQ(dynamic_cast<zlog::AsyncLogger *>(net_logger), nullptr);
     EXPECT_NE(dynamic_cast<zlog::AsyncLogger *>(http_logger), nullptr);
+}
+
+TEST(ServerConfigTest, LoadsSyntaxErrorsAsRuntimeErrorWithTomlPrefix) {
+    TempTomlFile invalid_file(R"(
+[server
+port = 8080
+)");
+
+    EXPECT_THROW(
+        {
+            try {
+                (void)zhttp::ServerConfig::from_toml(invalid_file.path());
+            } catch (const std::runtime_error &error) {
+                EXPECT_NE(std::string(error.what()).find("TOML syntax error"),
+                          std::string::npos);
+                throw;
+            }
+        },
+        std::runtime_error);
+}
+
+TEST(ServerConfigTest, StackModeHelpersCoverKnownAndFallbackValues) {
+    EXPECT_EQ(zhttp::string_to_stack_mode("shared"), zhttp::StackMode::SHARED);
+    EXPECT_EQ(zhttp::string_to_stack_mode("SHARED"), zhttp::StackMode::SHARED);
+    EXPECT_EQ(zhttp::string_to_stack_mode("whatever"),
+              zhttp::StackMode::INDEPENDENT);
+    EXPECT_EQ(zhttp::stack_mode_to_string(zhttp::StackMode::SHARED), "shared");
+    EXPECT_EQ(zhttp::stack_mode_to_string(zhttp::StackMode::INDEPENDENT),
+              "independent");
 }
 
 int main(int argc, char **argv) {
