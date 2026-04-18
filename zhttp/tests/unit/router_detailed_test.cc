@@ -30,8 +30,6 @@ class TraceMiddleware : public Middleware {
     std::string name_;
 };
 
-// ========== 路由优先级测试 ==========
-
 TEST_F(RouterDetailedTest, StaticVsParamPriority) {
     int static_called = 0;
     int param_called = 0;
@@ -63,7 +61,6 @@ TEST_F(RouterDetailedTest, StaticVsParamPriority) {
     EXPECT_EQ(param_called, 1);
 }
 
-// ========== 复杂路径参数测试 ==========
 
 TEST_F(RouterDetailedTest, NestedPathParams) {
     std::string captured_org, captured_repo, captured_issue;
