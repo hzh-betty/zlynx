@@ -82,8 +82,6 @@ class SinkTest : public ::testing::Test {
     std::string testDir;
 };
 
-// ===================== StdOutSink Tests =====================
-
 TEST_F(SinkTest, StdOutSinkBasic) {
     StdOutSink sink;
 
@@ -116,7 +114,6 @@ TEST_F(SinkTest, StdOutSinkEmptyString) {
     EXPECT_EQ(output, "");
 }
 
-// ===================== FileSink Tests =====================
 
 TEST_F(SinkTest, FileSinkBasic) {
     std::string filepath = testDir + "/test.log";
@@ -178,8 +175,6 @@ TEST_F(SinkTest, FileSinkMultipleWrites) {
         EXPECT_THAT(content, ::testing::HasSubstr(expected));
     }
 }
-
-// ===================== RollBySizeSink Tests =====================
 
 TEST_F(SinkTest, RollBySizeSinkBasic) {
     std::string basename = testDir + "/roll_test";
@@ -253,8 +248,6 @@ TEST_F(SinkTest, RollBySizeSinkLargeFile) {
 
     EXPECT_EQ(fileCount, 1);
 }
-
-// ===================== SinkFactory Tests =====================
 
 TEST_F(SinkTest, SinkFactoryCreateStdOut) {
     LogSink::ptr sink = SinkFactory::create<StdOutSink>();
