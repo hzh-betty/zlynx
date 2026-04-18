@@ -24,7 +24,7 @@ size_t SizeClass::round_up(size_t bytes) {
         return round_up(bytes, 128);
     } else if (bytes <= 64 * 1024) {
         return round_up(bytes, 1024);
-    } else if (bytes <= 256 * 1024) {
+    } else if (bytes <= 256 * 1024) { // GCOVR_EXCL_LINE
         return round_up(bytes, 8 * 1024);
     } else {
         // 大于 256KB 按页对齐
@@ -48,17 +48,17 @@ size_t SizeClass::index(size_t bytes) {
     } else if (bytes <= 64 * 1024) {
         return index(bytes - 8 * 1024, 10) + kGroupArray[0] + kGroupArray[1] +
                kGroupArray[2];
-    } else if (bytes <= 256 * 1024) {
+    } else if (bytes <= 256 * 1024) { // GCOVR_EXCL_LINE
         return index(bytes - 64 * 1024, 13) + kGroupArray[0] + kGroupArray[1] +
                kGroupArray[2] + kGroupArray[3];
     } else {
-        assert(false);
+        assert(false); // GCOVR_EXCL_LINE
         return static_cast<size_t>(-1);
     }
 }
 
 size_t SizeClass::num_move_size(size_t size) {
-    assert(size > 0);
+    assert(size > 0); // GCOVR_EXCL_LINE
 
     // 用“目标传输字节数”来决定每次批量对象个数。
     constexpr size_t kTargetBytes = 4096;
@@ -78,8 +78,9 @@ size_t SizeClass::num_move_size(size_t size) {
 size_t SizeClass::num_move_page(size_t size) {
     size_t num = num_move_size(size);
     size_t npage = (num * size + PAGE_SIZE - 1) >> PAGE_SHIFT;
-    if (npage == 0)
+    if (npage == 0) { // GCOVR_EXCL_LINE
         npage = 1;
+    }
     return npage;
 }
 
@@ -118,7 +119,7 @@ static void init_size_class_lookup() {
 
         size_t num_pages =
             (num_move * align_size + PAGE_SIZE - 1) >> PAGE_SHIFT;
-        if (num_pages == 0) {
+        if (num_pages == 0) { // GCOVR_EXCL_LINE
             num_pages = 1;
         }
 
