@@ -91,7 +91,6 @@ class ZlogIntegrationTest : public ::testing::Test {
     std::string testDir;
 };
 
-// ===================== 同步日志器集成测试 =====================
 
 TEST_F(ZlogIntegrationTest, SyncLoggerEndToEnd) {
     std::string logFile = testDir + "/sync_e2e.log";
@@ -166,8 +165,6 @@ TEST_F(ZlogIntegrationTest, SyncLoggerMultipleSinks) {
     EXPECT_EQ(content1, content2);
     EXPECT_THAT(content1, ::testing::HasSubstr("multi sink test"));
 }
-
-// ===================== 异步日志器集成测试 =====================
 
 TEST_F(ZlogIntegrationTest, AsyncLoggerEndToEnd) {
     std::string logFile = testDir + "/async_e2e.log";
@@ -256,7 +253,6 @@ TEST_F(ZlogIntegrationTest, AsyncLoggerSafeMode) {
     }
 }
 
-// ===================== 多线程测试 =====================
 
 TEST_F(ZlogIntegrationTest, MultithreadedSyncLogger) {
     std::string logFile = testDir + "/mt_sync.log";
@@ -332,8 +328,6 @@ TEST_F(ZlogIntegrationTest, MultithreadedAsyncLogger) {
     EXPECT_GT(countLines(content), 0);
 }
 
-// ===================== LoggerManager测试 =====================
-
 TEST_F(ZlogIntegrationTest, GlobalLoggerBuilder) {
     std::string logFile = testDir + "/global.log";
 
@@ -389,8 +383,6 @@ TEST_F(ZlogIntegrationTest, GetNonExistentLogger) {
     EXPECT_EQ(logger.get(), static_cast<Logger *>(NULL));
 }
 
-// ===================== 滚动文件集成测试 =====================
-
 TEST_F(ZlogIntegrationTest, RollingFileIntegration) {
     std::string basename = testDir + "/rolling";
 
@@ -424,8 +416,6 @@ TEST_F(ZlogIntegrationTest, RollingFileIntegration) {
     EXPECT_GT(fileCount, 1) << "Expected multiple rolling files";
 }
 
-// ===================== 格式化集成测试 =====================
-
 TEST_F(ZlogIntegrationTest, CompleteFormatIntegration) {
     std::string logFile = testDir + "/format.log";
 
@@ -447,8 +437,6 @@ TEST_F(ZlogIntegrationTest, CompleteFormatIntegration) {
         R"(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]\[[^\]]+\]\[format_test\]\[test\.cc:100\]\[INFO\]\s+formatted message\n)");
     EXPECT_TRUE(std::regex_match(content, pattern)) << "Got: " << content;
 }
-
-// ===================== 压力测试 =====================
 
 TEST_F(ZlogIntegrationTest, StressTestSync) {
     std::string logFile = testDir + "/stress_sync.log";
