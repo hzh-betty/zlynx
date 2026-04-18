@@ -427,6 +427,48 @@ TEST_F(FreeListTest, PushRangeThenPopRangeAll) {
     EXPECT_TRUE(list_.empty());
 }
 
+TEST_F(FreeListTest, PopBatchZeroReturnsZeroAndKeepsList) {
+    list_.push(blocks_[0]);
+    void *batch[1] = {reinterpret_cast<void *>(0x1)};
+    EXPECT_EQ(list_.pop_batch(batch, 0), 0u);
+    EXPECT_EQ(list_.size(), 1u);
+    EXPECT_EQ(list_.pop(), blocks_[0]);
+}
+
+TEST_F(FreeListTest, PopBatchExactAllElements) {
+    for (int i = 0; i < 5; ++i) {
+        list_.push(blocks_[i]);
+    }
+    void *batch[5] = {nullptr, nullptr, nullptr, nullptr, nullptr};
+    size_t popped = list_.pop_batch(batch, 5);
+    ASSERT_EQ(popped, 5u);
+    EXPECT_TRUE(list_.empty());
+    EXPECT_EQ(batch[0], blocks_[4]);
+    EXPECT_EQ(batch[1], blocks_[3]);
+    EXPECT_EQ(batch[2], blocks_[2]);
+    EXPECT_EQ(batch[3], blocks_[1]);
+    EXPECT_EQ(batch[4], blocks_[0]);
+    EXPECT_EQ(next_obj(batch[4]), nullptr);
+}
+
+TEST_F(FreeListTest, PopBatchPartialKeepsRemainingChain) {
+    for (int i = 0; i < 6; ++i) {
+        list_.push(blocks_[i]);
+    }
+    void *batch[3] = {nullptr, nullptr, nullptr};
+    size_t popped = list_.pop_batch(batch, 3);
+    ASSERT_EQ(popped, 3u);
+    EXPECT_EQ(list_.size(), 3u);
+    EXPECT_EQ(batch[0], blocks_[5]);
+    EXPECT_EQ(batch[1], blocks_[4]);
+    EXPECT_EQ(batch[2], blocks_[3]);
+    EXPECT_EQ(next_obj(batch[2]), nullptr);
+    EXPECT_EQ(list_.pop(), blocks_[2]);
+    EXPECT_EQ(list_.pop(), blocks_[1]);
+    EXPECT_EQ(list_.pop(), blocks_[0]);
+    EXPECT_TRUE(list_.empty());
+}
+
 } // namespace
 } // namespace zmalloc
 
