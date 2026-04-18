@@ -130,6 +130,194 @@ TEST_F(MultipartTest, UploadedFileSaveTo_WritesFile) {
     ::unlink(path);
 }
 
+TEST_F(MultipartTest, NonMultipartContentTypeReturnsEmptyResult) {
+    auto req = std::make_shared<HttpRequest>();
+    req->set_method(HttpMethod::POST);
+    req->set_path("/submit");
+    req->set_header("Content-Type", "application/json");
+    req->set_body("{\"k\":\"v\"}");
+
+    ASSERT_TRUE(req->parse_multipart());
+    EXPECT_EQ(req->multipart(), nullptr);
+}
+
+TEST_F(MultipartTest, SupportsQuotedBoundaryAndLowercaseHeaderNames) {
+    auto req = std::make_shared<HttpRequest>();
+    req->set_method(HttpMethod::POST);
+    req->set_path("/upload");
+    req->set_header("Content-Type", "multipart/form-data; charset=utf-8; boundary=\"quoted-b\"");
+
+    std::string body;
+    body += "--quoted-b\r\n";
+    body += "content-disposition: form-data; name=\"text\"\r\n";
+    body += "\r\n";
+    body += "hello-quoted\r\n";
+    body += "--quoted-b--\r\n";
+    req->set_body(body);
+
+    ASSERT_TRUE(req->parse_multipart()) << req->multipart_error();
+    const MultipartFormData *mp = req->multipart();
+    ASSERT_NE(mp, nullptr);
+    EXPECT_EQ(mp->field("text"), "hello-quoted");
+}
+
+TEST_F(MultipartTest, InvalidMultipartStructuresReturnErrors) {
+    {
+        // body 中找不到 boundary。
+        auto req = make_request("abc", "no-boundary-here");
+        EXPECT_FALSE(req->parse_multipart());
+        EXPECT_NE(req->multipart_error().find("Boundary"), std::string::npos);
+    }
+
+    {
+        // 缺失 header/body 分隔空行。
+        std::string body;
+        body += "--abc\r\n";
+        body += "Content-Disposition: form-data; name=\"x\"\r\n";
+        body += "--abc--\r\n";
+        auto req = make_request("abc", body);
+        EXPECT_FALSE(req->parse_multipart());
+        EXPECT_NE(req->multipart_error().find("header terminator"),
+                  std::string::npos);
+    }
+
+    {
+        // 缺失 Content-Disposition。
+        std::string body;
+        body += "--abc\r\n";
+        body += "Content-Type: text/plain\r\n";
+        body += "\r\n";
+        body += "abc\r\n";
+        body += "--abc--\r\n";
+        auto req = make_request("abc", body);
+        EXPECT_FALSE(req->parse_multipart());
+        EXPECT_NE(req->multipart_error().find("Content-Disposition"),
+                  std::string::npos);
+    }
+
+    {
+        // Content-Disposition 无 name 参数。
+        std::string body;
+        body += "--abc\r\n";
+        body += "Content-Disposition: form-data; filename=\"a.txt\"\r\n";
+        body += "\r\n";
+        body += "data\r\n";
+        body += "--abc--\r\n";
+        auto req = make_request("abc", body);
+        EXPECT_FALSE(req->parse_multipart());
+        EXPECT_NE(req->multipart_error().find("no name"), std::string::npos);
+    }
+
+    {
+        // 找不到下一个 boundary。
+        std::string body;
+        body += "--abc\r\n";
+        body += "Content-Disposition: form-data; name=\"x\"\r\n";
+        body += "\r\n";
+        body += "value";
+        auto req = make_request("abc", body);
+        EXPECT_FALSE(req->parse_multipart());
+        EXPECT_NE(req->multipart_error().find("next boundary"),
+                  std::string::npos);
+    }
+}
+
+TEST_F(MultipartTest, DuplicateFieldUsesLatestValueAndFileLookupMisses) {
+    std::string body;
+    body += "--b\r\n";
+    body += "Content-Disposition: form-data; name=\"k\"\r\n";
+    body += "\r\n";
+    body += "v1\r\n";
+    body += "--b\r\n";
+    body += "Content-Disposition: form-data; name=\"k\"\r\n";
+    body += "\r\n";
+    body += "v2\r\n";
+    body += "--b--\r\n";
+
+    auto req = make_request("b", body);
+    ASSERT_TRUE(req->parse_multipart()) << req->multipart_error();
+    const MultipartFormData *mp = req->multipart();
+    ASSERT_NE(mp, nullptr);
+    EXPECT_EQ(mp->field("k"), "v2");
+    EXPECT_EQ(mp->file("not-exist"), nullptr);
+}
+
+TEST_F(MultipartTest, UploadedFileSaveToFailureReturnsErrorText) {
+    std::string body;
+    body += "--b\r\n";
+    body +=
+        "Content-Disposition: form-data; name=\"file\"; filename=\"a.txt\"\r\n";
+    body += "Content-Type: text/plain\r\n";
+    body += "\r\n";
+    body += "hello-file\r\n";
+    body += "--b--\r\n";
+
+    auto req = make_request("b", body);
+    ASSERT_TRUE(req->parse_multipart()) << req->multipart_error();
+    const UploadedFile *f = req->multipart()->file("file");
+    ASSERT_NE(f, nullptr);
+
+    std::string err;
+    EXPECT_FALSE(f->save_to("/tmp", &err));
+    EXPECT_NE(err.find("Failed to write file"), std::string::npos);
+}
+
+TEST_F(MultipartTest, SupportsBoundaryWithUppercaseTokenAndRejectsEmptyBoundary) {
+    {
+        auto req = std::make_shared<HttpRequest>();
+        req->set_method(HttpMethod::POST);
+        req->set_path("/upload");
+        req->set_header("Content-Type",
+                        "multipart/form-data; charset=utf-8; BOUNDARY=AbC");
+
+        std::string body;
+        body += "--AbC\r\n";
+        body += "Content-Disposition: form-data; flag; name=\"k\"\r\n";
+        body += ": ignored-empty-key\r\n";
+        body += "NoColonHeader\r\n";
+        body += "\r\n";
+        body += "v\r\n";
+        body += "--AbC--\r\n";
+        req->set_body(body);
+
+        ASSERT_TRUE(req->parse_multipart()) << req->multipart_error();
+        const MultipartFormData *mp = req->multipart();
+        ASSERT_NE(mp, nullptr);
+        EXPECT_EQ(mp->field("k"), "v");
+        EXPECT_EQ(mp->field("missing", "default-v"), "default-v");
+    }
+
+    {
+        auto req = std::make_shared<HttpRequest>();
+        req->set_method(HttpMethod::POST);
+        req->set_path("/upload");
+        req->set_header("Content-Type", "multipart/form-data; boundary=\"\"");
+        req->set_body("--x--\r\n");
+        EXPECT_FALSE(req->parse_multipart());
+        EXPECT_NE(req->multipart_error().find("Missing boundary"), std::string::npos);
+    }
+}
+
+TEST_F(MultipartTest, AcceptsSingleLfAfterBoundaryLine) {
+    auto req = std::make_shared<HttpRequest>();
+    req->set_method(HttpMethod::POST);
+    req->set_path("/upload");
+    req->set_header("Content-Type", "multipart/form-data; boundary=lf-boundary");
+
+    std::string body;
+    body += "--lf-boundary\n";
+    body += "Content-Disposition: form-data; name=\"k\"\r\n";
+    body += "\r\n";
+    body += "lf-ok\r\n";
+    body += "--lf-boundary--\r\n";
+    req->set_body(body);
+
+    ASSERT_TRUE(req->parse_multipart()) << req->multipart_error();
+    const MultipartFormData *mp = req->multipart();
+    ASSERT_NE(mp, nullptr);
+    EXPECT_EQ(mp->field("k"), "lf-ok");
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
