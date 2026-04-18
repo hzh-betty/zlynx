@@ -46,6 +46,13 @@ TEST_F(SizeClassRoundUpTest, HugeSizes) {
     EXPECT_EQ(SizeClass::round_up(256 * 1024), 256 * 1024);
 }
 
+TEST_F(SizeClassRoundUpTest, OverMaxClassFallsBackToPageAlignment) {
+    const size_t bytes = 256 * 1024 + 1;
+    const size_t rounded = SizeClass::round_up(bytes);
+    EXPECT_GE(rounded, bytes);
+    EXPECT_EQ(rounded % PAGE_SIZE, 0u);
+}
+
 // 索引测试
 class SizeClassIndexTest : public ::testing::Test {};
 
