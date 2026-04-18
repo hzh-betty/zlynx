@@ -1,6 +1,9 @@
+#define private public
 #include "zlog/internal/buffer.h"
+#undef private
 #include <cstring>
 #include <gtest/gtest.h>
+#include <new>
 #include <string>
 #include <vector>
 
@@ -386,6 +389,47 @@ TEST_F(BufferTest, DataIntegrityAfterResize) {
 
     // 验证prefix仍在
     EXPECT_EQ(std::memcmp(buf.begin(), "prefix_", 7), 0);
+}
+
+TEST_F(BufferTest, CanAccommodateWhenResizeIsNeeded) {
+    const size_t len = buf.writable_size() + 1;
+    EXPECT_TRUE(buf.can_accommodate(len));
+}
+
+TEST_F(BufferTest, CanAccommodateReturnsFalseWhenBeyondMax) {
+    const size_t len = kMaxBufferSize;
+    EXPECT_FALSE(buf.can_accommodate(len));
+}
+
+TEST_F(BufferTest, MoveWriterIncreasesReadableSize) {
+    EXPECT_EQ(buf.readable_size(), 0u);
+    buf.move_writer(8);
+    EXPECT_EQ(buf.readable_size(), 8u);
+}
+
+TEST_F(BufferTest, EnsureEnoughSizeCappedBranchReturnsWithoutRealloc) {
+    const size_t old_cap = kMaxBufferSize - 10;
+    buf.capacity_ = old_cap;
+    buf.writer_idx_ = old_cap;
+    buf.reader_idx_ = 0;
+
+    buf.ensure_enough_size(20);
+
+    EXPECT_EQ(buf.capacity_, old_cap);
+    EXPECT_EQ(buf.writer_idx_, old_cap);
+}
+
+TEST_F(BufferTest, EnsureEnoughSizeCappedBranchReallocPath) {
+    buf.capacity_ = kMaxBufferSize - 100;
+    buf.writer_idx_ = buf.capacity_ - 50;
+    buf.reader_idx_ = 0;
+
+    try {
+        buf.ensure_enough_size(120);
+        EXPECT_EQ(buf.capacity_, kMaxBufferSize);
+    } catch (const std::bad_alloc &) {
+        SUCCEED();
+    }
 }
 
 int main(int argc, char **argv) {
