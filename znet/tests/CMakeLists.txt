@@ -15,7 +15,14 @@ function(add_znet_unit_test target_name src_file)
     PRIVATE
       ${PROJECT_SOURCE_DIR}/include
   )
+  if(ENABLE_COVERAGE)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+      target_compile_options(${target_name} PRIVATE -O0 -g --coverage)
+      target_link_options(${target_name} PRIVATE --coverage)
+    endif()
+  endif()
   add_test(NAME ${target_name} COMMAND ${target_name})
+  set_tests_properties(${target_name} PROPERTIES LABELS "znet;quick" TIMEOUT 90)
 endfunction()
 
 file(GLOB ZNET_UNIT_TESTS CONFIGURE_DEPENDS
@@ -42,3 +49,10 @@ target_include_directories(znet_wrk_benchmark
   PRIVATE
     ${PROJECT_SOURCE_DIR}/include
 )
+
+if(ENABLE_COVERAGE)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(znet_wrk_benchmark PRIVATE -O0 -g --coverage)
+    target_link_options(znet_wrk_benchmark PRIVATE --coverage)
+  endif()
+endif()
