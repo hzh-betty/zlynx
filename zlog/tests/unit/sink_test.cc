@@ -176,6 +176,16 @@ TEST_F(SinkTest, FileSinkMultipleWrites) {
     }
 }
 
+TEST_F(SinkTest, FileSinkAutoFlushWritesImmediately) {
+    std::string filepath = testDir + "/autoflush.log";
+
+    FileSink sink(filepath, true);
+    sink.log("flush-now", 9);
+
+    std::string content = readFile(filepath);
+    EXPECT_EQ(content, "flush-now");
+}
+
 TEST_F(SinkTest, RollBySizeSinkBasic) {
     std::string basename = testDir + "/roll_test";
     size_t maxSize = 1024; // 1KB
@@ -247,6 +257,26 @@ TEST_F(SinkTest, RollBySizeSinkLargeFile) {
     }
 
     EXPECT_EQ(fileCount, 1);
+}
+
+TEST_F(SinkTest, RollBySizeSinkAutoFlushWritesImmediately) {
+    std::string basename = testDir + "/roll_autoflush";
+    RollBySizeSink sink(basename, 4096, true);
+
+    sink.log("line-a\n", 7);
+    sink.log("line-b\n", 7);
+
+    std::vector<std::string> files = listDir(testDir);
+    bool found = false;
+    for (size_t i = 0; i < files.size(); ++i) {
+        if (files[i].find("roll_autoflush") != std::string::npos) {
+            found = true;
+            std::string content = readFile(testDir + "/" + files[i]);
+            EXPECT_THAT(content, ::testing::HasSubstr("line-a\n"));
+            EXPECT_THAT(content, ::testing::HasSubstr("line-b\n"));
+        }
+    }
+    EXPECT_TRUE(found);
 }
 
 TEST_F(SinkTest, SinkFactoryCreateStdOut) {
