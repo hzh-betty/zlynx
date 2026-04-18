@@ -107,5 +107,11 @@ TEST_F(SnapshotBufferPoolUnitTest, PerBucketLimitDropsOverflowBuffers) {
     }
 }
 
+TEST_F(SnapshotBufferPoolUnitTest, ReleaseNullBufferIsNoop) {
+    SnapshotBufferPool pool;
+    pool.release(nullptr, SnapshotBufferPool::dynamic_bucket_index(), 0);
+    SUCCEED();
+}
+
 } // namespace
 } // namespace zco
