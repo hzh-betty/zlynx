@@ -36,6 +36,16 @@ TEST_F(FormatTest, MessageFormatItemEmpty) {
     EXPECT_EQ(result, "");
 }
 
+TEST_F(FormatTest, MessageFormatItemNullPayload) {
+    LogMessage nullMsg(LogLevel::value::INFO, "test.cc", 1, nullptr, "logger");
+    MessageFormatItem item;
+    fmt::memory_buffer buffer;
+    item.format(buffer, nullMsg);
+
+    std::string result(buffer.data(), buffer.size());
+    EXPECT_EQ(result, "");
+}
+
 TEST_F(FormatTest, LevelFormatItem) {
     LevelFormatItem item;
     fmt::memory_buffer buffer;
@@ -102,6 +112,17 @@ TEST_F(FormatTest, TimeFormatItemCustom) {
                           << result;
 }
 
+TEST_F(FormatTest, TimeFormatItemInvalidFormatFallback) {
+    TimeFormatItem item("");
+    LogMessage testMsg(LogLevel::value::INFO, "test.cc", 1, "payload", "logger");
+    testMsg.curtime_ = msg->curtime_ + 1;
+    fmt::memory_buffer buffer;
+    item.format(buffer, testMsg);
+
+    std::string result(buffer.data(), buffer.size());
+    EXPECT_EQ(result, "InvalidTime");
+}
+
 TEST_F(FormatTest, FileFormatItem) {
     FileFormatItem item;
     fmt::memory_buffer buffer;
@@ -109,6 +130,16 @@ TEST_F(FormatTest, FileFormatItem) {
 
     std::string result(buffer.data(), buffer.size());
     EXPECT_EQ(result, "test_file.cc");
+}
+
+TEST_F(FormatTest, FileFormatItemNullFile) {
+    LogMessage nullMsg(LogLevel::value::INFO, nullptr, 1, "payload", "logger");
+    FileFormatItem item;
+    fmt::memory_buffer buffer;
+    item.format(buffer, nullMsg);
+
+    std::string result(buffer.data(), buffer.size());
+    EXPECT_EQ(result, "");
 }
 
 TEST_F(FormatTest, LineFormatItem) {
@@ -136,6 +167,16 @@ TEST_F(FormatTest, LoggerFormatItem) {
 
     std::string result(buffer.data(), buffer.size());
     EXPECT_EQ(result, "test_logger");
+}
+
+TEST_F(FormatTest, LoggerFormatItemNullLoggerName) {
+    LogMessage nullMsg(LogLevel::value::INFO, "file.cc", 1, "payload", nullptr);
+    LoggerFormatItem item;
+    fmt::memory_buffer buffer;
+    item.format(buffer, nullMsg);
+
+    std::string result(buffer.data(), buffer.size());
+    EXPECT_EQ(result, "");
 }
 
 TEST_F(FormatTest, TabFormatItem) {
@@ -250,6 +291,24 @@ TEST_F(FormatTest, FormatterFileAndLine) {
 
     std::string result(buffer.data(), buffer.size());
     EXPECT_EQ(result, "test_file.cc:42");
+}
+
+TEST_F(FormatTest, FormatterInvalidTrailingPercentPattern) {
+    Formatter formatter("prefix%");
+    fmt::memory_buffer buffer;
+    formatter.format(buffer, *msg);
+
+    std::string result(buffer.data(), buffer.size());
+    EXPECT_EQ(result, "");
+}
+
+TEST_F(FormatTest, FormatterInvalidUnclosedSubPattern) {
+    Formatter formatter("%d{%Y-%m-%d");
+    fmt::memory_buffer buffer;
+    formatter.format(buffer, *msg);
+
+    std::string result(buffer.data(), buffer.size());
+    EXPECT_EQ(result, "");
 }
 
 int main(int argc, char **argv) {
