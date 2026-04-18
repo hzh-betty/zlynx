@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <thread>
 
 #include "zhttp/mid/session_middleware.h"
 #include "zhttp/router.h"
@@ -115,6 +116,67 @@ TEST_F(SessionTest, ExistingSessionSettingSameValue_DoesNotTriggerSetCookie) {
     HttpResponse noop_resp;
     router.route(make_get("/noop", "ZHTTPSESSID=" + sid), noop_resp);
     EXPECT_TRUE(noop_resp.set_cookies().empty());
+}
+
+TEST(SessionCoreTest, SessionMutationFlagsHandleNoopAndEraseClearPaths) {
+    Session session("sid", true);
+    EXPECT_EQ(session.get("missing", "default"), "default");
+    EXPECT_TRUE(session.is_new());
+    EXPECT_FALSE(session.modified());
+
+    session.set("k", "v");
+    EXPECT_TRUE(session.modified());
+    session.mark_persisted();
+    EXPECT_FALSE(session.is_new());
+    EXPECT_FALSE(session.modified());
+
+    session.set("k", "v");
+    EXPECT_FALSE(session.modified());
+
+    session.erase("missing");
+    EXPECT_FALSE(session.modified());
+
+    session.erase("k");
+    EXPECT_TRUE(session.modified());
+    session.mark_persisted();
+    EXPECT_FALSE(session.modified());
+
+    session.clear();
+    EXPECT_FALSE(session.modified());
+
+    session.set("a", "1");
+    session.mark_persisted();
+    session.clear();
+    EXPECT_TRUE(session.modified());
+}
+
+TEST(SessionManagerCoreTest, HandlesLoadCreateSaveDestroyAndExpiration) {
+    SessionManager manager(
+        SessionManager::Options{std::chrono::seconds(1), 1});
+
+    EXPECT_EQ(manager.load(""), nullptr);
+    EXPECT_EQ(manager.load("missing"), nullptr);
+
+    auto session = manager.create();
+    ASSERT_NE(session, nullptr);
+    EXPECT_EQ(session->id().size(), 32u);
+
+    session->set("k", "v");
+    manager.save(*session);
+
+    auto loaded = manager.load(session->id());
+    ASSERT_NE(loaded, nullptr);
+    EXPECT_EQ(loaded->get("k"), "v");
+
+    manager.destroy(session->id());
+    EXPECT_EQ(manager.load(session->id()), nullptr);
+
+    auto expiring = manager.create();
+    ASSERT_NE(expiring, nullptr);
+    expiring->set("x", "y");
+    manager.save(*expiring);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1200));
+    EXPECT_EQ(manager.load(expiring->id()), nullptr);
 }
 
 int main(int argc, char **argv) {
