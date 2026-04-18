@@ -192,6 +192,138 @@ TEST(WebSocketServerIntegrationTest, UpgradesAndEchoesTextFrame) {
     ::close(client_fd);
 }
 
+TEST(WebSocketServerIntegrationTest, RejectsUnsupportedWebSocketVersion) {
+    const uint16_t port = find_free_port();
+    ASSERT_NE(port, 0);
+
+    HttpServerBuilder builder;
+    builder.listen("127.0.0.1", port)
+        .threads(1)
+        .log_level("error")
+        .websocket("/ws", WebSocketCallbacks{}, WebSocketOptions{});
+
+    auto server = builder.build();
+    ASSERT_TRUE(server);
+    ScopedServer guard(server);
+    ASSERT_TRUE(server->start());
+
+    const int client_fd = connect_with_retry(port, 20, 25);
+    ASSERT_GE(client_fd, 0);
+
+    const std::string handshake_request =
+        "GET /ws HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "Sec-WebSocket-Version: 12\r\n"
+        "\r\n";
+
+    ASSERT_TRUE(send_all(client_fd, handshake_request));
+    const std::string response = recv_once_with_timeout(client_fd, 1000);
+    EXPECT_NE(response.find("400 Bad Request"), std::string::npos) << response;
+    EXPECT_NE(response.find("Sec-WebSocket-Version: 13"), std::string::npos)
+        << response;
+
+    ::close(client_fd);
+}
+
+TEST(WebSocketServerIntegrationTest, RejectsIncompatibleSubprotocolRequest) {
+    const uint16_t port = find_free_port();
+    ASSERT_NE(port, 0);
+
+    HttpServerBuilder builder;
+    builder.listen("127.0.0.1", port)
+        .threads(1)
+        .log_level("error")
+        .websocket("/ws", WebSocketCallbacks{},
+                   WebSocketOptions{kDefaultWebSocketMaxMessageSize,
+                                    {"superchat"}});
+
+    auto server = builder.build();
+    ASSERT_TRUE(server);
+    ScopedServer guard(server);
+    ASSERT_TRUE(server->start());
+
+    const int client_fd = connect_with_retry(port, 20, 25);
+    ASSERT_GE(client_fd, 0);
+
+    const std::string handshake_request =
+        "GET /ws HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Protocol: chat\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "\r\n";
+
+    ASSERT_TRUE(send_all(client_fd, handshake_request));
+    const std::string response = recv_once_with_timeout(client_fd, 1000);
+    EXPECT_NE(response.find("400 Bad Request"), std::string::npos) << response;
+    EXPECT_NE(response.find("No compatible Sec-WebSocket-Protocol"),
+              std::string::npos)
+        << response;
+
+    ::close(client_fd);
+}
+
+TEST(WebSocketServerIntegrationTest, RespondsWithPongAndCloseFrame) {
+    const uint16_t port = find_free_port();
+    ASSERT_NE(port, 0);
+
+    HttpServerBuilder builder;
+    builder.listen("127.0.0.1", port)
+        .threads(1)
+        .log_level("error")
+        .websocket("/ws", WebSocketCallbacks{}, WebSocketOptions{});
+
+    auto server = builder.build();
+    ASSERT_TRUE(server);
+    ScopedServer guard(server);
+    ASSERT_TRUE(server->start());
+
+    const int client_fd = connect_with_retry(port, 20, 25);
+    ASSERT_GE(client_fd, 0);
+
+    const std::string handshake_request =
+        "GET /ws HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "\r\n";
+
+    ASSERT_TRUE(send_all(client_fd, handshake_request));
+    const std::string handshake_response =
+        recv_once_with_timeout(client_fd, 1000);
+    ASSERT_NE(handshake_response.find("101 Switching Protocols"),
+              std::string::npos)
+        << handshake_response;
+
+    ASSERT_TRUE(
+        send_all(client_fd, build_masked_client_frame(WebSocketOpcode::kPing, "hb")));
+    const std::string pong_response = recv_once_with_timeout(client_fd, 1000);
+    ASSERT_GE(pong_response.size(), 4u);
+    EXPECT_EQ(static_cast<uint8_t>(pong_response[0]), 0x8A);
+    EXPECT_EQ(static_cast<uint8_t>(pong_response[1]), 0x02);
+    EXPECT_EQ(pong_response.substr(2, 2), "hb");
+
+    std::string close_payload;
+    close_payload.push_back(static_cast<char>(0x03));
+    close_payload.push_back(static_cast<char>(0xE8));
+    close_payload.append("bye");
+    ASSERT_TRUE(send_all(
+        client_fd, build_masked_client_frame(WebSocketOpcode::kClose, close_payload)));
+
+    const std::string close_response = recv_once_with_timeout(client_fd, 1000);
+    ASSERT_GE(close_response.size(), 2u);
+    EXPECT_EQ(static_cast<uint8_t>(close_response[0] & 0x0F), 0x08);
+
+    ::close(client_fd);
+}
+
 } // namespace zhttp
 
 int main(int argc, char **argv) {
