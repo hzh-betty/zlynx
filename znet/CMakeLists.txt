@@ -47,6 +47,15 @@ target_compile_options(znet PRIVATE
   -Wpedantic
 )
 
+if(ENABLE_COVERAGE)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(znet PRIVATE -O0 -g --coverage)
+    target_link_options(znet PUBLIC --coverage)
+  else()
+    message(WARNING "ENABLE_COVERAGE is ON, but compiler ${CMAKE_CXX_COMPILER_ID} is not supported")
+  endif()
+endif()
+
 if(ZNET_BUILD_TESTS)
   enable_testing()
   add_subdirectory(tests)
