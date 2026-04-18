@@ -30,7 +30,7 @@ TEST_F(HookHelperUnitTest, CloseDelayIgnoredOutsideCoroutine) {
             .count();
 
     EXPECT_LT(elapsed_ms, 40);
-    EXPECT_EQ(::close(pair[1]), 0);
+    EXPECT_EQ(co_close(pair[1]), 0);
 }
 
 TEST_F(HookHelperUnitTest, CloseDelayWorksInsideCoroutine) {
@@ -56,7 +56,7 @@ TEST_F(HookHelperUnitTest, CloseDelayWorksInsideCoroutine) {
     done.wait();
     EXPECT_GE(elapsed_ms.load(std::memory_order_acquire), 15);
 
-    EXPECT_EQ(::close(pair[1]), 0);
+    EXPECT_EQ(co_close(pair[1]), 0);
 }
 
 TEST_F(HookHelperUnitTest, ShutdownInvalidModeReturnsEinval) {
@@ -67,8 +67,8 @@ TEST_F(HookHelperUnitTest, ShutdownInvalidModeReturnsEinval) {
     EXPECT_EQ(co_shutdown(pair[0], 'x'), -1);
     EXPECT_EQ(errno, EINVAL);
 
-    EXPECT_EQ(::close(pair[0]), 0);
-    EXPECT_EQ(::close(pair[1]), 0);
+    EXPECT_EQ(co_close(pair[0]), 0);
+    EXPECT_EQ(co_close(pair[1]), 0);
 }
 
 TEST_F(HookHelperUnitTest, ShutdownWriteKeepsReverseReadPathAlive) {
@@ -99,8 +99,8 @@ TEST_F(HookHelperUnitTest, ShutdownWriteKeepsReverseReadPathAlive) {
     ASSERT_EQ(::recv(pair[0], &recv_back, 1, 0), 1);
     EXPECT_EQ(recv_back, marker);
 
-    EXPECT_EQ(::close(pair[0]), 0);
-    EXPECT_EQ(::close(pair[1]), 0);
+    EXPECT_EQ(co_close(pair[0]), 0);
+    EXPECT_EQ(co_close(pair[1]), 0);
 }
 
 TEST_F(HookHelperUnitTest, ShutdownReadAndBothModesBehaveAsExpected) {
@@ -129,8 +129,8 @@ TEST_F(HookHelperUnitTest, ShutdownReadAndBothModesBehaveAsExpected) {
     EXPECT_EQ(write_after_both, -1);
     EXPECT_TRUE(errno == EPIPE || errno == ESHUTDOWN || errno == ENOTCONN);
 
-    EXPECT_EQ(::close(pair[0]), 0);
-    EXPECT_EQ(::close(pair[1]), 0);
+    EXPECT_EQ(co_close(pair[0]), 0);
+    EXPECT_EQ(co_close(pair[1]), 0);
 }
 
 TEST_F(HookHelperUnitTest, ResetTcpSocketSetsLingerAndClosesFd) {
@@ -153,7 +153,7 @@ TEST_F(HookHelperUnitTest, ResetTcpSocketSetsLingerAndClosesFd) {
     EXPECT_EQ(option.l_onoff, 1);
     EXPECT_EQ(option.l_linger, 0);
 
-    EXPECT_EQ(::close(dup_fd), 0);
+    EXPECT_EQ(co_close(dup_fd), 0);
 }
 
 TEST_F(HookHelperUnitTest, SetCloexecEnablesFdCloexecFlag) {
@@ -170,7 +170,7 @@ TEST_F(HookHelperUnitTest, SetCloexecEnablesFdCloexecFlag) {
     ASSERT_GE(flags, 0);
     EXPECT_NE(flags & FD_CLOEXEC, 0);
 
-    EXPECT_EQ(::close(fd), 0);
+    EXPECT_EQ(co_close(fd), 0);
 }
 
 TEST_F(HookHelperUnitTest, TcpAndUdpFactorySocketsAreNonblocking) {
@@ -186,8 +186,8 @@ TEST_F(HookHelperUnitTest, TcpAndUdpFactorySocketsAreNonblocking) {
     EXPECT_NE(tcp_flags & O_NONBLOCK, 0);
     EXPECT_NE(udp_flags & O_NONBLOCK, 0);
 
-    EXPECT_EQ(::close(tcp_fd), 0);
-    EXPECT_EQ(::close(udp_fd), 0);
+    EXPECT_EQ(co_close(tcp_fd), 0);
+    EXPECT_EQ(co_close(udp_fd), 0);
 }
 
 TEST_F(HookHelperUnitTest, SocketOptionHelpersApplyExpectedOptions) {
@@ -226,7 +226,7 @@ TEST_F(HookHelperUnitTest, SocketOptionHelpersApplyExpectedOptions) {
               0);
     EXPECT_EQ(nodelay, 1);
 
-    EXPECT_EQ(::close(fd), 0);
+    EXPECT_EQ(co_close(fd), 0);
 }
 
 TEST_F(HookHelperUnitTest, CoBindAndListenWrapSystemCalls) {
@@ -244,7 +244,7 @@ TEST_F(HookHelperUnitTest, CoBindAndListenWrapSystemCalls) {
               0);
     ASSERT_EQ(co_listen(fd, 8), 0);
 
-    EXPECT_EQ(::close(fd), 0);
+    EXPECT_EQ(co_close(fd), 0);
 }
 
 TEST_F(HookHelperUnitTest, MetadataSyncHelpersHandleInvalidInputsSafely) {
