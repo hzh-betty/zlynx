@@ -42,8 +42,8 @@ TEST_F(HookUnitByHeaderTest, SocketPairReadWriteRoundTrip) {
 
     done.wait();
 
-    ::close(pair[0]);
-    ::close(pair[1]);
+    EXPECT_EQ(co_close(pair[0]), 0);
+    EXPECT_EQ(co_close(pair[1]), 0);
 }
 
 TEST_F(HookUnitByHeaderTest, SocketPairVectorReadWriteRoundTrip) {
@@ -85,8 +85,8 @@ TEST_F(HookUnitByHeaderTest, SocketPairVectorReadWriteRoundTrip) {
     });
     done.wait();
 
-    ::close(pair[0]);
-    ::close(pair[1]);
+    EXPECT_EQ(co_close(pair[0]), 0);
+    EXPECT_EQ(co_close(pair[1]), 0);
 }
 
 TEST_F(HookUnitByHeaderTest, SocketPairSendRecvRoundTrip) {
@@ -113,8 +113,8 @@ TEST_F(HookUnitByHeaderTest, SocketPairSendRecvRoundTrip) {
     });
     done.wait();
 
-    ::close(pair[0]);
-    ::close(pair[1]);
+    EXPECT_EQ(co_close(pair[0]), 0);
+    EXPECT_EQ(co_close(pair[1]), 0);
 }
 
 TEST_F(HookUnitByHeaderTest, SocketApiHelpersExposeCoostStyleContracts) {
@@ -176,8 +176,8 @@ TEST_F(HookUnitByHeaderTest, SetSockoptTimeoutAffectsInfiniteTimeoutPath) {
     });
     done.wait();
 
-    ::close(pair[0]);
-    ::close(pair[1]);
+    EXPECT_EQ(co_close(pair[0]), 0);
+    EXPECT_EQ(co_close(pair[1]), 0);
 }
 
 TEST_F(HookUnitByHeaderTest, ShutdownRejectsInvalidHowFlag) {
@@ -188,8 +188,8 @@ TEST_F(HookUnitByHeaderTest, ShutdownRejectsInvalidHowFlag) {
     EXPECT_EQ(co_shutdown(pair[0], 'x'), -1);
     EXPECT_EQ(errno, EINVAL);
 
-    ::close(pair[0]);
-    ::close(pair[1]);
+    EXPECT_EQ(co_close(pair[0]), 0);
+    EXPECT_EQ(co_close(pair[1]), 0);
 }
 
 TEST_F(HookUnitByHeaderTest, CloseWithDelayInCoroutinePathWorks) {
@@ -205,7 +205,7 @@ TEST_F(HookUnitByHeaderTest, CloseWithDelayInCoroutinePathWorks) {
     });
     done.wait();
 
-    ::close(pair[1]);
+    EXPECT_EQ(co_close(pair[1]), 0);
 }
 
 TEST_F(HookUnitByHeaderTest, DupApisCreateValidDescriptors) {
@@ -217,7 +217,7 @@ TEST_F(HookUnitByHeaderTest, DupApisCreateValidDescriptors) {
 
     int probe = ::dup(fd);
     ASSERT_GE(probe, 0);
-    ASSERT_EQ(::close(probe), 0);
+    ASSERT_EQ(co_close(probe), 0);
 
     const int dup2_fd = co_dup2(fd, probe);
     ASSERT_EQ(dup2_fd, probe);
@@ -255,8 +255,8 @@ TEST_F(HookUnitByHeaderTest, OutsideCoroutineIoHooksFailWithEperm) {
     EXPECT_EQ(co_send(pair[0], "x", 1, 0, 10), -1);
     EXPECT_EQ(errno, EPERM);
 
-    ::close(pair[0]);
-    ::close(pair[1]);
+    EXPECT_EQ(co_close(pair[0]), 0);
+    EXPECT_EQ(co_close(pair[1]), 0);
 }
 
 } // namespace
