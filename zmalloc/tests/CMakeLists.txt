@@ -12,6 +12,15 @@ enable_testing()
 
 find_package(Threads REQUIRED)
 
+function(zmalloc_test_enable_coverage target_name)
+    if(ENABLE_COVERAGE)
+        if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+            target_compile_options(${target_name} PRIVATE -O0 -g --coverage)
+            target_link_options(${target_name} PRIVATE --coverage)
+        endif()
+    endif()
+endfunction()
+
 # zmalloc 头文件目录
 set(ZMALLOC_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
@@ -38,6 +47,7 @@ foreach(TEST_NAME ${UNIT_TESTS})
             GTest::gtest
     )
     target_include_directories(zmalloc_${TEST_NAME} PRIVATE ${ZMALLOC_INCLUDE_DIR})
+    zmalloc_test_enable_coverage(zmalloc_${TEST_NAME})
     add_test(NAME zmalloc_${TEST_NAME} COMMAND zmalloc_${TEST_NAME})
 endforeach()
 
@@ -49,6 +59,7 @@ target_link_libraries(zmalloc_allocator_override_test
         GTest::gtest_main
 )
 target_include_directories(zmalloc_allocator_override_test PRIVATE ${ZMALLOC_INCLUDE_DIR})
+zmalloc_test_enable_coverage(zmalloc_allocator_override_test)
 add_test(NAME zmalloc_allocator_override_test COMMAND zmalloc_allocator_override_test)
 
 # 集成测试
@@ -64,6 +75,7 @@ foreach(TEST_NAME ${INTEGRATION_TESTS})
             GTest::gtest
     )
     target_include_directories(zmalloc_${TEST_NAME} PRIVATE ${ZMALLOC_INCLUDE_DIR})
+    zmalloc_test_enable_coverage(zmalloc_${TEST_NAME})
     add_test(NAME zmalloc_${TEST_NAME} COMMAND zmalloc_${TEST_NAME})
 endforeach()
 
@@ -75,6 +87,7 @@ target_link_libraries(zmalloc_benchmark
         Threads::Threads
 )
 target_include_directories(zmalloc_benchmark PRIVATE ${ZMALLOC_INCLUDE_DIR})
+zmalloc_test_enable_coverage(zmalloc_benchmark)
 
 # perf 性能分析驱动
 add_executable(zmalloc_performance benchmark/performance.cc)
@@ -85,3 +98,4 @@ target_link_libraries(zmalloc_performance
 )
 target_include_directories(zmalloc_performance PRIVATE ${ZMALLOC_INCLUDE_DIR})
 target_compile_options(zmalloc_performance PRIVATE -g -O2)
+zmalloc_test_enable_coverage(zmalloc_performance)
