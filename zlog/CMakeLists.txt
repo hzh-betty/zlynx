@@ -8,6 +8,17 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Find dependencies
 find_package(fmt REQUIRED CONFIG)
 
+function(zlog_enable_coverage target_name)
+    if(ENABLE_COVERAGE)
+        if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+            target_compile_options(${target_name} PRIVATE -O0 -g --coverage)
+            target_link_options(${target_name} PUBLIC --coverage)
+        else()
+            message(WARNING "ENABLE_COVERAGE is ON, but compiler ${CMAKE_CXX_COMPILER_ID} is not supported")
+        endif()
+    endif()
+endfunction()
+
 # Sources for zlog
 set(ZLOG_SOURCES
     src/buffer.cc
@@ -23,6 +34,8 @@ set(ZLOG_SOURCES
 # Create both shared and static libraries
 add_library(zlog_shared SHARED ${ZLOG_SOURCES})
 add_library(zlog_static STATIC ${ZLOG_SOURCES})
+zlog_enable_coverage(zlog_shared)
+zlog_enable_coverage(zlog_static)
 
 # Public include dir
 target_include_directories(zlog_shared PUBLIC ${PROJECT_SOURCE_DIR}/include)
