@@ -13,6 +13,17 @@ find_package(nlohmann_json REQUIRED)
 
 find_library(BROTLI_ENC_LIBRARY NAMES brotlienc REQUIRED)
 
+function(zhttp_enable_coverage target_name)
+    if(ENABLE_COVERAGE)
+        if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+            target_compile_options(${target_name} PRIVATE -O0 -g --coverage)
+            target_link_options(${target_name} PUBLIC --coverage)
+        else()
+            message(WARNING "ENABLE_COVERAGE is ON, but compiler ${CMAKE_CXX_COMPILER_ID} is not supported")
+        endif()
+    endif()
+endfunction()
+
 # zhttp 库源文件
 set(ZHTTP_SOURCES
     src/zhttp_logger.cc
@@ -47,6 +58,7 @@ set(ZHTTP_SOURCES
 
 # 创建 zhttp 静态库
 add_library(zhttp STATIC ${ZHTTP_SOURCES})
+zhttp_enable_coverage(zhttp)
 
 # 头文件目录
 target_include_directories(zhttp PUBLIC
