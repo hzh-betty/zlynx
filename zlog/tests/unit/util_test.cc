@@ -56,6 +56,11 @@ TEST_F(UtilTest, PathReturnsDotWhenNoSeparator) {
     EXPECT_EQ(File::path("plain.log"), ".");
 }
 
+TEST_F(UtilTest, PathReturnsParentWithUnixAndWindowsSeparators) {
+    EXPECT_EQ(File::path("/tmp/zlog/plain.log"), "/tmp/zlog/");
+    EXPECT_EQ(File::path("C:\\tmp\\zlog\\plain.log"), "C:\\tmp\\zlog\\");
+}
+
 TEST_F(UtilTest, ExistsReturnsFalseForMissingPath) {
     const std::string missing = "/tmp/" + makeUniqueName("zlog_missing");
     EXPECT_FALSE(File::exists(missing));
@@ -94,6 +99,21 @@ TEST_F(UtilTest, CreateDirectoryWithoutSeparatorCreatesLeafDir) {
 
     EXPECT_TRUE(dirExists(dirname));
     rmdir(dirname.c_str());
+}
+
+TEST_F(UtilTest, CreateDirectoryIsIdempotentForExistingPath) {
+    char templ[] = "/tmp/zlog_util_existing_XXXXXX";
+    char *base = mkdtemp(templ);
+    ASSERT_NE(base, static_cast<char *>(NULL));
+    const std::string basePath(base);
+    const std::string nested = basePath + "/p1/p2/";
+
+    File::create_directory(nested);
+    File::create_directory(nested);
+
+    EXPECT_TRUE(dirExists(basePath + "/p1"));
+    EXPECT_TRUE(dirExists(basePath + "/p1/p2"));
+    removeDirRecursive(basePath);
 }
 
 int main(int argc, char **argv) {
