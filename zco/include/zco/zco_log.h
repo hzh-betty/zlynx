@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <mutex>
 #include <string>
 #include <utility>
 
@@ -62,7 +63,12 @@ inline std::atomic<int> &cached_logger_level() {
     return level;
 }
 
-inline void init_logger(const LoggerInitOptions &options) {
+inline std::mutex &cached_logger_mutex() {
+    static std::mutex mutex;
+    return mutex;
+}
+
+inline void init_logger_locked(const LoggerInitOptions &options) {
     zlog::GlobalLoggerBuilder builder;
     builder.build_logger_name(kLoggerName);
     builder.build_logger_level(options.level);
@@ -79,6 +85,11 @@ inline void init_logger(const LoggerInitOptions &options) {
                                 std::memory_order_release);
 }
 
+inline void init_logger(const LoggerInitOptions &options) {
+    std::lock_guard<std::mutex> lock(cached_logger_mutex());
+    init_logger_locked(options);
+}
+
 inline void
 init_logger(zlog::LogLevel::value level = zlog::LogLevel::value::INFO) {
     LoggerInitOptions options;
@@ -86,12 +97,19 @@ init_logger(zlog::LogLevel::value level = zlog::LogLevel::value::INFO) {
     init_logger(options);
 }
 
-inline zlog::Logger *get_logger() {
+inline zlog::Logger::ptr get_logger_ptr() {
+    std::lock_guard<std::mutex> lock(cached_logger_mutex());
     auto &logger = cached_logger();
     if (!logger) {
-        init_logger(zlog::LogLevel::value::INFO);
+        LoggerInitOptions options;
+        options.level = zlog::LogLevel::value::INFO;
+        init_logger_locked(options);
     }
-    return logger.get();
+    return logger;
+}
+
+inline zlog::Logger *get_logger() {
+    return get_logger_ptr().get();
 }
 
 inline bool should_log(zlog::LogLevel::value level) {
@@ -104,11 +122,7 @@ inline bool should_log(zlog::LogLevel::value level) {
  * @return 日志器智能指针，若日志系统不可用则返回空。
  */
 inline zlog::Logger::ptr default_logger() {
-    auto &logger = cached_logger();
-    if (!logger) {
-        init_logger(zlog::LogLevel::value::INFO);
-    }
-    return logger;
+    return get_logger_ptr();
 }
 
 } // namespace zco
@@ -119,7 +133,7 @@ inline zlog::Logger::ptr default_logger() {
 #define ZCO_LOG_DEBUG(...)                                                     \
     do {                                                                       \
         if (::zco::should_log(::zlog::LogLevel::value::DEBUG)) {               \
-            auto *zco_logger__ = ::zco::get_logger();                          \
+            auto zco_logger__ = ::zco::get_logger_ptr();                       \
             if (zco_logger__) {                                                \
                 zco_logger__->debug(__FILE__, __LINE__, __VA_ARGS__);          \
             }                                                                  \
@@ -132,7 +146,7 @@ inline zlog::Logger::ptr default_logger() {
 #define ZCO_LOG_INFO(...)                                                      \
     do {                                                                       \
         if (::zco::should_log(::zlog::LogLevel::value::INFO)) {                \
-            auto *zco_logger__ = ::zco::get_logger();                          \
+            auto zco_logger__ = ::zco::get_logger_ptr();                       \
             if (zco_logger__) {                                                \
                 zco_logger__->info(__FILE__, __LINE__, __VA_ARGS__);           \
             }                                                                  \
@@ -145,7 +159,7 @@ inline zlog::Logger::ptr default_logger() {
 #define ZCO_LOG_WARN(...)                                                      \
     do {                                                                       \
         if (::zco::should_log(::zlog::LogLevel::value::WARNING)) {             \
-            auto *zco_logger__ = ::zco::get_logger();                          \
+            auto zco_logger__ = ::zco::get_logger_ptr();                       \
             if (zco_logger__) {                                                \
                 zco_logger__->warning(__FILE__, __LINE__, __VA_ARGS__);        \
             }                                                                  \
@@ -158,7 +172,7 @@ inline zlog::Logger::ptr default_logger() {
 #define ZCO_LOG_ERROR(...)                                                     \
     do {                                                                       \
         if (::zco::should_log(::zlog::LogLevel::value::ERROR)) {               \
-            auto *zco_logger__ = ::zco::get_logger();                          \
+            auto zco_logger__ = ::zco::get_logger_ptr();                       \
             if (zco_logger__) {                                                \
                 zco_logger__->error(__FILE__, __LINE__, __VA_ARGS__);          \
             }                                                                  \
@@ -171,7 +185,7 @@ inline zlog::Logger::ptr default_logger() {
 #define ZCO_LOG_FATAL(...)                                                     \
     do {                                                                       \
         if (::zco::should_log(::zlog::LogLevel::value::FATAL)) {               \
-            auto *zco_logger__ = ::zco::get_logger();                          \
+            auto zco_logger__ = ::zco::get_logger_ptr();                       \
             if (zco_logger__) {                                                \
                 zco_logger__->fatal(__FILE__, __LINE__, __VA_ARGS__);          \
             }                                                                  \
