@@ -160,6 +160,20 @@ TEST_F(FormatTest, ThreadIdFormatItem) {
     EXPECT_FALSE(result.empty());
 }
 
+TEST_F(FormatTest, ThreadIdFormatItemCacheFastPathOnSameThreadId) {
+    ThreadIdFormatItem item;
+    fmt::memory_buffer first;
+    fmt::memory_buffer second;
+
+    item.format(first, *msg);
+    item.format(second, *msg);
+
+    const std::string first_str(first.data(), first.size());
+    const std::string second_str(second.data(), second.size());
+    EXPECT_EQ(first_str, second_str);
+    EXPECT_FALSE(first_str.empty());
+}
+
 TEST_F(FormatTest, LoggerFormatItem) {
     LoggerFormatItem item;
     fmt::memory_buffer buffer;
