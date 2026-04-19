@@ -147,6 +147,13 @@ TEST_F(TlsContextUnitTest, CreateServerContextRejectsInvalidCertificatePaths) {
     EXPECT_FALSE(error.empty());
 }
 
+TEST_F(TlsContextUnitTest, CreateServerContextFailureAllowsNullErrorPointer) {
+    auto ctx = create_server_tls_context_openssl("/tmp/not-exist-cert.pem",
+                                                 "/tmp/not-exist-key.pem",
+                                                 nullptr);
+    EXPECT_EQ(ctx, nullptr);
+}
+
 TEST_F(TlsContextUnitTest, RejectsMismatchedCertificateAndPrivateKey) {
     CertFiles files = create_cert_files();
 
@@ -168,6 +175,29 @@ TEST_F(TlsContextUnitTest, CreateContextAndChannelValidation) {
     auto invalid = ctx->create_server_channel(-1);
     EXPECT_EQ(invalid, nullptr);
     EXPECT_EQ(errno, EINVAL);
+}
+
+TEST_F(TlsContextUnitTest, ClosedFdLeadsToTlsChannelFailureOnCreateOrHandshake) {
+    CertFiles files = create_cert_files();
+    std::string error;
+    auto ctx = create_server_tls_context_openssl(files.cert, files.key, &error);
+    ASSERT_NE(ctx, nullptr) << error;
+
+    int closed_fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    ASSERT_GE(closed_fd, 0);
+    ASSERT_EQ(::close(closed_fd), 0);
+
+    errno = 0;
+    auto ch = ctx->create_server_channel(closed_fd);
+    if (!ch) {
+        EXPECT_EQ(errno, EIO);
+        return;
+    }
+
+    errno = 0;
+    const bool ok = ch->handshake(10, TlsChannel::WaitCallback{});
+    EXPECT_FALSE(ok);
+    EXPECT_NE(errno, 0);
 }
 
 TEST_F(TlsContextUnitTest, HandshakeReadWriteAndShutdownSucceed) {
@@ -297,6 +327,30 @@ TEST_F(TlsContextUnitTest, HandshakeTimeoutPathSetsEtimedout) {
     ::close(pair[1]);
 }
 
+TEST_F(TlsContextUnitTest, HandshakeTimeoutWithoutWaitCallbackSetsEtimedout) {
+    CertFiles files = create_cert_files();
+    std::string error;
+    auto server_ctx =
+        create_server_tls_context_openssl(files.cert, files.key, &error);
+    ASSERT_NE(server_ctx, nullptr) << error;
+
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+    const int flags = ::fcntl(pair[0], F_GETFL, 0);
+    ASSERT_GE(flags, 0);
+    ASSERT_EQ(::fcntl(pair[0], F_SETFL, flags | O_NONBLOCK), 0);
+    auto channel = server_ctx->create_server_channel(pair[0]);
+    ASSERT_NE(channel, nullptr);
+
+    errno = 0;
+    const bool ok = channel->handshake(10, TlsChannel::WaitCallback{});
+    EXPECT_FALSE(ok);
+    EXPECT_TRUE(errno == ETIMEDOUT || errno == EAGAIN);
+
+    ::close(pair[0]);
+    ::close(pair[1]);
+}
+
 TEST_F(TlsContextUnitTest, ReadReturnsZeroAfterPeerCloseNotify) {
     CertFiles files = create_cert_files();
     std::string error;
@@ -395,6 +449,56 @@ TEST_F(TlsContextUnitTest, ReadAndWriteReportTimeoutOrPeerClosureErrors) {
                             }),
               -1);
     EXPECT_EQ(errno, ETIMEDOUT);
+
+    ::close(server_fd);
+    ::close(client_fd);
+}
+
+TEST_F(TlsContextUnitTest, ReadTimeoutWithoutWaitCallbackSetsEtimedout) {
+    CertFiles files = create_cert_files();
+    std::string error;
+    auto server_ctx =
+        create_server_tls_context_openssl(files.cert, files.key, &error);
+    ASSERT_NE(server_ctx, nullptr) << error;
+
+    auto pair = create_connected_tcp_pair();
+    const int server_fd = pair.first;
+    const int client_fd = pair.second;
+    ASSERT_GE(server_fd, 0);
+    ASSERT_GE(client_fd, 0);
+
+    auto channel = server_ctx->create_server_channel(server_fd);
+    ASSERT_NE(channel, nullptr);
+
+    SSL_CTX *client_ctx_raw = SSL_CTX_new(TLS_client_method());
+    ASSERT_NE(client_ctx_raw, nullptr);
+    std::unique_ptr<SSL_CTX, decltype(&SSL_CTX_free)> client_ctx(client_ctx_raw,
+                                                                  &SSL_CTX_free);
+    SSL_CTX_set_verify(client_ctx.get(), SSL_VERIFY_NONE, nullptr);
+    SSL *client_ssl_raw = SSL_new(client_ctx.get());
+    ASSERT_NE(client_ssl_raw, nullptr);
+    std::unique_ptr<SSL, decltype(&SSL_free)> client_ssl(client_ssl_raw,
+                                                         &SSL_free);
+    ASSERT_EQ(SSL_set_fd(client_ssl.get(), client_fd), 1);
+
+    std::thread server_thread([&]() {
+        ASSERT_TRUE(channel->handshake(
+            2000, [&](bool wait_for_write, uint32_t timeout_ms) {
+                return wait_fd_event(server_fd, wait_for_write, timeout_ms);
+            }));
+    });
+    ASSERT_EQ(SSL_connect(client_ssl.get()), 1);
+    server_thread.join();
+
+    const int flags = ::fcntl(server_fd, F_GETFL, 0);
+    ASSERT_GE(flags, 0);
+    ASSERT_EQ(::fcntl(server_fd, F_SETFL, flags | O_NONBLOCK), 0);
+
+    errno = 0;
+    char buffer[8] = {0};
+    EXPECT_EQ(channel->read(buffer, sizeof(buffer), 20, TlsChannel::WaitCallback{}),
+              -1);
+    EXPECT_TRUE(errno == ETIMEDOUT || errno == EAGAIN);
 
     ::close(server_fd);
     ::close(client_fd);
