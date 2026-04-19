@@ -1,6 +1,15 @@
 find_package(GTest REQUIRED)
 find_library(BROTLI_DEC_LIBRARY NAMES brotlidec REQUIRED)
 
+function(zhttp_test_enable_coverage target_name)
+    if(ENABLE_COVERAGE)
+        if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+            target_compile_options(${target_name} PRIVATE -O0 -g --coverage)
+            target_link_options(${target_name} PRIVATE --coverage)
+        endif()
+    endif()
+endfunction()
+
 # 单元测试列表
 set(UNIT_TESTS
     http_parser_test
@@ -47,7 +56,19 @@ foreach(test_name ${UNIT_TESTS})
     target_include_directories(${test_name} PRIVATE
         ${CMAKE_SOURCE_DIR}/zhttp/include
     )
+    zhttp_test_enable_coverage(${test_name})
     add_test(NAME ${test_name} COMMAND ${test_name})
+endforeach()
+
+# These tests manipulate process-wide state (signals/fork/runtime internals)
+# and are more stable when isolated from high parallel pressure.
+foreach(test_name http_server_context_test daemon_test)
+    if(TARGET ${test_name})
+        set_tests_properties(${test_name} PROPERTIES
+            RUN_SERIAL TRUE
+            RESOURCE_LOCK zco_runtime
+        )
+    endif()
 endforeach()
 
 target_link_libraries(compression_middleware_test
@@ -67,6 +88,7 @@ target_link_libraries(http_server_test
 target_include_directories(http_server_test PRIVATE
     ${CMAKE_SOURCE_DIR}/zhttp/include
 )
+zhttp_test_enable_coverage(http_server_test)
 add_test(NAME http_server_test COMMAND http_server_test)
 
 add_executable(websocket_server_test integration/websocket_server_test.cc)
@@ -81,6 +103,7 @@ target_link_libraries(websocket_server_test
 target_include_directories(websocket_server_test PRIVATE
     ${CMAKE_SOURCE_DIR}/zhttp/include
 )
+zhttp_test_enable_coverage(websocket_server_test)
 add_test(NAME websocket_server_test COMMAND websocket_server_test)
 
 add_executable(zhttp_benchmark benchmark/zhttp_benchmark.cc)
@@ -96,3 +119,4 @@ target_link_libraries(zhttp_benchmark
 target_include_directories(zhttp_benchmark PRIVATE
     ${CMAKE_SOURCE_DIR}/zhttp/include
 )
+zhttp_test_enable_coverage(zhttp_benchmark)
