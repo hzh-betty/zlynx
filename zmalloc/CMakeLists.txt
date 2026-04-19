@@ -9,6 +9,17 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # 查找线程库
 find_package(Threads REQUIRED)
 
+function(zmalloc_enable_coverage target_name)
+    if(ENABLE_COVERAGE)
+        if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+            target_compile_options(${target_name} PRIVATE -O0 -g --coverage)
+            target_link_options(${target_name} PUBLIC --coverage)
+        else()
+            message(WARNING "ENABLE_COVERAGE is ON, but compiler ${CMAKE_CXX_COMPILER_ID} is not supported")
+        endif()
+    endif()
+endfunction()
+
 # 源文件
 set(ZMALLOC_SOURCES
     src/size_class.cc
@@ -30,6 +41,8 @@ add_library(zmalloc ${ZMALLOC_SOURCES})
 add_library(zmalloc_override STATIC
     src/override.cc
 )
+zmalloc_enable_coverage(zmalloc)
+zmalloc_enable_coverage(zmalloc_override)
 
 target_include_directories(zmalloc
     PUBLIC
