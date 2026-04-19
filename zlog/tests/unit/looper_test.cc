@@ -216,6 +216,28 @@ TEST_F(LooperTest, CallbackException) {
     EXPECT_GE(count.load(), 1);
 }
 
+TEST_F(LooperTest, CallbackUnknownException) {
+    std::atomic<int> count(0);
+
+    AsyncLooper looper(
+        [&](Buffer &buf) {
+            (void)buf;
+            count++;
+            if (count == 1) {
+                throw 42;
+            }
+        },
+        AsyncType::ASYNC_UNSAFE, std::chrono::milliseconds(20));
+
+    looper.push("a", 1);
+    std::this_thread::sleep_for(std::chrono::milliseconds(80));
+    looper.push("b", 1);
+    std::this_thread::sleep_for(std::chrono::milliseconds(80));
+
+    looper.stop();
+    EXPECT_GE(count.load(), 1);
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
