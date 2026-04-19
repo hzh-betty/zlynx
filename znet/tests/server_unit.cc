@@ -18,6 +18,7 @@ TEST_F(TcpServerLifecycleUnitTest, StartStopTransitionsState) {
     auto server = std::make_shared<TcpServer>(
         std::make_shared<IPv4Address>("127.0.0.1", 0), 16);
     ASSERT_NE(server, nullptr);
+    server->set_thread_count(1);
 
     EXPECT_FALSE(server->is_running());
     EXPECT_TRUE(server->start());
@@ -30,6 +31,7 @@ TEST_F(TcpServerLifecycleUnitTest, StartStopTransitionsState) {
 TEST_F(TcpServerLifecycleUnitTest, FailedStartRollsBackRunningState) {
     auto server = std::make_shared<TcpServer>(Address::ptr{}, 16);
     ASSERT_NE(server, nullptr);
+    server->set_thread_count(1);
 
     EXPECT_FALSE(server->start());
     EXPECT_FALSE(server->is_running());
@@ -43,6 +45,7 @@ TEST_F(TcpServerLifecycleUnitTest, RepeatedStartStopIsIdempotent) {
     auto server = std::make_shared<TcpServer>(
         std::make_shared<IPv4Address>("127.0.0.1", 0), 16);
     ASSERT_NE(server, nullptr);
+    server->set_thread_count(1);
 
     EXPECT_TRUE(server->start());
     EXPECT_TRUE(server->start());
