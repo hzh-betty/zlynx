@@ -16,6 +16,29 @@
 namespace zhttp {
 namespace {
 
+class ScopedSignalHandler {
+  public:
+    using SignalHandler = void (*)(int);
+
+    ScopedSignalHandler(int signum, SignalHandler handler)
+        : signum_(signum), previous_(::signal(signum, handler)),
+          armed_(previous_ != SIG_ERR) {}
+
+    ~ScopedSignalHandler() {
+        if (armed_) {
+            ::signal(signum_, previous_);
+        }
+    }
+
+    ScopedSignalHandler(const ScopedSignalHandler &) = delete;
+    ScopedSignalHandler &operator=(const ScopedSignalHandler &) = delete;
+
+  private:
+    int signum_;
+    SignalHandler previous_;
+    bool armed_;
+};
+
 class HttpServerContextTestDouble : public HttpServer {
   public:
     explicit HttpServerContextTestDouble(znet::Address::ptr listen_address)
@@ -190,8 +213,7 @@ TEST(HttpServerContextTest, HandleRequestCoversSendFailureBranches) {
         resp.status(HttpStatus::OK).body("chunk").enable_chunked();
     });
 
-    zco::init(1);
-    ::signal(SIGPIPE, SIG_IGN);
+    ScopedSignalHandler ignore_sigpipe(SIGPIPE, SIG_IGN);
 
     {
         int pair[2] = {-1, -1};
@@ -218,7 +240,6 @@ TEST(HttpServerContextTest, HandleRequestCoversSendFailureBranches) {
         conn->close();
     }
 
-    zco::shutdown();
 }
 
 TEST(HttpServerContextTest, HandleRequestWebSocketUpgradeBranches) {
@@ -354,7 +375,7 @@ TEST(HttpServerContextTest, OnMessageReturnsEarlyWhenAsyncStreamIsActive) {
 TEST(HttpServerContextTest, SendAsyncChunkedResponseCoversFailureAndClosePaths) {
     auto listen_address = std::make_shared<znet::IPv4Address>("127.0.0.1", 0);
     HttpServerContextTestDouble server(listen_address);
-    ::signal(SIGPIPE, SIG_IGN);
+    ScopedSignalHandler ignore_sigpipe(SIGPIPE, SIG_IGN);
 
     {
         HttpResponse response;
