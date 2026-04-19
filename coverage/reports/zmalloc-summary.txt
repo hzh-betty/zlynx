@@ -1,0 +1,22 @@
+------------------------------------------------------------------------------
+                           GCC Code Coverage Report
+Directory: .
+------------------------------------------------------------------------------
+File                                       Lines     Exec  Cover   Missing
+------------------------------------------------------------------------------
+zmalloc/src/central_cache.cc                 124      121    97%   21,182-183
+zmalloc/src/free_list.cc                      46       46   100%
+zmalloc/src/override.cc                      294      287    97%   192,236,329,391,406,423,520
+zmalloc/src/page_cache.cc                    104      103    99%   16
+zmalloc/src/size_class.cc                     77       75    97%   82,123
+zmalloc/src/span_list.cc                      27       27   100%
+zmalloc/src/system_alloc.cc                   39       34    87%   33,59,61,78,104
+zmalloc/src/thread_cache.cc                   46       44    95%   165,175
+zmalloc/src/transfer_cache.cc                 90       89    98%   72
+------------------------------------------------------------------------------
+TOTAL                                        847      826    97%
+------------------------------------------------------------------------------
+lines: 97.5% (826 out of 847)
+functions: 100.0% (98 out of 98)
+branches: 90.2% (333 out of 369)
+decisions: 97.7% (170 out of 174)

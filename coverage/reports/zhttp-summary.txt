@@ -1,0 +1,41 @@
+------------------------------------------------------------------------------
+                           GCC Code Coverage Report
+Directory: .
+------------------------------------------------------------------------------
+File                                       Lines     Exec  Cover   Missing
+------------------------------------------------------------------------------
+zhttp/src/daemon.cc                          108       77    71%   26,32-33,35,38,40,44,46,71,73,77-80,124,134,137-138,159,161,166,183,185-186,188,193-194,197,211,215,221
+zhttp/src/http_common.cc                     194      194   100%
+zhttp/src/http_parser.cc                     205      194    94%   101,108-110,240,246,258,271,314,326,344
+zhttp/src/http_request.cc                    222      218    98%   152,315,381,435
+zhttp/src/http_response.cc                   169      166    98%   25,82,249
+zhttp/src/http_server.cc                     358      314    87%   34,42,46,59,66,89,96,117-118,152,158,165,172,179,187,195,206-207,268,289,368,436,462,476,516,536,546-551,553-555,559,564,566,607-608,611-613,615
+zhttp/src/http_server_builder.cc             329      309    93%   27,38-39,41,81,95,154-155,160,169,174,179,189-191,448,521-522,583-584
+zhttp/src/http_utils.cc                      132      129    97%   112,159,225
+zhttp/src/mid/auth_middleware.cc             114      112    98%   145,167
+zhttp/src/mid/compression_middleware.cc      170      142    83%   33,45,53,63,85,118,139-140,164,179-181,192-193,198,201,207,218-219,257,269,276-281,297
+zhttp/src/mid/cors_middleware.cc              80       77    96%   85-87
+zhttp/src/mid/error_middleware.cc             58       58   100%
+zhttp/src/mid/middleware.cc                   16       16   100%
+zhttp/src/mid/rate_limiter_middleware.cc     193      187    96%   21-22,218,248,254,259
+zhttp/src/mid/request_body_middleware.cc      31       31   100%
+zhttp/src/mid/security_middleware.cc          31       31   100%
+zhttp/src/mid/session_middleware.cc           30       29    96%   13
+zhttp/src/mid/static_file_middleware.cc      197      186    94%   20,35,158-159,215,218,272,290,299,333,367
+zhttp/src/mid/timeout_middleware.cc           37       35    94%   36,67
+zhttp/src/multipart.cc                       164      160    97%   43,179,209,300
+zhttp/src/radix_tree.cc                      177      172    97%   25,58,144-145,147
+zhttp/src/range_parse.cc                      97       92    94%   19,27-28,124-125
+zhttp/src/router.cc                          246      241    98%   216,220,254,283,379
+zhttp/src/server_config.cc                   167      164    98%   125,242-243
+zhttp/src/session.cc                          90       87    96%   66-67,139
+zhttp/src/websocket.cc                       302      287    95%   64,80,119,164,166,197,207,289,355,370-371,373,410,448,500
+zhttp/src/websocket_frame.cc                 270      260    96%   106,126,142,151,215,236,241,243-244,250
+zhttp/src/zhttp_logger.cc                     58       58   100%
+------------------------------------------------------------------------------
+TOTAL                                       4245     4026    94%
+------------------------------------------------------------------------------
+lines: 94.8% (4026 out of 4245)
+functions: 98.3% (409 out of 416)
+branches: 85.1% (3721 out of 4372)
+decisions: 84.3% (1242 out of 1473)
