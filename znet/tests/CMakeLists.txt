@@ -34,6 +34,22 @@ foreach(test_src ${ZNET_UNIT_TESTS})
   add_znet_unit_test(${test_name} ${test_src})
 endforeach()
 
+# These tests are sensitive to system-level socket/thread pressure when many
+# binaries run concurrently. Serialize them to reduce flaky crashes.
+set(ZNET_SERIAL_TESTS
+  buffer_unit
+  server_unit
+  tcp_server_unit
+)
+foreach(test_name ${ZNET_SERIAL_TESTS})
+  if(TARGET ${test_name})
+    set_tests_properties(${test_name} PROPERTIES
+      RUN_SERIAL TRUE
+      RESOURCE_LOCK zco_runtime
+    )
+  endif()
+endforeach()
+
 add_executable(znet_wrk_benchmark
   benchmark/znet_wrk_benchmark.cc
 )
