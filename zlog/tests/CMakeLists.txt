@@ -8,6 +8,15 @@ find_package(spdlog QUIET)
 
 find_package(glog QUIET)
 
+function(zlog_test_enable_coverage target_name)
+    if(ENABLE_COVERAGE)
+        if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+            target_compile_options(${target_name} PRIVATE -O0 -g --coverage)
+            target_link_options(${target_name} PRIVATE --coverage)
+        endif()
+    endif()
+endfunction()
+
 # 收集单元测试源文件
 file(GLOB UNIT_TEST_SOURCES "unit/*.cc")
 message(STATUS "Project source dir: ${PROJECT_SOURCE_DIR}")
@@ -16,6 +25,7 @@ foreach(TEST_SRC ${UNIT_TEST_SOURCES})
     add_executable(${TEST_NAME} ${TEST_SRC})
     target_link_libraries(${TEST_NAME} PRIVATE zlog_static GTest::gtest GTest::gmock Threads::Threads)
     target_include_directories(${TEST_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/include)
+    zlog_test_enable_coverage(${TEST_NAME})
     add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
 endforeach()
 
@@ -26,6 +36,7 @@ foreach(TEST_SRC ${INTEGRATION_TEST_SOURCES})
     add_executable(${TEST_NAME} ${TEST_SRC})
     target_link_libraries(${TEST_NAME} PRIVATE zlog_static GTest::gtest GTest::gmock Threads::Threads)
     target_include_directories(${TEST_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/include)
+    zlog_test_enable_coverage(${TEST_NAME})
     add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
 endforeach()
 
@@ -39,6 +50,7 @@ if(spdlog_FOUND AND glog_FOUND)
         Threads::Threads
     )
     target_include_directories(zlog_benchmark PRIVATE ${PROJECT_SOURCE_DIR}/include)
+    zlog_test_enable_coverage(zlog_benchmark)
 else()
     message(STATUS "Skipping zlog_benchmark (requires spdlog, glog)")
 endif()
@@ -50,3 +62,4 @@ target_link_libraries(zlog_perf_bench PRIVATE
     Threads::Threads
 )
 target_include_directories(zlog_perf_bench PRIVATE ${PROJECT_SOURCE_DIR}/include)
+zlog_test_enable_coverage(zlog_perf_bench)
