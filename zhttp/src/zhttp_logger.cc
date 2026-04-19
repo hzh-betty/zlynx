@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <mutex>
 #include <string>
 #include <utility>
 
@@ -16,6 +17,11 @@ constexpr char kDefaultFilePath[] = "./logfile/zhttp.log";
 zlog::Logger::ptr &cached_logger() {
     static zlog::Logger::ptr logger;
     return logger;
+}
+
+std::mutex &cached_logger_mutex() {
+    static std::mutex mutex;
+    return mutex;
 }
 
 std::string normalize_sink(std::string sink) {
@@ -51,7 +57,7 @@ void build_logger_sinks(zlog::GlobalLoggerBuilder &builder,
 
 } // namespace
 
-void init_logger(const LoggerInitOptions &options) {
+void init_logger_locked(const LoggerInitOptions &options) {
     zlog::GlobalLoggerBuilder builder;
     builder.build_logger_name(kLoggerName);
     builder.build_logger_level(options.level);
@@ -66,18 +72,28 @@ void init_logger(const LoggerInitOptions &options) {
     cached_logger() = std::move(logger);
 }
 
+void init_logger(const LoggerInitOptions &options) {
+    std::lock_guard<std::mutex> lock(cached_logger_mutex());
+    init_logger_locked(options);
+}
+
 void init_logger(zlog::LogLevel::value level) {
     LoggerInitOptions options;
     options.level = level;
     init_logger(options);
 }
 
-zlog::Logger *get_logger() {
+zlog::Logger::ptr get_logger_ptr() {
+    std::lock_guard<std::mutex> lock(cached_logger_mutex());
     auto &logger = cached_logger();
     if (!logger) {
-        init_logger(zlog::LogLevel::value::INFO);
+        LoggerInitOptions options;
+        options.level = zlog::LogLevel::value::INFO;
+        init_logger_locked(options);
     }
-    return logger.get();
+    return logger;
 }
+
+zlog::Logger *get_logger() { return get_logger_ptr().get(); }
 
 } // namespace zhttp
