@@ -32,11 +32,12 @@ void init_logger(zlog::LogLevel::value level = zlog::LogLevel::value::DEBUG);
  * @return 全局日志器指针
  */
 zlog::Logger *get_logger();
+zlog::Logger::ptr get_logger_ptr();
 
 template <typename... Args>
 inline void log_debug(const char *file, int line, const char *fmt,
                       Args &&...args) {
-    auto *logger = get_logger();
+    auto logger = get_logger_ptr();
     if (!logger) {
         return;
     }
@@ -46,7 +47,7 @@ inline void log_debug(const char *file, int line, const char *fmt,
 template <typename... Args>
 inline void log_info(const char *file, int line, const char *fmt,
                      Args &&...args) {
-    auto *logger = get_logger();
+    auto logger = get_logger_ptr();
     if (!logger) {
         return;
     }
@@ -56,7 +57,7 @@ inline void log_info(const char *file, int line, const char *fmt,
 template <typename... Args>
 inline void log_warn(const char *file, int line, const char *fmt,
                      Args &&...args) {
-    auto *logger = get_logger();
+    auto logger = get_logger_ptr();
     if (!logger) {
         return;
     }
@@ -66,7 +67,7 @@ inline void log_warn(const char *file, int line, const char *fmt,
 template <typename... Args>
 inline void log_error(const char *file, int line, const char *fmt,
                       Args &&...args) {
-    auto *logger = get_logger();
+    auto logger = get_logger_ptr();
     if (!logger) {
         return;
     }
@@ -76,7 +77,7 @@ inline void log_error(const char *file, int line, const char *fmt,
 template <typename... Args>
 inline void log_fatal(const char *file, int line, const char *fmt,
                       Args &&...args) {
-    auto *logger = get_logger();
+    auto logger = get_logger_ptr();
     if (!logger) {
         return;
     }
