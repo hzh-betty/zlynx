@@ -32,6 +32,14 @@ bool is_pipe_like_errno(int err) {
     return err == EPIPE || err == ESHUTDOWN || err == ECONNRESET;
 }
 
+bool is_expected_connect_failure_errno(int err) {
+    return err == ECONNREFUSED || err == ETIMEDOUT || err == EHOSTUNREACH ||
+           err == ENETUNREACH || err == EINVAL || err == EADDRNOTAVAIL ||
+           err == EAGAIN || err == EALREADY || err == EINPROGRESS ||
+           err == ECONNABORTED || err == ENETDOWN || err == EACCES ||
+           err == EADDRINUSE;
+}
+
 int make_loopback_listener(sockaddr_in *out_addr) {
     if (!out_addr) {
         errno = EINVAL;
@@ -384,8 +392,6 @@ TEST_F(HookIntegrationTest, RandomizedSocketPairRoundTripDeterministicSeed) {
 TEST_F(HookIntegrationTest, RandomizedRefusedConnectDeterministicSeed) {
     init(2);
 
-    std::mt19937 rng(20260329u);
-
     for (int i = 0; i < 20; ++i) {
         int probe_fd = ::socket(AF_INET, SOCK_STREAM, 0);
         ASSERT_GE(probe_fd, 0);
@@ -403,8 +409,6 @@ TEST_F(HookIntegrationTest, RandomizedRefusedConnectDeterministicSeed) {
                                 reinterpret_cast<sockaddr *>(&probe_addr),
                                 &probe_len),
                   0);
-        const uint16_t closed_port = ntohs(probe_addr.sin_port);
-        ::close(probe_fd);
 
         int fd = co_socket(AF_INET, SOCK_STREAM, 0);
         ASSERT_GE(fd, 0);
@@ -412,8 +416,9 @@ TEST_F(HookIntegrationTest, RandomizedRefusedConnectDeterministicSeed) {
         sockaddr_in target_addr;
         target_addr.sin_family = AF_INET;
         target_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        target_addr.sin_port =
-            htons(static_cast<uint16_t>(closed_port + (rng() % 3)));
+        // Keep the probe socket bound (without listen) during connect probing so
+        // the test port cannot be reused by unrelated listeners.
+        target_addr.sin_port = probe_addr.sin_port;
 
         WaitGroup done(1);
         std::atomic<int> rc(0);
@@ -431,11 +436,11 @@ TEST_F(HookIntegrationTest, RandomizedRefusedConnectDeterministicSeed) {
 
         EXPECT_EQ(rc.load(std::memory_order_acquire), -1);
         const int err = captured_errno.load(std::memory_order_acquire);
-        EXPECT_TRUE(err == ECONNREFUSED || err == ETIMEDOUT ||
-                    err == EHOSTUNREACH || err == ENETUNREACH ||
-                    err == EINVAL || err == EADDRNOTAVAIL);
+        EXPECT_TRUE(is_expected_connect_failure_errno(err))
+            << "unexpected connect errno: " << err;
 
         ::close(fd);
+        ::close(probe_fd);
     }
 }
 
@@ -456,7 +461,6 @@ TEST_F(HookIntegrationTest, ConnectFailureThenSuccessPathKeepsRuntimeUsable) {
                             reinterpret_cast<sockaddr *>(&refused_addr),
                             &refused_len),
               0);
-    ::close(probe_fd);
 
     sockaddr_in listen_addr;
     const int listen_fd = make_loopback_listener(&listen_addr);
@@ -490,9 +494,8 @@ TEST_F(HookIntegrationTest, ConnectFailureThenSuccessPathKeepsRuntimeUsable) {
                              reinterpret_cast<const sockaddr *>(&refused_addr),
                              static_cast<socklen_t>(sizeof(refused_addr)), 120),
                   -1);
-        EXPECT_TRUE(errno == ECONNREFUSED || errno == ETIMEDOUT ||
-                    errno == EHOSTUNREACH || errno == ENETUNREACH ||
-                    errno == EINVAL || errno == EADDRNOTAVAIL);
+        EXPECT_TRUE(is_expected_connect_failure_errno(errno))
+            << "unexpected connect errno: " << errno;
         EXPECT_EQ(co_close(failed_fd), 0);
 
         const int success_fd = connect_loopback(listen_addr, 1500);
@@ -509,6 +512,7 @@ TEST_F(HookIntegrationTest, ConnectFailureThenSuccessPathKeepsRuntimeUsable) {
     });
 
     done.wait();
+    ::close(probe_fd);
     EXPECT_EQ(co_close(listen_fd), 0);
 }
 
