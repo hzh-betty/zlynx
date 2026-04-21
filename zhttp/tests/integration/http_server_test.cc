@@ -15,6 +15,7 @@
 #include <sys/socket.h>
 #include <thread>
 #include <atomic>
+#include <utility>
 #include <unistd.h>
 #include <vector>
 
@@ -157,6 +158,60 @@ uint16_t find_free_port() {
     const uint16_t port = ntohs(addr.sin_port);
     ::close(fd);
     return port;
+}
+
+std::pair<uint16_t, uint16_t> find_two_distinct_free_ports() {
+    const int fd1 = ::socket(AF_INET, SOCK_STREAM, 0);
+    const int fd2 = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (fd1 < 0 || fd2 < 0) {
+        if (fd1 >= 0) {
+            ::close(fd1);
+        }
+        if (fd2 >= 0) {
+            ::close(fd2);
+        }
+        return {0, 0};
+    }
+
+    sockaddr_in addr1{};
+    addr1.sin_family = AF_INET;
+    addr1.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr1.sin_port = 0;
+    if (::bind(fd1, reinterpret_cast<sockaddr *>(&addr1), sizeof(addr1)) != 0) {
+        ::close(fd1);
+        ::close(fd2);
+        return {0, 0};
+    }
+
+    sockaddr_in addr2{};
+    addr2.sin_family = AF_INET;
+    addr2.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr2.sin_port = 0;
+    if (::bind(fd2, reinterpret_cast<sockaddr *>(&addr2), sizeof(addr2)) != 0) {
+        ::close(fd1);
+        ::close(fd2);
+        return {0, 0};
+    }
+
+    socklen_t len1 = sizeof(addr1);
+    socklen_t len2 = sizeof(addr2);
+    if (::getsockname(fd1, reinterpret_cast<sockaddr *>(&addr1), &len1) != 0 ||
+        ::getsockname(fd2, reinterpret_cast<sockaddr *>(&addr2), &len2) != 0) {
+        ::close(fd1);
+        ::close(fd2);
+        return {0, 0};
+    }
+
+    const uint16_t first = ntohs(addr1.sin_port);
+    const uint16_t second = ntohs(addr2.sin_port);
+
+    ::close(fd1);
+    ::close(fd2);
+
+    if (first == 0 || second == 0 || first == second) {
+        return {0, 0};
+    }
+    return {first, second};
 }
 
 int connect_with_retry(uint16_t port, int retry_count, int retry_delay_ms) {
@@ -710,11 +765,11 @@ TEST(HttpServerIntegrationTest, HttpsRoundTripWithRealTlsHandshake) {
 }
 
 TEST(HttpServerIntegrationTest, ForceHttpsRedirectBuildsExpectedLocation) {
-    const uint16_t https_port = find_free_port();
-    const uint16_t redirect_port = find_free_port();
+    const auto ports = find_two_distinct_free_ports();
+    const uint16_t https_port = ports.first;
+    const uint16_t redirect_port = ports.second;
     ASSERT_NE(https_port, 0);
     ASSERT_NE(redirect_port, 0);
-    ASSERT_NE(https_port, redirect_port);
 
     ScopedTlsPemFiles pem_files;
     ASSERT_FALSE(pem_files.cert_path().empty());
@@ -776,11 +831,11 @@ TEST(HttpServerIntegrationTest, ForceHttpsRedirectBuildsExpectedLocation) {
 }
 
 TEST(HttpServerIntegrationTest, RunFailsWhenRedirectPortAlreadyInUse) {
-    const uint16_t https_port = find_free_port();
-    const uint16_t redirect_port = find_free_port();
+    const auto ports = find_two_distinct_free_ports();
+    const uint16_t https_port = ports.first;
+    const uint16_t redirect_port = ports.second;
     ASSERT_NE(https_port, 0);
     ASSERT_NE(redirect_port, 0);
-    ASSERT_NE(https_port, redirect_port);
 
     const int occupied_fd = bind_and_listen_port(redirect_port);
     ASSERT_GE(occupied_fd, 0);
@@ -803,11 +858,11 @@ TEST(HttpServerIntegrationTest, RunFailsWhenRedirectPortAlreadyInUse) {
 
 TEST(HttpServerIntegrationTest,
      RunFailsWhenHttpsPortInUseAfterRedirectServerStarted) {
-    const uint16_t https_port = find_free_port();
-    const uint16_t redirect_port = find_free_port();
+    const auto ports = find_two_distinct_free_ports();
+    const uint16_t https_port = ports.first;
+    const uint16_t redirect_port = ports.second;
     ASSERT_NE(https_port, 0);
     ASSERT_NE(redirect_port, 0);
-    ASSERT_NE(https_port, redirect_port);
 
     const int occupied_https_fd = bind_and_listen_port(https_port);
     ASSERT_GE(occupied_https_fd, 0);

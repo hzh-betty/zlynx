@@ -8,6 +8,7 @@
 
 #include "zco/internal/coroutine_waiter.h"
 #include "zco/internal/fiber.h"
+#include "zco/internal/processor.h"
 #include "zco/internal/runtime_manager.h"
 #include "zco/zco_log.h"
 
@@ -89,7 +90,19 @@ void Mutex::unlock() const {
         while (!impl_->coroutine_waiters.empty()) {
             CoroutineWaiterEntry waiter = impl_->coroutine_waiters.front();
             impl_->coroutine_waiters.pop_front();
-            resume_target = claim_waiter(&waiter);
+            Fiber::ptr candidate = claim_waiter(&waiter);
+            if (!candidate) {
+                continue;
+            }
+
+            // 防止把锁交接给“已不在等待态”的协程，避免 locked 永久保持 true。
+            if (!candidate->try_wake(false)) {
+                ZCO_LOG_DEBUG("mutex unlock skip stale waiter, fiber_id={}",
+                              candidate->id());
+                continue;
+            }
+
+            resume_target = std::move(candidate);
             if (resume_target) {
                 break;
             }
@@ -103,7 +116,7 @@ void Mutex::unlock() const {
 
     if (resume_target) {
         // 直接交接给协程等待者，保持互斥语义连续。
-        resume_fiber(resume_target, false);
+        resume_target->owner()->enqueue_ready(std::move(resume_target));
         return;
     }
 

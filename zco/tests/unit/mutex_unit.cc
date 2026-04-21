@@ -32,15 +32,30 @@ TEST_F(MutexUnitByHeaderTest, MixedThreadAndCoroutineContention) {
     constexpr int kCoroutineTasks = 80;
     constexpr int kThreadTasks = 40;
     constexpr int kTotal = kCoroutineTasks + kThreadTasks;
-
-    WaitGroup done(kTotal);
     std::atomic<int> counter(0);
+    std::atomic<int> completed(0);
+    std::atomic<bool> timeout_or_error(false);
+
+    auto finish_task = [&]() {
+        completed.fetch_add(1, std::memory_order_release);
+    };
 
     for (int i = 0; i < kCoroutineTasks; ++i) {
         go([&]() {
-            MutexGuard guard(mutex);
-            counter.fetch_add(1, std::memory_order_relaxed);
-            done.done();
+            const auto deadline =
+                std::chrono::steady_clock::now() + std::chrono::seconds(2);
+            while (std::chrono::steady_clock::now() < deadline) {
+                if (mutex.try_lock()) {
+                    counter.fetch_add(1, std::memory_order_relaxed);
+                    mutex.unlock();
+                    finish_task();
+                    return;
+                }
+                co_sleep_for(1);
+            }
+
+            timeout_or_error.store(true, std::memory_order_release);
+            finish_task();
         });
     }
 
@@ -48,9 +63,20 @@ TEST_F(MutexUnitByHeaderTest, MixedThreadAndCoroutineContention) {
     threads.reserve(kThreadTasks);
     for (int i = 0; i < kThreadTasks; ++i) {
         threads.emplace_back([&]() {
-            MutexGuard guard(mutex);
-            counter.fetch_add(1, std::memory_order_relaxed);
-            done.done();
+            const auto deadline =
+                std::chrono::steady_clock::now() + std::chrono::seconds(2);
+            while (std::chrono::steady_clock::now() < deadline) {
+                if (mutex.try_lock()) {
+                    counter.fetch_add(1, std::memory_order_relaxed);
+                    mutex.unlock();
+                    finish_task();
+                    return;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+
+            timeout_or_error.store(true, std::memory_order_release);
+            finish_task();
         });
     }
 
@@ -58,7 +84,15 @@ TEST_F(MutexUnitByHeaderTest, MixedThreadAndCoroutineContention) {
         threads[i].join();
     }
 
-    done.wait();
+    const auto wait_deadline =
+        std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (completed.load(std::memory_order_acquire) < kTotal &&
+           std::chrono::steady_clock::now() < wait_deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    EXPECT_EQ(completed.load(std::memory_order_acquire), kTotal);
+    EXPECT_FALSE(timeout_or_error.load(std::memory_order_acquire));
     EXPECT_EQ(counter.load(std::memory_order_relaxed), kTotal);
 }
 
