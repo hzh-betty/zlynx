@@ -3,9 +3,10 @@
 #include "zhttp/zhttp_logger.h"
 
 #include <arpa/inet.h>
+#include <atomic>
 #include <chrono>
-#include <cstdio>
 #include <csignal>
+#include <cstdio>
 #include <cstring>
 #include <fstream>
 #include <gtest/gtest.h>
@@ -14,9 +15,8 @@
 #include <poll.h>
 #include <sys/socket.h>
 #include <thread>
-#include <atomic>
-#include <utility>
 #include <unistd.h>
+#include <utility>
 #include <vector>
 
 using namespace zhttp;
@@ -663,7 +663,9 @@ TEST(HttpServerIntegrationTest, DoesNotUseChunkedForNoContentStatus) {
         .threads(1)
         .log_level("error")
         .get("/no-content", [](const HttpRequest::ptr &, HttpResponse &resp) {
-            resp.status(HttpStatus::NO_CONTENT).body("ignored").enable_chunked();
+            resp.status(HttpStatus::NO_CONTENT)
+                .body("ignored")
+                .enable_chunked();
         });
 
     auto server = builder.build();
@@ -807,7 +809,7 @@ TEST(HttpServerIntegrationTest, ForceHttpsRedirectBuildsExpectedLocation) {
     ::close(fd1);
     EXPECT_NE(resp1.find("308"), std::string::npos) << resp1;
     EXPECT_NE(resp1.find("Location: https://example.com:" +
-                             std::to_string(https_port) + "/secure?x=1"),
+                         std::to_string(https_port) + "/secure?x=1"),
               std::string::npos)
         << resp1;
 
@@ -819,8 +821,8 @@ TEST(HttpServerIntegrationTest, ForceHttpsRedirectBuildsExpectedLocation) {
     ASSERT_TRUE(send_all(fd2, req2));
     const std::string resp2 = recv_until_close(fd2, 1000);
     ::close(fd2);
-    EXPECT_NE(resp2.find("Location: https://[::1]:" + std::to_string(https_port) +
-                             "/v6"),
+    EXPECT_NE(resp2.find("Location: https://[::1]:" +
+                         std::to_string(https_port) + "/v6"),
               std::string::npos)
         << resp2;
 
@@ -893,18 +895,19 @@ TEST(HttpServerIntegrationTest, HandlesAsyncAndStreamErrorPaths) {
         .log_level("error")
         .get("/chunked-async-throw",
              [](const HttpRequest::ptr &, HttpResponse &resp) {
-                 resp.status(HttpStatus::OK).content_type("text/plain").async_stream(
-                     [](HttpResponse::AsyncChunkSender, HttpResponse::AsyncStreamCloser) {
+                 resp.status(HttpStatus::OK)
+                     .content_type("text/plain")
+                     .async_stream([](HttpResponse::AsyncChunkSender,
+                                      HttpResponse::AsyncStreamCloser) {
                          throw std::runtime_error("async boom");
                      });
              })
-        .get("/chunked-stream-oversize",
-             [](const HttpRequest::ptr &, HttpResponse &resp) {
-                 resp.status(HttpStatus::OK).content_type("text/plain").stream(
-                     [](char *, size_t size) -> size_t {
-                         return size + 1;
-                     });
-             });
+        .get("/chunked-stream-oversize", [](const HttpRequest::ptr &,
+                                            HttpResponse &resp) {
+            resp.status(HttpStatus::OK)
+                .content_type("text/plain")
+                .stream([](char *, size_t size) -> size_t { return size + 1; });
+        });
 
     auto server = builder.build();
     ASSERT_TRUE(server);
@@ -920,8 +923,10 @@ TEST(HttpServerIntegrationTest, HandlesAsyncAndStreamErrorPaths) {
         ASSERT_TRUE(send_all(client_fd, request));
         const std::string response = recv_until_close(client_fd, 1000);
         ::close(client_fd);
-        EXPECT_NE(response.find("HTTP/1.1 200 OK"), std::string::npos) << response;
-        EXPECT_NE(response.find("Transfer-Encoding: chunked"), std::string::npos)
+        EXPECT_NE(response.find("HTTP/1.1 200 OK"), std::string::npos)
+            << response;
+        EXPECT_NE(response.find("Transfer-Encoding: chunked"),
+                  std::string::npos)
             << response;
         EXPECT_EQ(response.find("0\r\n\r\n"), std::string::npos) << response;
     }
@@ -929,15 +934,16 @@ TEST(HttpServerIntegrationTest, HandlesAsyncAndStreamErrorPaths) {
     {
         const int client_fd = connect_with_retry(port, 20, 25);
         ASSERT_GE(client_fd, 0);
-        const std::string request =
-            "GET /chunked-stream-oversize HTTP/1.1\r\n"
-            "Host: localhost\r\n"
-            "Connection: close\r\n\r\n";
+        const std::string request = "GET /chunked-stream-oversize HTTP/1.1\r\n"
+                                    "Host: localhost\r\n"
+                                    "Connection: close\r\n\r\n";
         ASSERT_TRUE(send_all(client_fd, request));
         const std::string response = recv_until_close(client_fd, 1000);
         ::close(client_fd);
-        EXPECT_NE(response.find("HTTP/1.1 200 OK"), std::string::npos) << response;
-        EXPECT_NE(response.find("Transfer-Encoding: chunked"), std::string::npos)
+        EXPECT_NE(response.find("HTTP/1.1 200 OK"), std::string::npos)
+            << response;
+        EXPECT_NE(response.find("Transfer-Encoding: chunked"),
+                  std::string::npos)
             << response;
         EXPECT_EQ(response.find("0\r\n\r\n"), std::string::npos) << response;
     }

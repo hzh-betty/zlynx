@@ -122,7 +122,8 @@ TEST(HttpServerBuilderTest, BuildConfiguresRoutesMiddlewareAndHandlers) {
         .server_name("builder-test-server");
 
     builder.use(nullptr);
-    builder.use(std::make_shared<MarkerMiddleware>(&before_called, &after_called));
+    builder.use(
+        std::make_shared<MarkerMiddleware>(&before_called, &after_called));
 
     builder.get("/cb-get", [](const HttpRequest::ptr &, HttpResponse &resp) {
         resp.status(HttpStatus::OK).text("cb-get");
@@ -145,10 +146,10 @@ TEST(HttpServerBuilderTest, BuildConfiguresRoutesMiddlewareAndHandlers) {
     builder.not_found(
         [](const HttpRequest::ptr &, HttpResponse &resp) { resp.text("tmp"); });
     builder.not_found(std::make_shared<NotFoundHandler>());
-    builder.exception_handler([](const HttpRequest::ptr &, HttpResponse &resp,
-                                 std::exception_ptr) {
-        resp.status(HttpStatus::INTERNAL_SERVER_ERROR).text("custom-ex");
-    });
+    builder.exception_handler(
+        [](const HttpRequest::ptr &, HttpResponse &resp, std::exception_ptr) {
+            resp.status(HttpStatus::INTERNAL_SERVER_ERROR).text("custom-ex");
+        });
     builder.get("/throw", [](const HttpRequest::ptr &, HttpResponse &) {
         throw std::runtime_error("boom");
     });

@@ -29,7 +29,8 @@ void init_logger(zlog::LogLevel::value level = zlog::LogLevel::value::DEBUG);
 
 /**
  * @brief 获取 znet 默认日志器。
- * @return 日志器裸指针；若初始化失败可能返回 nullptr。
+ * @return
+ * 日志器裸指针；若初始化失败可能返回 nullptr。
  */
 zlog::Logger *get_logger();
 zlog::Logger::ptr get_logger_ptr();

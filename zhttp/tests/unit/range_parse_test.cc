@@ -116,7 +116,8 @@ TEST(RangeParseTest, WritePayloadByRangeHandlesNotSatisfiable) {
 
     write_payload_by_range(request, response, parsed, 10, "0123456789");
 
-    EXPECT_EQ(response.status_code(), HttpStatus::REQUESTED_RANGE_NOT_SATISFIABLE);
+    EXPECT_EQ(response.status_code(),
+              HttpStatus::REQUESTED_RANGE_NOT_SATISFIABLE);
     EXPECT_EQ(response.headers().at("Content-Range"), "bytes */10");
     EXPECT_TRUE(response.body_content().empty());
 }

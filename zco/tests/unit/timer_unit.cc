@@ -25,8 +25,8 @@ TEST_F(TimerUnitByHeaderTest, AddTimerAndProcessDueExecutesCallback) {
     TimerQueue queue;
     std::atomic<bool> fired(false);
 
-    std::shared_ptr<TimerToken> token =
-        queue.add_timer(1, [&fired]() { fired.store(true, std::memory_order_release); });
+    std::shared_ptr<TimerToken> token = queue.add_timer(
+        1, [&fired]() { fired.store(true, std::memory_order_release); });
     ASSERT_NE(token, nullptr);
 
     const uint64_t deadline = now_ms() + 100;
@@ -41,8 +41,8 @@ TEST_F(TimerUnitByHeaderTest, CancelledTimerIsSkippedDuringProcessDue) {
     TimerQueue queue;
     std::atomic<bool> fired(false);
 
-    std::shared_ptr<TimerToken> token =
-        queue.add_timer(1, [&fired]() { fired.store(true, std::memory_order_release); });
+    std::shared_ptr<TimerToken> token = queue.add_timer(
+        1, [&fired]() { fired.store(true, std::memory_order_release); });
     ASSERT_NE(token, nullptr);
     token->cancelled.store(true, std::memory_order_release);
 
@@ -64,9 +64,11 @@ TEST_F(TimerUnitByHeaderTest, EmptyAndFutureQueueTimeoutsFollowContract) {
     EXPECT_LE(timeout_ms, 1000);
 }
 
-TEST_F(TimerUnitByHeaderTest, DueTimerMakesNextTimeoutZeroAndNullCallbackIsSafe) {
+TEST_F(TimerUnitByHeaderTest,
+       DueTimerMakesNextTimeoutZeroAndNullCallbackIsSafe) {
     TimerQueue queue;
-    std::shared_ptr<TimerToken> token = queue.add_timer(0, std::function<void()>());
+    std::shared_ptr<TimerToken> token =
+        queue.add_timer(0, std::function<void()>());
     ASSERT_NE(token, nullptr);
 
     EXPECT_EQ(queue.next_timeout_ms(), 0);

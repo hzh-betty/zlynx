@@ -180,7 +180,8 @@ TEST_F(MutexUnitByHeaderTest, CoroutineLockUnlockFastPathWorksWhenUnlocked) {
     mutex.unlock();
 }
 
-TEST_F(MutexUnitByHeaderTest, ThreadWaiterCanProceedAfterCoroutineHandoffCompletes) {
+TEST_F(MutexUnitByHeaderTest,
+       ThreadWaiterCanProceedAfterCoroutineHandoffCompletes) {
     init(1);
 
     Mutex mutex;

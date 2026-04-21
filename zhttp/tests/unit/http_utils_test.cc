@@ -62,14 +62,14 @@ TEST(HttpUtilsTest, PathOperatorNormalizesMatchesAndMapsPaths) {
     EXPECT_TRUE(PathOperator::should_handle_path("/x", "/"));
     EXPECT_FALSE(PathOperator::should_handle_path("x", "/"));
     EXPECT_TRUE(PathOperator::should_handle_path("/assets", "/assets"));
-    EXPECT_TRUE(PathOperator::should_handle_path("/assets/js/app.js",
-                                                 "/assets"));
-    EXPECT_FALSE(PathOperator::should_handle_path("/assets2/app.js",
-                                                  "/assets"));
+    EXPECT_TRUE(
+        PathOperator::should_handle_path("/assets/js/app.js", "/assets"));
+    EXPECT_FALSE(
+        PathOperator::should_handle_path("/assets2/app.js", "/assets"));
 
-    EXPECT_EQ(PathOperator::map_to_relative_path("/assets/js/app.js",
-                                                 "/assets"),
-              "/js/app.js");
+    EXPECT_EQ(
+        PathOperator::map_to_relative_path("/assets/js/app.js", "/assets"),
+        "/js/app.js");
     EXPECT_EQ(PathOperator::map_to_relative_path("/assets", "/assets"), "/");
     EXPECT_EQ(PathOperator::map_to_relative_path("/index.html", "/"),
               "/index.html");
@@ -126,8 +126,8 @@ TEST(HttpUtilsTest, FileOperatorHandlesReadWriteAndMetadata) {
     std::string last_modified;
     ASSERT_TRUE(FileOperator::get_last_modified(file_path, last_modified));
     EXPECT_NE(last_modified.find("GMT"), std::string::npos);
-    EXPECT_FALSE(FileOperator::get_last_modified("/tmp/missing-zhttp",
-                                                 last_modified));
+    EXPECT_FALSE(
+        FileOperator::get_last_modified("/tmp/missing-zhttp", last_modified));
 
     std::string etag;
     ASSERT_TRUE(FileOperator::get_etag(file_path, etag));

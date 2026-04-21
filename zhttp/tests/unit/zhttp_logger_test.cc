@@ -11,7 +11,9 @@
 
 namespace {
 
-bool file_exists(const std::string &path) { return ::access(path.c_str(), F_OK) == 0; }
+bool file_exists(const std::string &path) {
+    return ::access(path.c_str(), F_OK) == 0;
+}
 
 } // namespace
 
@@ -33,12 +35,9 @@ TEST(ZhttpLoggerTest, InitLoggerCoversSinkVariantsAndLegacyOverload) {
     };
 
     const std::vector<Case> cases = {
-        {"stdout", false, false},
-        {"file", false, true},
-        {"both", true, false},
-        {"stdout+file", true, false},
-        {"file+stdout", true, false},
-        {"unknown-sink", false, false},
+        {"stdout", false, false},     {"file", false, true},
+        {"both", true, false},        {"stdout+file", true, false},
+        {"file+stdout", true, false}, {"unknown-sink", false, false},
     };
 
     for (size_t i = 0; i < cases.size(); ++i) {
@@ -60,7 +59,8 @@ TEST(ZhttpLoggerTest, InitLoggerCoversSinkVariantsAndLegacyOverload) {
         EXPECT_EQ(logger->get_name(), "zhttp_logger");
         EXPECT_EQ(dynamic_cast<zlog::AsyncLogger *>(logger), nullptr);
 
-        logger->info(__FILE__, __LINE__, "zhttp logger sink case {}", cases[i].sink);
+        logger->info(__FILE__, __LINE__, "zhttp logger sink case {}",
+                     cases[i].sink);
 
         if (cases[i].use_default_file) {
             EXPECT_TRUE(file_exists(default_file));
@@ -81,4 +81,3 @@ int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }
-

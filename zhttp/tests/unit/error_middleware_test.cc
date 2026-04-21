@@ -119,8 +119,9 @@ TEST(ErrorMiddlewareTest, CustomInternalErrorMessageAndEscapingAreApplied) {
     middleware.after(request, response);
 
     EXPECT_NE(response.body_content().find("\"code\":500"), std::string::npos);
-    EXPECT_NE(response.body_content().find("bad \\\"quote\\\" \\\\ slash\\nline"),
-              std::string::npos);
+    EXPECT_NE(
+        response.body_content().find("bad \\\"quote\\\" \\\\ slash\\nline"),
+        std::string::npos);
     EXPECT_NE(response.body_content().find("\"method\":\"POST\""),
               std::string::npos);
     EXPECT_NE(response.body_content().find("\"path\":\"/panic\\\"\\\\x\""),

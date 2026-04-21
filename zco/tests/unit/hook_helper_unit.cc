@@ -214,16 +214,16 @@ TEST_F(HookHelperUnitTest, SocketOptionHelpersApplyExpectedOptions) {
     co_set_tcp_keepalive(fd);
     int keepalive = 0;
     socklen_t keepalive_len = sizeof(keepalive);
-    ASSERT_EQ(::getsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &keepalive,
-                           &keepalive_len),
-              0);
+    ASSERT_EQ(
+        ::getsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &keepalive, &keepalive_len),
+        0);
     EXPECT_EQ(keepalive, 1);
 
     co_set_tcp_nodelay(fd);
     int nodelay = 0;
     socklen_t nodelay_len = sizeof(nodelay);
-    ASSERT_EQ(::getsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &nodelay, &nodelay_len),
-              0);
+    ASSERT_EQ(
+        ::getsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &nodelay, &nodelay_len), 0);
     EXPECT_EQ(nodelay, 1);
 
     EXPECT_EQ(co_close(fd), 0);

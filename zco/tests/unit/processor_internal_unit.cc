@@ -66,9 +66,8 @@ TEST_F(ProcessorInternalUnitTest, RecycleAndIoReadyGuardPathsAreExercised) {
     ready->timer = std::make_shared<TimerToken>();
     ready->active.store(true, std::memory_order_release);
     {
-        Fiber::ptr tmp =
-            std::make_shared<Fiber>(103, &processor, []() {}, 64 * 1024, 0,
-                                    true);
+        Fiber::ptr tmp = std::make_shared<Fiber>(
+            103, &processor, []() {}, 64 * 1024, 0, true);
         ready->fiber = tmp;
     }
 

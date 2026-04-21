@@ -236,9 +236,9 @@ TEST(WebSocketServerIntegrationTest, RejectsIncompatibleSubprotocolRequest) {
     builder.listen("127.0.0.1", port)
         .threads(1)
         .log_level("error")
-        .websocket("/ws", WebSocketCallbacks{},
-                   WebSocketOptions{kDefaultWebSocketMaxMessageSize,
-                                    {"superchat"}});
+        .websocket(
+            "/ws", WebSocketCallbacks{},
+            WebSocketOptions{kDefaultWebSocketMaxMessageSize, {"superchat"}});
 
     auto server = builder.build();
     ASSERT_TRUE(server);
@@ -302,8 +302,8 @@ TEST(WebSocketServerIntegrationTest, RespondsWithPongAndCloseFrame) {
               std::string::npos)
         << handshake_response;
 
-    ASSERT_TRUE(
-        send_all(client_fd, build_masked_client_frame(WebSocketOpcode::kPing, "hb")));
+    ASSERT_TRUE(send_all(
+        client_fd, build_masked_client_frame(WebSocketOpcode::kPing, "hb")));
     const std::string pong_response = recv_once_with_timeout(client_fd, 1000);
     ASSERT_GE(pong_response.size(), 4u);
     EXPECT_EQ(static_cast<uint8_t>(pong_response[0]), 0x8A);
@@ -314,8 +314,9 @@ TEST(WebSocketServerIntegrationTest, RespondsWithPongAndCloseFrame) {
     close_payload.push_back(static_cast<char>(0x03));
     close_payload.push_back(static_cast<char>(0xE8));
     close_payload.append("bye");
-    ASSERT_TRUE(send_all(
-        client_fd, build_masked_client_frame(WebSocketOpcode::kClose, close_payload)));
+    ASSERT_TRUE(
+        send_all(client_fd, build_masked_client_frame(WebSocketOpcode::kClose,
+                                                      close_payload)));
 
     const std::string close_response = recv_once_with_timeout(client_fd, 1000);
     ASSERT_GE(close_response.size(), 2u);

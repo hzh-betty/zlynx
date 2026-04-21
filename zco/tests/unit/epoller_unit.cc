@@ -191,17 +191,17 @@ TEST_F(EpollerUnitTest, ReadAndWriteWaitersOnSameFdCanBothBeDispatched) {
 
     std::atomic<bool> read_seen(false);
     std::atomic<bool> write_seen(false);
-    epoller.wait_events(100, [&](const std::shared_ptr<IoWaiter> &ready,
-                                 uint32_t events) {
-        if (ready.get() == read_waiter.get()) {
-            read_seen.store(true, std::memory_order_release);
-            EXPECT_NE(events & (EPOLLIN | EPOLLHUP | EPOLLERR), 0u);
-        }
-        if (ready.get() == write_waiter.get()) {
-            write_seen.store(true, std::memory_order_release);
-            EXPECT_NE(events & (EPOLLOUT | EPOLLHUP | EPOLLERR), 0u);
-        }
-    });
+    epoller.wait_events(
+        100, [&](const std::shared_ptr<IoWaiter> &ready, uint32_t events) {
+            if (ready.get() == read_waiter.get()) {
+                read_seen.store(true, std::memory_order_release);
+                EXPECT_NE(events & (EPOLLIN | EPOLLHUP | EPOLLERR), 0u);
+            }
+            if (ready.get() == write_waiter.get()) {
+                write_seen.store(true, std::memory_order_release);
+                EXPECT_NE(events & (EPOLLOUT | EPOLLHUP | EPOLLERR), 0u);
+            }
+        });
 
     EXPECT_TRUE(read_seen.load(std::memory_order_acquire));
     EXPECT_TRUE(write_seen.load(std::memory_order_acquire));
@@ -226,8 +226,9 @@ TEST_F(EpollerUnitTest, WaitEventsWithoutCallbackStillConsumesReadyEvents) {
 
     const char marker = 'm';
     ASSERT_EQ(::write(pair[0], &marker, 1), 1);
-    epoller.wait_events(100, std::function<void(const std::shared_ptr<IoWaiter> &,
-                                                uint32_t)>());
+    epoller.wait_events(
+        100,
+        std::function<void(const std::shared_ptr<IoWaiter> &, uint32_t)>());
 
     // Should be removable cleanly after callback-less dispatch.
     epoller.unregister_waiter(waiter);

@@ -382,11 +382,10 @@ TEST_F(SocketCoroutineUnitTest, ConnectSuccessPopulatesLocalAndRemoteAddress) {
     });
 
     zco::go([&]() {
-        connected.store(
-            client->connect(
-                std::make_shared<IPv4Address>("127.0.0.1", listen_addr->port()),
-                200),
-            std::memory_order_release);
+        connected.store(client->connect(std::make_shared<IPv4Address>(
+                                            "127.0.0.1", listen_addr->port()),
+                                        200),
+                        std::memory_order_release);
         if (connected.load(std::memory_order_acquire)) {
             EXPECT_NE(client->get_local_address(), nullptr);
             EXPECT_NE(client->get_remote_address(), nullptr);
@@ -453,7 +452,8 @@ TEST_F(SocketCoroutineUnitTest, SocketCtorWithInvalidFdFallsBackToDefaults) {
     EXPECT_EQ(socket.type(), SOCK_STREAM);
 }
 
-TEST_F(SocketCoroutineUnitTest, RawCtorWithInvalidFamilyTriggersSocketCreateFail) {
+TEST_F(SocketCoroutineUnitTest,
+       RawCtorWithInvalidFamilyTriggersSocketCreateFail) {
     Socket socket(-1, SOCK_STREAM, 0);
     EXPECT_FALSE(socket.is_valid());
 }
@@ -512,12 +512,13 @@ TEST_F(SocketCoroutineUnitTest, SendRecvFromNonCoroutinePathsFailFast) {
     EXPECT_EQ(errno, EPERM);
 
     errno = 0;
-    EXPECT_EQ(socket->send_to("x", 1, std::make_shared<IPv4Address>(), 0, 10), -1);
+    EXPECT_EQ(socket->send_to("x", 1, std::make_shared<IPv4Address>(), 0, 10),
+              -1);
     EXPECT_EQ(errno, EPERM);
 
     errno = 0;
-    EXPECT_EQ(socket->recv_from(buf, sizeof(buf), std::make_shared<IPv4Address>(),
-                                0, 10),
+    EXPECT_EQ(socket->recv_from(buf, sizeof(buf),
+                                std::make_shared<IPv4Address>(), 0, 10),
               -1);
     EXPECT_EQ(errno, EPERM);
 }
@@ -545,8 +546,8 @@ TEST_F(SocketCoroutineUnitTest, RecvFromBranchWithNonNullFromAddressIsCovered) {
     zco::go([&]() {
         EXPECT_EQ(sender->send_to(
                       "udp", 3,
-                      std::make_shared<IPv4Address>("127.0.0.1", local->port()), 0,
-                      200),
+                      std::make_shared<IPv4Address>("127.0.0.1", local->port()),
+                      0, 200),
                   3);
         done.done();
     });

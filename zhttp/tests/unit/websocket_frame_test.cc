@@ -18,7 +18,8 @@ void append_u64_be(std::string *out, uint64_t value) {
 }
 
 std::string build_masked_client_frame(WebSocketOpcode opcode,
-                                      const std::string &payload, bool fin = true,
+                                      const std::string &payload,
+                                      bool fin = true,
                                       int force_payload_len_code = 0) {
     std::string frame;
     const uint8_t first = static_cast<uint8_t>((fin ? 0x80 : 0x00) |
@@ -255,7 +256,8 @@ TEST(WebSocketFrameTest, AcceptsUtf8BoundarySequences) {
     utf8_payload.append(std::string("\xF1\x80\x80\x80", 4)); // F1-F3 branch
     utf8_payload.append(std::string("\xF4\x8F\xBF\xBF", 4)); // F4 branch
 
-    buffer.append(build_masked_client_frame(WebSocketOpcode::kText, utf8_payload));
+    buffer.append(
+        build_masked_client_frame(WebSocketOpcode::kText, utf8_payload));
 
     std::vector<WebSocketFrameEvent> events;
     uint16_t close_code = 0;
@@ -286,8 +288,8 @@ TEST(WebSocketFrameTest, RejectsUtf8BoundaryViolations) {
         SCOPED_TRACE(test_case.name);
         WebSocketFrameParser parser;
         znet::Buffer buffer;
-        buffer.append(
-            build_masked_client_frame(WebSocketOpcode::kText, test_case.payload));
+        buffer.append(build_masked_client_frame(WebSocketOpcode::kText,
+                                                test_case.payload));
 
         std::vector<WebSocketFrameEvent> events;
         uint16_t close_code = 0;
@@ -295,8 +297,9 @@ TEST(WebSocketFrameTest, RejectsUtf8BoundaryViolations) {
         const bool ok = parser.parse(&buffer, &events, &close_code, &error);
 
         EXPECT_FALSE(ok);
-        EXPECT_EQ(close_code, static_cast<uint16_t>(
-                                  WebSocketCloseCode::kInvalidFramePayloadData));
+        EXPECT_EQ(close_code,
+                  static_cast<uint16_t>(
+                      WebSocketCloseCode::kInvalidFramePayloadData));
         EXPECT_NE(error.find("UTF-8"), std::string::npos);
     }
 }
@@ -329,10 +332,10 @@ TEST(WebSocketFrameTest, ValidatesUtf8OnlyWhenFinalFragmentArrives) {
     {
         WebSocketFrameParser parser;
         znet::Buffer buffer;
-        buffer.append(
-            build_masked_client_frame(WebSocketOpcode::kText, "\xE4\xB8", false));
-        buffer.append(
-            build_masked_client_frame(WebSocketOpcode::kContinuation, "\xAD", true));
+        buffer.append(build_masked_client_frame(WebSocketOpcode::kText,
+                                                "\xE4\xB8", false));
+        buffer.append(build_masked_client_frame(WebSocketOpcode::kContinuation,
+                                                "\xAD", true));
 
         std::vector<WebSocketFrameEvent> events;
         uint16_t close_code = 0;
@@ -348,10 +351,10 @@ TEST(WebSocketFrameTest, ValidatesUtf8OnlyWhenFinalFragmentArrives) {
     {
         WebSocketFrameParser parser;
         znet::Buffer buffer;
-        buffer.append(
-            build_masked_client_frame(WebSocketOpcode::kText, "\xE4\xB8", false));
-        buffer.append(
-            build_masked_client_frame(WebSocketOpcode::kContinuation, "(", true));
+        buffer.append(build_masked_client_frame(WebSocketOpcode::kText,
+                                                "\xE4\xB8", false));
+        buffer.append(build_masked_client_frame(WebSocketOpcode::kContinuation,
+                                                "(", true));
 
         std::vector<WebSocketFrameEvent> events;
         uint16_t close_code = 0;
@@ -359,8 +362,9 @@ TEST(WebSocketFrameTest, ValidatesUtf8OnlyWhenFinalFragmentArrives) {
         const bool ok = parser.parse(&buffer, &events, &close_code, &error);
 
         EXPECT_FALSE(ok);
-        EXPECT_EQ(close_code, static_cast<uint16_t>(
-                                  WebSocketCloseCode::kInvalidFramePayloadData));
+        EXPECT_EQ(close_code,
+                  static_cast<uint16_t>(
+                      WebSocketCloseCode::kInvalidFramePayloadData));
         EXPECT_NE(error.find("UTF-8"), std::string::npos);
     }
 }
@@ -486,8 +490,7 @@ TEST(WebSocketFrameTest, ParsesClosePingAndPongEvents) {
 
     buffer.append(
         build_masked_client_frame(WebSocketOpcode::kPing, "heartbeat"));
-    buffer.append(
-        build_masked_client_frame(WebSocketOpcode::kPong, "ack"));
+    buffer.append(build_masked_client_frame(WebSocketOpcode::kPong, "ack"));
     buffer.append(
         build_masked_client_frame(WebSocketOpcode::kClose, close_payload));
 
@@ -520,25 +523,23 @@ TEST(WebSocketFrameTest, EncodesServerFrameWithoutMask) {
 
 TEST(WebSocketFrameTest, EncodesExtendedLengthsAndFinBit) {
     std::string frame_126;
-    ASSERT_TRUE(build_websocket_frame(WebSocketOpcode::kBinary,
-                                      std::string(126, 'x'), &frame_126,
-                                      false));
+    ASSERT_TRUE(build_websocket_frame(
+        WebSocketOpcode::kBinary, std::string(126, 'x'), &frame_126, false));
     ASSERT_GE(frame_126.size(), 4u + 126u);
     EXPECT_EQ(static_cast<uint8_t>(frame_126[0]), 0x02);
     EXPECT_EQ(static_cast<uint8_t>(frame_126[1]), 126);
 
     std::string frame_127;
-    ASSERT_TRUE(build_websocket_frame(WebSocketOpcode::kBinary,
-                                      std::string(66000, 'y'), &frame_127,
-                                      true));
+    ASSERT_TRUE(build_websocket_frame(
+        WebSocketOpcode::kBinary, std::string(66000, 'y'), &frame_127, true));
     ASSERT_GE(frame_127.size(), 10u + 66000u);
     EXPECT_EQ(static_cast<uint8_t>(frame_127[0]), 0x82);
     EXPECT_EQ(static_cast<uint8_t>(frame_127[1]), 127);
 }
 
 TEST(WebSocketFrameTest, RejectsInvalidBuildInputs) {
-    EXPECT_FALSE(build_websocket_frame(WebSocketOpcode::kText, "abc", nullptr,
-                                       true));
+    EXPECT_FALSE(
+        build_websocket_frame(WebSocketOpcode::kText, "abc", nullptr, true));
 
     std::string frame;
     EXPECT_FALSE(build_websocket_frame(WebSocketOpcode::kPing,

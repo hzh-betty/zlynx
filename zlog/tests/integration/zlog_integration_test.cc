@@ -91,7 +91,6 @@ class ZlogIntegrationTest : public ::testing::Test {
     std::string testDir;
 };
 
-
 TEST_F(ZlogIntegrationTest, SyncLoggerEndToEnd) {
     std::string logFile = testDir + "/sync_e2e.log";
 
@@ -252,7 +251,6 @@ TEST_F(ZlogIntegrationTest, AsyncLoggerSafeMode) {
                     ::testing::HasSubstr("safe message " + std::to_string(i)));
     }
 }
-
 
 TEST_F(ZlogIntegrationTest, MultithreadedSyncLogger) {
     std::string logFile = testDir + "/mt_sync.log";

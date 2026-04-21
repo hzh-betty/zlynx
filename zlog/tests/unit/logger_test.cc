@@ -116,8 +116,7 @@ TEST_F(LoggerTest, AsyncLoggerWithEmptySinksReturnsEarlyInRelog) {
     AsyncLogger logger("async_empty", LogLevel::value::DEBUG, formatter,
                        empty_sinks, AsyncType::ASYNC_SAFE,
                        std::chrono::milliseconds(10));
-    logger.log_impl(LogLevel::value::INFO, __FILE__, __LINE__,
-                    "async dropped");
+    logger.log_impl(LogLevel::value::INFO, __FILE__, __LINE__, "async dropped");
     std::this_thread::sleep_for(std::chrono::milliseconds(30));
 }
 

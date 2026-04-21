@@ -538,7 +538,8 @@ TEST_F(TcpConnectionUnitTest, FlushOutputTlsFailurePropagatesError) {
     ::close(pair[1]);
 }
 
-TEST_F(TcpConnectionUnitTest, CloseAndShutdownRemainIdempotentWhenDisconnected) {
+TEST_F(TcpConnectionUnitTest,
+       CloseAndShutdownRemainIdempotentWhenDisconnected) {
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
     auto conn =
@@ -554,7 +555,8 @@ TEST_F(TcpConnectionUnitTest, CloseAndShutdownRemainIdempotentWhenDisconnected) 
     ::close(pair[1]);
 }
 
-TEST_F(TcpConnectionUnitTest, ConstructorHandlesNullSocketAndDispatchNullEvent) {
+TEST_F(TcpConnectionUnitTest,
+       ConstructorHandlesNullSocketAndDispatchNullEvent) {
     auto conn = std::make_shared<TcpConnection>(Socket::ptr{});
     ASSERT_NE(conn, nullptr);
     EXPECT_EQ(conn->fd(), -1);
@@ -577,8 +579,8 @@ TEST_F(TcpConnectionUnitTest, ReentrantDispatchPathWorksInsideInlineActor) {
     zco::WaitGroup done(1);
     zco::go([&]() {
         ASSERT_TRUE(conn->try_begin_inline_actor());
-        auto event =
-            std::make_shared<TcpConnection::Event>(TcpConnection::EventType::kClose);
+        auto event = std::make_shared<TcpConnection::Event>(
+            TcpConnection::EventType::kClose);
         EXPECT_EQ(conn->dispatch_event_and_wait(event), 0);
         conn->finish_inline_actor();
         done.done();
@@ -623,7 +625,8 @@ TEST_F(TcpConnectionUnitTest, SendInternalValidatesStateAndLength) {
     ::close(pair[1]);
 }
 
-TEST_F(TcpConnectionUnitTest, SendInternalClosesDisconnectingConnectionAfterFlush) {
+TEST_F(TcpConnectionUnitTest,
+       SendInternalClosesDisconnectingConnectionAfterFlush) {
     zco::init(1);
 
     int pair[2] = {-1, -1};
@@ -650,7 +653,8 @@ TEST_F(TcpConnectionUnitTest, SendInternalClosesDisconnectingConnectionAfterFlus
     ::close(pair[1]);
 }
 
-TEST_F(TcpConnectionUnitTest, SendInternalFastPathClosesDisconnectingConnection) {
+TEST_F(TcpConnectionUnitTest,
+       SendInternalFastPathClosesDisconnectingConnection) {
     zco::init(1);
 
     int pair[2] = {-1, -1};
@@ -711,8 +715,8 @@ TEST_F(TcpConnectionUnitTest, DispatchUsesInlineAndSchedulerWorkerPaths) {
     zco::WaitGroup done(1);
     zco::go([&]() {
         conn->actor_sched_id_ = zco::sched_id();
-        auto event =
-            std::make_shared<TcpConnection::Event>(TcpConnection::EventType::kRead);
+        auto event = std::make_shared<TcpConnection::Event>(
+            TcpConnection::EventType::kRead);
         event->max_read_bytes = 0;
         event->timeout_ms = 1;
         errno = 0;
@@ -726,7 +730,8 @@ TEST_F(TcpConnectionUnitTest, DispatchUsesInlineAndSchedulerWorkerPaths) {
     ::close(pair[1]);
 }
 
-TEST_F(TcpConnectionUnitTest, TryBeginInlineActorHandlesSchedMismatchAndBusyActor) {
+TEST_F(TcpConnectionUnitTest,
+       TryBeginInlineActorHandlesSchedMismatchAndBusyActor) {
     zco::init(1);
 
     int pair[2] = {-1, -1};
@@ -777,7 +782,8 @@ TEST_F(TcpConnectionUnitTest, ReadWriteTlsInternalValidationAndIoWaitPaths) {
     std::atomic<bool> write_ready{false};
     std::atomic<bool> read_wait_returned{false};
     zco::go([&]() {
-        write_ready.store(conn->wait_tls_io(true, 20), std::memory_order_release);
+        write_ready.store(conn->wait_tls_io(true, 20),
+                          std::memory_order_release);
         read_wait_returned.store(conn->wait_tls_io(false, 20),
                                  std::memory_order_release);
         done.done();

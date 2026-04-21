@@ -228,9 +228,9 @@ TEST(HttpResponseTest, DisableChunkedClearsStreamCallbacks) {
 
 TEST(HttpResponseTest, UpgradeToWebSocketClearsStreamingStateAndBody) {
     HttpResponse resp;
-    resp.status(HttpStatus::OK)
-        .body("payload")
-        .stream([](char *, size_t) { return 0U; });
+    resp.status(HttpStatus::OK).body("payload").stream([](char *, size_t) {
+        return 0U;
+    });
 
     WebSocketCallbacks callbacks;
     WebSocketOptions options;
@@ -262,7 +262,8 @@ TEST(HttpResponseTest, CookieFormattingCoversOptionalAttributes) {
     const std::string serialized = resp.serialize();
     EXPECT_NE(serialized.find("Set-Cookie: sid=abc"), std::string::npos);
     EXPECT_EQ(serialized.find("Set-Cookie: sid=abc;"), std::string::npos);
-    EXPECT_NE(serialized.find("Set-Cookie: sid=; Max-Age=0"), std::string::npos);
+    EXPECT_NE(serialized.find("Set-Cookie: sid=; Max-Age=0"),
+              std::string::npos);
 }
 
 TEST(HttpResponseTest, SerializeWithoutBodyStillWritesHeaders) {

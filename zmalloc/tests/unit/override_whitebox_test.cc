@@ -21,14 +21,15 @@ TEST(OverrideWhiteboxTest, BootstrapAllocateFreeRoundTrip) {
     ASSERT_NE(p, nullptr);
     EXPECT_TRUE(is_bootstrap_pointer(p));
     EXPECT_EQ(bootstrap_size(p), 32u);
-    EXPECT_TRUE(
-        bootstrap_contains_address(static_cast<void *>(static_cast<char *>(p))));
+    EXPECT_TRUE(bootstrap_contains_address(
+        static_cast<void *>(static_cast<char *>(p))));
     bootstrap_free(p);
     EXPECT_FALSE(is_bootstrap_pointer(p));
 }
 
 TEST(OverrideWhiteboxTest, BootstrapReallocatePaths) {
-    unsigned char *p = static_cast<unsigned char *>(bootstrap_reallocate(nullptr, 8));
+    unsigned char *p =
+        static_cast<unsigned char *>(bootstrap_reallocate(nullptr, 8));
     ASSERT_NE(p, nullptr);
     for (size_t i = 0; i < 8; ++i) {
         p[i] = static_cast<unsigned char>(i + 7);
@@ -147,8 +148,8 @@ TEST(OverrideWhiteboxTest, UnwrapAlignedPointerSuccessAndFailure) {
 
 TEST(OverrideWhiteboxTest, UnwrapAlignedPointerEdgeFailures) {
     EXPECT_FALSE(unwrap_aligned_pointer(nullptr, nullptr, nullptr));
-    EXPECT_FALSE(unwrap_aligned_pointer(reinterpret_cast<void *>(8), nullptr,
-                                        nullptr));
+    EXPECT_FALSE(
+        unwrap_aligned_pointer(reinterpret_cast<void *>(8), nullptr, nullptr));
 
     void *raw = allocate_bytes(128);
     ASSERT_NE(raw, nullptr);
@@ -158,16 +159,16 @@ TEST(OverrideWhiteboxTest, UnwrapAlignedPointerEdgeFailures) {
     header->magic = 0;
     header->raw = raw;
     header->user_size = 16;
-    EXPECT_FALSE(unwrap_aligned_pointer(reinterpret_cast<void *>(
-                                            header_addr + sizeof(AlignedHeader)),
-                                        nullptr, nullptr));
+    EXPECT_FALSE(unwrap_aligned_pointer(
+        reinterpret_cast<void *>(header_addr + sizeof(AlignedHeader)), nullptr,
+        nullptr));
 
     header->magic = kAlignedAllocMagic;
     int stack_value = 0;
     header->raw = &stack_value;
-    EXPECT_FALSE(unwrap_aligned_pointer(reinterpret_cast<void *>(
-                                            header_addr + sizeof(AlignedHeader)),
-                                        nullptr, nullptr));
+    EXPECT_FALSE(unwrap_aligned_pointer(
+        reinterpret_cast<void *>(header_addr + sizeof(AlignedHeader)), nullptr,
+        nullptr));
     deallocate_bytes(raw);
 }
 
@@ -179,7 +180,8 @@ TEST(OverrideWhiteboxTest, ReallocateBytesCoversAlignedPointerBranch) {
         aligned[i] = static_cast<unsigned char>(i ^ 0x5A);
     }
 
-    unsigned char *next = static_cast<unsigned char *>(reallocate_bytes(aligned, 96));
+    unsigned char *next =
+        static_cast<unsigned char *>(reallocate_bytes(aligned, 96));
     ASSERT_NE(next, nullptr);
     for (size_t i = 0; i < 32; ++i) {
         EXPECT_EQ(next[i], static_cast<unsigned char>(i ^ 0x5A));
@@ -219,7 +221,8 @@ TEST(OverrideWhiteboxTest, ShouldUseBootstrapAllocatorStateSwitches) {
     ensure_allocator_ready();
 }
 
-TEST(OverrideWhiteboxTest, WrapperFunctionsCfreeMemalignPvallocAndDeleteVariants) {
+TEST(OverrideWhiteboxTest,
+     WrapperFunctionsCfreeMemalignPvallocAndDeleteVariants) {
     void *p1 = memalign(64, 33);
     ASSERT_NE(p1, nullptr);
     cfree(p1);
@@ -231,7 +234,7 @@ TEST(OverrideWhiteboxTest, WrapperFunctionsCfreeMemalignPvallocAndDeleteVariants
 
     volatile size_t invalid_alignment = 24;
     EXPECT_EQ(aligned_alloc(static_cast<size_t>(invalid_alignment), 64),
-              nullptr); // 非法 alignment
+              nullptr);                        // 非法 alignment
     EXPECT_EQ(aligned_alloc(64, 96), nullptr); // size 不是 alignment 倍数
     void *p3 = aligned_alloc(64, 128);
     ASSERT_NE(p3, nullptr);
@@ -250,8 +253,8 @@ TEST(OverrideWhiteboxTest, WrapperFunctionsCfreeMemalignPvallocAndDeleteVariants
     EXPECT_EQ(posix_memalign(&pm, 4, 32), EINVAL);
     EXPECT_EQ(pm, nullptr);
     volatile std::uintptr_t null_addr = 0;
-    void **null_memptr = reinterpret_cast<void **>(
-        static_cast<std::uintptr_t>(null_addr));
+    void **null_memptr =
+        reinterpret_cast<void **>(static_cast<std::uintptr_t>(null_addr));
     EXPECT_EQ(posix_memalign(null_memptr, 16, 32), EINVAL);
 
     EXPECT_EQ(pvalloc(std::numeric_limits<size_t>::max()), nullptr);

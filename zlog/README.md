@@ -122,7 +122,7 @@ classDiagram
         #looper_ : AsyncLooper::ptr
         +AsyncLogger(logger_name, limit_level, formatter, sinks, looperType, milliseco)
         #log(data, len) void
-        #re_log(buffer) void
+        #real_log(buffer) void
     }
 
     class LoggerBuilder {
@@ -355,7 +355,7 @@ sequenceDiagram
         Worker->>Looper: 等待条件/超时
         Worker->>ProBuf: swap(ConBuf)
         Worker->>ConBuf: 获取数据
-        Worker->>Logger: re_log(buffer)
+        Worker->>Logger: real_log(buffer)
         loop 遍历所有 Sink
             Logger->>Sink: log(data, len)
         end

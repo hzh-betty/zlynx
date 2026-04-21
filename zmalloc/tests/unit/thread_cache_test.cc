@@ -234,7 +234,6 @@ TEST_F(ThreadCacheTest, ListTooLongWhenCountExceedsListSize) {
     list.max_size() = old_max;
 }
 
-
 #define ZMALLOC_TC_ALLOC_FREE_CASE(SZ)                                         \
     TEST_F(ThreadCacheTest, AllocFree_Size_##SZ) { AllocTouchFree(tc, SZ); }
 

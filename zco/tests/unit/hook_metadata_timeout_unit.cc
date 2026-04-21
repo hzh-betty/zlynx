@@ -4,10 +4,10 @@
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <string>
-#include <sys/un.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/uio.h>
+#include <sys/un.h>
 #include <unistd.h>
 
 #include <gtest/gtest.h>
@@ -577,7 +577,8 @@ TEST_F(HookMetadataTimeoutUnitTest, InvalidFdInCoroutineReturnsEbadfForHooks) {
     done.wait();
 }
 
-TEST_F(HookMetadataTimeoutUnitTest, ConnectWithMismatchedAddressFamilyFailsFast) {
+TEST_F(HookMetadataTimeoutUnitTest,
+       ConnectWithMismatchedAddressFamilyFailsFast) {
     init(1);
 
     const int fd = co_socket(AF_INET, SOCK_STREAM, 0);
@@ -659,7 +660,8 @@ TEST_F(HookMetadataTimeoutUnitTest, SendtoWithInvalidAddressLengthFailsFast) {
     co_close(fd);
 }
 
-TEST_F(HookMetadataTimeoutUnitTest, ReadvAndWritevTransferFragmentsAcrossSocketPair) {
+TEST_F(HookMetadataTimeoutUnitTest,
+       ReadvAndWritevTransferFragmentsAcrossSocketPair) {
     init(2);
 
     int pair[2] = {-1, -1};
@@ -738,8 +740,9 @@ TEST_F(HookMetadataTimeoutUnitTest, RecvfromReturnsPeerAddressAndPayload) {
         sockaddr_storage peer;
         std::memset(&peer, 0, sizeof(peer));
         socklen_t peer_len = sizeof(peer);
-        EXPECT_EQ(co_recvfrom(fd, out, 3, 0, reinterpret_cast<sockaddr *>(&peer),
-                              &peer_len, 100),
+        EXPECT_EQ(co_recvfrom(fd, out, 3, 0,
+                              reinterpret_cast<sockaddr *>(&peer), &peer_len,
+                              100),
                   3);
         EXPECT_STREQ(out, "udp");
         EXPECT_EQ(peer.ss_family, AF_INET);
@@ -842,7 +845,8 @@ TEST_F(HookMetadataTimeoutUnitTest, AcceptReturnsNonblockingClientFd) {
     co_close(listen_fd);
 }
 
-TEST_F(HookMetadataTimeoutUnitTest, SendtoNullAddressWithNonzeroLengthFailsFast) {
+TEST_F(HookMetadataTimeoutUnitTest,
+       SendtoNullAddressWithNonzeroLengthFailsFast) {
     init(1);
 
     const int fd = co_socket(AF_INET, SOCK_DGRAM, 0);
@@ -885,7 +889,8 @@ TEST_F(HookMetadataTimeoutUnitTest, RecvnZeroCountReturnsImmediately) {
     co_close(pair[1]);
 }
 
-TEST_F(HookMetadataTimeoutUnitTest, RecvnReturnsZeroWhenPeerClosesBeforeFullRead) {
+TEST_F(HookMetadataTimeoutUnitTest,
+       RecvnReturnsZeroWhenPeerClosesBeforeFullRead) {
     init(2);
 
     int pair[2] = {-1, -1};
@@ -906,8 +911,8 @@ TEST_F(HookMetadataTimeoutUnitTest, RecvnReturnsZeroWhenPeerClosesBeforeFullRead
 
     go([&done, fd = pair[1]]() {
         const char payload[3] = {'a', 'b', 'c'};
-        EXPECT_EQ(co_send(fd, payload, sizeof(payload), send_nosignal_flags_for_unit(),
-                          50),
+        EXPECT_EQ(co_send(fd, payload, sizeof(payload),
+                          send_nosignal_flags_for_unit(), 50),
                   3);
         co_close(fd);
         done.done();
@@ -930,8 +935,8 @@ TEST_F(HookMetadataTimeoutUnitTest, CoSendTimesOutWhenPeerNeverReads) {
         0);
 
     const int small = 1024;
-    ASSERT_EQ(::setsockopt(pair[0], SOL_SOCKET, SO_SNDBUF, &small, sizeof(small)),
-              0);
+    ASSERT_EQ(
+        ::setsockopt(pair[0], SOL_SOCKET, SO_SNDBUF, &small, sizeof(small)), 0);
 
     WaitGroup done(1);
     go([&done, fd = pair[0]]() {
@@ -971,7 +976,8 @@ TEST_F(HookMetadataTimeoutUnitTest, InvalidFdForRecvnSendAndSendtoReturnEbadf) {
         EXPECT_EQ(errno, EBADF);
 
         errno = 0;
-        EXPECT_EQ(co_sendto(-1, "x", 1, 0, reinterpret_cast<const sockaddr *>(&addr),
+        EXPECT_EQ(co_sendto(-1, "x", 1, 0,
+                            reinterpret_cast<const sockaddr *>(&addr),
                             static_cast<socklen_t>(sizeof(addr)), 10),
                   -1);
         EXPECT_EQ(errno, EBADF);
@@ -996,8 +1002,8 @@ TEST_F(HookMetadataTimeoutUnitTest,
 
     WaitGroup done(2);
     go([&done, fd = pair[0]]() {
-        EXPECT_EQ(co_sendto(fd, "xy", 2, send_nosignal_flags_for_unit(), nullptr,
-                            0, 100),
+        EXPECT_EQ(co_sendto(fd, "xy", 2, send_nosignal_flags_for_unit(),
+                            nullptr, 0, 100),
                   2);
         done.done();
     });
@@ -1111,7 +1117,8 @@ TEST_F(HookMetadataTimeoutUnitTest, RecvnWithZeroTimeoutReturnsEtimedout) {
     co_close(pair[1]);
 }
 
-TEST_F(HookMetadataTimeoutUnitTest, CoSendWithZeroTimeoutFailsWhenWriteWouldBlock) {
+TEST_F(HookMetadataTimeoutUnitTest,
+       CoSendWithZeroTimeoutFailsWhenWriteWouldBlock) {
     init(1);
 
     int pair[2] = {-1, -1};
@@ -1124,8 +1131,8 @@ TEST_F(HookMetadataTimeoutUnitTest, CoSendWithZeroTimeoutFailsWhenWriteWouldBloc
         0);
 
     const int small = 1024;
-    ASSERT_EQ(::setsockopt(pair[0], SOL_SOCKET, SO_SNDBUF, &small, sizeof(small)),
-              0);
+    ASSERT_EQ(
+        ::setsockopt(pair[0], SOL_SOCKET, SO_SNDBUF, &small, sizeof(small)), 0);
 
     WaitGroup done(1);
     go([&done, fd = pair[0]]() {
@@ -1162,7 +1169,8 @@ TEST_F(HookMetadataTimeoutUnitTest,
               0);
     ASSERT_EQ(::listen(listen_fd, 8), 0);
     socklen_t listen_len = sizeof(listen_addr);
-    ASSERT_EQ(::getsockname(listen_fd, reinterpret_cast<sockaddr *>(&listen_addr),
+    ASSERT_EQ(::getsockname(listen_fd,
+                            reinterpret_cast<sockaddr *>(&listen_addr),
                             &listen_len),
               0);
 
@@ -1210,9 +1218,9 @@ TEST_F(HookMetadataTimeoutUnitTest, AcceptOnNonListeningSocketReturnsError) {
         std::memset(&peer, 0, sizeof(peer));
         socklen_t peer_len = sizeof(peer);
         errno = 0;
-        EXPECT_EQ(co_accept(fd, reinterpret_cast<sockaddr *>(&peer), &peer_len,
-                            50),
-                  -1);
+        EXPECT_EQ(
+            co_accept(fd, reinterpret_cast<sockaddr *>(&peer), &peer_len, 50),
+            -1);
         EXPECT_TRUE(errno == EINVAL || errno == ENOTSOCK || errno == EBADF ||
                     errno == EOPNOTSUPP);
         done.done();

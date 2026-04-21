@@ -52,9 +52,9 @@ TEST_F(RateLimiterTest, FactoryCreatesInstances) {
 }
 
 TEST_F(RateLimiterTest, FactoryFallsBackForUnknownTypeAndUnit) {
-    auto fallback = RateLimiter::newRateLimiter(
-        static_cast<RateLimiter::Type>(999), 0,
-        static_cast<RateLimiter::TimeUnit>(999));
+    auto fallback =
+        RateLimiter::newRateLimiter(static_cast<RateLimiter::Type>(999), 0,
+                                    static_cast<RateLimiter::TimeUnit>(999));
     ASSERT_NE(fallback, nullptr);
 
     EXPECT_TRUE(fallback->isAllowed("fallback"));
@@ -77,9 +77,9 @@ TEST_F(RateLimiterTest, FixedWindow_BlocksAfterCapacity_ThenResets) {
 }
 
 TEST_F(RateLimiterTest, RetryAfterAndZeroCapacityPathsAreCovered) {
-    auto fixed = RateLimiter::newRateLimiter(RateLimiter::Type::FIXED_WINDOW, 0,
-                                             RateLimiter::TimeUnit::MILLISECOND,
-                                             now());
+    auto fixed =
+        RateLimiter::newRateLimiter(RateLimiter::Type::FIXED_WINDOW, 0,
+                                    RateLimiter::TimeUnit::MILLISECOND, now());
     ASSERT_NE(fixed, nullptr);
     EXPECT_EQ(fixed->retryAfter("none").count(), 0);
     EXPECT_TRUE(fixed->isAllowed("fw"));
@@ -99,9 +99,8 @@ TEST_F(RateLimiterTest, RetryAfterAndZeroCapacityPathsAreCovered) {
     advance_ms(1000);
     EXPECT_EQ(sliding->retryAfter("sw").count(), 0);
 
-    auto token_bucket =
-        RateLimiter::newRateLimiter(RateLimiter::Type::TOKEN_BUCKET, 0,
-                                    RateLimiter::TimeUnit::HOUR, now());
+    auto token_bucket = RateLimiter::newRateLimiter(
+        RateLimiter::Type::TOKEN_BUCKET, 0, RateLimiter::TimeUnit::HOUR, now());
     ASSERT_NE(token_bucket, nullptr);
     EXPECT_EQ(token_bucket->retryAfter("none").count(), 0);
     EXPECT_TRUE(token_bucket->isAllowed("tb"));

@@ -200,8 +200,9 @@ TEST(HttpRequestTest, ParseFormUrlencodedCoversNonFormEmptyAndCache) {
 
 TEST(HttpRequestTest, CookieParsingHandlesFlagsAndMalformedPairs) {
     HttpRequest req;
-    req.set_header("Cookie",
-                   "a=1; theme=dark ; flag ; =skip ; ; spaced = value ;multi=a=b");
+    req.set_header(
+        "Cookie",
+        "a=1; theme=dark ; flag ; =skip ; ; spaced = value ;multi=a=b");
 
     EXPECT_EQ(req.cookie("a"), "1");
     EXPECT_EQ(req.cookie("theme"), "dark");
@@ -218,7 +219,8 @@ TEST(HttpRequestTest, CookieParsingHandlesFlagsAndMalformedPairs) {
     EXPECT_EQ(no_cookie.cookie("none", "fallback"), "fallback");
 }
 
-TEST(HttpRequestTest, ParseMultipartCoversFailureCacheAndContentTypeInvalidation) {
+TEST(HttpRequestTest,
+     ParseMultipartCoversFailureCacheAndContentTypeInvalidation) {
     HttpRequest req;
     req.set_header("Content-Type", "application/json");
     req.set_body("{}");

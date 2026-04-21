@@ -61,7 +61,6 @@ TEST_F(RouterDetailedTest, StaticVsParamPriority) {
     EXPECT_EQ(param_called, 1);
 }
 
-
 TEST_F(RouterDetailedTest, NestedPathParams) {
     std::string captured_org, captured_repo, captured_issue;
 

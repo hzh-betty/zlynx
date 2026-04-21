@@ -145,7 +145,9 @@ TEST_F(MultipartTest, SupportsQuotedBoundaryAndLowercaseHeaderNames) {
     auto req = std::make_shared<HttpRequest>();
     req->set_method(HttpMethod::POST);
     req->set_path("/upload");
-    req->set_header("Content-Type", "multipart/form-data; charset=utf-8; boundary=\"quoted-b\"");
+    req->set_header(
+        "Content-Type",
+        "multipart/form-data; charset=utf-8; boundary=\"quoted-b\"");
 
     std::string body;
     body += "--quoted-b\r\n";
@@ -262,7 +264,8 @@ TEST_F(MultipartTest, UploadedFileSaveToFailureReturnsErrorText) {
     EXPECT_NE(err.find("Failed to write file"), std::string::npos);
 }
 
-TEST_F(MultipartTest, SupportsBoundaryWithUppercaseTokenAndRejectsEmptyBoundary) {
+TEST_F(MultipartTest,
+       SupportsBoundaryWithUppercaseTokenAndRejectsEmptyBoundary) {
     {
         auto req = std::make_shared<HttpRequest>();
         req->set_method(HttpMethod::POST);
@@ -294,7 +297,8 @@ TEST_F(MultipartTest, SupportsBoundaryWithUppercaseTokenAndRejectsEmptyBoundary)
         req->set_header("Content-Type", "multipart/form-data; boundary=\"\"");
         req->set_body("--x--\r\n");
         EXPECT_FALSE(req->parse_multipart());
-        EXPECT_NE(req->multipart_error().find("Missing boundary"), std::string::npos);
+        EXPECT_NE(req->multipart_error().find("Missing boundary"),
+                  std::string::npos);
     }
 }
 
@@ -302,7 +306,8 @@ TEST_F(MultipartTest, AcceptsSingleLfAfterBoundaryLine) {
     auto req = std::make_shared<HttpRequest>();
     req->set_method(HttpMethod::POST);
     req->set_path("/upload");
-    req->set_header("Content-Type", "multipart/form-data; boundary=lf-boundary");
+    req->set_header("Content-Type",
+                    "multipart/form-data; boundary=lf-boundary");
 
     std::string body;
     body += "--lf-boundary\n";

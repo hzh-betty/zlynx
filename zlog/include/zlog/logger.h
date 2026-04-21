@@ -221,7 +221,7 @@ class AsyncLogger final : public Logger {
      * 将数据从缓冲区中落地到各个sink
      * @param buffer 缓冲区
      */
-    void re_log(const Buffer &buffer) const;
+    void real_log(const Buffer &buffer) const;
 
   protected:
     AsyncLooper::ptr looper_; // 异步循环器

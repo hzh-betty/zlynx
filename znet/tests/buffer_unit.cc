@@ -173,7 +173,8 @@ TEST(BufferUnitTest, ReadTimeoutStoresSavedErrnoWhenReadFails) {
     zco::go([&]() {
         int local_saved_errno = 0;
         errno = 0;
-        EXPECT_EQ(input.read_from_socket(reader, 4, 10, &local_saved_errno), -1);
+        EXPECT_EQ(input.read_from_socket(reader, 4, 10, &local_saved_errno),
+                  -1);
         captured_errno.store(errno, std::memory_order_release);
         saved_errno.store(local_saved_errno, std::memory_order_release);
         done.done();

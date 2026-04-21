@@ -108,9 +108,7 @@ inline zlog::Logger::ptr get_logger_ptr() {
     return logger;
 }
 
-inline zlog::Logger *get_logger() {
-    return get_logger_ptr().get();
-}
+inline zlog::Logger *get_logger() { return get_logger_ptr().get(); }
 
 inline bool should_log(zlog::LogLevel::value level) {
     return static_cast<int>(level) >=
@@ -121,9 +119,7 @@ inline bool should_log(zlog::LogLevel::value level) {
  * @brief 获取 zco 默认日志器。
  * @return 日志器智能指针，若日志系统不可用则返回空。
  */
-inline zlog::Logger::ptr default_logger() {
-    return get_logger_ptr();
-}
+inline zlog::Logger::ptr default_logger() { return get_logger_ptr(); }
 
 } // namespace zco
 

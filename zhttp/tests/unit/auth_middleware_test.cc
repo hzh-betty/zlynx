@@ -125,7 +125,8 @@ TEST_F(AuthenticationMiddlewareTest, AllowWhenBearerTokenValid) {
     EXPECT_EQ(resp.status_code(), HttpStatus::OK);
 }
 
-TEST_F(AuthenticationMiddlewareTest, HandlesBearerEdgeCasesAndCustomUnauthorized) {
+TEST_F(AuthenticationMiddlewareTest,
+       HandlesBearerEdgeCasesAndCustomUnauthorized) {
     AuthenticationMiddleware::Options options;
     options.use_session = true;
     options.session_auth_key = "user_id";
@@ -201,9 +202,8 @@ TEST_F(AuthenticationMiddlewareTest,
         AuthenticationMiddleware::Options options;
         options.use_session = false;
         options.use_bearer_token = false;
-        options.token_validator = [](const std::string &, const HttpRequest::ptr &) {
-            return true;
-        };
+        options.token_validator = [](const std::string &,
+                                     const HttpRequest::ptr &) { return true; };
         AuthenticationMiddleware middleware(options);
 
         auto req = make_get_request("/secure");

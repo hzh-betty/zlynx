@@ -151,8 +151,7 @@ TEST(SessionCoreTest, SessionMutationFlagsHandleNoopAndEraseClearPaths) {
 }
 
 TEST(SessionManagerCoreTest, HandlesLoadCreateSaveDestroyAndExpiration) {
-    SessionManager manager(
-        SessionManager::Options{std::chrono::seconds(1), 1});
+    SessionManager manager(SessionManager::Options{std::chrono::seconds(1), 1});
 
     EXPECT_EQ(manager.load(""), nullptr);
     EXPECT_EQ(manager.load("missing"), nullptr);

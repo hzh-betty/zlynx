@@ -114,7 +114,6 @@ TEST_F(SinkTest, StdOutSinkEmptyString) {
     EXPECT_EQ(output, "");
 }
 
-
 TEST_F(SinkTest, FileSinkBasic) {
     std::string filepath = testDir + "/test.log";
 

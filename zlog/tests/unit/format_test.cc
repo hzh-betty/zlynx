@@ -114,7 +114,8 @@ TEST_F(FormatTest, TimeFormatItemCustom) {
 
 TEST_F(FormatTest, TimeFormatItemInvalidFormatFallback) {
     TimeFormatItem item("");
-    LogMessage testMsg(LogLevel::value::INFO, "test.cc", 1, "payload", "logger");
+    LogMessage testMsg(LogLevel::value::INFO, "test.cc", 1, "payload",
+                       "logger");
     testMsg.curtime_ = msg->curtime_ + 1;
     fmt::memory_buffer buffer;
     item.format(buffer, testMsg);

@@ -57,14 +57,14 @@ AsyncLogger::AsyncLogger(const char *logger_name,
     : Logger(logger_name, limit_level, formatter, sinks),
       looper_(std::make_shared<AsyncLooper>(
           AsyncLooper::Functor{
-              [this](const Buffer &buf) { this->re_log(buf); }},
+              [this](const Buffer &buf) { this->real_log(buf); }},
           looper_type, milliseco)) {}
 
 void AsyncLogger::log(const char *data, const size_t len) {
     looper_->push(data, len);
 }
 
-void AsyncLogger::re_log(const Buffer &buffer) const {
+void AsyncLogger::real_log(const Buffer &buffer) const {
     if (sinks_.empty())
         return;
     for (auto &sink : sinks_) {

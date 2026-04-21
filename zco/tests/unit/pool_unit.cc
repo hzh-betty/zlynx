@@ -102,13 +102,12 @@ TEST_F(PoolUnitByHeaderTest, PopReturnsCachedElementFromSameThreadBucket) {
 
 TEST_F(PoolUnitByHeaderTest, CopyAndMoveConstructorsKeepUsableState) {
     std::atomic<int> destroyed(0);
-    Pool original(
-        []() -> void * { return new int(7); },
-        [&destroyed](void *ptr) {
-            destroyed.fetch_add(1, std::memory_order_relaxed);
-            delete static_cast<int *>(ptr);
-        },
-        2);
+    Pool original([]() -> void * { return new int(7); },
+                  [&destroyed](void *ptr) {
+                      destroyed.fetch_add(1, std::memory_order_relaxed);
+                      delete static_cast<int *>(ptr);
+                  },
+                  2);
 
     Pool copied(original);
     void *copied_elem = copied.pop();
@@ -170,7 +169,8 @@ TEST_F(PoolUnitByHeaderTest, ClearWithoutDestroyCallbackDropsElementsSafely) {
     EXPECT_EQ(pool.size(), 0u);
 }
 
-TEST_F(PoolUnitByHeaderTest, CrossThreadBucketCannotBePoppedFromMainThreadWithoutCreate) {
+TEST_F(PoolUnitByHeaderTest,
+       CrossThreadBucketCannotBePoppedFromMainThreadWithoutCreate) {
     Pool pool(nullptr, nullptr, 4);
     static int value = 99;
 

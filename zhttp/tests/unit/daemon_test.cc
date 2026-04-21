@@ -3,11 +3,11 @@
 
 #include <gtest/gtest.h>
 
+#include <cerrno>
 #include <chrono>
 #include <csignal>
-#include <cstdlib>
 #include <cstdio>
-#include <cerrno>
+#include <cstdlib>
 #include <fstream>
 #include <string>
 #include <sys/wait.h>
@@ -108,8 +108,8 @@ TEST(DaemonTest, ForegroundStartRunsMainCallbackAndSetsProcessInfo) {
 }
 
 TEST(DaemonTest, ReturnsErrorWhenMainCallbackIsEmpty) {
-    const int rc = Daemon::start_daemon(0, nullptr, Daemon::MainCallback{},
-                                        false);
+    const int rc =
+        Daemon::start_daemon(0, nullptr, Daemon::MainCallback{}, false);
     EXPECT_EQ(rc, -1);
 }
 
@@ -183,8 +183,8 @@ TEST(DaemonTest, DaemonModeCanBeStoppedBySignalWhileWaitingChild) {
 
     std::string daemon_parent_pid_text;
     ASSERT_TRUE(wait_for_file_content(pid_template, &daemon_parent_pid_text));
-    const pid_t daemon_parent_pid =
-        static_cast<pid_t>(std::strtol(daemon_parent_pid_text.c_str(), nullptr, 10));
+    const pid_t daemon_parent_pid = static_cast<pid_t>(
+        std::strtol(daemon_parent_pid_text.c_str(), nullptr, 10));
     ASSERT_GT(daemon_parent_pid, 1);
 
     ASSERT_EQ(::kill(daemon_parent_pid, SIGTERM), 0);

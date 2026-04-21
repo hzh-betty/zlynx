@@ -59,7 +59,7 @@ void *ThreadCache::allocate(size_t size) {
 }
 
 void ThreadCache::deallocate(void *ptr, size_t size) {
-    assert(ptr); // GCOVR_EXCL_LINE
+    assert(ptr);               // GCOVR_EXCL_LINE
     assert(size <= MAX_BYTES); // GCOVR_EXCL_LINE
 
     // 关键步骤：释放也用查表统一 size->index/align_size 的策略，避免重复计算。

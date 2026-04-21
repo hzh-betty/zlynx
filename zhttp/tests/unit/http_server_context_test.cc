@@ -5,12 +5,12 @@
 #include "zco/sched.h"
 #include "znet/socket.h"
 
-#include <gtest/gtest.h>
 #include <csignal>
+#include <gtest/gtest.h>
 #include <limits>
 #include <stdexcept>
-#include <tuple>
 #include <sys/socket.h>
+#include <tuple>
 #include <unistd.h>
 
 namespace zhttp {
@@ -45,17 +45,17 @@ class HttpServerContextTestDouble : public HttpServer {
         : HttpServer(std::move(listen_address)) {}
 
     using HttpServer::find_websocket_session;
+    using HttpServer::handle_request;
     using HttpServer::is_async_stream_active;
     using HttpServer::is_websocket_active;
     using HttpServer::mark_async_stream_active;
     using HttpServer::mark_async_stream_finished;
-    using HttpServer::handle_request;
+    using HttpServer::on_close;
+    using HttpServer::on_connection;
     using HttpServer::on_message;
     using HttpServer::register_websocket_session;
     using HttpServer::send_async_chunked_response;
     using HttpServer::take_websocket_session;
-    using HttpServer::on_close;
-    using HttpServer::on_connection;
 
     znet::TcpServer::ptr tcp_server_for_test() const { return tcp_server(); }
 };
@@ -157,7 +157,8 @@ TEST(HttpServerContextTest, NullConnectionCallbacksAreNoops) {
     server.on_close(nullptr);
 }
 
-TEST(HttpServerContextTest, OnMessageParseErrorAndWebSocketSessionFailurePaths) {
+TEST(HttpServerContextTest,
+     OnMessageParseErrorAndWebSocketSessionFailurePaths) {
     auto listen_address = std::make_shared<znet::IPv4Address>("127.0.0.1", 0);
     HttpServerContextTestDouble server(listen_address);
 
@@ -206,12 +207,14 @@ TEST(HttpServerContextTest, OnMessageParseErrorAndWebSocketSessionFailurePaths) 
 TEST(HttpServerContextTest, HandleRequestCoversSendFailureBranches) {
     auto listen_address = std::make_shared<znet::IPv4Address>("127.0.0.1", 0);
     HttpServerContextTestDouble server(listen_address);
-    server.router().get("/plain", [](const HttpRequest::ptr &, HttpResponse &resp) {
-        resp.status(HttpStatus::OK).text("ok");
-    });
-    server.router().get("/chunked", [](const HttpRequest::ptr &, HttpResponse &resp) {
-        resp.status(HttpStatus::OK).body("chunk").enable_chunked();
-    });
+    server.router().get("/plain",
+                        [](const HttpRequest::ptr &, HttpResponse &resp) {
+                            resp.status(HttpStatus::OK).text("ok");
+                        });
+    server.router().get(
+        "/chunked", [](const HttpRequest::ptr &, HttpResponse &resp) {
+            resp.status(HttpStatus::OK).body("chunk").enable_chunked();
+        });
 
     ScopedSignalHandler ignore_sigpipe(SIGPIPE, SIG_IGN);
 
@@ -239,37 +242,39 @@ TEST(HttpServerContextTest, HandleRequestCoversSendFailureBranches) {
         EXPECT_FALSE(server.handle_request(conn, request_chunked));
         conn->close();
     }
-
 }
 
 TEST(HttpServerContextTest, HandleRequestWebSocketUpgradeBranches) {
     auto listen_address = std::make_shared<znet::IPv4Address>("127.0.0.1", 0);
     HttpServerContextTestDouble server(listen_address);
 
-    server.router().get("/ws-ok", [](const HttpRequest::ptr &, HttpResponse &resp) {
-        resp.upgrade_to_websocket(WebSocketCallbacks{});
-    });
-    server.router().get("/ws-subproto",
+    server.router().get("/ws-ok",
                         [](const HttpRequest::ptr &, HttpResponse &resp) {
-                            WebSocketOptions opt;
-                            opt.subprotocols = {"chat"};
-                            resp.upgrade_to_websocket(WebSocketCallbacks{}, opt);
+                            resp.upgrade_to_websocket(WebSocketCallbacks{});
                         });
-    server.router().get("/ws-throw", [](const HttpRequest::ptr &, HttpResponse &resp) {
-        WebSocketCallbacks callbacks;
-        callbacks.on_open = [](const WebSocketConnection::ptr &,
-                               const HttpRequest::ptr &) {
-            throw std::runtime_error("open failed");
-        };
-        resp.upgrade_to_websocket(callbacks);
-    });
+    server.router().get(
+        "/ws-subproto", [](const HttpRequest::ptr &, HttpResponse &resp) {
+            WebSocketOptions opt;
+            opt.subprotocols = {"chat"};
+            resp.upgrade_to_websocket(WebSocketCallbacks{}, opt);
+        });
+    server.router().get(
+        "/ws-throw", [](const HttpRequest::ptr &, HttpResponse &resp) {
+            WebSocketCallbacks callbacks;
+            callbacks.on_open = [](const WebSocketConnection::ptr &,
+                                   const HttpRequest::ptr &) {
+                throw std::runtime_error("open failed");
+            };
+            resp.upgrade_to_websocket(callbacks);
+        });
 
     auto make_conn = []() {
         int pair[2] = {-1, -1};
         EXPECT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
         auto conn = std::make_shared<znet::TcpConnection>(
             std::make_shared<znet::Socket>(pair[0]));
-        return std::tuple<znet::TcpConnection::ptr, int, int>{conn, pair[0], pair[1]};
+        return std::tuple<znet::TcpConnection::ptr, int, int>{conn, pair[0],
+                                                              pair[1]};
     };
 
     auto make_ws_request = [](const std::string &path,
@@ -372,7 +377,8 @@ TEST(HttpServerContextTest, OnMessageReturnsEarlyWhenAsyncStreamIsActive) {
     ::close(pair[1]);
 }
 
-TEST(HttpServerContextTest, SendAsyncChunkedResponseCoversFailureAndClosePaths) {
+TEST(HttpServerContextTest,
+     SendAsyncChunkedResponseCoversFailureAndClosePaths) {
     auto listen_address = std::make_shared<znet::IPv4Address>("127.0.0.1", 0);
     HttpServerContextTestDouble server(listen_address);
     ScopedSignalHandler ignore_sigpipe(SIGPIPE, SIG_IGN);
@@ -404,10 +410,9 @@ TEST(HttpServerContextTest, SendAsyncChunkedResponseCoversFailureAndClosePaths) 
 
         HttpResponse response;
         response.set_version(HttpVersion::HTTP_1_1);
-        response.async_stream([](HttpResponse::AsyncChunkSender,
-                                 HttpResponse::AsyncStreamCloser close) {
-            close();
-        });
+        response.async_stream(
+            [](HttpResponse::AsyncChunkSender,
+               HttpResponse::AsyncStreamCloser close) { close(); });
 
         ::close(pair[1]); // 响应头发送失败。
         EXPECT_FALSE(server.send_async_chunked_response(conn, response));
@@ -424,14 +429,15 @@ TEST(HttpServerContextTest, SendAsyncChunkedResponseCoversFailureAndClosePaths) 
         int peer_fd = pair[1];
         HttpResponse response;
         response.set_version(HttpVersion::HTTP_1_1);
-        response.async_stream([&peer_fd](HttpResponse::AsyncChunkSender send,
-                                         HttpResponse::AsyncStreamCloser close) {
-            ::close(peer_fd);
-            peer_fd = -1;
-            EXPECT_FALSE(send("abc"));
-            close();
-            close(); // 覆盖 finish_stream 的重复关闭分支。
-        });
+        response.async_stream(
+            [&peer_fd](HttpResponse::AsyncChunkSender send,
+                       HttpResponse::AsyncStreamCloser close) {
+                ::close(peer_fd);
+                peer_fd = -1;
+                EXPECT_FALSE(send("abc"));
+                close();
+                close(); // 覆盖 finish_stream 的重复关闭分支。
+            });
 
         EXPECT_TRUE(server.send_async_chunked_response(conn, response));
         EXPECT_FALSE(server.is_async_stream_active(conn));

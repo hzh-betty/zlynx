@@ -63,7 +63,8 @@ TEST_F(AcceptorUnitTest, StartOnStackInstanceFailsBadWeakPtr) {
 
 TEST_F(AcceptorUnitTest, StartFailsWhenBindOrListenFails) {
     // AF_UNIX 地址走 TCP 创建路径会导致 bind/listen 失败，覆盖失败回滚分支。
-    auto acceptor = std::make_shared<Acceptor>(std::make_shared<UnixAddress>(""), 8);
+    auto acceptor =
+        std::make_shared<Acceptor>(std::make_shared<UnixAddress>(""), 8);
     ASSERT_NE(acceptor, nullptr);
 
     EXPECT_FALSE(acceptor->start());
@@ -73,8 +74,8 @@ TEST_F(AcceptorUnitTest, StartFailsWhenBindOrListenFails) {
 TEST_F(AcceptorUnitTest, StartStopAreIdempotent) {
     zco::init(1);
 
-    auto acceptor =
-        std::make_shared<Acceptor>(std::make_shared<IPv4Address>("127.0.0.1", 0), 8);
+    auto acceptor = std::make_shared<Acceptor>(
+        std::make_shared<IPv4Address>("127.0.0.1", 0), 8);
     ASSERT_NE(acceptor, nullptr);
     ASSERT_TRUE(acceptor->start());
     ASSERT_TRUE(acceptor->start());
@@ -89,8 +90,8 @@ TEST_F(AcceptorUnitTest, StartStopAreIdempotent) {
 TEST_F(AcceptorUnitTest, AcceptCallbackReceivesClientSocket) {
     zco::init(2);
 
-    auto acceptor =
-        std::make_shared<Acceptor>(std::make_shared<IPv4Address>("127.0.0.1", 0), 8);
+    auto acceptor = std::make_shared<Acceptor>(
+        std::make_shared<IPv4Address>("127.0.0.1", 0), 8);
     ASSERT_NE(acceptor, nullptr);
 
     std::atomic<int> accepted_count{0};
@@ -125,8 +126,8 @@ TEST_F(AcceptorUnitTest, AcceptCallbackReceivesClientSocket) {
 TEST_F(AcceptorUnitTest, NullCallbackPathDoesNotBlockStop) {
     zco::init(1);
 
-    auto acceptor =
-        std::make_shared<Acceptor>(std::make_shared<IPv4Address>("127.0.0.1", 0), 8);
+    auto acceptor = std::make_shared<Acceptor>(
+        std::make_shared<IPv4Address>("127.0.0.1", 0), 8);
     ASSERT_NE(acceptor, nullptr);
     ASSERT_TRUE(acceptor->start());
 
@@ -144,8 +145,8 @@ TEST_F(AcceptorUnitTest, NullCallbackPathDoesNotBlockStop) {
 }
 
 TEST_F(AcceptorUnitTest, AcceptLoopExitsWhenListenSocketBecomesNull) {
-    auto acceptor =
-        std::make_shared<Acceptor>(std::make_shared<IPv4Address>("127.0.0.1", 0), 8);
+    auto acceptor = std::make_shared<Acceptor>(
+        std::make_shared<IPv4Address>("127.0.0.1", 0), 8);
     ASSERT_NE(acceptor, nullptr);
 
     acceptor->running_.store(true, std::memory_order_release);
@@ -154,8 +155,8 @@ TEST_F(AcceptorUnitTest, AcceptLoopExitsWhenListenSocketBecomesNull) {
 }
 
 TEST_F(AcceptorUnitTest, AcceptLoopHandlesGeneralAcceptErrorAndBackoff) {
-    auto acceptor =
-        std::make_shared<Acceptor>(std::make_shared<IPv4Address>("127.0.0.1", 0), 8);
+    auto acceptor = std::make_shared<Acceptor>(
+        std::make_shared<IPv4Address>("127.0.0.1", 0), 8);
     ASSERT_NE(acceptor, nullptr);
 
     acceptor->listen_socket_ = Socket::create_tcp();
@@ -171,8 +172,8 @@ TEST_F(AcceptorUnitTest, AcceptLoopHandlesGeneralAcceptErrorAndBackoff) {
 TEST_F(AcceptorUnitTest, AcceptLoopBreaksOnEbafdAfterAcceptFailure) {
     zco::init(1);
 
-    auto acceptor =
-        std::make_shared<Acceptor>(std::make_shared<IPv4Address>("127.0.0.1", 0), 8);
+    auto acceptor = std::make_shared<Acceptor>(
+        std::make_shared<IPv4Address>("127.0.0.1", 0), 8);
     ASSERT_NE(acceptor, nullptr);
     acceptor->listen_socket_ = Socket::create_tcp();
     ASSERT_NE(acceptor->listen_socket_, nullptr);

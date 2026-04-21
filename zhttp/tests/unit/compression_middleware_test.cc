@@ -1,8 +1,8 @@
 #include "zhttp/mid/compression_middleware.h"
 
+#include <brotli/decode.h>
 #include <gtest/gtest.h>
 #include <zlib.h>
-#include <brotli/decode.h>
 
 using namespace zhttp;
 using namespace zhttp::mid;
@@ -217,7 +217,8 @@ TEST(CompressionMiddlewareTest, SkipCompressionForHeadRequest) {
     EXPECT_EQ(resp.body_content(), plain);
 }
 
-TEST(CompressionMiddlewareTest, SkipCompressionForPreEncodedOrStreamingResponse) {
+TEST(CompressionMiddlewareTest,
+     SkipCompressionForPreEncodedOrStreamingResponse) {
     CompressionMiddleware::Options opt;
     opt.enable_gzip = true;
     opt.enable_br = false;
@@ -313,9 +314,7 @@ TEST(CompressionMiddlewareTest,
 
     {
         HttpResponse image_resp;
-        image_resp.status(HttpStatus::OK)
-            .content_type("image/png")
-            .body(plain);
+        image_resp.status(HttpStatus::OK).content_type("image/png").body(plain);
         middleware.after(req, image_resp);
         EXPECT_EQ(image_resp.headers().count("Content-Encoding"), 0U);
     }

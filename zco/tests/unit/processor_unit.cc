@@ -1,6 +1,6 @@
 #include <atomic>
-#include <deque>
 #include <chrono>
+#include <deque>
 #include <sys/epoll.h>
 #include <thread>
 
@@ -118,9 +118,8 @@ TEST_F(ProcessorUnitTest, RunLoopExecutesEnqueuedTaskToCompletion) {
     std::atomic<int> counter(0);
 
     processor.start();
-    processor.enqueue_task([&counter]() {
-        counter.fetch_add(1, std::memory_order_release);
-    });
+    processor.enqueue_task(
+        [&counter]() { counter.fetch_add(1, std::memory_order_release); });
 
     const auto deadline =
         std::chrono::steady_clock::now() + std::chrono::milliseconds(500);

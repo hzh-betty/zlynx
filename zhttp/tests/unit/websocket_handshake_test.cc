@@ -255,15 +255,15 @@ TEST(WebSocketHandshakeTest, SessionOnOpenHandlesCallbacksAndExceptions) {
             throw std::runtime_error("open boom");
         };
         callbacks.on_close = [&close_count, &close_code, &close_reason](
-                                 const WebSocketConnection::ptr &, uint16_t code,
-                                 const std::string &reason) {
+                                 const WebSocketConnection::ptr &,
+                                 uint16_t code, const std::string &reason) {
             ++close_count;
             close_code = code;
             close_reason = reason;
         };
-        callbacks.on_error = [&error_count, &error_text](
-                                 const WebSocketConnection::ptr &,
-                                 const std::string &text) {
+        callbacks.on_error = [&error_count,
+                              &error_text](const WebSocketConnection::ptr &,
+                                           const std::string &text) {
             ++error_count;
             error_text = text;
         };
@@ -342,9 +342,9 @@ TEST(WebSocketHandshakeTest, SessionOnMessageHandlesErrorBranches) {
                                             uint16_t, const std::string &) {
             ++close_count;
         };
-        callbacks.on_error = [&error_count, &error_text](
-                                 const WebSocketConnection::ptr &,
-                                 const std::string &text) {
+        callbacks.on_error = [&error_count,
+                              &error_text](const WebSocketConnection::ptr &,
+                                           const std::string &text) {
             ++error_count;
             error_text = text;
         };
@@ -392,9 +392,8 @@ TEST(WebSocketHandshakeTest, SessionOnMessageHandlesErrorBranches) {
         int error_count = 0;
         WebSocketCallbacks callbacks;
         callbacks.on_message = [](const WebSocketConnection::ptr &,
-                                  std::string &&, WebSocketMessageType) {
-            throw 123;
-        };
+                                  std::string &&,
+                                  WebSocketMessageType) { throw 123; };
         callbacks.on_close = [&close_count](const WebSocketConnection::ptr &,
                                             uint16_t, const std::string &) {
             ++close_count;
@@ -445,8 +444,8 @@ TEST(WebSocketHandshakeTest, SessionPingFailureAndCloseNotificationAreHandled) {
         std::string close_reason;
         WebSocketCallbacks callbacks;
         callbacks.on_close = [&close_count, &close_code, &close_reason](
-                                 const WebSocketConnection::ptr &, uint16_t code,
-                                 const std::string &reason) {
+                                 const WebSocketConnection::ptr &,
+                                 uint16_t code, const std::string &reason) {
             ++close_count;
             close_code = code;
             close_reason = reason;

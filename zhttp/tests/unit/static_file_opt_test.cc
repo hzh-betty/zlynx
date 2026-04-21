@@ -348,11 +348,13 @@ TEST_F(StaticFileMiddlewareTest, MissingFileReturnsContinueForDownstreamRoute) {
     EXPECT_TRUE(middleware.before(req, resp));
 }
 
-TEST_F(StaticFileMiddlewareTest, DisablesConditionalAndVariantHeadersByOptions) {
+TEST_F(StaticFileMiddlewareTest,
+       DisablesConditionalAndVariantHeadersByOptions) {
     TempDir dir;
     dir.write_file("hello.txt", "hello");
 
-    StaticFileMiddleware::Options opt = make_options("/assets", dir.path(), false);
+    StaticFileMiddleware::Options opt =
+        make_options("/assets", dir.path(), false);
     opt.enable_etag = false;
     opt.enable_last_modified = false;
     opt.gzip_static = false;
@@ -519,7 +521,8 @@ TEST_F(StaticFileMiddlewareTest, SkipCachingWhenFileExceedsConfiguredMaxSize) {
     TempDir dir;
     const std::string file_path = dir.write_file("large.txt", "0123456789");
 
-    StaticFileMiddleware::Options opt = make_options("/assets", dir.path(), true, 30);
+    StaticFileMiddleware::Options opt =
+        make_options("/assets", dir.path(), true, 30);
     opt.max_cached_file_size = 3;
     StaticFileMiddleware middleware(opt);
 

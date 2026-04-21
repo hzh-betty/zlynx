@@ -9,8 +9,8 @@
 
 #include <atomic>
 #include <chrono>
-#include <cstring>
 #include <cstdlib>
+#include <cstring>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -36,10 +36,9 @@ std::pair<std::string, std::string> create_temp_cert_pair() {
     EXPECT_NE(dir, nullptr);
     const std::string cert = std::string(dir ? dir : "/tmp") + "/cert.pem";
     const std::string key = std::string(dir ? dir : "/tmp") + "/key.pem";
-    const std::string cmd =
-        "openssl req -x509 -nodes -newkey rsa:2048 -days 1 "
-        "-subj '/CN=localhost' -keyout " +
-        key + " -out " + cert + " >/dev/null 2>&1";
+    const std::string cmd = "openssl req -x509 -nodes -newkey rsa:2048 -days 1 "
+                            "-subj '/CN=localhost' -keyout " +
+                            key + " -out " + cert + " >/dev/null 2>&1";
     EXPECT_EQ(std::system(cmd.c_str()), 0);
     return {cert, key};
 }
@@ -611,7 +610,8 @@ TEST_F(TcpServerUnitTest, EnableTlsSuccessPathSetsTlsState) {
     EXPECT_EQ(server->tls_handshake_timeout_ms_, 321U);
 }
 
-TEST_F(TcpServerUnitTest, HandleConnectionRunsInlineWhenSchedulerIsUnavailable) {
+TEST_F(TcpServerUnitTest,
+       HandleConnectionRunsInlineWhenSchedulerIsUnavailable) {
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
 

@@ -16,7 +16,6 @@ class BufferTest : public ::testing::Test {
     Buffer buf;
 };
 
-
 TEST_F(BufferTest, InitialState) {
     EXPECT_EQ(buf.readable_size(), 0u);
     EXPECT_EQ(buf.writable_size(), kDefaultBufferSize);
@@ -31,7 +30,6 @@ TEST_F(BufferTest, DefaultBufferConstants) {
     EXPECT_EQ(kIncrementBufferSize, 1024u * 1024u * 1u); // 1MB
     EXPECT_EQ(kMaxBufferSize, 1024u * 1024u * 512u);     // 512MB
 }
-
 
 TEST_F(BufferTest, PushSmallData) {
     const char *data = "hello";
@@ -90,7 +88,6 @@ TEST_F(BufferTest, PushWithNullBytes) {
     EXPECT_EQ(std::memcmp(buf.begin(), data, 11), 0);
 }
 
-
 TEST_F(BufferTest, MoveReaderPartial) {
     buf.push("hello world", 11);
     buf.move_reader(6);
@@ -128,7 +125,6 @@ TEST_F(BufferTest, MoveReaderMultipleTimes) {
     EXPECT_TRUE(buf.empty());
 }
 
-
 TEST_F(BufferTest, ResetAfterPush) {
     buf.push("hello world", 11);
     buf.reset();
@@ -162,7 +158,6 @@ TEST_F(BufferTest, PushAfterReset) {
     EXPECT_EQ(buf.readable_size(), 6u);
     EXPECT_EQ(std::string(buf.begin(), buf.readable_size()), "second");
 }
-
 
 TEST_F(BufferTest, SwapBothNonEmpty) {
     Buffer b2;
@@ -267,7 +262,6 @@ TEST_F(BufferTest, MultipleResizes) {
     EXPECT_GT(buf.readable_size(), 0u);
 }
 
-
 TEST_F(BufferTest, CapacityInitial) {
     EXPECT_EQ(buf.capacity(), kDefaultBufferSize);
 }
@@ -293,7 +287,6 @@ TEST_F(BufferTest, CapacityUnchangedAfterReset) {
     EXPECT_EQ(buf.capacity(), expandedCap); // reset不缩减容量
 }
 
-
 TEST_F(BufferTest, WriteAbleSizeInitial) {
     EXPECT_EQ(buf.writable_size(), kDefaultBufferSize);
 }
@@ -308,7 +301,6 @@ TEST_F(BufferTest, WriteAbleSizeAfterReset) {
     buf.reset();
     EXPECT_EQ(buf.writable_size(), buf.capacity());
 }
-
 
 TEST_F(BufferTest, PushExactCapacity) {
     std::vector<char> data(kDefaultBufferSize, 'X');
@@ -338,7 +330,6 @@ TEST_F(BufferTest, BeginPointerAfterMoveReader) {
 
     EXPECT_EQ(p2, p1 + 6);
 }
-
 
 TEST_F(BufferTest, ManySmallPushes) {
     const int iterations = 10000;

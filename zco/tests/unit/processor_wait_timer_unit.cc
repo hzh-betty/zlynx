@@ -81,7 +81,8 @@ TEST_F(ProcessorWaitTimerUnitTest, WaitFdInCoroutineHandlesReadableAndTimeout) {
     ::close(pair[1]);
 }
 
-TEST_F(ProcessorWaitTimerUnitTest, WaitFdWithInfiniteTimeoutReturnsOnReadReady) {
+TEST_F(ProcessorWaitTimerUnitTest,
+       WaitFdWithInfiniteTimeoutReturnsOnReadReady) {
     init(2);
 
     int pair[2] = {-1, -1};

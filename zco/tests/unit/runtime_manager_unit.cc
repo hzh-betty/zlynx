@@ -201,8 +201,8 @@ TEST_F(RuntimeManagerUnitTest, RegisterFiberAndExternalHandleRoundTrip) {
     runtime.init(1);
 
     Processor owner(77, 64 * 1024);
-    Fiber::ptr fiber = std::make_shared<Fiber>(1001, &owner, []() {},
-                                               64 * 1024, 0, true);
+    Fiber::ptr fiber =
+        std::make_shared<Fiber>(1001, &owner, []() {}, 64 * 1024, 0, true);
     ASSERT_NE(fiber, nullptr);
     EXPECT_EQ(fiber->external_handle_id(), 0u);
 

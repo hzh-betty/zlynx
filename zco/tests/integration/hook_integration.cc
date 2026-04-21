@@ -416,8 +416,8 @@ TEST_F(HookIntegrationTest, RandomizedRefusedConnectDeterministicSeed) {
         sockaddr_in target_addr;
         target_addr.sin_family = AF_INET;
         target_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        // Keep the probe socket bound (without listen) during connect probing so
-        // the test port cannot be reused by unrelated listeners.
+        // Keep the probe socket bound (without listen) during connect probing
+        // so the test port cannot be reused by unrelated listeners.
         target_addr.sin_port = probe_addr.sin_port;
 
         WaitGroup done(1);
