@@ -1,0 +1,31 @@
+------------------------------------------------------------------------------
+                           GCC Code Coverage Report
+Directory: .
+------------------------------------------------------------------------------
+File                                       Lines     Exec  Cover   Missing
+------------------------------------------------------------------------------
+zco/src/context.cc                            14       13    92%   16
+zco/src/epoller.cc                           174      163    93%   40-41,51-52,198,201,222-223,225-226,274
+zco/src/event.cc                             105      105   100%
+zco/src/fiber.cc                             143      135    94%   27,34,231,239-243
+zco/src/fiber_handle_registry.cc              44       42    95%   28,47
+zco/src/fiber_pool.cc                         26       25    96%   26
+zco/src/hook.cc                              462      433    93%   61,71,159,198,234-235,245,250,289,320,326,371-374,593,694-696,699-701,740,750,781-783,839,859
+zco/src/io_event.cc                           29       26    89%   40-42
+zco/src/mutex.cc                              75       72    96%   95,102,129
+zco/src/pool.cc                               70       70   100%
+zco/src/processor.cc                         361      353    97%   233,387,483,606,613,640,648,676
+zco/src/runtime_manager.cc                   225      224    99%   136
+zco/src/sched.cc                              75       75   100%
+zco/src/shared_stack_buffer.cc                50       50   100%
+zco/src/snapshot_buffer_pool.cc               64       63    98%   114
+zco/src/steal_queue.cc                        56       54    96%   44,60
+zco/src/timer.cc                              39       39   100%
+zco/src/wait_group.cc                         20       20   100%
+------------------------------------------------------------------------------
+TOTAL                                       2032     1962    96%
+------------------------------------------------------------------------------
+lines: 96.6% (1962 out of 2032)
+functions: 100.0% (353 out of 353)
+branches: 87.6% (1248 out of 1425)
+decisions: 88.7% (432 out of 487)

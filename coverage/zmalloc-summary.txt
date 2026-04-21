@@ -19,4 +19,4 @@ TOTAL                                        847      826    97%
 lines: 97.5% (826 out of 847)
 functions: 100.0% (98 out of 98)
 branches: 90.2% (333 out of 369)
-decisions: 97.7% (170 out of 174)
+decisions: 97.1% (169 out of 174)

@@ -71,6 +71,12 @@ TEST(BufferUnitTest, AppendNullOrEmptyInputIsNoop) {
     EXPECT_EQ(buffer.readable_bytes(), 0U);
 }
 
+TEST(BufferUnitTest, RetrieveAsStringOnEmptyBufferReturnsEmptyString) {
+    Buffer buffer;
+    EXPECT_EQ(buffer.retrieve_as_string(8), "");
+    EXPECT_EQ(buffer.retrieve_all_as_string(), "");
+}
+
 TEST(BufferUnitTest, ReadFromSocketValidatesArguments) {
     Buffer buffer;
     int saved_errno = 0;
@@ -112,6 +118,76 @@ TEST(BufferUnitTest, WriteToSocketHandlesInvalidAndEmptyCases) {
 
     socket->close();
     ::close(pair[1]);
+}
+
+TEST(BufferUnitTest, ReadFromSocketInvalidPathAllowsNullSavedErrno) {
+    Buffer buffer;
+    errno = 0;
+    EXPECT_EQ(buffer.read_from_socket(nullptr, 8, 10, nullptr), -1);
+    EXPECT_EQ(errno, EBADF);
+}
+
+TEST(BufferUnitTest, WriteToSocketInvalidPathAllowsNullSavedErrno) {
+    Buffer buffer;
+    errno = 0;
+    EXPECT_EQ(buffer.write_to_socket(nullptr, 10, nullptr), -1);
+    EXPECT_EQ(errno, EBADF);
+}
+
+TEST(BufferUnitTest, ReadAndWriteDetectClosedSocketObjectAsBadFd) {
+    Buffer buffer;
+    int saved_errno = 0;
+
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+    auto socket = std::make_shared<Socket>(pair[0]);
+    ASSERT_NE(socket, nullptr);
+    socket->close();
+
+    errno = 0;
+    EXPECT_EQ(buffer.read_from_socket(socket, 8, 10, &saved_errno), -1);
+    EXPECT_EQ(errno, EBADF);
+    EXPECT_EQ(saved_errno, EBADF);
+
+    buffer.append("x", 1);
+    errno = 0;
+    EXPECT_EQ(buffer.write_to_socket(socket, 10, &saved_errno), -1);
+    EXPECT_EQ(errno, EBADF);
+    EXPECT_EQ(saved_errno, EBADF);
+
+    ::close(pair[1]);
+}
+
+TEST(BufferUnitTest, ReadTimeoutStoresSavedErrnoWhenReadFails) {
+    zco::init(1);
+
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+    auto reader = std::make_shared<Socket>(pair[0]);
+    ASSERT_NE(reader, nullptr);
+
+    Buffer input;
+    zco::WaitGroup done(1);
+    std::atomic<int> captured_errno{0};
+    std::atomic<int> saved_errno{0};
+    zco::go([&]() {
+        int local_saved_errno = 0;
+        errno = 0;
+        EXPECT_EQ(input.read_from_socket(reader, 4, 10, &local_saved_errno), -1);
+        captured_errno.store(errno, std::memory_order_release);
+        saved_errno.store(local_saved_errno, std::memory_order_release);
+        done.done();
+    });
+    done.wait();
+
+    const int err = captured_errno.load(std::memory_order_acquire);
+    const int saved = saved_errno.load(std::memory_order_acquire);
+    EXPECT_TRUE(err == ETIMEDOUT || err == EAGAIN || err == EWOULDBLOCK);
+    EXPECT_EQ(saved, err);
+
+    reader->close();
+    ::close(pair[1]);
+    zco::shutdown();
 }
 
 TEST(BufferUnitTest, ReadAndWriteSocketPathWorksInCoroutineContext) {

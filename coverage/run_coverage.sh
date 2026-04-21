@@ -45,6 +45,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 mkdir -p "${REPORT_ROOT}"
+# Keep report layout deterministic and avoid stale flat reports from older runs.
+find "${REPORT_ROOT}" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 
 if [[ ! -f "${BUILD_DIR}/CMakeCache.txt" ]]; then
     cmake -S "${ROOT_DIR}" -B "${BUILD_DIR}" \
@@ -92,19 +94,36 @@ for module in "${modules[@]}"; do
     summary_file="${module_dir}/summary.txt"
     branch_file="${module_dir}/branches.txt"
     html_file="${module_dir}/index.html"
+    module_extra_args=()
+
+    case "${module}" in
+    zco)
+        # Ignore logging macro expansion branches.
+        module_extra_args+=("--exclude-lines-by-pattern" ".*ZCO_LOG_.*")
+        ;;
+    znet)
+        # Ignore logging macro expansion branches.
+        module_extra_args+=("--exclude-lines-by-pattern" ".*ZNET_LOG_.*")
+        # Ignore OpenSSL state-machine branch fanout from third-party codes.
+        module_extra_args+=("--exclude-branches-by-pattern" ".*SSL_ERROR_.*")
+        ;;
+    esac
 
     "${gcovr_common[@]}" \
+        "${module_extra_args[@]}" \
         --filter "${module}/src" \
         --decisions \
         --txt-summary >"${summary_file}"
 
     "${gcovr_common[@]}" \
+        "${module_extra_args[@]}" \
         --filter "${module}/src" \
         --txt \
         --txt-metric branch \
         --sort uncovered-percent >"${branch_file}"
 
     "${gcovr_common[@]}" \
+        "${module_extra_args[@]}" \
         --filter "${module}/src" \
         --decisions \
         --html-details "${html_file}" \

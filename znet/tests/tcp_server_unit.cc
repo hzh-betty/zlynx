@@ -509,6 +509,28 @@ TEST_F(TcpServerUnitTest, DoStopClearsTrackedConnections) {
     ::close(pair[1]);
 }
 
+TEST_F(TcpServerUnitTest, DoStopHandlesNullAcceptorAndNullConnectionEntry) {
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+
+    auto server = std::make_shared<TcpServer>(
+        std::make_shared<IPv4Address>("127.0.0.1", 0), 16);
+    ASSERT_NE(server, nullptr);
+
+    auto conn =
+        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    ASSERT_NE(conn, nullptr);
+
+    server->connections_[-1] = nullptr;
+    server->connections_[conn->fd()] = conn;
+    server->acceptor_.reset();
+
+    server->do_stop();
+    EXPECT_TRUE(server->connections_.empty());
+
+    ::close(pair[1]);
+}
+
 TEST_F(TcpServerUnitTest, HandleConnectionDirectPathCoversTlsHandshakeFailure) {
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
@@ -587,6 +609,70 @@ TEST_F(TcpServerUnitTest, EnableTlsSuccessPathSetsTlsState) {
     EXPECT_TRUE(server->enable_tls(cert_pair.first, cert_pair.second, 321));
     EXPECT_TRUE(server->tls_enabled());
     EXPECT_EQ(server->tls_handshake_timeout_ms_, 321U);
+}
+
+TEST_F(TcpServerUnitTest, HandleConnectionRunsInlineWhenSchedulerIsUnavailable) {
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+
+    auto server = std::make_shared<TcpServer>(
+        std::make_shared<IPv4Address>("127.0.0.1", 0), 16);
+    ASSERT_NE(server, nullptr);
+
+    std::atomic<int> close_count{0};
+    server->set_on_close([&](const TcpConnection::ptr &conn) {
+        ASSERT_NE(conn, nullptr);
+        close_count.fetch_add(1, std::memory_order_relaxed);
+    });
+
+    server->handle_connection(std::make_shared<Socket>(pair[0]));
+    for (int i = 0; i < 100 && close_count.load(std::memory_order_relaxed) == 0;
+         ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    EXPECT_GE(close_count.load(std::memory_order_relaxed), 1);
+
+    ::close(pair[1]);
+}
+
+TEST_F(TcpServerUnitTest, DataIsConsumedEvenWithoutMessageCallback) {
+    zco::init(2);
+
+    auto listen_addr = std::make_shared<IPv4Address>("127.0.0.1", 0);
+    auto server = std::make_shared<TcpServer>(listen_addr, 16);
+    ASSERT_NE(server, nullptr);
+
+    std::atomic<int> close_count{0};
+    server->set_on_close([&](const TcpConnection::ptr &conn) {
+        ASSERT_NE(conn, nullptr);
+        close_count.fetch_add(1, std::memory_order_relaxed);
+    });
+
+    ASSERT_TRUE(server->start());
+    auto bound_addr = std::dynamic_pointer_cast<IPv4Address>(
+        server->acceptor()->listen_socket()->get_local_address());
+    ASSERT_NE(bound_addr, nullptr);
+
+    int client_fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    ASSERT_GE(client_fd, 0);
+    sockaddr_in addr;
+    std::memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(bound_addr->port());
+    ASSERT_EQ(::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr), 1);
+    ASSERT_EQ(
+        ::connect(client_fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)),
+        0);
+    ASSERT_EQ(::send(client_fd, "x", 1, 0), 1);
+    ::close(client_fd);
+
+    for (int i = 0; i < 100 && close_count.load(std::memory_order_relaxed) == 0;
+         ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_GE(close_count.load(std::memory_order_relaxed), 1);
+
+    server->stop();
 }
 
 } // namespace
