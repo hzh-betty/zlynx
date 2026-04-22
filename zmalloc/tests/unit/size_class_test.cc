@@ -6,11 +6,18 @@
 #include "zmalloc/internal/size_class.h"
 #include <gtest/gtest.h>
 
+#include <tuple>
+
 namespace zmalloc {
 namespace {
 
+
+class SizeClassConsistencyTest : public ::testing::Test {};
+
 // 对齐测试
 class SizeClassRoundUpTest : public ::testing::Test {};
+class SizeClassRoundUpParamTest
+    : public ::testing::TestWithParam<std::tuple<size_t, size_t>> {};
 
 TEST_F(SizeClassRoundUpTest, SmallSizes) {
     // [1, 128] 至少满足 malloc/new 的 max_align_t 对齐
@@ -55,6 +62,12 @@ TEST_F(SizeClassRoundUpTest, OverMaxClassFallsBackToPageAlignment) {
 
 // 索引测试
 class SizeClassIndexTest : public ::testing::Test {};
+class SizeClassIndexParamTest
+    : public ::testing::TestWithParam<std::tuple<size_t, size_t>> {};
+class SizeClassNumMoveSizeParamTest
+    : public ::testing::TestWithParam<std::tuple<size_t, size_t>> {};
+class SizeClassNumMovePageAtLeastParamTest
+    : public ::testing::TestWithParam<size_t> {};
 
 TEST_F(SizeClassIndexTest, SmallSizesIndex) {
     EXPECT_EQ(SizeClass::index(1), 0);
@@ -180,93 +193,72 @@ TEST_F(SizeClassIndexTest, NumMovePageLarge) {
     EXPECT_GE(SizeClass::num_move_page(256 * 1024), 1);
 }
 
-#define ZMALLOC_SC_ROUNDUP_CASE(NAME, SIZE, EXPECTED)                          \
-    TEST_F(SizeClassRoundUpTest, RoundUp_##NAME) {                             \
-        EXPECT_EQ(SizeClass::round_up(static_cast<size_t>(SIZE)),              \
-                  static_cast<size_t>(EXPECTED));                              \
-    }
+TEST_P(SizeClassRoundUpParamTest, RoundsExpectedSize) {
+    const size_t size = std::get<0>(GetParam());
+    const size_t expected = std::get<1>(GetParam());
+    EXPECT_EQ(SizeClass::round_up(size), expected);
+}
 
-ZMALLOC_SC_ROUNDUP_CASE(S2, 2, 16)
-ZMALLOC_SC_ROUNDUP_CASE(S15, 15, 16)
-ZMALLOC_SC_ROUNDUP_CASE(S63, 63, 64)
-ZMALLOC_SC_ROUNDUP_CASE(S64, 64, 64)
-ZMALLOC_SC_ROUNDUP_CASE(S72, 72, 80)
-ZMALLOC_SC_ROUNDUP_CASE(S73, 73, 80)
-ZMALLOC_SC_ROUNDUP_CASE(S120, 120, 128)
-ZMALLOC_SC_ROUNDUP_CASE(S121, 121, 128)
+INSTANTIATE_TEST_SUITE_P(
+    BoundaryCases, SizeClassRoundUpParamTest,
+    ::testing::Values(std::make_tuple(2u, 16u), std::make_tuple(15u, 16u),
+                      std::make_tuple(63u, 64u), std::make_tuple(64u, 64u),
+                      std::make_tuple(72u, 80u), std::make_tuple(73u, 80u),
+                      std::make_tuple(120u, 128u), std::make_tuple(121u, 128u),
+                      std::make_tuple(255u, 256u), std::make_tuple(257u, 272u),
+                      std::make_tuple(1000u, 1008u),
+                      std::make_tuple(2000u, 2048u),
+                      std::make_tuple(4097u, 4224u),
+                      std::make_tuple(8192u, 8192u),
+                      std::make_tuple(8193u, 9216u),
+                      std::make_tuple(65535u, 65536u),
+                      std::make_tuple(65536u, 65536u),
+                      std::make_tuple(65537u, 73728u)));
 
-ZMALLOC_SC_ROUNDUP_CASE(S255, 255, 256)
-ZMALLOC_SC_ROUNDUP_CASE(S257, 257, 272)
-ZMALLOC_SC_ROUNDUP_CASE(S1000, 1000, 1008)
+TEST_P(SizeClassIndexParamTest, ReturnsExpectedIndex) {
+    const size_t size = std::get<0>(GetParam());
+    const size_t expected = std::get<1>(GetParam());
+    EXPECT_EQ(SizeClass::index(size), expected);
+}
 
-ZMALLOC_SC_ROUNDUP_CASE(S2000, 2000, 2048)
-ZMALLOC_SC_ROUNDUP_CASE(S4097, 4097, 4224)
-ZMALLOC_SC_ROUNDUP_CASE(S8192, 8192, 8192)
-ZMALLOC_SC_ROUNDUP_CASE(S8193, 8193, 9216)
+INSTANTIATE_TEST_SUITE_P(
+    BoundaryCases, SizeClassIndexParamTest,
+    ::testing::Values(std::make_tuple(16u, 1u), std::make_tuple(24u, 2u),
+                      std::make_tuple(72u, 8u), std::make_tuple(80u, 9u),
+                      std::make_tuple(144u, 16u), std::make_tuple(1008u, 70u),
+                      std::make_tuple(1152u, 72u), std::make_tuple(2048u, 79u),
+                      std::make_tuple(7168u, 119u),
+                      std::make_tuple(9216u, 128u)));
 
-ZMALLOC_SC_ROUNDUP_CASE(S65535, 65535, 65536)
-ZMALLOC_SC_ROUNDUP_CASE(S65536, 65536, 65536)
-ZMALLOC_SC_ROUNDUP_CASE(S65537, 65537, 73728)
+TEST_P(SizeClassNumMoveSizeParamTest, ReturnsExpectedBatchSize) {
+    const size_t size = std::get<0>(GetParam());
+    const size_t expected = std::get<1>(GetParam());
+    EXPECT_EQ(SizeClass::num_move_size(size), expected);
+}
 
-#undef ZMALLOC_SC_ROUNDUP_CASE
-
-#define ZMALLOC_SC_INDEX_CASE(NAME, SIZE, EXPECTED)                            \
-    TEST_F(SizeClassIndexTest, Index_##NAME) {                                 \
-        EXPECT_EQ(SizeClass::index(static_cast<size_t>(SIZE)),                 \
-                  static_cast<size_t>(EXPECTED));                              \
-    }
-
-ZMALLOC_SC_INDEX_CASE(S16, 16, 1)
-ZMALLOC_SC_INDEX_CASE(S24, 24, 2)
-ZMALLOC_SC_INDEX_CASE(S72, 72, 8)
-ZMALLOC_SC_INDEX_CASE(S80, 80, 9)
-ZMALLOC_SC_INDEX_CASE(S144, 144, 16)
-ZMALLOC_SC_INDEX_CASE(S1008, 1008, 70)
-ZMALLOC_SC_INDEX_CASE(S1152, 1152, 72)
-ZMALLOC_SC_INDEX_CASE(S2048, 2048, 79)
-ZMALLOC_SC_INDEX_CASE(S7168, 7168, 119)
-ZMALLOC_SC_INDEX_CASE(S9216, 9216, 128)
-
-#undef ZMALLOC_SC_INDEX_CASE
-
-#define ZMALLOC_SC_NUMMOVE_SIZE_CASE(NAME, SIZE, EXPECTED)                     \
-    TEST_F(SizeClassIndexTest, NumMoveSize_##NAME) {                           \
-        EXPECT_EQ(SizeClass::num_move_size(static_cast<size_t>(SIZE)),         \
-                  static_cast<size_t>(EXPECTED));                              \
-    }
-
-ZMALLOC_SC_NUMMOVE_SIZE_CASE(B8, 8, 128)
-ZMALLOC_SC_NUMMOVE_SIZE_CASE(B24, 24, 128)
-ZMALLOC_SC_NUMMOVE_SIZE_CASE(B80, 80, 51)
-ZMALLOC_SC_NUMMOVE_SIZE_CASE(B144, 144, 28)
-ZMALLOC_SC_NUMMOVE_SIZE_CASE(B1008, 1008, 4)
-ZMALLOC_SC_NUMMOVE_SIZE_CASE(B1152, 1152, 3)
-ZMALLOC_SC_NUMMOVE_SIZE_CASE(B4096, 4096, 2)
-ZMALLOC_SC_NUMMOVE_SIZE_CASE(B73728, 73728, 2)
-
-#undef ZMALLOC_SC_NUMMOVE_SIZE_CASE
+INSTANTIATE_TEST_SUITE_P(
+    BoundaryCases, SizeClassNumMoveSizeParamTest,
+    ::testing::Values(std::make_tuple(8u, 128u), std::make_tuple(24u, 128u),
+                      std::make_tuple(80u, 51u), std::make_tuple(144u, 28u),
+                      std::make_tuple(1008u, 4u), std::make_tuple(1152u, 3u),
+                      std::make_tuple(4096u, 2u),
+                      std::make_tuple(73728u, 2u)));
 
 TEST_F(SizeClassIndexTest, NumMovePageRoundsUpToFitWholeBatch) {
     EXPECT_EQ(SizeClass::num_move_size(5000), 2u);
     EXPECT_EQ(SizeClass::num_move_page(5000), 2u);
 }
 
-#define ZMALLOC_SC_NUMMOVE_PAGE_ATLEAST_CASE(NAME, SIZE)                       \
-    TEST_F(SizeClassIndexTest, NumMovePage_AtLeast1_##NAME) {                  \
-        EXPECT_GE(SizeClass::num_move_page(static_cast<size_t>(SIZE)), 1u);    \
-    }
+TEST_P(SizeClassNumMovePageAtLeastParamTest, ReturnsAtLeastOnePage) {
+    EXPECT_GE(SizeClass::num_move_page(GetParam()), 1u);
+}
 
-ZMALLOC_SC_NUMMOVE_PAGE_ATLEAST_CASE(S8, 8)
-ZMALLOC_SC_NUMMOVE_PAGE_ATLEAST_CASE(S128, 128)
-ZMALLOC_SC_NUMMOVE_PAGE_ATLEAST_CASE(S1024, 1024)
-ZMALLOC_SC_NUMMOVE_PAGE_ATLEAST_CASE(S8192, 8192)
-ZMALLOC_SC_NUMMOVE_PAGE_ATLEAST_CASE(S65536, 65536)
-ZMALLOC_SC_NUMMOVE_PAGE_ATLEAST_CASE(S262144, 262144)
-
-#undef ZMALLOC_SC_NUMMOVE_PAGE_ATLEAST_CASE
+INSTANTIATE_TEST_SUITE_P(BoundaryCases, SizeClassNumMovePageAtLeastParamTest,
+                         ::testing::Values(8u, 128u, 1024u, 8192u, 65536u,
+                                           262144u));
 
 // round_up 与 index 一致性
-TEST(SizeClassConsistencyTest, RoundUpIndexConsistency) {
+TEST_F(SizeClassConsistencyTest, RoundUpIndexConsistency) {
     for (size_t size = 1; size <= 256 * 1024; size += 100) {
         size_t rounded = SizeClass::round_up(size);
         EXPECT_GE(rounded, size);

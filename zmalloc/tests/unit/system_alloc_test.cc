@@ -10,21 +10,24 @@
 namespace zmalloc {
 namespace {
 
-TEST(SystemAllocTest, AllocateAndFreeSinglePage) {
+
+class SystemAllocTest : public ::testing::Test {};
+
+TEST_F(SystemAllocTest, AllocateAndFreeSinglePage) {
     void *p = system_alloc(1);
     ASSERT_NE(p, nullptr);
     EXPECT_EQ(reinterpret_cast<uintptr_t>(p) % PAGE_SIZE, 0u);
     system_free(p, 1);
 }
 
-TEST(SystemAllocTest, AllocateAndFreeMultiplePages) {
+TEST_F(SystemAllocTest, AllocateAndFreeMultiplePages) {
     void *p = system_alloc(8);
     ASSERT_NE(p, nullptr);
     EXPECT_EQ(reinterpret_cast<uintptr_t>(p) % PAGE_SIZE, 0u);
     system_free(p, 8);
 }
 
-TEST(SystemAllocTest, RepeatedAllocationsRemainAligned) {
+TEST_F(SystemAllocTest, RepeatedAllocationsRemainAligned) {
     void *p1 = system_alloc(2);
     void *p2 = system_alloc(3);
     ASSERT_NE(p1, nullptr);
@@ -35,7 +38,7 @@ TEST(SystemAllocTest, RepeatedAllocationsRemainAligned) {
     system_free(p2, 3);
 }
 
-TEST(SystemAllocTest, ZeroPagesThrowsBadAlloc) {
+TEST_F(SystemAllocTest, ZeroPagesThrowsBadAlloc) {
     EXPECT_THROW(system_alloc(0), std::bad_alloc);
 }
 

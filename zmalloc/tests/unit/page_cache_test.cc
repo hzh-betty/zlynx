@@ -29,6 +29,10 @@ class PageCacheTest : public ::testing::Test {
   protected:
     zmalloc::PageCache &pc = zmalloc::PageCache::get_instance();
 };
+class PageCacheSmallSpanParamTest
+    : public PageCacheTest, public ::testing::WithParamInterface<size_t> {};
+class PageCacheLargeSpanParamTest
+    : public PageCacheTest, public ::testing::WithParamInterface<size_t> {};
 
 static void NewSpanCheckMappingAndRelease(zmalloc::PageCache &pc, size_t k) {
     std::lock_guard<std::mutex> lk(pc.page_mtx());
@@ -326,61 +330,23 @@ TEST_F(PageCacheTest, MultipleSmallAllocationsDoNotOverlapInMapping) {
     }
 }
 
-#define ZMALLOC_PC_SMALL_K_CASE(K)                                             \
-    TEST_F(PageCacheTest, NewSpanMappingAndRelease_K_##K) {                    \
-        NewSpanCheckMappingAndRelease(pc, K);                                  \
-    }
+TEST_P(PageCacheSmallSpanParamTest, NewSpanMapsAllPagesAndReleaseKeepsBoundary) {
+    NewSpanCheckMappingAndRelease(pc, GetParam());
+}
 
-ZMALLOC_PC_SMALL_K_CASE(1)
-ZMALLOC_PC_SMALL_K_CASE(2)
-ZMALLOC_PC_SMALL_K_CASE(3)
-ZMALLOC_PC_SMALL_K_CASE(4)
-ZMALLOC_PC_SMALL_K_CASE(5)
-ZMALLOC_PC_SMALL_K_CASE(6)
-ZMALLOC_PC_SMALL_K_CASE(7)
-ZMALLOC_PC_SMALL_K_CASE(8)
-ZMALLOC_PC_SMALL_K_CASE(9)
-ZMALLOC_PC_SMALL_K_CASE(10)
-ZMALLOC_PC_SMALL_K_CASE(11)
-ZMALLOC_PC_SMALL_K_CASE(12)
-ZMALLOC_PC_SMALL_K_CASE(13)
-ZMALLOC_PC_SMALL_K_CASE(14)
-ZMALLOC_PC_SMALL_K_CASE(15)
-ZMALLOC_PC_SMALL_K_CASE(16)
-ZMALLOC_PC_SMALL_K_CASE(17)
-ZMALLOC_PC_SMALL_K_CASE(18)
-ZMALLOC_PC_SMALL_K_CASE(19)
-ZMALLOC_PC_SMALL_K_CASE(20)
-ZMALLOC_PC_SMALL_K_CASE(21)
-ZMALLOC_PC_SMALL_K_CASE(22)
-ZMALLOC_PC_SMALL_K_CASE(23)
-ZMALLOC_PC_SMALL_K_CASE(24)
-ZMALLOC_PC_SMALL_K_CASE(25)
-ZMALLOC_PC_SMALL_K_CASE(26)
-ZMALLOC_PC_SMALL_K_CASE(27)
-ZMALLOC_PC_SMALL_K_CASE(28)
-ZMALLOC_PC_SMALL_K_CASE(29)
-ZMALLOC_PC_SMALL_K_CASE(30)
-ZMALLOC_PC_SMALL_K_CASE(31)
-ZMALLOC_PC_SMALL_K_CASE(32)
-ZMALLOC_PC_SMALL_K_CASE(48)
-ZMALLOC_PC_SMALL_K_CASE(64)
-ZMALLOC_PC_SMALL_K_CASE(96)
-ZMALLOC_PC_SMALL_K_CASE(127)
-ZMALLOC_PC_SMALL_K_CASE(128)
+INSTANTIATE_TEST_SUITE_P(
+    SpanSizes, PageCacheSmallSpanParamTest,
+    ::testing::Values(1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 9u, 10u, 11u, 12u, 13u,
+                      14u, 15u, 16u, 17u, 18u, 19u, 20u, 21u, 22u, 23u, 24u,
+                      25u, 26u, 27u, 28u, 29u, 30u, 31u, 32u, 48u, 64u, 96u,
+                      127u, 128u));
 
-#undef ZMALLOC_PC_SMALL_K_CASE
+TEST_P(PageCacheLargeSpanParamTest, LargeSpanAllocFree) {
+    NewLargeSpanAllocAndFree(pc, GetParam());
+}
 
-#define ZMALLOC_PC_LARGE_K_CASE(K)                                             \
-    TEST_F(PageCacheTest, LargeSpanAllocFree_K_##K) {                          \
-        NewLargeSpanAllocAndFree(pc, K);                                       \
-    }
-
-ZMALLOC_PC_LARGE_K_CASE(129)
-ZMALLOC_PC_LARGE_K_CASE(256)
-ZMALLOC_PC_LARGE_K_CASE(512)
-
-#undef ZMALLOC_PC_LARGE_K_CASE
+INSTANTIATE_TEST_SUITE_P(SpanSizes, PageCacheLargeSpanParamTest,
+                         ::testing::Values(129u, 256u, 512u));
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

@@ -12,6 +12,15 @@
 namespace zmalloc {
 namespace {
 
+
+
+
+class ObjectPoolIndependentTest : public ::testing::Test {};
+
+class ObjectPoolLargeTest : public ::testing::Test {};
+
+class ObjectPoolSmallTest : public ::testing::Test {};
+
 struct TestObject {
     int value;
     char padding[64];
@@ -24,6 +33,16 @@ class ObjectPoolTest : public ::testing::Test {
   protected:
     ObjectPool<TestObject> pool_;
 };
+class ObjectPoolLifoParamTest
+    : public ObjectPoolTest, public ::testing::WithParamInterface<int> {};
+class ObjectPoolBatchParamTest
+    : public ObjectPoolTest, public ::testing::WithParamInterface<int> {};
+class ObjectPoolAlternateParamTest
+    : public ObjectPoolTest, public ::testing::WithParamInterface<int> {};
+class ObjectPoolSmallCountParamTest
+    : public ::testing::TestWithParam<int> {};
+class ObjectPoolLargeCountParamTest
+    : public ::testing::TestWithParam<int> {};
 
 static void ExpectPointerAligned(void *p) {
     ASSERT_NE(p, nullptr);
@@ -83,7 +102,7 @@ struct SmallObject {
     char c;
 };
 
-TEST(ObjectPoolSmallTest, SmallObjectHandling) {
+TEST_F(ObjectPoolSmallTest, SmallObjectHandling) {
     ObjectPool<SmallObject> pool;
     SmallObject *obj = pool.allocate();
     EXPECT_NE(obj, nullptr);
@@ -97,7 +116,7 @@ struct LargeObject {
     LargeObject() : value(999) { std::memset(data, 0, sizeof(data)); }
 };
 
-TEST(ObjectPoolLargeTest, LargeObjectHandling) {
+TEST_F(ObjectPoolLargeTest, LargeObjectHandling) {
     ObjectPool<LargeObject> pool;
     LargeObject *obj = pool.allocate();
     EXPECT_NE(obj, nullptr);
@@ -184,7 +203,7 @@ TEST_F(ObjectPoolTest, MassAllocationNoFail) {
 }
 
 // 不同池子独立性
-TEST(ObjectPoolIndependentTest, PoolsAreIndependent) {
+TEST_F(ObjectPoolIndependentTest, PoolsAreIndependent) {
     ObjectPool<TestObject> pool1;
     ObjectPool<TestObject> pool2;
 
@@ -197,96 +216,77 @@ TEST(ObjectPoolIndependentTest, PoolsAreIndependent) {
     pool2.deallocate(obj2);
 }
 
-#define ZMALLOC_OBJECTPOOL_LIFO_REUSE_CASE(N)                                  \
-    TEST_F(ObjectPoolTest, LifoReuseOrder_N##N) {                              \
-        std::vector<TestObject *> objs;                                        \
-        objs.reserve(N);                                                       \
-        for (int i = 0; i < (N); ++i) {                                        \
-            auto *p = pool_.allocate();                                        \
-            ASSERT_NE(p, nullptr);                                             \
-            p->value = 100 + i;                                                \
-            objs.push_back(p);                                                 \
-        }                                                                      \
-        for (int i = 0; i < (N); ++i) {                                        \
-            pool_.deallocate(objs[i]);                                         \
-        }                                                                      \
-        std::vector<TestObject *> reused;                                      \
-        reused.reserve(N);                                                     \
-        for (int i = 0; i < (N); ++i) {                                        \
-            auto *q = pool_.allocate();                                        \
-            ASSERT_NE(q, nullptr);                                             \
-            reused.push_back(q);                                               \
-        }                                                                      \
-        for (int i = 0; i < (N); ++i) {                                        \
-            EXPECT_EQ(reused[i], objs[(N) - 1 - i]);                           \
-            EXPECT_EQ(reused[i]->value, 42);                                   \
-        }                                                                      \
-        for (auto *q : reused) {                                               \
-            pool_.deallocate(q);                                               \
-        }                                                                      \
+TEST_P(ObjectPoolLifoParamTest, ReusesObjectsInLifoOrder) {
+    const int n = GetParam();
+    std::vector<TestObject *> objs;
+    objs.reserve(n);
+    for (int i = 0; i < n; ++i) {
+        auto *p = pool_.allocate();
+        ASSERT_NE(p, nullptr);
+        p->value = 100 + i;
+        objs.push_back(p);
     }
-
-ZMALLOC_OBJECTPOOL_LIFO_REUSE_CASE(2)
-ZMALLOC_OBJECTPOOL_LIFO_REUSE_CASE(3)
-ZMALLOC_OBJECTPOOL_LIFO_REUSE_CASE(4)
-ZMALLOC_OBJECTPOOL_LIFO_REUSE_CASE(5)
-ZMALLOC_OBJECTPOOL_LIFO_REUSE_CASE(6)
-ZMALLOC_OBJECTPOOL_LIFO_REUSE_CASE(7)
-ZMALLOC_OBJECTPOOL_LIFO_REUSE_CASE(8)
-ZMALLOC_OBJECTPOOL_LIFO_REUSE_CASE(9)
-ZMALLOC_OBJECTPOOL_LIFO_REUSE_CASE(10)
-
-#undef ZMALLOC_OBJECTPOOL_LIFO_REUSE_CASE
-
-#define ZMALLOC_OBJECTPOOL_BATCH_UNIQUE_CASE(N)                                \
-    TEST_F(ObjectPoolTest, BatchAllocationUnique_N##N) {                       \
-        std::vector<TestObject *> objs;                                        \
-        objs.reserve(N);                                                       \
-        for (int i = 0; i < (N); ++i) {                                        \
-            auto *p = pool_.allocate();                                        \
-            ASSERT_NE(p, nullptr);                                             \
-            ExpectPointerAligned(p);                                           \
-            objs.push_back(p);                                                 \
-        }                                                                      \
-        for (int i = 0; i < (N); ++i) {                                        \
-            for (int j = i + 1; j < (N); ++j) {                                \
-                ASSERT_NE(objs[i], objs[j]);                                   \
-            }                                                                  \
-        }                                                                      \
-        for (auto *p : objs) {                                                 \
-            pool_.deallocate(p);                                               \
-        }                                                                      \
+    for (int i = 0; i < n; ++i) {
+        pool_.deallocate(objs[i]);
     }
-
-ZMALLOC_OBJECTPOOL_BATCH_UNIQUE_CASE(5)
-ZMALLOC_OBJECTPOOL_BATCH_UNIQUE_CASE(10)
-ZMALLOC_OBJECTPOOL_BATCH_UNIQUE_CASE(20)
-ZMALLOC_OBJECTPOOL_BATCH_UNIQUE_CASE(50)
-ZMALLOC_OBJECTPOOL_BATCH_UNIQUE_CASE(100)
-
-#undef ZMALLOC_OBJECTPOOL_BATCH_UNIQUE_CASE
-
-#define ZMALLOC_OBJECTPOOL_ALTERNATE_CASE(ITERS)                               \
-    TEST_F(ObjectPoolTest, AlternateAllocateDeallocate_Iters##ITERS) {         \
-        for (int i = 0; i < (ITERS); ++i) {                                    \
-            auto *p = pool_.allocate();                                        \
-            ASSERT_NE(p, nullptr);                                             \
-            p->value = i;                                                      \
-            pool_.deallocate(p);                                               \
-        }                                                                      \
-        auto *q = pool_.allocate();                                            \
-        ASSERT_NE(q, nullptr);                                                 \
-        EXPECT_EQ(q->value, 42);                                               \
-        pool_.deallocate(q);                                                   \
+    std::vector<TestObject *> reused;
+    reused.reserve(n);
+    for (int i = 0; i < n; ++i) {
+        auto *q = pool_.allocate();
+        ASSERT_NE(q, nullptr);
+        reused.push_back(q);
     }
+    for (int i = 0; i < n; ++i) {
+        EXPECT_EQ(reused[i], objs[n - 1 - i]);
+        EXPECT_EQ(reused[i]->value, 42);
+    }
+    for (auto *q : reused) {
+        pool_.deallocate(q);
+    }
+}
 
-ZMALLOC_OBJECTPOOL_ALTERNATE_CASE(1)
-ZMALLOC_OBJECTPOOL_ALTERNATE_CASE(2)
-ZMALLOC_OBJECTPOOL_ALTERNATE_CASE(10)
-ZMALLOC_OBJECTPOOL_ALTERNATE_CASE(100)
-ZMALLOC_OBJECTPOOL_ALTERNATE_CASE(1000)
+INSTANTIATE_TEST_SUITE_P(LifoCounts, ObjectPoolLifoParamTest,
+                         ::testing::Values(2, 3, 4, 5, 6, 7, 8, 9, 10));
 
-#undef ZMALLOC_OBJECTPOOL_ALTERNATE_CASE
+TEST_P(ObjectPoolBatchParamTest, BatchAllocationReturnsUniqueAlignedObjects) {
+    const int n = GetParam();
+    std::vector<TestObject *> objs;
+    objs.reserve(n);
+    for (int i = 0; i < n; ++i) {
+        auto *p = pool_.allocate();
+        ASSERT_NE(p, nullptr);
+        ExpectPointerAligned(p);
+        objs.push_back(p);
+    }
+    for (int i = 0; i < n; ++i) {
+        for (int j = i + 1; j < n; ++j) {
+            ASSERT_NE(objs[i], objs[j]);
+        }
+    }
+    for (auto *p : objs) {
+        pool_.deallocate(p);
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(BatchCounts, ObjectPoolBatchParamTest,
+                         ::testing::Values(5, 10, 20, 50, 100));
+
+TEST_P(ObjectPoolAlternateParamTest, AlternateAllocateDeallocateResetsObject) {
+    const int iters = GetParam();
+    for (int i = 0; i < iters; ++i) {
+        auto *p = pool_.allocate();
+        ASSERT_NE(p, nullptr);
+        p->value = i;
+        pool_.deallocate(p);
+    }
+    auto *q = pool_.allocate();
+    ASSERT_NE(q, nullptr);
+    EXPECT_EQ(q->value, 42);
+    pool_.deallocate(q);
+}
+
+INSTANTIATE_TEST_SUITE_P(AlternateCounts, ObjectPoolAlternateParamTest,
+                         ::testing::Values(1, 2, 10, 100, 1000));
 
 static void SmallObjectBatch(ObjectPool<SmallObject> &pool, int n) {
     std::vector<SmallObject *> objs;
@@ -302,24 +302,13 @@ static void SmallObjectBatch(ObjectPool<SmallObject> &pool, int n) {
     }
 }
 
-#define ZMALLOC_OBJECTPOOL_SMALL_BATCH_CASE(N)                                 \
-    TEST(ObjectPoolSmallTest, SmallObjectBatch_N##N) {                         \
-        ObjectPool<SmallObject> pool;                                          \
-        SmallObjectBatch(pool, N);                                             \
-    }
+TEST_P(ObjectPoolSmallCountParamTest, SmallObjectBatch) {
+    ObjectPool<SmallObject> pool;
+    SmallObjectBatch(pool, GetParam());
+}
 
-ZMALLOC_OBJECTPOOL_SMALL_BATCH_CASE(1)
-ZMALLOC_OBJECTPOOL_SMALL_BATCH_CASE(2)
-ZMALLOC_OBJECTPOOL_SMALL_BATCH_CASE(3)
-ZMALLOC_OBJECTPOOL_SMALL_BATCH_CASE(4)
-ZMALLOC_OBJECTPOOL_SMALL_BATCH_CASE(5)
-ZMALLOC_OBJECTPOOL_SMALL_BATCH_CASE(6)
-ZMALLOC_OBJECTPOOL_SMALL_BATCH_CASE(7)
-ZMALLOC_OBJECTPOOL_SMALL_BATCH_CASE(8)
-ZMALLOC_OBJECTPOOL_SMALL_BATCH_CASE(9)
-ZMALLOC_OBJECTPOOL_SMALL_BATCH_CASE(10)
-
-#undef ZMALLOC_OBJECTPOOL_SMALL_BATCH_CASE
+INSTANTIATE_TEST_SUITE_P(BatchCounts, ObjectPoolSmallCountParamTest,
+                         ::testing::Values(1, 2, 3, 4, 5, 6, 7, 8, 9, 10));
 
 // LargeObject：复用顺序 + 构造函数重置
 static void LargeObjectLifoReuse(ObjectPool<LargeObject> &pool, int n) {
@@ -351,20 +340,13 @@ static void LargeObjectLifoReuse(ObjectPool<LargeObject> &pool, int n) {
     }
 }
 
-#define ZMALLOC_OBJECTPOOL_LARGE_REUSE_CASE(N)                                 \
-    TEST(ObjectPoolLargeTest, LargeObjectLifoReuse_N##N) {                     \
-        ObjectPool<LargeObject> pool;                                          \
-        LargeObjectLifoReuse(pool, N);                                         \
-    }
+TEST_P(ObjectPoolLargeCountParamTest, LargeObjectLifoReuse) {
+    ObjectPool<LargeObject> pool;
+    LargeObjectLifoReuse(pool, GetParam());
+}
 
-ZMALLOC_OBJECTPOOL_LARGE_REUSE_CASE(2)
-ZMALLOC_OBJECTPOOL_LARGE_REUSE_CASE(3)
-ZMALLOC_OBJECTPOOL_LARGE_REUSE_CASE(4)
-ZMALLOC_OBJECTPOOL_LARGE_REUSE_CASE(5)
-ZMALLOC_OBJECTPOOL_LARGE_REUSE_CASE(6)
-ZMALLOC_OBJECTPOOL_LARGE_REUSE_CASE(7)
-
-#undef ZMALLOC_OBJECTPOOL_LARGE_REUSE_CASE
+INSTANTIATE_TEST_SUITE_P(LifoCounts, ObjectPoolLargeCountParamTest,
+                         ::testing::Values(2, 3, 4, 5, 6, 7));
 
 } // namespace
 } // namespace zmalloc

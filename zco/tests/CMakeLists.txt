@@ -10,7 +10,7 @@ function(add_zco_test target_name src_file labels timeout_seconds)
   else()
     set(zco_test_runtime zco)
   endif()
-  target_link_libraries(${target_name} PRIVATE ${zco_test_runtime} GTest::gtest GTest::gtest_main Threads::Threads)
+  target_link_libraries(${target_name} PRIVATE ${zco_test_runtime} GTest::gtest Threads::Threads)
   target_include_directories(${target_name} PRIVATE ${PROJECT_SOURCE_DIR}/include ${PROJECT_SOURCE_DIR}/tests)
   if(ENABLE_COVERAGE)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
@@ -50,9 +50,8 @@ file(GLOB ZCO_UNIT_TESTS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/unit/*.c
 file(GLOB ZCO_INTEGRATION_TESTS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/integration/*.cc")
 file(GLOB ZCO_STRESS_TESTS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/stress/*.cc")
 set(ZCO_BENCHMARK_SOURCES
-  "${CMAKE_CURRENT_SOURCE_DIR}/stress/stack_model_perf.cc"
+  "${CMAKE_CURRENT_SOURCE_DIR}/benchmark/stack_model_perf.cc"
 )
-list(REMOVE_ITEM ZCO_STRESS_TESTS ${ZCO_BENCHMARK_SOURCES})
 
 foreach(test_src ${ZCO_UNIT_TESTS})
   get_filename_component(test_name ${test_src} NAME_WE)
@@ -64,10 +63,10 @@ foreach(test_src ${ZCO_INTEGRATION_TESTS})
   add_zco_test(${test_name} ${test_src} "integration;quick" 45)
 endforeach()
 
-# hook_integration occasionally flakes under high global test parallelism due
+# hook_integration_test occasionally flakes under high global test parallelism due
 # transient networking/scheduler resource pressure; run it in isolation.
-if(TARGET hook_integration)
-  set_tests_properties(hook_integration PROPERTIES
+if(TARGET hook_integration_test)
+  set_tests_properties(hook_integration_test PROPERTIES
     RUN_SERIAL TRUE
     RESOURCE_LOCK zco_runtime
   )

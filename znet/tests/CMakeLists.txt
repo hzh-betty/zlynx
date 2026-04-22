@@ -1,14 +1,13 @@
 find_package(GTest REQUIRED)
 find_package(Threads REQUIRED)
 
-function(add_znet_unit_test target_name src_file)
+function(add_znet_test target_name src_file labels)
   add_executable(${target_name} ${src_file})
   target_link_libraries(${target_name}
     PRIVATE
       znet
       zco
       GTest::gtest
-      GTest::gtest_main
       Threads::Threads
   )
   target_include_directories(${target_name}
@@ -22,24 +21,33 @@ function(add_znet_unit_test target_name src_file)
     endif()
   endif()
   add_test(NAME ${target_name} COMMAND ${target_name})
-  set_tests_properties(${target_name} PROPERTIES LABELS "znet;quick" TIMEOUT 90)
+  set_tests_properties(${target_name} PROPERTIES LABELS "${labels}" TIMEOUT 90)
 endfunction()
 
 file(GLOB ZNET_UNIT_TESTS CONFIGURE_DEPENDS
-  "${CMAKE_CURRENT_SOURCE_DIR}/*_unit.cc"
+  "${CMAKE_CURRENT_SOURCE_DIR}/unit/*.cc"
+)
+
+file(GLOB ZNET_INTEGRATION_TESTS CONFIGURE_DEPENDS
+  "${CMAKE_CURRENT_SOURCE_DIR}/integration/*.cc"
 )
 
 foreach(test_src ${ZNET_UNIT_TESTS})
   get_filename_component(test_name ${test_src} NAME_WE)
-  add_znet_unit_test(${test_name} ${test_src})
+  add_znet_test(${test_name} ${test_src} "znet;unit;quick")
+endforeach()
+
+foreach(test_src ${ZNET_INTEGRATION_TESTS})
+  get_filename_component(test_name ${test_src} NAME_WE)
+  add_znet_test(${test_name} ${test_src} "znet;integration;quick")
 endforeach()
 
 # These tests are sensitive to system-level socket/thread pressure when many
 # binaries run concurrently. Serialize them to reduce flaky crashes.
 set(ZNET_SERIAL_TESTS
-  buffer_unit
-  server_unit
-  tcp_server_unit
+  buffer_test
+  server_test
+  tcp_server_test
 )
 foreach(test_name ${ZNET_SERIAL_TESTS})
   if(TARGET ${test_name})

@@ -61,6 +61,10 @@ class ThreadCacheTest : public ::testing::Test {
   protected:
     zmalloc::ThreadCache *tc = zmalloc::get_thread_cache();
 };
+class ThreadCacheAllocFreeParamTest
+    : public ThreadCacheTest, public ::testing::WithParamInterface<size_t> {};
+class ThreadCacheTooLongParamTest
+    : public ThreadCacheTest, public ::testing::WithParamInterface<size_t> {};
 
 TEST_F(ThreadCacheTest, AllocateReturnsNonNull) {
     void *p = tc->allocate(64);
@@ -234,80 +238,26 @@ TEST_F(ThreadCacheTest, ListTooLongWhenCountExceedsListSize) {
     list.max_size() = old_max;
 }
 
-#define ZMALLOC_TC_ALLOC_FREE_CASE(SZ)                                         \
-    TEST_F(ThreadCacheTest, AllocFree_Size_##SZ) { AllocTouchFree(tc, SZ); }
+TEST_P(ThreadCacheAllocFreeParamTest, AllocTouchFreeBySize) {
+    AllocTouchFree(tc, GetParam());
+}
 
-ZMALLOC_TC_ALLOC_FREE_CASE(1)
-ZMALLOC_TC_ALLOC_FREE_CASE(2)
-ZMALLOC_TC_ALLOC_FREE_CASE(7)
-ZMALLOC_TC_ALLOC_FREE_CASE(8)
-ZMALLOC_TC_ALLOC_FREE_CASE(9)
-ZMALLOC_TC_ALLOC_FREE_CASE(15)
-ZMALLOC_TC_ALLOC_FREE_CASE(16)
-ZMALLOC_TC_ALLOC_FREE_CASE(17)
-ZMALLOC_TC_ALLOC_FREE_CASE(24)
-ZMALLOC_TC_ALLOC_FREE_CASE(31)
-ZMALLOC_TC_ALLOC_FREE_CASE(32)
-ZMALLOC_TC_ALLOC_FREE_CASE(33)
-ZMALLOC_TC_ALLOC_FREE_CASE(48)
-ZMALLOC_TC_ALLOC_FREE_CASE(63)
-ZMALLOC_TC_ALLOC_FREE_CASE(64)
-ZMALLOC_TC_ALLOC_FREE_CASE(65)
-ZMALLOC_TC_ALLOC_FREE_CASE(80)
-ZMALLOC_TC_ALLOC_FREE_CASE(95)
-ZMALLOC_TC_ALLOC_FREE_CASE(96)
-ZMALLOC_TC_ALLOC_FREE_CASE(97)
-ZMALLOC_TC_ALLOC_FREE_CASE(112)
-ZMALLOC_TC_ALLOC_FREE_CASE(127)
-ZMALLOC_TC_ALLOC_FREE_CASE(128)
-ZMALLOC_TC_ALLOC_FREE_CASE(129)
-ZMALLOC_TC_ALLOC_FREE_CASE(192)
-ZMALLOC_TC_ALLOC_FREE_CASE(255)
-ZMALLOC_TC_ALLOC_FREE_CASE(256)
-ZMALLOC_TC_ALLOC_FREE_CASE(257)
-ZMALLOC_TC_ALLOC_FREE_CASE(384)
-ZMALLOC_TC_ALLOC_FREE_CASE(511)
-ZMALLOC_TC_ALLOC_FREE_CASE(512)
-ZMALLOC_TC_ALLOC_FREE_CASE(513)
-ZMALLOC_TC_ALLOC_FREE_CASE(768)
-ZMALLOC_TC_ALLOC_FREE_CASE(1023)
-ZMALLOC_TC_ALLOC_FREE_CASE(1024)
-ZMALLOC_TC_ALLOC_FREE_CASE(1025)
-ZMALLOC_TC_ALLOC_FREE_CASE(2047)
-ZMALLOC_TC_ALLOC_FREE_CASE(2048)
-ZMALLOC_TC_ALLOC_FREE_CASE(2049)
-ZMALLOC_TC_ALLOC_FREE_CASE(4095)
-ZMALLOC_TC_ALLOC_FREE_CASE(4096)
-ZMALLOC_TC_ALLOC_FREE_CASE(4097)
-ZMALLOC_TC_ALLOC_FREE_CASE(8191)
-ZMALLOC_TC_ALLOC_FREE_CASE(8192)
-ZMALLOC_TC_ALLOC_FREE_CASE(8193)
-ZMALLOC_TC_ALLOC_FREE_CASE(16384)
-ZMALLOC_TC_ALLOC_FREE_CASE(32768)
-ZMALLOC_TC_ALLOC_FREE_CASE(65536)
-ZMALLOC_TC_ALLOC_FREE_CASE(131072)
-ZMALLOC_TC_ALLOC_FREE_CASE(200000)
-ZMALLOC_TC_ALLOC_FREE_CASE(262144)
+INSTANTIATE_TEST_SUITE_P(
+    Sizes, ThreadCacheAllocFreeParamTest,
+    ::testing::Values(1u, 2u, 7u, 8u, 9u, 15u, 16u, 17u, 24u, 31u, 32u, 33u,
+                      48u, 63u, 64u, 65u, 80u, 95u, 96u, 97u, 112u, 127u,
+                      128u, 129u, 192u, 255u, 256u, 257u, 384u, 511u, 512u,
+                      513u, 768u, 1023u, 1024u, 1025u, 2047u, 2048u, 2049u,
+                      4095u, 4096u, 4097u, 8191u, 8192u, 8193u, 16384u,
+                      32768u, 65536u, 131072u, 200000u, 262144u));
 
-#undef ZMALLOC_TC_ALLOC_FREE_CASE
+TEST_P(ThreadCacheTooLongParamTest, ListTooLongTriggerBySize) {
+    TriggerListTooLongOnce(tc, GetParam(), 1);
+}
 
-#define ZMALLOC_TC_TOO_LONG_CASE(SZ)                                           \
-    TEST_F(ThreadCacheTest, ListTooLongTrigger_Size_##SZ) {                    \
-        TriggerListTooLongOnce(tc, SZ, 1);                                     \
-    }
-
-ZMALLOC_TC_TOO_LONG_CASE(32)
-ZMALLOC_TC_TOO_LONG_CASE(64)
-ZMALLOC_TC_TOO_LONG_CASE(128)
-ZMALLOC_TC_TOO_LONG_CASE(256)
-ZMALLOC_TC_TOO_LONG_CASE(512)
-ZMALLOC_TC_TOO_LONG_CASE(1024)
-ZMALLOC_TC_TOO_LONG_CASE(4096)
-ZMALLOC_TC_TOO_LONG_CASE(8192)
-ZMALLOC_TC_TOO_LONG_CASE(65536)
-ZMALLOC_TC_TOO_LONG_CASE(131072)
-
-#undef ZMALLOC_TC_TOO_LONG_CASE
+INSTANTIATE_TEST_SUITE_P(Sizes, ThreadCacheTooLongParamTest,
+                         ::testing::Values(32u, 64u, 128u, 256u, 512u, 1024u,
+                                           4096u, 8192u, 65536u, 131072u));
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

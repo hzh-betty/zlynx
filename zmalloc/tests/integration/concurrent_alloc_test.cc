@@ -9,12 +9,17 @@
 #include <atomic>
 #include <cstring>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 namespace zmalloc {
 namespace {
 
 class ConcurrentAllocTest : public ::testing::Test {};
+class ConcurrentAllocFreeParamTest
+    : public ::testing::TestWithParam<std::tuple<int, int, size_t>> {};
+class ConcurrentMixedParamTest
+    : public ::testing::TestWithParam<std::tuple<int, int>> {};
 
 static void AllocTouchAndFree(size_t size, unsigned char tag) {
     unsigned char *p = static_cast<unsigned char *>(zmalloc(size));
@@ -547,68 +552,49 @@ TEST_F(ConcurrentAllocTest, BoundarySizesConcurrent) {
     }
 }
 
-// ------------------------------
-// 补充：轻量并发参数化用例（控制总耗时）
-// ------------------------------
+TEST_P(ConcurrentAllocFreeParamTest, AllocFreeByConcurrencyAndSize) {
+    const int thread_count = std::get<0>(GetParam());
+    const int iterations = std::get<1>(GetParam());
+    const size_t size = std::get<2>(GetParam());
+    RunConcurrentAllocFree(thread_count, iterations, size,
+                           static_cast<unsigned char>(0x10));
+}
 
-#define ZMALLOC_CONC_ALLOC_CASE(NAME, THREADS, ITERS, SIZE)                    \
-    TEST_F(ConcurrentAllocTest, ParamAllocFree_##NAME) {                       \
-        RunConcurrentAllocFree((THREADS), (ITERS), static_cast<size_t>(SIZE),  \
-                               static_cast<unsigned char>(0x10));              \
-    }
+INSTANTIATE_TEST_SUITE_P(
+    SizeAndConcurrency, ConcurrentAllocFreeParamTest,
+    ::testing::Values(
+        std::make_tuple(2, 200, 1u), std::make_tuple(2, 200, 8u),
+        std::make_tuple(2, 200, 16u), std::make_tuple(2, 200, 72u),
+        std::make_tuple(2, 200, 80u), std::make_tuple(2, 200, 96u),
+        std::make_tuple(2, 200, 144u), std::make_tuple(2, 200, 24u),
+        std::make_tuple(2, 200, 32u), std::make_tuple(2, 200, 64u),
+        std::make_tuple(2, 200, 128u), std::make_tuple(2, 200, 256u),
+        std::make_tuple(2, 200, 512u), std::make_tuple(2, 200, 1024u),
+        std::make_tuple(2, 200, 1008u), std::make_tuple(2, 200, 1152u),
+        std::make_tuple(2, 200, 2048u), std::make_tuple(2, 200, 4096u),
+        std::make_tuple(2, 200, 7168u), std::make_tuple(4, 100, 128u),
+        std::make_tuple(4, 100, 129u), std::make_tuple(4, 100, 1024u),
+        std::make_tuple(4, 100, 1025u), std::make_tuple(4, 100, 8u * 1024u),
+        std::make_tuple(4, 100, 8u * 1024u + 1u),
+        std::make_tuple(4, 50, 64u * 1024u),
+        std::make_tuple(4, 50, 64u * 1024u + 1u),
+        std::make_tuple(4, 25, 256u * 1024u),
+        std::make_tuple(2, 10, 256u * 1024u + 1u),
+        std::make_tuple(2, 5, 512u * 1024u)));
 
-// 小对象/中对象：2 线程 * 200 次
-ZMALLOC_CONC_ALLOC_CASE(S1, 2, 200, 1)
-ZMALLOC_CONC_ALLOC_CASE(S8, 2, 200, 8)
-ZMALLOC_CONC_ALLOC_CASE(S16, 2, 200, 16)
-ZMALLOC_CONC_ALLOC_CASE(S72, 2, 200, 72)
-ZMALLOC_CONC_ALLOC_CASE(S80, 2, 200, 80)
-ZMALLOC_CONC_ALLOC_CASE(S96, 2, 200, 96)
-ZMALLOC_CONC_ALLOC_CASE(S144, 2, 200, 144)
-ZMALLOC_CONC_ALLOC_CASE(S24, 2, 200, 24)
-ZMALLOC_CONC_ALLOC_CASE(S32, 2, 200, 32)
-ZMALLOC_CONC_ALLOC_CASE(S64, 2, 200, 64)
-ZMALLOC_CONC_ALLOC_CASE(S128, 2, 200, 128)
-ZMALLOC_CONC_ALLOC_CASE(S256, 2, 200, 256)
-ZMALLOC_CONC_ALLOC_CASE(S512, 2, 200, 512)
-ZMALLOC_CONC_ALLOC_CASE(S1024, 2, 200, 1024)
-ZMALLOC_CONC_ALLOC_CASE(S1008, 2, 200, 1008)
-ZMALLOC_CONC_ALLOC_CASE(S1152, 2, 200, 1152)
-ZMALLOC_CONC_ALLOC_CASE(S2048, 2, 200, 2048)
-ZMALLOC_CONC_ALLOC_CASE(S4096, 2, 200, 4096)
-ZMALLOC_CONC_ALLOC_CASE(S7168, 2, 200, 7168)
+TEST_P(ConcurrentMixedParamTest, MixedSizesByConcurrency) {
+    const int thread_count = std::get<0>(GetParam());
+    const int iterations = std::get<1>(GetParam());
+    std::vector<size_t> sizes = {1,    8,    16,    24,   32,   64,
+                                 128,  256,  512,   1024, 2048, 4096,
+                                 8192, 8193, 16384, 32768};
+    RunConcurrentMixedSizes(thread_count, iterations, sizes,
+                            static_cast<unsigned char>(0x55));
+}
 
-// 典型边界：4 线程 * 100 次
-ZMALLOC_CONC_ALLOC_CASE(B128, 4, 100, 128)
-ZMALLOC_CONC_ALLOC_CASE(B129, 4, 100, 129)
-ZMALLOC_CONC_ALLOC_CASE(B1024, 4, 100, 1024)
-ZMALLOC_CONC_ALLOC_CASE(B1025, 4, 100, 1025)
-ZMALLOC_CONC_ALLOC_CASE(B8192, 4, 100, 8 * 1024)
-ZMALLOC_CONC_ALLOC_CASE(B8193, 4, 100, 8 * 1024 + 1)
-ZMALLOC_CONC_ALLOC_CASE(B65536, 4, 50, 64 * 1024)
-ZMALLOC_CONC_ALLOC_CASE(B65537, 4, 50, 64 * 1024 + 1)
-ZMALLOC_CONC_ALLOC_CASE(B262144, 4, 25, 256 * 1024)
-
-// 大对象（>MAX_BYTES）：2 线程 * 少量
-ZMALLOC_CONC_ALLOC_CASE(L262145, 2, 10, 256 * 1024 + 1)
-ZMALLOC_CONC_ALLOC_CASE(L512K, 2, 5, 512 * 1024)
-
-#undef ZMALLOC_CONC_ALLOC_CASE
-
-// 混合 size 集合：保持多样性但每个用例很轻
-#define ZMALLOC_CONC_MIXED_CASE(NAME, THREADS, ITERS)                          \
-    TEST_F(ConcurrentAllocTest, ParamMixedSizes_##NAME) {                      \
-        std::vector<size_t> sizes = {1,    8,    16,    24,   32,   64,        \
-                                     128,  256,  512,   1024, 2048, 4096,      \
-                                     8192, 8193, 16384, 32768};                \
-        RunConcurrentMixedSizes((THREADS), (ITERS), sizes,                     \
-                                static_cast<unsigned char>(0x55));             \
-    }
-
-ZMALLOC_CONC_MIXED_CASE(SetA_T2, 2, 200)
-ZMALLOC_CONC_MIXED_CASE(SetA_T4, 4, 100)
-
-#undef ZMALLOC_CONC_MIXED_CASE
+INSTANTIATE_TEST_SUITE_P(Concurrency, ConcurrentMixedParamTest,
+                         ::testing::Values(std::make_tuple(2, 200),
+                                           std::make_tuple(4, 100)));
 
 // 并发 zfree(nullptr)（确保不会崩溃）
 TEST_F(ConcurrentAllocTest, ConcurrentNullptrFreeNoCrash) {

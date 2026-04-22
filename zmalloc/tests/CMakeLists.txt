@@ -56,7 +56,6 @@ target_link_libraries(zmalloc_allocator_override_test
     PRIVATE
         zmalloc_override
         GTest::gtest
-        GTest::gtest_main
 )
 target_include_directories(zmalloc_allocator_override_test PRIVATE ${ZMALLOC_INCLUDE_DIR})
 zmalloc_test_enable_coverage(zmalloc_allocator_override_test)

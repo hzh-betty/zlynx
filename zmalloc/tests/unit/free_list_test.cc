@@ -22,6 +22,8 @@ class FreeListTest : public ::testing::Test {
         }
     }
 };
+class FreeListCountParamTest
+    : public FreeListTest, public ::testing::WithParamInterface<int> {};
 
 static size_t ChainLength(void *start, size_t hard_limit = 1024) {
     size_t n = 0;
@@ -272,61 +274,38 @@ TEST_F(FreeListTest, PopRangeOneElementMatchesPop) {
     EXPECT_EQ(list_.size(), 0u);
 }
 
-#define ZMALLOC_FREELIST_POPRANGE_CASE(N)                                      \
-    TEST_F(FreeListTest, PopRange_ChainLength_##N) {                           \
-        for (int i = 0; i < 10; ++i) {                                         \
-            list_.push(blocks_[i]);                                            \
-        }                                                                      \
-        void *start = nullptr;                                                 \
-        void *end = nullptr;                                                   \
-        list_.pop_range(start, end, N);                                        \
-        ASSERT_NE(start, nullptr);                                             \
-        ASSERT_NE(end, nullptr);                                               \
-        EXPECT_EQ(ChainLength(start), static_cast<size_t>(N));                 \
-        EXPECT_EQ(next_obj(end), nullptr);                                     \
-        EXPECT_EQ(list_.size(), static_cast<size_t>(10 - (N)));                \
-        EXPECT_EQ(start, blocks_[9]);                                          \
-        EXPECT_EQ(end, NthNode(start, static_cast<size_t>(N - 1)));            \
+TEST_P(FreeListCountParamTest, PopRangeReturnsRequestedChainLength) {
+    const int n = GetParam();
+    for (int i = 0; i < 10; ++i) {
+        list_.push(blocks_[i]);
     }
+    void *start = nullptr;
+    void *end = nullptr;
+    list_.pop_range(start, end, n);
+    ASSERT_NE(start, nullptr);
+    ASSERT_NE(end, nullptr);
+    EXPECT_EQ(ChainLength(start), static_cast<size_t>(n));
+    EXPECT_EQ(next_obj(end), nullptr);
+    EXPECT_EQ(list_.size(), static_cast<size_t>(10 - n));
+    EXPECT_EQ(start, blocks_[9]);
+    EXPECT_EQ(end, NthNode(start, static_cast<size_t>(n - 1)));
+}
 
-ZMALLOC_FREELIST_POPRANGE_CASE(1)
-ZMALLOC_FREELIST_POPRANGE_CASE(2)
-ZMALLOC_FREELIST_POPRANGE_CASE(3)
-ZMALLOC_FREELIST_POPRANGE_CASE(4)
-ZMALLOC_FREELIST_POPRANGE_CASE(5)
-ZMALLOC_FREELIST_POPRANGE_CASE(6)
-ZMALLOC_FREELIST_POPRANGE_CASE(7)
-ZMALLOC_FREELIST_POPRANGE_CASE(8)
-ZMALLOC_FREELIST_POPRANGE_CASE(9)
-ZMALLOC_FREELIST_POPRANGE_CASE(10)
-
-#undef ZMALLOC_FREELIST_POPRANGE_CASE
-
-#define ZMALLOC_FREELIST_PUSHRANGE_POP_CASE(N)                                 \
-    TEST_F(FreeListTest, PushRangeThenPopSequential_##N) {                     \
-        for (int i = 0; i < (N); ++i) {                                        \
-            next_obj(blocks_[i]) = (i + 1 < (N)) ? blocks_[i + 1] : nullptr;   \
-        }                                                                      \
-        list_.push_range(blocks_[0], blocks_[(N) - 1], (N));                   \
-        EXPECT_EQ(list_.size(), static_cast<size_t>(N));                       \
-        for (int i = 0; i < (N); ++i) {                                        \
-            EXPECT_EQ(list_.pop(), blocks_[i]);                                \
-        }                                                                      \
-        EXPECT_TRUE(list_.empty());                                            \
+TEST_P(FreeListCountParamTest, PushRangeThenPopPreservesSequentialOrder) {
+    const int n = GetParam();
+    for (int i = 0; i < n; ++i) {
+        next_obj(blocks_[i]) = (i + 1 < n) ? blocks_[i + 1] : nullptr;
     }
+    list_.push_range(blocks_[0], blocks_[n - 1], n);
+    EXPECT_EQ(list_.size(), static_cast<size_t>(n));
+    for (int i = 0; i < n; ++i) {
+        EXPECT_EQ(list_.pop(), blocks_[i]);
+    }
+    EXPECT_TRUE(list_.empty());
+}
 
-ZMALLOC_FREELIST_PUSHRANGE_POP_CASE(1)
-ZMALLOC_FREELIST_PUSHRANGE_POP_CASE(2)
-ZMALLOC_FREELIST_PUSHRANGE_POP_CASE(3)
-ZMALLOC_FREELIST_PUSHRANGE_POP_CASE(4)
-ZMALLOC_FREELIST_PUSHRANGE_POP_CASE(5)
-ZMALLOC_FREELIST_PUSHRANGE_POP_CASE(6)
-ZMALLOC_FREELIST_PUSHRANGE_POP_CASE(7)
-ZMALLOC_FREELIST_PUSHRANGE_POP_CASE(8)
-ZMALLOC_FREELIST_PUSHRANGE_POP_CASE(9)
-ZMALLOC_FREELIST_PUSHRANGE_POP_CASE(10)
-
-#undef ZMALLOC_FREELIST_PUSHRANGE_POP_CASE
+INSTANTIATE_TEST_SUITE_P(Counts, FreeListCountParamTest,
+                         ::testing::Values(1, 2, 3, 4, 5, 6, 7, 8, 9, 10));
 
 // push / push_range 组合：确保计数与弹出顺序一致
 TEST_F(FreeListTest, PushThenPushRangeThenPopAllOrder) {

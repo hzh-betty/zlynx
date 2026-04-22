@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <tuple>
 #include <vector>
 
 #include "zmalloc/internal/free_list.h"
@@ -96,6 +97,9 @@ class CentralCacheTest : public ::testing::Test {
     zmalloc::CentralCache &cc = zmalloc::CentralCache::get_instance();
     zmalloc::PageCache &pc = zmalloc::PageCache::get_instance();
 };
+class CentralCacheFetchReleaseParamTest
+    : public CentralCacheTest,
+      public ::testing::WithParamInterface<std::tuple<size_t, size_t>> {};
 
 TEST_F(CentralCacheTest, FetchReturnsAtLeastOne) {
     void *start = nullptr;
@@ -322,50 +326,31 @@ TEST_F(CentralCacheTest, EmptyListSpansHaveNoFreeObjectsWhenPresent) {
     cc.release_list_to_spans(all_s, size);
 }
 
-// ------------------------------
-// 大量 size/batch 覆盖（每个都是独立用例）
-// ------------------------------
+TEST_P(CentralCacheFetchReleaseParamTest, FetchAndReleaseSizeBatchPair) {
+    const size_t size = std::get<0>(GetParam());
+    const size_t batch = std::get<1>(GetParam());
+    FetchAndRelease(cc, batch, size);
+}
 
-#define ZMALLOC_CC_FETCH_RELEASE(SZ, N)                                        \
-    TEST_F(CentralCacheTest, FetchRelease_Size_##SZ##_Batch_##N) {             \
-        FetchAndRelease(cc, N, SZ);                                            \
-    }
-
-// 小对象/边界
-ZMALLOC_CC_FETCH_RELEASE(8, 1)
-ZMALLOC_CC_FETCH_RELEASE(8, 8)
-ZMALLOC_CC_FETCH_RELEASE(8, 64)
-ZMALLOC_CC_FETCH_RELEASE(16, 1)
-ZMALLOC_CC_FETCH_RELEASE(16, 32)
-ZMALLOC_CC_FETCH_RELEASE(32, 1)
-ZMALLOC_CC_FETCH_RELEASE(32, 32)
-ZMALLOC_CC_FETCH_RELEASE(64, 1)
-ZMALLOC_CC_FETCH_RELEASE(64, 2)
-ZMALLOC_CC_FETCH_RELEASE(64, 8)
-ZMALLOC_CC_FETCH_RELEASE(64, 32)
-ZMALLOC_CC_FETCH_RELEASE(64, 64)
-ZMALLOC_CC_FETCH_RELEASE(96, 8)
-ZMALLOC_CC_FETCH_RELEASE(128, 1)
-ZMALLOC_CC_FETCH_RELEASE(128, 16)
-ZMALLOC_CC_FETCH_RELEASE(256, 1)
-ZMALLOC_CC_FETCH_RELEASE(256, 8)
-ZMALLOC_CC_FETCH_RELEASE(512, 1)
-ZMALLOC_CC_FETCH_RELEASE(512, 8)
-ZMALLOC_CC_FETCH_RELEASE(1024, 1)
-ZMALLOC_CC_FETCH_RELEASE(1024, 4)
-ZMALLOC_CC_FETCH_RELEASE(2048, 1)
-ZMALLOC_CC_FETCH_RELEASE(2048, 2)
-ZMALLOC_CC_FETCH_RELEASE(4096, 1)
-ZMALLOC_CC_FETCH_RELEASE(4096, 2)
-ZMALLOC_CC_FETCH_RELEASE(8192, 1)
-ZMALLOC_CC_FETCH_RELEASE(8192, 2)
-ZMALLOC_CC_FETCH_RELEASE(65536, 1)
-ZMALLOC_CC_FETCH_RELEASE(65536, 2)
-ZMALLOC_CC_FETCH_RELEASE(131072, 1)
-ZMALLOC_CC_FETCH_RELEASE(131072, 2)
-ZMALLOC_CC_FETCH_RELEASE(262144, 1)
-
-#undef ZMALLOC_CC_FETCH_RELEASE
+INSTANTIATE_TEST_SUITE_P(
+    SizeBatchPairs, CentralCacheFetchReleaseParamTest,
+    ::testing::Values(
+        std::make_tuple(8u, 1u), std::make_tuple(8u, 8u),
+        std::make_tuple(8u, 64u), std::make_tuple(16u, 1u),
+        std::make_tuple(16u, 32u), std::make_tuple(32u, 1u),
+        std::make_tuple(32u, 32u), std::make_tuple(64u, 1u),
+        std::make_tuple(64u, 2u), std::make_tuple(64u, 8u),
+        std::make_tuple(64u, 32u), std::make_tuple(64u, 64u),
+        std::make_tuple(96u, 8u), std::make_tuple(128u, 1u),
+        std::make_tuple(128u, 16u), std::make_tuple(256u, 1u),
+        std::make_tuple(256u, 8u), std::make_tuple(512u, 1u),
+        std::make_tuple(512u, 8u), std::make_tuple(1024u, 1u),
+        std::make_tuple(1024u, 4u), std::make_tuple(2048u, 1u),
+        std::make_tuple(2048u, 2u), std::make_tuple(4096u, 1u),
+        std::make_tuple(4096u, 2u), std::make_tuple(8192u, 1u),
+        std::make_tuple(8192u, 2u), std::make_tuple(65536u, 1u),
+        std::make_tuple(65536u, 2u), std::make_tuple(131072u, 1u),
+        std::make_tuple(131072u, 2u), std::make_tuple(262144u, 1u)));
 
 TEST_F(CentralCacheTest, FetchTwiceConcatThenRelease) {
     FetchTwiceConcatAndRelease(cc, 8, 8, 64);

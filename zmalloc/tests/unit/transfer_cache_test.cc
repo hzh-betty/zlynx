@@ -10,6 +10,7 @@
 
 #include <atomic>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 namespace zmalloc {
@@ -20,6 +21,16 @@ class TransferCacheTest : public ::testing::Test {
     void SetUp() override {}
     void TearDown() override {}
 };
+class TransferCacheEntryExactParamTest
+    : public TransferCacheTest, public ::testing::WithParamInterface<size_t> {};
+class TransferCacheEntryPartialParamTest
+    : public TransferCacheTest,
+      public ::testing::WithParamInterface<std::tuple<size_t, size_t>> {};
+class TransferCacheEntryEmptyParamTest
+    : public TransferCacheTest, public ::testing::WithParamInterface<size_t> {};
+class TransferCacheManagerExactParamTest
+    : public TransferCacheTest,
+      public ::testing::WithParamInterface<std::tuple<size_t, size_t>> {};
 
 static void FillUniquePtrs(void **out, size_t n, uintptr_t base) {
     for (size_t i = 0; i < n; ++i) {
@@ -500,102 +511,71 @@ TEST_F(TransferCacheTest, ManagerTryInsertAndTryRemove) {
     ASSERT_EQ(removed, 4u);
 }
 
-#define ZMALLOC_TC_ENTRY_EXACT_CASE(N)                                         \
-    TEST_F(TransferCacheTest, Entry_InsertRemoveExact_N##N) {                  \
-        TransferCacheEntry cache;                                              \
-        InsertRemoveExactEntry(cache, N, 0x1000u + static_cast<uintptr_t>(N)); \
+TEST_P(TransferCacheEntryExactParamTest, InsertRemoveExactCount) {
+    const size_t n = GetParam();
+    TransferCacheEntry cache;
+    InsertRemoveExactEntry(cache, n, 0x1000u + static_cast<uintptr_t>(n));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Counts, TransferCacheEntryExactParamTest,
+    ::testing::Values(1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 9u, 10u, 15u, 16u, 31u,
+                      32u, 63u, 64u, 127u, 128u));
+
+TEST_P(TransferCacheEntryPartialParamTest, PartialRemoveKeepsRemainingCount) {
+    const size_t inserted = std::get<0>(GetParam());
+    const size_t requested = std::get<1>(GetParam());
+    TransferCacheEntry cache;
+    std::vector<void *> in(inserted);
+    FillUniquePtrs(in.data(), inserted,
+                   0x2000u + static_cast<uintptr_t>(inserted));
+    ASSERT_EQ(cache.insert_range(in.data(), inserted), inserted);
+    std::vector<void *> out(requested, nullptr);
+    const size_t removed = cache.remove_range(out.data(), requested);
+    ASSERT_EQ(removed, requested);
+    EXPECT_EQ(cache.size(), inserted - requested);
+    for (size_t i = 0; i < requested; ++i) {
+        EXPECT_EQ(out[i], in[i]);
     }
+}
 
-ZMALLOC_TC_ENTRY_EXACT_CASE(1)
-ZMALLOC_TC_ENTRY_EXACT_CASE(2)
-ZMALLOC_TC_ENTRY_EXACT_CASE(3)
-ZMALLOC_TC_ENTRY_EXACT_CASE(4)
-ZMALLOC_TC_ENTRY_EXACT_CASE(5)
-ZMALLOC_TC_ENTRY_EXACT_CASE(6)
-ZMALLOC_TC_ENTRY_EXACT_CASE(7)
-ZMALLOC_TC_ENTRY_EXACT_CASE(8)
-ZMALLOC_TC_ENTRY_EXACT_CASE(9)
-ZMALLOC_TC_ENTRY_EXACT_CASE(10)
-ZMALLOC_TC_ENTRY_EXACT_CASE(15)
-ZMALLOC_TC_ENTRY_EXACT_CASE(16)
-ZMALLOC_TC_ENTRY_EXACT_CASE(31)
-ZMALLOC_TC_ENTRY_EXACT_CASE(32)
-ZMALLOC_TC_ENTRY_EXACT_CASE(63)
-ZMALLOC_TC_ENTRY_EXACT_CASE(64)
-ZMALLOC_TC_ENTRY_EXACT_CASE(127)
-ZMALLOC_TC_ENTRY_EXACT_CASE(128)
+INSTANTIATE_TEST_SUITE_P(
+    InsertRemoveCounts, TransferCacheEntryPartialParamTest,
+    ::testing::Values(std::make_tuple(8u, 1u), std::make_tuple(8u, 2u),
+                      std::make_tuple(8u, 7u), std::make_tuple(16u, 1u),
+                      std::make_tuple(16u, 8u), std::make_tuple(32u, 1u),
+                      std::make_tuple(32u, 16u), std::make_tuple(64u, 1u),
+                      std::make_tuple(64u, 32u),
+                      std::make_tuple(128u, 64u)));
 
-#undef ZMALLOC_TC_ENTRY_EXACT_CASE
+TEST_P(TransferCacheEntryEmptyParamTest, EmptyRemoveReturnsZero) {
+    TransferCacheEntry cache;
+    std::vector<void *> out(GetParam(), nullptr);
+    EXPECT_EQ(cache.remove_range(out.data(), GetParam()), 0u);
+    EXPECT_TRUE(cache.empty());
+}
 
-#define ZMALLOC_TC_ENTRY_PARTIAL_CASE(INS, REM)                                \
-    TEST_F(TransferCacheTest, Entry_PartialRemove_Insert##INS##_Remove##REM) { \
-        TransferCacheEntry cache;                                              \
-        std::vector<void *> in(INS);                                           \
-        FillUniquePtrs(in.data(), INS, 0x2000u + static_cast<uintptr_t>(INS)); \
-        ASSERT_EQ(cache.insert_range(in.data(), INS),                          \
-                  static_cast<size_t>(INS));                                   \
-        std::vector<void *> out(REM, nullptr);                                 \
-        size_t removed = cache.remove_range(out.data(), REM);                  \
-        ASSERT_EQ(removed, static_cast<size_t>(REM));                          \
-        EXPECT_EQ(cache.size(), static_cast<size_t>(INS - REM));               \
-        for (size_t i = 0; i < static_cast<size_t>(REM); ++i) {                \
-            EXPECT_EQ(out[i], in[i]);                                          \
-        }                                                                      \
-    }
+INSTANTIATE_TEST_SUITE_P(Counts, TransferCacheEntryEmptyParamTest,
+                         ::testing::Values(1u, 2u, 8u, 64u));
 
-ZMALLOC_TC_ENTRY_PARTIAL_CASE(8, 1)
-ZMALLOC_TC_ENTRY_PARTIAL_CASE(8, 2)
-ZMALLOC_TC_ENTRY_PARTIAL_CASE(8, 7)
-ZMALLOC_TC_ENTRY_PARTIAL_CASE(16, 1)
-ZMALLOC_TC_ENTRY_PARTIAL_CASE(16, 8)
-ZMALLOC_TC_ENTRY_PARTIAL_CASE(32, 1)
-ZMALLOC_TC_ENTRY_PARTIAL_CASE(32, 16)
-ZMALLOC_TC_ENTRY_PARTIAL_CASE(64, 1)
-ZMALLOC_TC_ENTRY_PARTIAL_CASE(64, 32)
-ZMALLOC_TC_ENTRY_PARTIAL_CASE(128, 64)
+TEST_P(TransferCacheManagerExactParamTest, InsertRemoveExactIndexAndCount) {
+    const size_t index = std::get<0>(GetParam());
+    const size_t n = std::get<1>(GetParam());
+    TransferCache &manager = TransferCache::get_instance();
+    InsertRemoveExactManager(
+        manager, index, n, 0x3000u + static_cast<uintptr_t>(index * 1024 + n));
+}
 
-#undef ZMALLOC_TC_ENTRY_PARTIAL_CASE
-
-#define ZMALLOC_TC_ENTRY_EMPTY_REMOVE_CASE(N)                                  \
-    TEST_F(TransferCacheTest, Entry_EmptyRemove_Returns0_N##N) {               \
-        TransferCacheEntry cache;                                              \
-        std::vector<void *> out(N, nullptr);                                   \
-        EXPECT_EQ(cache.remove_range(out.data(), N), 0u);                      \
-        EXPECT_TRUE(cache.empty());                                            \
-    }
-
-ZMALLOC_TC_ENTRY_EMPTY_REMOVE_CASE(1)
-ZMALLOC_TC_ENTRY_EMPTY_REMOVE_CASE(2)
-ZMALLOC_TC_ENTRY_EMPTY_REMOVE_CASE(8)
-ZMALLOC_TC_ENTRY_EMPTY_REMOVE_CASE(64)
-
-#undef ZMALLOC_TC_ENTRY_EMPTY_REMOVE_CASE
-
-#define ZMALLOC_TC_MANAGER_EXACT_CASE(INDEX, N)                                \
-    TEST_F(TransferCacheTest, Manager_InsertRemoveExact_Index##INDEX##_N##N) { \
-        TransferCache &manager = TransferCache::get_instance();                \
-        InsertRemoveExactManager(                                              \
-            manager, INDEX, N,                                                 \
-            0x3000u + static_cast<uintptr_t>(INDEX * 1024 + N));               \
-    }
-
-ZMALLOC_TC_MANAGER_EXACT_CASE(0, 1)
-ZMALLOC_TC_MANAGER_EXACT_CASE(0, 8)
-ZMALLOC_TC_MANAGER_EXACT_CASE(0, 32)
-ZMALLOC_TC_MANAGER_EXACT_CASE(1, 1)
-ZMALLOC_TC_MANAGER_EXACT_CASE(1, 8)
-ZMALLOC_TC_MANAGER_EXACT_CASE(1, 32)
-ZMALLOC_TC_MANAGER_EXACT_CASE(2, 1)
-ZMALLOC_TC_MANAGER_EXACT_CASE(2, 8)
-ZMALLOC_TC_MANAGER_EXACT_CASE(2, 32)
-ZMALLOC_TC_MANAGER_EXACT_CASE(3, 1)
-ZMALLOC_TC_MANAGER_EXACT_CASE(3, 8)
-ZMALLOC_TC_MANAGER_EXACT_CASE(3, 32)
-ZMALLOC_TC_MANAGER_EXACT_CASE(7, 1)
-ZMALLOC_TC_MANAGER_EXACT_CASE(7, 8)
-ZMALLOC_TC_MANAGER_EXACT_CASE(7, 32)
-
-#undef ZMALLOC_TC_MANAGER_EXACT_CASE
+INSTANTIATE_TEST_SUITE_P(
+    IndexCountPairs, TransferCacheManagerExactParamTest,
+    ::testing::Values(std::make_tuple(0u, 1u), std::make_tuple(0u, 8u),
+                      std::make_tuple(0u, 32u), std::make_tuple(1u, 1u),
+                      std::make_tuple(1u, 8u), std::make_tuple(1u, 32u),
+                      std::make_tuple(2u, 1u), std::make_tuple(2u, 8u),
+                      std::make_tuple(2u, 32u), std::make_tuple(3u, 1u),
+                      std::make_tuple(3u, 8u), std::make_tuple(3u, 32u),
+                      std::make_tuple(7u, 1u), std::make_tuple(7u, 8u),
+                      std::make_tuple(7u, 32u)));
 
 } // namespace
 } // namespace zmalloc
