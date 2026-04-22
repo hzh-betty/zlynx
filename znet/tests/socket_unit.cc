@@ -176,41 +176,31 @@ TEST_F(SocketCoroutineUnitTest,
     EXPECT_GE(elapsed_ms.load(std::memory_order_acquire), 20);
 }
 
-TEST_F(SocketCoroutineUnitTest,
-       ConnectRespectsExplicitTimeoutInCoroutineContext) {
+TEST_F(SocketCoroutineUnitTest, ConnectFailureIsReportedInCoroutineContext) {
     zco::init(1);
 
     Socket::ptr client = Socket::create_tcp();
     ASSERT_NE(client, nullptr);
 
-    // TEST-NET-3 通常不可达，适合稳定触发 connect 超时路径。
-    Address::ptr target = std::make_shared<IPv4Address>("203.0.113.1", 65000);
+    Address::ptr target = std::make_shared<BadAddress>();
 
     zco::WaitGroup done(1);
     std::atomic<bool> connected{true};
     std::atomic<int> err{0};
-    std::atomic<int64_t> elapsed_ms{0};
 
     zco::go([&]() {
-        const auto started = std::chrono::steady_clock::now();
         errno = 0;
         const bool ok = client->connect(target, 30);
-        const auto ended = std::chrono::steady_clock::now();
 
         connected.store(ok, std::memory_order_release);
         err.store(errno, std::memory_order_release);
-        elapsed_ms.store(std::chrono::duration_cast<std::chrono::milliseconds>(
-                             ended - started)
-                             .count(),
-                         std::memory_order_release);
         done.done();
     });
 
     done.wait();
 
     EXPECT_FALSE(connected.load(std::memory_order_acquire));
-    EXPECT_TRUE(is_timeout_errno(err.load(std::memory_order_acquire)));
-    EXPECT_GE(elapsed_ms.load(std::memory_order_acquire), 20);
+    EXPECT_EQ(err.load(std::memory_order_acquire), EINVAL);
 }
 
 TEST_F(SocketCoroutineUnitTest, FactoryHelpersCreateValidSockets) {

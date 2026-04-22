@@ -22,7 +22,7 @@ TEST(AddressUnitTest, LookupReturnsResultForLocalhost) {
 }
 
 TEST(AddressUnitTest, LookupReturnsEmptyOnInvalidHost) {
-    const auto result = Address::lookup("host.invalid.znet.example", 10000);
+    const auto result = Address::lookup("invalid host name", 10000);
     EXPECT_TRUE(result.empty());
 }
 

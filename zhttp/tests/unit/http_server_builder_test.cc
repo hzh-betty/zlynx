@@ -217,7 +217,7 @@ TEST(HttpServerBuilderTest, BuildThrowsForInvalidConfigAndLookupFailure) {
     EXPECT_THROW(invalid_config_builder.build(), std::runtime_error);
 
     HttpServerBuilder resolve_fail_builder;
-    resolve_fail_builder.listen("definitely.invalid.host.local", 18080)
+    resolve_fail_builder.listen("invalid host name", 18080)
         .threads(1)
         .log_level("error");
     EXPECT_THROW(resolve_fail_builder.build(), std::runtime_error);
