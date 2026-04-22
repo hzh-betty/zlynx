@@ -225,6 +225,38 @@ TEST_F(BufferUnitTest, ReadAndWriteSocketPathWorksInCoroutineContext) {
     zco::shutdown();
 }
 
+TEST_F(BufferUnitTest, ReadFromSocketDoesNotPreGrowToMaxReadBytes) {
+    zco::init(1);
+
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+    auto reader = std::make_shared<Socket>(pair[0]);
+    ASSERT_NE(reader, nullptr);
+
+    Buffer input(8);
+    input.append("abcd", 4);
+    EXPECT_EQ(input.retrieve_as_string(4), "abcd");
+    const size_t writable_before = input.writable_bytes();
+
+    zco::WaitGroup done(1);
+    zco::go([&]() {
+        int saved_errno = 0;
+        EXPECT_EQ(::send(pair[1], "xy", 2, 0), 2);
+        EXPECT_EQ(input.read_from_socket(reader, 64 * 1024, 200,
+                                         &saved_errno),
+                  2);
+        done.done();
+    });
+    done.wait();
+
+    EXPECT_EQ(input.writable_bytes(), writable_before - 2);
+    EXPECT_EQ(input.retrieve_all_as_string(), "xy");
+
+    reader->close();
+    ::close(pair[1]);
+    zco::shutdown();
+}
+
 } // namespace
 } // namespace znet
 

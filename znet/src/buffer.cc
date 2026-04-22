@@ -1,8 +1,12 @@
 #include "znet/buffer.h"
 
+#include <sys/uio.h>
+
 #include <algorithm>
 #include <cerrno>
 #include <cstring>
+
+#include "zco/hook.h"
 
 #include "znet/socket.h"
 
@@ -101,6 +105,10 @@ void Buffer::ensure_writable_bytes(size_t length) {
     }
 }
 
+// 从 socket 读取数据到 Buffer 中，返回实际读取字节数或 -1（出错时）。
+// 
+// 优化：使用 readv 进行“单次系统调用多缓冲区”读入，复用栈上 extra_buffer
+// 减少缓冲区的频繁扩容和内存搬移
 ssize_t Buffer::read_from_socket(const std::shared_ptr<Socket> &socket,
                                  size_t max_read_bytes, uint32_t timeout_ms,
                                  int *saved_errno) {
@@ -120,9 +128,25 @@ ssize_t Buffer::read_from_socket(const std::shared_ptr<Socket> &socket,
         return -1;
     }
 
-    ensure_writable_bytes(max_read_bytes);
+    // 使用 readv 进行“单次系统调用多缓冲区”读入，提升效率。
+    char extra_buffer[65536];
+    const size_t writable = writable_bytes();
+    const size_t extra_writable =
+        writable < max_read_bytes
+            ? std::min(sizeof(extra_buffer), max_read_bytes - writable)
+            : 0;
+
+    struct iovec vec[2];
+    vec[0].iov_base = begin_write();
+    vec[0].iov_len = std::min(writable, max_read_bytes);
+    vec[1].iov_base = extra_buffer;
+    vec[1].iov_len = extra_writable;
+
+    const int iovcnt = extra_writable > 0 ? 2 : 1;
+    const uint32_t effective_timeout_ms =
+        timeout_ms == 0 ? zco::kInfiniteTimeoutMs : timeout_ms;
     const ssize_t n =
-        socket->recv(begin_write(), max_read_bytes, 0, timeout_ms);
+        zco::co_readv(socket->fd(), vec, iovcnt, effective_timeout_ms);
     if (n < 0) {
         if (saved_errno) {
             *saved_errno = errno;
@@ -130,7 +154,12 @@ ssize_t Buffer::read_from_socket(const std::shared_ptr<Socket> &socket,
         return -1;
     }
 
-    has_written(static_cast<size_t>(n));
+    if (static_cast<size_t>(n) <= writable) {
+        has_written(static_cast<size_t>(n));
+    } else {
+        writer_index_ = data_.size();
+        append(extra_buffer, static_cast<size_t>(n) - writable);
+    }
     return n;
 }
 
