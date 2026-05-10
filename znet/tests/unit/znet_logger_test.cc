@@ -1,12 +1,6 @@
 #include "znet/znet_logger.h"
 
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <unistd.h>
-
-#include <cstdio>
-#include <cstring>
-#include <string>
+#include "zco/zco_log.h"
 
 #include <gtest/gtest.h>
 
@@ -16,57 +10,19 @@ namespace {
 
 class ZnetLoggerUnitTest : public ::testing::Test {};
 
-std::string make_temp_log_file() {
-    char dir_template[] = "/tmp/znet-log-XXXXXX";
-    char *dir = ::mkdtemp(dir_template);
-    EXPECT_NE(dir, nullptr);
-    return std::string(dir ? dir : "/tmp") + "/znet.log";
-}
-
 TEST_F(ZnetLoggerUnitTest, GetLoggerLazilyInitializesDefaultLogger) {
-    zlog::Logger *logger = get_logger();
+    zlog::Logger::ptr logger = get_logger_ptr();
     ASSERT_NE(logger, nullptr);
-}
-
-TEST_F(ZnetLoggerUnitTest, InitLoggerSupportsFileSinkAndCustomFormatter) {
-    LoggerInitOptions options;
-    options.async = false;
-    options.level = zlog::LogLevel::value::INFO;
-    options.formatter = "[%p]%m%n";
-    options.sink = "FiLe";
-    options.file_path = make_temp_log_file();
-
-    init_logger(options);
-    zlog::Logger *logger = get_logger();
-    ASSERT_NE(logger, nullptr);
-
-    ZNET_LOG_INFO("file sink log {}", 1);
-
-    struct stat st;
-    ASSERT_EQ(::stat(options.file_path.c_str(), &st), 0);
-    EXPECT_GT(static_cast<long long>(st.st_size), 0);
-}
-
-TEST_F(ZnetLoggerUnitTest, InitLoggerSupportsBothSinkAliases) {
-    LoggerInitOptions options;
-    options.async = false;
-    options.sink = "stdout+file";
-    options.file_path = make_temp_log_file();
-    init_logger(options);
-    ASSERT_NE(get_logger(), nullptr);
-
-    options.sink = "file+stdout";
-    init_logger(options);
-    ASSERT_NE(get_logger(), nullptr);
-
-    options.sink = "both";
-    init_logger(options);
-    ASSERT_NE(get_logger(), nullptr);
+    EXPECT_EQ(logger->get_name(), "znet_logger");
+    EXPECT_NE(dynamic_cast<zlog::AsyncLogger *>(logger.get()), nullptr);
 }
 
 TEST_F(ZnetLoggerUnitTest, InitLoggerLevelOverloadWorks) {
     init_logger(zlog::LogLevel::value::DEBUG);
-    ASSERT_NE(get_logger(), nullptr);
+    zlog::Logger::ptr logger = get_logger_ptr();
+    ASSERT_NE(logger, nullptr);
+    EXPECT_EQ(logger->get_name(), "znet_logger");
+    EXPECT_NE(dynamic_cast<zlog::AsyncLogger *>(logger.get()), nullptr);
 
     ZNET_LOG_DEBUG("debug {}", 1);
     ZNET_LOG_WARN("warn {}", 2);
@@ -74,13 +30,13 @@ TEST_F(ZnetLoggerUnitTest, InitLoggerLevelOverloadWorks) {
     ZNET_LOG_FATAL("fatal {}", 4);
 }
 
-TEST_F(ZnetLoggerUnitTest, EmptyFilePathFallsBackToDefaultPath) {
-    LoggerInitOptions options;
-    options.async = false;
-    options.sink = "file";
-    options.file_path.clear();
-    init_logger(options);
-    ASSERT_NE(get_logger(), nullptr);
+TEST_F(ZnetLoggerUnitTest, InitLoggerAlsoInitializesZcoLogger) {
+    init_logger(zlog::LogLevel::value::ERROR);
+
+    zlog::Logger::ptr co_logger = zco::get_logger_ptr();
+    ASSERT_NE(co_logger, nullptr);
+    EXPECT_EQ(co_logger->get_name(), "zco_logger");
+    EXPECT_NE(dynamic_cast<zlog::AsyncLogger *>(co_logger.get()), nullptr);
 }
 
 } // namespace
@@ -88,5 +44,6 @@ TEST_F(ZnetLoggerUnitTest, EmptyFilePathFallsBackToDefaultPath) {
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
+    znet::init_logger();
     return RUN_ALL_TESTS();
 }
