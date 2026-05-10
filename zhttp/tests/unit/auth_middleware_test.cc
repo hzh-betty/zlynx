@@ -3,6 +3,7 @@
 #include "zhttp/mid/auth_middleware.h"
 #include "zhttp/router.h"
 #include "zhttp/session.h"
+#include "zhttp/zhttp_logger.h"
 
 using namespace zhttp;
 using namespace zhttp::mid;
@@ -351,5 +352,6 @@ TEST_F(RoleAuthorizationMiddlewareTest,
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
+    zhttp::init_logger();
     return RUN_ALL_TESTS();
 }
