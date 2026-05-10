@@ -79,7 +79,7 @@ foreach(TEST_NAME ${INTEGRATION_TESTS})
 endforeach()
 
 # 基准测试
-add_executable(zmalloc_benchmark benchmark/benchmark.cc)
+add_executable(zmalloc_benchmark benchmark/zmalloc_benchmark.cc)
 target_link_libraries(zmalloc_benchmark
     PRIVATE
         zmalloc
@@ -89,7 +89,7 @@ target_include_directories(zmalloc_benchmark PRIVATE ${ZMALLOC_INCLUDE_DIR})
 zmalloc_test_enable_coverage(zmalloc_benchmark)
 
 # perf 性能分析驱动
-add_executable(zmalloc_performance benchmark/performance.cc)
+add_executable(zmalloc_performance benchmark/zmalloc_performance.cc)
 target_link_libraries(zmalloc_performance
     PRIVATE
         zmalloc
