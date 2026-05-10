@@ -1,5 +1,7 @@
 #ifndef ZLOG_ZLOG_H_
 #define ZLOG_ZLOG_H_
+#include <stdexcept>
+
 #include "zlog/logger.h"
 
 namespace zlog {
@@ -10,14 +12,22 @@ namespace zlog {
  * @return 返回对应名称的日志器智能指针，如果不存在则返回空指针
  */
 inline Logger::ptr get_logger(const std::string &name) {
-    return LoggerManager::get_instance().get_logger(name);
+    Logger::ptr logger = LoggerManager::get_instance().get_logger(name);
+    if (!logger) {
+        throw std::runtime_error("logger is not initialized: " + name);
+    }
+    return logger;
 }
 /**
  * @brief 获取root日志器
  * @return 返回root日志器的智能指针
  */
 inline Logger::ptr root_logger() {
-    return LoggerManager::get_instance().root_logger();
+    Logger::ptr logger = LoggerManager::get_instance().root_logger();
+    if (!logger) {
+        throw std::runtime_error("root logger is not initialized");
+    }
+    return logger;
 }
 
 // 2. 通过宏函数对日志器的接口进行代理

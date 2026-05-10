@@ -377,8 +377,7 @@ TEST_F(ZlogIntegrationTest, GetLoggerByName) {
 }
 
 TEST_F(ZlogIntegrationTest, GetNonExistentLogger) {
-    Logger::ptr logger = zlog::get_logger("non_existent");
-    EXPECT_EQ(logger.get(), static_cast<Logger *>(NULL));
+    EXPECT_THROW(zlog::get_logger("non_existent"), std::runtime_error);
 }
 
 TEST_F(ZlogIntegrationTest, RollingFileIntegration) {

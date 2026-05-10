@@ -6,7 +6,6 @@
  */
 
 #include <mutex>
-#include <stdexcept>
 #include <unordered_map>
 #include <utility>
 
@@ -119,9 +118,6 @@ class Logger {
     template <typename... Args>
     void log_impl_helper(const LogLevel::value level, const char *file,
                          const size_t line, const char *fmt, Args &&...args) {
-        if (this == nullptr) {
-            throw std::runtime_error("logger is not initialized");
-        }
         if (level < limit_level_)
             return;
 

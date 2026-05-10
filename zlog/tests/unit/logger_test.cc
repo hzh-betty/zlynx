@@ -1,4 +1,5 @@
 #include "zlog/logger.h"
+#include "zlog/zlog.h"
 #include <chrono>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -137,9 +138,8 @@ TEST_F(LoggerTest, LoggerManagerUpsertNonRootDoesNotReplaceRoot) {
 }
 
 TEST_F(LoggerTest, UninitializedLoggerThrowsWhenLogging) {
-    Logger::ptr logger;
-    EXPECT_THROW(logger->log_impl(LogLevel::value::INFO, __FILE__, __LINE__,
-                                  "uninitialized logger"),
+    EXPECT_THROW(zlog::get_logger("uninitialized_logger")->ZLOG_INFO(
+                     "uninitialized logger"),
                  std::runtime_error);
 }
 
