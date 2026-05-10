@@ -169,7 +169,8 @@ TEST(RangeParseTest, WritePayloadByRangeFallsBackToFullEntity) {
 } // namespace zhttp
 
 int main(int argc, char **argv) {
-    zhttp::init_logger();
     ::testing::InitGoogleTest(&argc, argv);
+
+    zhttp::init_logger();
     return RUN_ALL_TESTS();
 }
