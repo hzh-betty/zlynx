@@ -108,52 +108,6 @@ void parse_logging_section(const toml::value &data, ServerConfig &config) {
     if (logging.contains("level")) {
         config.log_level = toml::find<std::string>(logging, "level");
     }
-    if (logging.contains("async")) {
-        config.log_async = toml::find<bool>(logging, "async");
-    }
-    if (logging.contains("format")) {
-        config.log_format = toml::find<std::string>(logging, "format");
-    }
-    if (logging.contains("sink")) {
-        config.log_sink = toml::find<std::string>(logging, "sink");
-    }
-    if (logging.contains("file")) {
-        config.log_file = toml::find<std::string>(logging, "file");
-    }
-
-    if (!logging.contains("modules")) {
-        return;
-    }
-
-    auto parse_module = [&logging](const char *module_name,
-                                   ModuleLogConfig &module_config) {
-        const auto &modules = toml::find(logging, "modules");
-        if (!modules.contains(module_name)) {
-            return;
-        }
-
-        const auto &module = toml::find(modules, module_name);
-        if (module.contains("level")) {
-            module_config.level = toml::find<std::string>(module, "level");
-        }
-        if (module.contains("async")) {
-            module_config.async = toml::find<bool>(module, "async");
-            module_config.has_async = true;
-        }
-        if (module.contains("format")) {
-            module_config.format = toml::find<std::string>(module, "format");
-        }
-        if (module.contains("sink")) {
-            module_config.sink = toml::find<std::string>(module, "sink");
-        }
-        if (module.contains("file")) {
-            module_config.file = toml::find<std::string>(module, "file");
-        }
-    };
-
-    parse_module("zco", config.zco_log);
-    parse_module("znet", config.znet_log);
-    parse_module("zhttp", config.zhttp_log);
 }
 
 void parse_timeout_section(const toml::value &data, ServerConfig &config) {
