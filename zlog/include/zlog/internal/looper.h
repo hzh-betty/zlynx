@@ -3,6 +3,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <exception>
 #include <functional>
 #include <memory>
 #include <thread>
@@ -51,7 +52,7 @@ class AsyncLooper {
      * @brief 析构函数
      * 停止异步循环器并等待工作线程结束
      */
-    ~AsyncLooper();
+    ~AsyncLooper() noexcept;
 
     /**
      * @brief 停止异步循环器
@@ -76,6 +77,7 @@ class AsyncLooper {
     std::thread thread_;                   // 工作线程
     Functor callback_;                     // 回调函数
     std::chrono::milliseconds milliseco_;  // 最大等待时间
+    std::exception_ptr callback_exception_; // 回调执行期间捕获的异常
 };
 } // namespace zlog
 

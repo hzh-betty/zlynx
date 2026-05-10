@@ -136,6 +136,13 @@ TEST_F(LoggerTest, LoggerManagerUpsertNonRootDoesNotReplaceRoot) {
               logger);
 }
 
+TEST_F(LoggerTest, UninitializedLoggerThrowsWhenLogging) {
+    Logger::ptr logger;
+    EXPECT_THROW(logger->log_impl(LogLevel::value::INFO, __FILE__, __LINE__,
+                                  "uninitialized logger"),
+                 std::runtime_error);
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

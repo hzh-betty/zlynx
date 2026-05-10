@@ -211,7 +211,7 @@ TEST_F(LooperTest, CallbackException) {
     looper.push("data2", 5);
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-    looper.stop();
+    EXPECT_THROW(looper.stop(), std::runtime_error);
 
     EXPECT_GE(count.load(), 1);
 }
@@ -234,7 +234,7 @@ TEST_F(LooperTest, CallbackUnknownException) {
     looper.push("b", 1);
     std::this_thread::sleep_for(std::chrono::milliseconds(80));
 
-    looper.stop();
+    EXPECT_ANY_THROW(looper.stop());
     EXPECT_GE(count.load(), 1);
 }
 

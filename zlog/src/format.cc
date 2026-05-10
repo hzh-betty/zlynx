@@ -1,6 +1,6 @@
 #include "zlog/format.h"
 
-#include <iostream>
+#include <stdexcept>
 #include <sstream>
 
 namespace zlog {
@@ -99,7 +99,7 @@ void OtherFormatItem::format(fmt::memory_buffer &buffer,
 
 Formatter::Formatter(std::string pattern) : pattern_(std::move(pattern)) {
     if (!parse_pattern()) {
-        ;
+        throw std::invalid_argument("invalid log format pattern: " + pattern_);
     }
 }
 
@@ -137,7 +137,6 @@ bool Formatter::parse_pattern() {
 
         // 4. 是%，开始处理格式化字符
         if (++pos == n) {
-            std::cerr << "%之后没有格式化字符" << std::endl;
             return false;
         }
 
@@ -152,7 +151,6 @@ bool Formatter::parse_pattern() {
             }
 
             if (pos == n) {
-                std::cerr << "未找到匹配的子规则字符 }" << std::endl;
                 return false;
             }
             pos++;
@@ -213,8 +211,7 @@ FormatItem::prt Formatter::create_item(const std::string &key,
         return std::make_shared<NLineFormatItem>();
 
     if (!key.empty()) {
-        std::cerr << "没有对应的格式化字符: %" << key << std::endl;
-        abort();
+        throw std::invalid_argument("unknown log format item: %" + key);
     }
     return std::make_shared<OtherFormatItem>(val);
 }

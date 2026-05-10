@@ -309,21 +309,15 @@ TEST_F(FormatTest, FormatterFileAndLine) {
 }
 
 TEST_F(FormatTest, FormatterInvalidTrailingPercentPattern) {
-    Formatter formatter("prefix%");
-    fmt::memory_buffer buffer;
-    formatter.format(buffer, *msg);
-
-    std::string result(buffer.data(), buffer.size());
-    EXPECT_EQ(result, "");
+    EXPECT_THROW(Formatter("prefix%"), std::invalid_argument);
 }
 
 TEST_F(FormatTest, FormatterInvalidUnclosedSubPattern) {
-    Formatter formatter("%d{%Y-%m-%d");
-    fmt::memory_buffer buffer;
-    formatter.format(buffer, *msg);
+    EXPECT_THROW(Formatter("%d{%Y-%m-%d"), std::invalid_argument);
+}
 
-    std::string result(buffer.data(), buffer.size());
-    EXPECT_EQ(result, "");
+TEST_F(FormatTest, FormatterUnknownPatternItemThrows) {
+    EXPECT_THROW(Formatter("%x"), std::invalid_argument);
 }
 
 int main(int argc, char **argv) {

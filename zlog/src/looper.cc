@@ -1,7 +1,5 @@
 #include "zlog/internal/looper.h"
 
-#include <iostream>
-
 namespace zlog {
 
 AsyncLooper::AsyncLooper(Functor func, const AsyncType looper_type,
@@ -28,13 +26,23 @@ void AsyncLooper::push(const char *data, const size_t len) {
     }
 }
 
-AsyncLooper::~AsyncLooper() { stop(); }
+AsyncLooper::~AsyncLooper() noexcept {
+    try {
+        stop();
+    } catch (...) {
+    }
+}
 
 void AsyncLooper::stop() {
     stop_ = true;
     cond_con_.notify_all();
     if (thread_.joinable()) {
         thread_.join(); // 等待工作线程退出
+    }
+    if (callback_exception_) {
+        const std::exception_ptr exception = callback_exception_;
+        callback_exception_ = nullptr;
+        std::rethrow_exception(exception);
     }
 }
 
@@ -66,14 +74,13 @@ void AsyncLooper::thread_entry() {
             cond_pro_.notify_one();
         }
 
-        // 4.处理数据并初始化
+        // 4. 处理数据并初始化
         try {
             callback_(con_buf_);
-        } catch (const std::exception &e) {
-            std::cerr << "AsyncLooper callback exception: " << e.what()
-                      << std::endl;
         } catch (...) {
-            std::cerr << "AsyncLooper callback unknown exception" << std::endl;
+            if (!callback_exception_) {
+                callback_exception_ = std::current_exception();
+            }
         }
         con_buf_.reset();
     }
