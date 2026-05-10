@@ -18,6 +18,8 @@
 
 #include <gtest/gtest.h>
 
+#include "znet/znet_logger.h"
+
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 
@@ -773,5 +775,6 @@ TEST_F(TlsContextUnitTest, WriteReportsErrorAfterAbruptPeerReset) {
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
+    znet::init_logger();
     return RUN_ALL_TESTS();
 }
