@@ -106,6 +106,36 @@ TEST_F(ProcessorInternalUnitTest,
     EXPECT_EQ(fiber->saved_stack_size(), before);
 }
 
+TEST_F(ProcessorInternalUnitTest, SharedStackOwnerUsesFiberIdToAvoidStaleHit) {
+    Processor processor(25, 64 * 1024, 1, StackModel::kShared);
+    Fiber::ptr fiber =
+        std::make_shared<Fiber>(201, &processor, []() {}, 64 * 1024, 0, true);
+
+    processor.shared_stacks_.set_occupy_fiber(0, fiber.get(), fiber->id());
+    fiber->reset(202, []() {}, 0);
+
+    processor.prepare_shared_stack_for(fiber);
+
+    const SharedStackOwner owner = processor.shared_stacks_.occupy_fiber(0);
+    EXPECT_EQ(owner.fiber, fiber.get());
+    EXPECT_EQ(owner.fiber_id, fiber->id());
+}
+
+TEST_F(ProcessorInternalUnitTest, DoneFiberClearsMatchingSharedStackOwner) {
+    Processor processor(26, 64 * 1024, 1, StackModel::kShared);
+    Fiber::ptr fiber =
+        std::make_shared<Fiber>(203, &processor, []() {}, 64 * 1024, 0, true);
+
+    processor.shared_stacks_.set_occupy_fiber(0, fiber.get(), fiber->id());
+    fiber->mark_done();
+
+    EXPECT_EQ(processor.finalize_after_switch(fiber), Fiber::State::kDone);
+
+    const SharedStackOwner owner = processor.shared_stacks_.occupy_fiber(0);
+    EXPECT_EQ(owner.fiber, nullptr);
+    EXPECT_EQ(owner.fiber_id, 0);
+}
+
 } // namespace
 } // namespace zco
 

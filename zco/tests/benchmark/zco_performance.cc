@@ -29,7 +29,7 @@ constexpr int kDefaultProducerThreads = 8;
 constexpr int kDefaultSchedulerTasks = 120000;
 constexpr int kDefaultYieldInterval = 8;
 constexpr size_t kDefaultStackSize = 64 * 1024;
-constexpr size_t kDefaultSharedStackNum = 8;
+constexpr size_t kDefaultSharedStackNum = 64;
 constexpr int kDefaultChannelMessages = 80000;
 constexpr int kDefaultTimerTasks = 60000;
 constexpr int kDefaultHookRounds = 40000;
@@ -218,9 +218,7 @@ void print_workload_config(const WorkloadConfig &config) {
               << " shared_stack_num=" << config.shared_stack_num << std::endl;
 }
 
-void disable_benchmark_logging() {
-    init_logger(zlog::LogLevel::value::OFF);
-}
+void disable_benchmark_logging() { init_logger(zlog::LogLevel::value::OFF); }
 
 void prepare_runtime(StackModel model, const WorkloadConfig &config) {
     shutdown();

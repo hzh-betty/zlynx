@@ -10,7 +10,7 @@ namespace zco {
 SharedStackBuffer::SharedStackBuffer(size_t stack_size)
     : stack_buffer_(stack_size == 0 ? nullptr : new char[stack_size]),
       stack_bp_(stack_buffer_ ? stack_buffer_ + stack_size : nullptr),
-      stack_size_(stack_size), occupy_fiber_(nullptr) {}
+      stack_size_(stack_size), occupy_fiber_() {}
 
 SharedStackBuffer::~SharedStackBuffer() { delete[] stack_buffer_; }
 
@@ -21,7 +21,7 @@ SharedStackBuffer::SharedStackBuffer(SharedStackBuffer &&other) noexcept
     other.stack_buffer_ = nullptr;
     other.stack_bp_ = nullptr;
     other.stack_size_ = 0;
-    other.occupy_fiber_ = nullptr;
+    other.occupy_fiber_ = SharedStackOwner();
 }
 
 SharedStackBuffer &
@@ -40,7 +40,7 @@ SharedStackBuffer::operator=(SharedStackBuffer &&other) noexcept {
     other.stack_buffer_ = nullptr;
     other.stack_bp_ = nullptr;
     other.stack_size_ = 0;
-    other.occupy_fiber_ = nullptr;
+    other.occupy_fiber_ = SharedStackOwner();
 
     return *this;
 }
@@ -55,11 +55,13 @@ const char *SharedStackBuffer::stack_bp() const { return stack_bp_; }
 
 size_t SharedStackBuffer::size() const { return stack_size_; }
 
-Fiber *SharedStackBuffer::occupy_fiber() const { return occupy_fiber_; }
+SharedStackOwner SharedStackBuffer::occupy_fiber() const {
+    return occupy_fiber_;
+}
 
-void SharedStackBuffer::set_occupy_fiber(Fiber *fiber) {
+void SharedStackBuffer::set_occupy_fiber(Fiber *fiber, int fiber_id) {
     // 共享栈不会同时被多个 fiber 持有；这里仅记录最后一个占用者。
-    occupy_fiber_ = fiber;
+    occupy_fiber_ = SharedStackOwner(fiber, fiber ? fiber_id : 0);
 }
 
 SharedStackPool::SharedStackPool(size_t stack_count, size_t stack_size)
@@ -87,5 +89,20 @@ size_t SharedStackPool::size(size_t stack_slot) const {
 }
 
 size_t SharedStackPool::count() const { return stacks_.size(); }
+
+SharedStackOwner SharedStackPool::occupy_fiber(size_t stack_slot) const {
+    if (stack_slot >= stacks_.size()) {
+        return SharedStackOwner();
+    }
+    return stacks_[stack_slot].occupy_fiber();
+}
+
+void SharedStackPool::set_occupy_fiber(size_t stack_slot, Fiber *fiber,
+                                       int fiber_id) {
+    if (stack_slot >= stacks_.size()) {
+        return;
+    }
+    stacks_[stack_slot].set_occupy_fiber(fiber, fiber_id);
+}
 
 } // namespace zco

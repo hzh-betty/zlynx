@@ -14,7 +14,8 @@ TEST_F(SharedStackBufferUnitTest, ZeroSizedBufferHasNullPointers) {
     EXPECT_EQ(buffer.data(), nullptr);
     EXPECT_EQ(buffer.stack_bp(), nullptr);
     EXPECT_EQ(buffer.size(), 0u);
-    EXPECT_EQ(buffer.occupy_fiber(), nullptr);
+    EXPECT_EQ(buffer.occupy_fiber().fiber, nullptr);
+    EXPECT_EQ(buffer.occupy_fiber().fiber_id, 0);
 }
 
 TEST_F(SharedStackBufferUnitTest, MoveConstructorTransfersOwnership) {
@@ -68,11 +69,13 @@ TEST_F(SharedStackBufferUnitTest, OccupyFiberSetterAndGetterWork) {
     SharedStackBuffer buffer(256);
 
     Fiber *sentinel = reinterpret_cast<Fiber *>(0x1);
-    buffer.set_occupy_fiber(sentinel);
-    EXPECT_EQ(buffer.occupy_fiber(), sentinel);
+    buffer.set_occupy_fiber(sentinel, 7);
+    EXPECT_EQ(buffer.occupy_fiber().fiber, sentinel);
+    EXPECT_EQ(buffer.occupy_fiber().fiber_id, 7);
 
-    buffer.set_occupy_fiber(nullptr);
-    EXPECT_EQ(buffer.occupy_fiber(), nullptr);
+    buffer.set_occupy_fiber(nullptr, 99);
+    EXPECT_EQ(buffer.occupy_fiber().fiber, nullptr);
+    EXPECT_EQ(buffer.occupy_fiber().fiber_id, 0);
 }
 
 TEST_F(SharedStackBufferUnitTest, SharedStackPoolAccessAndBounds) {
@@ -84,6 +87,26 @@ TEST_F(SharedStackBufferUnitTest, SharedStackPoolAccessAndBounds) {
 
     EXPECT_EQ(pool.data(9), nullptr);
     EXPECT_EQ(pool.size(9), 0u);
+}
+
+TEST_F(SharedStackBufferUnitTest, SharedStackPoolOwnerTracksFiberAndId) {
+    SharedStackPool pool(2, 1024);
+
+    Fiber *sentinel = reinterpret_cast<Fiber *>(0x1);
+    pool.set_occupy_fiber(1, sentinel, 42);
+
+    SharedStackOwner owner = pool.occupy_fiber(1);
+    EXPECT_EQ(owner.fiber, sentinel);
+    EXPECT_EQ(owner.fiber_id, 42);
+
+    pool.set_occupy_fiber(1, nullptr, 42);
+    owner = pool.occupy_fiber(1);
+    EXPECT_EQ(owner.fiber, nullptr);
+    EXPECT_EQ(owner.fiber_id, 0);
+
+    owner = pool.occupy_fiber(9);
+    EXPECT_EQ(owner.fiber, nullptr);
+    EXPECT_EQ(owner.fiber_id, 0);
 }
 
 TEST_F(SharedStackBufferUnitTest, ConstAccessorsExposeSamePointers) {

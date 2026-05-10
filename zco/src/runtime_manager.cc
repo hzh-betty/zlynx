@@ -21,7 +21,7 @@ namespace zco {
 namespace {
 
 constexpr size_t kDefaultStackSize = 128 * 1024;
-constexpr size_t kDefaultSharedStackNum = 8;
+constexpr size_t kDefaultSharedStackNum = 64;
 constexpr StackModel kDefaultStackModel = StackModel::kShared;
 
 uint64_t decode_fiber_handle(void *handle) {

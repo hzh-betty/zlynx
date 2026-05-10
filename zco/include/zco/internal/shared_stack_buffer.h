@@ -10,6 +10,15 @@ namespace zco {
 
 class Fiber;
 
+struct SharedStackOwner {
+    Fiber *fiber;
+    int fiber_id;
+
+    SharedStackOwner() : fiber(nullptr), fiber_id(0) {}
+    SharedStackOwner(Fiber *owner_fiber, int owner_fiber_id)
+        : fiber(owner_fiber), fiber_id(owner_fiber_id) {}
+};
+
 /**
  * @brief 共享栈缓冲区
  * @details
@@ -47,15 +56,15 @@ class SharedStackBuffer : public NonCopyable {
      * @brief 获取占用的 Fiber 对象
      * @return 占用的 Fiber 对象，未被占用时返回 nullptr
      */
-    Fiber *occupy_fiber() const;
+    SharedStackOwner occupy_fiber() const;
 
-    void set_occupy_fiber(Fiber *fiber);
+    void set_occupy_fiber(Fiber *fiber, int fiber_id);
 
   private:
     char *stack_buffer_;
     char *stack_bp_;
     size_t stack_size_;
-    Fiber *occupy_fiber_;
+    SharedStackOwner occupy_fiber_;
 };
 
 /**
@@ -76,6 +85,10 @@ class SharedStackPool : private NonCopyable {
     size_t size(size_t stack_slot) const;
 
     size_t count() const;
+
+    SharedStackOwner occupy_fiber(size_t stack_slot) const;
+
+    void set_occupy_fiber(size_t stack_slot, Fiber *fiber, int fiber_id);
 
   private:
     std::vector<SharedStackBuffer> stacks_;

@@ -266,7 +266,7 @@ TEST_F(RuntimeManagerUnitTest, StackConfigDefaultsToSharedMode) {
 
     Processor *processor = processors[0].get();
     EXPECT_EQ(processor->stack_model(), StackModel::kShared);
-    EXPECT_EQ(processor->shared_stack_count(), 8u);
+    EXPECT_EQ(processor->shared_stack_count(), 64u);
     EXPECT_EQ(processor->shared_stack_size(0), 128u * 1024u);
 }
 
@@ -285,7 +285,7 @@ TEST_F(RuntimeManagerUnitTest,
 
     Processor *processor = processors[0].get();
     EXPECT_EQ(processor->stack_model(), StackModel::kShared);
-    EXPECT_EQ(processor->shared_stack_count(), 8u);
+    EXPECT_EQ(processor->shared_stack_count(), 64u);
     EXPECT_EQ(processor->shared_stack_size(0), 128u * 1024u);
 }
 
@@ -397,7 +397,7 @@ TEST_F(RuntimeManagerUnitTest,
     ASSERT_EQ(second_processors.size(), 1u);
     ASSERT_NE(second_processors[0], nullptr);
     EXPECT_EQ(second_processors[0]->stack_model(), StackModel::kShared);
-    EXPECT_EQ(second_processors[0]->shared_stack_count(), 8u);
+    EXPECT_EQ(second_processors[0]->shared_stack_count(), 64u);
     EXPECT_EQ(second_processors[0]->shared_stack_size(0), 128u * 1024u);
 }
 

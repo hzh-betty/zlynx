@@ -46,7 +46,7 @@ class RuntimeTestBase : public ::testing::Test {
 
     void SetUp() override {
         shutdown();
-        co_stack_num(8);
+        co_stack_num(64);
         co_stack_size(128 * 1024);
         co_stack_model(StackModel::kShared);
 

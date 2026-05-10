@@ -1,3 +1,4 @@
+#include <array>
 #include <atomic>
 
 #include <gtest/gtest.h>
@@ -206,6 +207,50 @@ TEST_F(SchedUnitByHeaderTest, SleepForZeroInCoroutineActsLikeYield) {
 
     done.wait();
     EXPECT_EQ(counter.load(std::memory_order_relaxed), 3);
+}
+
+TEST_F(SchedUnitByHeaderTest,
+       SingleSharedStackSlotPreservesLocalDataAcrossYields) {
+    co_stack_model(StackModel::kShared);
+    co_stack_size(64 * 1024);
+    co_stack_num(1);
+    init(1);
+
+    WaitGroup done(2);
+    std::atomic<bool> valid(true);
+
+    auto run_with_pattern = [&done, &valid](uint8_t pattern) {
+        std::array<uint8_t, 4096> local;
+        local.fill(pattern);
+
+        for (int round = 0; round < 24; ++round) {
+            local[static_cast<size_t>(round)] =
+                static_cast<uint8_t>(pattern + round);
+            yield();
+            for (int i = 0; i <= round; ++i) {
+                if (local[static_cast<size_t>(i)] !=
+                    static_cast<uint8_t>(pattern + i)) {
+                    valid.store(false, std::memory_order_release);
+                    break;
+                }
+            }
+            for (size_t i = static_cast<size_t>(round + 1); i < local.size();
+                 ++i) {
+                if (local[i] != pattern) {
+                    valid.store(false, std::memory_order_release);
+                    break;
+                }
+            }
+        }
+
+        done.done();
+    };
+
+    go([&]() { run_with_pattern(0x31); });
+    go([&]() { run_with_pattern(0x73); });
+
+    done.wait();
+    EXPECT_TRUE(valid.load(std::memory_order_acquire));
 }
 
 TEST_F(SchedUnitByHeaderTest, StopSchedsIsIdempotent) {

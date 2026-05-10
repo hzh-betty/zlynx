@@ -552,7 +552,7 @@ Fiber::ptr Processor::switch_to_fiber(Fiber::ptr fiber) {
         // 首次运行需要初始化 ucontext；后续恢复只做栈快照回填。
         current_fiber_->initialize_context();
     }
-    restore_fiber_stack(current_fiber_);
+    prepare_shared_stack_for(current_fiber_);
 
     current_fiber_->mark_running();
     Context *fiber_context = current_fiber_->context();
@@ -568,12 +568,17 @@ Fiber::ptr Processor::switch_to_fiber(Fiber::ptr fiber) {
 Fiber::State Processor::finalize_after_switch(const Fiber::ptr &fiber) {
     const Fiber::State state = fiber->state();
     if (state != Fiber::State::kDone) {
-        // 非结束态都要把共享栈快照保存，供下次恢复继续执行。
-        save_fiber_stack(fiber);
         return state;
     }
 
     fiber->clear_saved_stack();
+    if (fiber->use_shared_stack()) {
+        const SharedStackOwner owner =
+            shared_stacks_.occupy_fiber(fiber->stack_slot());
+        if (owner.fiber == fiber.get() && owner.fiber_id == fiber->id()) {
+            shared_stacks_.set_occupy_fiber(fiber->stack_slot(), nullptr, 0);
+        }
+    }
     return state;
 }
 
@@ -625,6 +630,14 @@ void Processor::handle_io_ready(const std::shared_ptr<IoWaiter> &waiter,
 }
 
 void Processor::save_fiber_stack(const Fiber::ptr &fiber) {
+    save_fiber_stack(fiber.get());
+}
+
+void Processor::save_fiber_stack(Fiber *fiber) {
+    if (!fiber || !fiber->use_shared_stack()) {
+        return;
+    }
+
     const size_t stack_slot = fiber->stack_slot();
     const size_t stack_size = shared_stacks_.size(stack_slot);
     void *stack_data = shared_stacks_.data(stack_slot);
@@ -688,6 +701,26 @@ void Processor::restore_fiber_stack(const Fiber::ptr &fiber) {
     ZCO_LOG_DEBUG(
         "shared stack restored, sched_id={}, fiber_id={}, used_bytes={}", id_,
         fiber->id(), used);
+}
+
+void Processor::prepare_shared_stack_for(const Fiber::ptr &fiber) {
+    if (!fiber || !fiber->use_shared_stack()) {
+        return;
+    }
+
+    const size_t stack_slot = fiber->stack_slot();
+    const SharedStackOwner owner = shared_stacks_.occupy_fiber(stack_slot);
+    if (owner.fiber == fiber.get() && owner.fiber_id == fiber->id()) {
+        return;
+    }
+
+    if (owner.fiber && owner.fiber->id() == owner.fiber_id &&
+        owner.fiber->state() != Fiber::State::kDone) {
+        save_fiber_stack(owner.fiber);
+    }
+
+    shared_stacks_.set_occupy_fiber(stack_slot, fiber.get(), fiber->id());
+    restore_fiber_stack(fiber);
 }
 
 Fiber::ptr Processor::obtain_fiber(Task task) {

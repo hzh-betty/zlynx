@@ -175,8 +175,10 @@ class Processor : public NonCopyable {
 
     /**
      * @brief 取消指定 fd 上挂起的 IO 等待。
-     * @param fd 文件描述符。
+     * @param fd
+     * 文件描述符。
      * @param error 唤醒等待协程后暴露的错误码。
+     *
      * @return 无返回值。
      */
     void cancel_fd_waiters(int fd, int error);
@@ -373,12 +375,16 @@ class Processor : public NonCopyable {
      */
     void save_fiber_stack(const Fiber::ptr &fiber);
 
+    void save_fiber_stack(Fiber *fiber);
+
     /**
      * @brief 恢复 Fiber 共享栈快照。
      * @param fiber 协程对象。
      * @return 无返回值。
      */
     void restore_fiber_stack(const Fiber::ptr &fiber);
+
+    void prepare_shared_stack_for(const Fiber::ptr &fiber);
 
     /**
      * @brief 获取 Fiber 对象用于执行任务。
