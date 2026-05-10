@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include "zhttp/zhttp_logger.h"
+
 #include <fcntl.h>
 #include <unistd.h>
 
@@ -325,5 +327,6 @@ TEST_F(MultipartTest, AcceptsSingleLfAfterBoundaryLine) {
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
+    zhttp::init_logger();
     return RUN_ALL_TESTS();
 }
