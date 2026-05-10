@@ -556,8 +556,7 @@ int run_server_process(const BenchConfig &cfg, const int ready_fd) {
     std::signal(SIGINT, server_signal_handler);
     std::signal(SIGPIPE, SIG_IGN);
 
-    zco::init_logger(zlog::LogLevel::value::ERROR);
-    znet::init_logger(zlog::LogLevel::value::ERROR);
+    znet::init_logger(zlog::LogLevel::value::OFF);
 
     auto address = std::make_shared<znet::IPv4Address>(
         "127.0.0.1", static_cast<uint16_t>(cfg.port));
