@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 BUILD_DIR="${BUILD_DIR:-${ROOT_DIR}/build-zco-perf-nooverride}"
-BIN="${BIN:-${BUILD_DIR}/zco/tests/stack_model_perf}"
+BIN="${BIN:-${BUILD_DIR}/zco/tests/stack_model_performance}"
 MODE="${1:-baseline}"
 OUT_ROOT="${ROOT_DIR}/zco/tests/stress/perf_results"
 STAMP="$(date +%Y%m%d_%H%M%S)"
@@ -14,7 +14,7 @@ mkdir -p "${OUT_DIR}"
 if [[ ! -x "${BIN}" ]]; then
   echo "[error] test binary not found: ${BIN}"
   echo "[hint] configure first: cmake -S . -B build-zco-perf-nooverride -DCMAKE_BUILD_TYPE=RelWithDebInfo -DZCO_BUILD_TESTS=ON -DZLYNX_USE_ZMALLOC_OVERRIDE=OFF"
-  echo "[hint] build first: cmake --build build-zco-perf-nooverride --target stack_model_perf"
+  echo "[hint] build first: cmake --build build-zco-perf-nooverride --target stack_model_performance"
   exit 1
 fi
 

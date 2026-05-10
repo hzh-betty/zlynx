@@ -219,12 +219,7 @@ void print_workload_config(const WorkloadConfig &config) {
 }
 
 void disable_benchmark_logging() {
-    LoggerInitOptions options;
-    options.level = zlog::LogLevel::value::OFF;
-    options.async = false;
-    options.formatter = kDefaultFormatter;
-    options.sink = "stdout";
-    init_logger(options);
+    init_logger(zlog::LogLevel::value::OFF);
 }
 
 void prepare_runtime(StackModel model, const WorkloadConfig &config) {
@@ -554,4 +549,7 @@ int run_stack_model_perf_main() {
 
 } // namespace zco
 
-int main() { return zco::run_stack_model_perf_main(); }
+int main() {
+    zco::init_logger(zlog::LogLevel::value::OFF);
+    return zco::run_stack_model_perf_main();
+}

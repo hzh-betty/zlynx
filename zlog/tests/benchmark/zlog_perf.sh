@@ -51,7 +51,7 @@ run_perf_test() {
     echo "=========================================="
     
     # 构建启动命令
-    local cmd="./zlog_perf_bench -m $test_mode -t $THREADS -c $COUNT -s $MSG_SIZE -o ${output_dir}/logs"
+    local cmd="./zlog_performance -m $test_mode -t $THREADS -c $COUNT -s $MSG_SIZE -o ${output_dir}/logs"
     
     echo "[1] 使用perf record记录CPU性能数据..."
     echo "命令: $cmd"

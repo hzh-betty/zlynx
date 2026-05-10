@@ -2,7 +2,7 @@
  * @brief zlog性能分析程序
  * 用于perf工具采集同步/异步日志器的性能数据
  *
- * 用法: ./zlog_perf_bench [options]
+ * 用法: ./zlog_performance [options]
  *   -m <mode>      模式: sync/async/both (默认: both)
  *   -c <count>     日志条数 (默认: 1000000)
  *   -t <threads>   线程数 (默认: 4)
