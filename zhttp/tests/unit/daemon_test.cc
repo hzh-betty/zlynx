@@ -212,8 +212,8 @@ int main(int argc, char **argv) {
     if (argc >= 3 && std::string(argv[1]) == "--daemon-signal-helper") {
         return zhttp::run_daemon_signal_helper_mode(argv[2]);
     }
+    ::testing::InitGoogleTest(&argc, argv);
 
     zhttp::init_logger();
-    ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }
