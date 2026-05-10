@@ -210,21 +210,23 @@ bool Processor::wait_fd(int fd, uint32_t events, uint32_t milliseconds) {
     waiter->fiber = current_fiber_;
     waiter->timer = nullptr;
     waiter->active.store(true, std::memory_order_release);
+    waiter->error.store(0, std::memory_order_release);
 
     if (waiter->events == 0) {
         errno = EINVAL;
         return false;
     }
 
+    prepare_wait_current();
+
     if (!poller_ || !poller_->register_waiter(waiter)) {
         ZCO_LOG_ERROR(
             "epoll add/mod failed, sched_id={}, fd={}, events={}, errno={}",
             id_, fd, events, errno);
         waiter->active.store(false, std::memory_order_release);
+        current_fiber_->mark_running();
         return false;
     }
-
-    prepare_wait_current();
 
     if (milliseconds != kInfiniteTimeoutMs) {
         // timeout 回调与 IO 回调通过 waiter->active 竞争，只有一个路径生效。
@@ -245,6 +247,7 @@ bool Processor::wait_fd(int fd, uint32_t events, uint32_t milliseconds) {
     }
 
     const bool ok = park_current();
+    const int waiter_error = waiter->error.load(std::memory_order_acquire);
 
     waiter->active.store(false, std::memory_order_release);
     if (waiter->timer) {
@@ -254,6 +257,11 @@ bool Processor::wait_fd(int fd, uint32_t events, uint32_t milliseconds) {
         poller_->unregister_waiter(waiter);
     }
 
+    if (waiter_error != 0) {
+        errno = waiter_error;
+        return false;
+    }
+
     if (!ok) {
         ZCO_LOG_DEBUG(
             "wait_fd wake failed or timeout, sched_id={}, fd={}, timeout_ms={}",
@@ -261,6 +269,33 @@ bool Processor::wait_fd(int fd, uint32_t events, uint32_t milliseconds) {
     }
 
     return ok;
+}
+
+void Processor::cancel_fd_waiters(int fd, int error) {
+    if (!poller_ || fd < 0) {
+        return;
+    }
+
+    std::vector<std::shared_ptr<IoWaiter>> waiters =
+        poller_->cancel_fd(fd, error);
+    for (size_t i = 0; i < waiters.size(); ++i) {
+        const std::shared_ptr<IoWaiter> &waiter = waiters[i];
+        if (!waiter ||
+            !waiter->active.exchange(false, std::memory_order_acq_rel)) {
+            continue;
+        }
+
+        if (waiter->timer) {
+            waiter->timer->cancelled.store(true, std::memory_order_release);
+        }
+
+        if (Fiber::ptr fiber = waiter->fiber.lock()) {
+            ZCO_LOG_DEBUG("fd waiter cancelled, sched_id={}, fd={}, "
+                          "fiber_id={}, error={}",
+                          id_, fd, fiber->id(), error);
+            resume_fiber(fiber, false);
+        }
+    }
 }
 
 void *Processor::shared_stack_data(size_t stack_slot) {

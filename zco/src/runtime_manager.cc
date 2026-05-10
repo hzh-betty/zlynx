@@ -338,6 +338,18 @@ void Runtime::unregister_fiber(Fiber *fiber) {
                   handle_id);
 }
 
+void Runtime::cancel_fd_waiters(int fd, int error) {
+    if (fd < 0) {
+        return;
+    }
+
+    for (size_t i = 0; i < processors_.size(); ++i) {
+        if (processors_[i]) {
+            processors_[i]->cancel_fd_waiters(fd, error);
+        }
+    }
+}
+
 void *Runtime::external_handle(const Fiber::ptr &fiber) {
     if (!fiber) {
         return nullptr;
@@ -423,6 +435,10 @@ bool wait_fd(int fd, uint32_t events, uint32_t milliseconds) {
 
     // 仅支持协程上下文：统一走 Processor epoll + 挂起模型。
     return processor->wait_fd(fd, events, milliseconds);
+}
+
+void cancel_fd_waiters(int fd, int error) {
+    Runtime::instance().cancel_fd_waiters(fd, error);
 }
 
 } // namespace zco

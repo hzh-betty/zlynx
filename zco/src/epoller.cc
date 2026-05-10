@@ -22,6 +22,21 @@ namespace {
 
 constexpr int kMaxEpollEvents = 64;
 
+void collect_waiter_unique(std::vector<std::shared_ptr<IoWaiter>> *waiters,
+                           const std::shared_ptr<IoWaiter> &waiter) {
+    if (!waiters || !waiter) {
+        return;
+    }
+
+    for (size_t i = 0; i < waiters->size(); ++i) {
+        if ((*waiters)[i].get() == waiter.get()) {
+            return;
+        }
+    }
+
+    waiters->push_back(waiter);
+}
+
 } // namespace
 
 Epoller::Epoller()
@@ -115,6 +130,15 @@ bool Epoller::register_waiter(const std::shared_ptr<IoWaiter> &waiter) {
     FdWaitState &state = fd_wait_states_[waiter->fd];
     FdWaitState old_state = state;
 
+    if (state.read_waiter &&
+        !state.read_waiter->active.load(std::memory_order_acquire)) {
+        state.read_waiter.reset();
+    }
+    if (state.write_waiter &&
+        !state.write_waiter->active.load(std::memory_order_acquire)) {
+        state.write_waiter.reset();
+    }
+
     if (want_read) {
         if (state.read_waiter && state.read_waiter.get() != waiter.get()) {
             errno = EBUSY;
@@ -174,6 +198,39 @@ void Epoller::unregister_waiter(const std::shared_ptr<IoWaiter> &waiter) {
     if (!state.registered && !state.read_waiter && !state.write_waiter) {
         fd_wait_states_.erase(it);
     }
+}
+
+std::vector<std::shared_ptr<IoWaiter>> Epoller::cancel_fd(int fd, int error) {
+    std::vector<std::shared_ptr<IoWaiter>> waiters;
+    if (epoll_fd_ < 0 || fd < 0) {
+        return waiters;
+    }
+
+    std::lock_guard<std::mutex> lock(waiter_mutex_);
+    auto it = fd_wait_states_.find(fd);
+    if (it == fd_wait_states_.end()) {
+        return waiters;
+    }
+
+    FdWaitState &state = it->second;
+    collect_waiter_unique(&waiters, state.read_waiter);
+    collect_waiter_unique(&waiters, state.write_waiter);
+
+    for (size_t i = 0; i < waiters.size(); ++i) {
+        waiters[i]->error.store(error, std::memory_order_release);
+    }
+
+    state.read_waiter.reset();
+    state.write_waiter.reset();
+
+    if (state.registered &&
+        epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr) != 0 &&
+        errno != ENOENT && errno != EBADF) {
+        ZCO_LOG_WARN("epoll cancel fd failed, fd={}, errno={}", fd, errno);
+    }
+
+    fd_wait_states_.erase(it);
+    return waiters;
 }
 
 bool Epoller::update_interest_locked(int fd, FdWaitState *state) {

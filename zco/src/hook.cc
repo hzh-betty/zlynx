@@ -15,6 +15,7 @@
 #include <mutex>
 #include <unordered_map>
 
+#include "zco/internal/runtime_manager.h"
 #include "zco/io_event.h"
 #include "zco/zco_log.h"
 
@@ -427,6 +428,7 @@ int co_close(int fd, uint32_t delay_ms) {
         co_sleep_for(delay_ms);
     }
 
+    cancel_fd_waiters(fd, EBADF);
     sync_fd_metadata_on_close(fd);
     return static_cast<int>(
         retry_on_eintr([&]() -> ssize_t { return ::close(fd); }));

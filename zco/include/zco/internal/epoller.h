@@ -83,6 +83,15 @@ class Epoller : public Poller {
     void unregister_waiter(const std::shared_ptr<IoWaiter> &waiter) override;
 
     /**
+     * @brief 取消指定 fd 的所有 waiter。
+     * @param fd 文件描述符。
+     * @param error 写入 waiter 的错误码。
+     * @return 被取消的 waiter 列表。
+     */
+    std::vector<std::shared_ptr<IoWaiter>> cancel_fd(int fd,
+                                                     int error) override;
+
+    /**
      * @brief 等待 IO 事件并回调处理。
      * @param timeout_ms 等待超时毫秒。
      * @param on_ready 事件就绪回调。

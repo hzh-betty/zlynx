@@ -174,6 +174,14 @@ class Processor : public NonCopyable {
     bool wait_fd(int fd, uint32_t events, uint32_t milliseconds);
 
     /**
+     * @brief 取消指定 fd 上挂起的 IO 等待。
+     * @param fd 文件描述符。
+     * @param error 唤醒等待协程后暴露的错误码。
+     * @return 无返回值。
+     */
+    void cancel_fd_waiters(int fd, int error);
+
+    /**
      * @brief 获取共享栈起始地址。
      * @param stack_slot 共享栈槽位。
      * @param 无参数。

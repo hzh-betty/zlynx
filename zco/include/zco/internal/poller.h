@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <vector>
 
 #include "zco/internal/fiber.h"
 #include "zco/internal/noncopyable.h"
@@ -22,6 +23,7 @@ struct IoWaiter {
     std::weak_ptr<Fiber> fiber;
     std::shared_ptr<TimerToken> timer;
     std::atomic<bool> active;
+    std::atomic<int> error;
 };
 
 /**
@@ -39,6 +41,8 @@ class Poller : public NonCopyable {
 
     virtual bool register_waiter(const std::shared_ptr<IoWaiter> &waiter) = 0;
     virtual void unregister_waiter(const std::shared_ptr<IoWaiter> &waiter) = 0;
+    virtual std::vector<std::shared_ptr<IoWaiter>> cancel_fd(int fd,
+                                                             int error) = 0;
 
     /**
      * @brief 等待 I/O 事件

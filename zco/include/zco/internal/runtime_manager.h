@@ -164,6 +164,14 @@ class Runtime : public NonCopyable {
     void unregister_fiber(Fiber *fiber);
 
     /**
+     * @brief 取消所有处理器上指定 fd 的 IO 等待。
+     * @param fd 文件描述符。
+     * @param error 唤醒等待协程后暴露的错误码。
+     * @return 无返回值。
+     */
+    void cancel_fd_waiters(int fd, int error);
+
+    /**
      * @brief 导出 Fiber 的外部句柄。
      * @param fiber 协程对象。
      * @return 对外可传递句柄，不存在时返回 nullptr。
@@ -180,8 +188,7 @@ class Runtime : public NonCopyable {
     /**
      * @brief 确保运行时已启动。
      * @param 无参数。
-     * @return
-     * 无返回值。
+     * @return 无返回值。
      */
     void ensure_started();
 
@@ -282,6 +289,8 @@ std::shared_ptr<TimerToken> add_timer(uint32_t milliseconds,
  * @return true 表示事件已就绪。
  */
 bool wait_fd(int fd, uint32_t events, uint32_t milliseconds);
+
+void cancel_fd_waiters(int fd, int error);
 
 } // namespace zco
 
