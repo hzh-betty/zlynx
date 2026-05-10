@@ -217,34 +217,6 @@ class HttpServerBuilder {
     HttpServerBuilder &log_level(const std::string &level);
 
     /**
-     * @brief 设置日志是否异步
-     * @param enable true 为异步，false 为同步
-     * @return 当前 Builder 引用
-     */
-    HttpServerBuilder &log_async(bool enable);
-
-    /**
-     * @brief 设置日志格式
-     * @param format zlog 模式串
-     * @return 当前 Builder 引用
-     */
-    HttpServerBuilder &log_format(const std::string &format);
-
-    /**
-     * @brief 设置日志输出目标
-     * @param sink stdout/file/both
-     * @return 当前 Builder 引用
-     */
-    HttpServerBuilder &log_sink(const std::string &sink);
-
-    /**
-     * @brief 设置日志文件路径
-     * @param file_path 文件路径
-     * @return 当前 Builder 引用
-     */
-    HttpServerBuilder &log_file(const std::string &file_path);
-
-    /**
      * @brief 启用守护进程模式
      * @param enable 是否启用
      * @return 当前 Builder 引用
