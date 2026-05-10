@@ -14,6 +14,8 @@
 
 #include <gtest/gtest.h>
 
+#include "znet/znet_logger.h"
+
 #include "zco/sched.h"
 #include "znet/tls_context.h"
 
@@ -826,5 +828,6 @@ TEST_F(TcpConnectionUnitTest, InlineActorPathsInFlushShutdownAndClose) {
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
+    znet::init_logger();
     return RUN_ALL_TESTS();
 }
