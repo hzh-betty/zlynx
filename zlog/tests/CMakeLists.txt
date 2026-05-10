@@ -42,7 +42,7 @@ endforeach()
 
 # 基准测试
 if(spdlog_FOUND AND glog_FOUND)
-    add_executable(zlog_benchmark benchmark/bench_compare.cc)
+    add_executable(zlog_benchmark benchmark/zlog_benchmark.cc)
     target_link_libraries(zlog_benchmark PRIVATE 
         zlog_static 
         spdlog::spdlog
@@ -56,10 +56,10 @@ else()
 endif()
 
 # 性能测试
-add_executable(zlog_perf_bench benchmark/perf_bench.cc)
-target_link_libraries(zlog_perf_bench PRIVATE 
+add_executable(zlog_performance benchmark/zlog_performance.cc)
+target_link_libraries(zlog_performance PRIVATE 
     zlog_static 
     Threads::Threads
 )
-target_include_directories(zlog_perf_bench PRIVATE ${PROJECT_SOURCE_DIR}/include)
-zlog_test_enable_coverage(zlog_perf_bench)
+target_include_directories(zlog_performance PRIVATE ${PROJECT_SOURCE_DIR}/include)
+zlog_test_enable_coverage(zlog_performance)
