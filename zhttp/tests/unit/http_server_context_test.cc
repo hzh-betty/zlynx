@@ -490,9 +490,9 @@ TEST(HttpServerContextTest,
 } // namespace zhttp
 
 int main(int argc, char **argv) {
-    zhttp::init_logger();
     zco::init(1);
     ::testing::InitGoogleTest(&argc, argv);
+    zhttp::init_logger();
     const int rc = RUN_ALL_TESTS();
     zco::shutdown();
     return rc;
