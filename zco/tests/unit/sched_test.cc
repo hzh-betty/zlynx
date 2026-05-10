@@ -222,5 +222,6 @@ TEST_F(SchedUnitByHeaderTest, StopSchedsIsIdempotent) {
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
+    zco::init_logger();
     return RUN_ALL_TESTS();
 }
