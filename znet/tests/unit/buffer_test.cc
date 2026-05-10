@@ -9,6 +9,8 @@
 
 #include <gtest/gtest.h>
 
+#include "znet/znet_logger.h"
+
 #include "zco/sched.h"
 #include "zco/wait_group.h"
 
@@ -262,5 +264,6 @@ TEST_F(BufferUnitTest, ReadFromSocketDoesNotPreGrowToMaxReadBytes) {
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
+    znet::init_logger();
     return RUN_ALL_TESTS();
 }
