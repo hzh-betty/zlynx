@@ -1,4 +1,5 @@
 #include "zhttp/mid/timeout_middleware.h"
+#include "zhttp/zhttp_logger.h"
 
 #include <gtest/gtest.h>
 
@@ -85,5 +86,6 @@ TEST(TimeoutMiddlewareTest, CustomTimeoutHandlerWorks) {
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
+    zhttp::init_logger();
     return RUN_ALL_TESTS();
 }
