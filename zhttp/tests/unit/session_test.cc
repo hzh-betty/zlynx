@@ -4,6 +4,7 @@
 #include "zhttp/mid/session_middleware.h"
 #include "zhttp/router.h"
 #include "zhttp/session.h"
+#include "zhttp/zhttp_logger.h"
 
 using namespace zhttp;
 using namespace zhttp::mid;
@@ -180,5 +181,6 @@ TEST(SessionManagerCoreTest, HandlesLoadCreateSaveDestroyAndExpiration) {
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
+    zhttp::init_logger();
     return RUN_ALL_TESTS();
 }
