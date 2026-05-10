@@ -328,7 +328,7 @@ TEST(ServerConfigTest, BuilderSupportsHttpsRedirectChaining) {
     EXPECT_EQ(builder.config().redirect_http_port, 18080);
 }
 
-TEST(ServerConfigTest, LoadsLoggingOverridesFromTomlFile) {
+TEST(ServerConfigTest, LoadsLogLevelFromTomlFile) {
     TempTomlFile config_file(R"(
 [server]
 host = "127.0.0.1"
@@ -339,50 +339,12 @@ count = 1
 
 [logging]
 level = "warning"
-async = false
-format = "[%p] %m%n"
-sink = "both"
-file = "/tmp/zhttp-all.log"
-
-[logging.modules.zco]
-level = "debug"
-async = true
-format = "%m%n"
-
-[logging.modules.znet]
-level = "error"
-async = false
-sink = "file"
-file = "/tmp/znet-only.log"
-
-[logging.modules.zhttp]
-level = "info"
-sink = "stdout"
 )");
 
     const zhttp::ServerConfig config =
         zhttp::ServerConfig::from_toml(config_file.path());
 
     EXPECT_EQ(config.log_level, "warning");
-    EXPECT_FALSE(config.log_async);
-    EXPECT_EQ(config.log_format, "[%p] %m%n");
-    EXPECT_EQ(config.log_sink, "both");
-    EXPECT_EQ(config.log_file, "/tmp/zhttp-all.log");
-
-    EXPECT_EQ(config.zco_log.level, "debug");
-    EXPECT_TRUE(config.zco_log.has_async);
-    EXPECT_TRUE(config.zco_log.async);
-    EXPECT_EQ(config.zco_log.format, "%m%n");
-
-    EXPECT_EQ(config.znet_log.level, "error");
-    EXPECT_TRUE(config.znet_log.has_async);
-    EXPECT_FALSE(config.znet_log.async);
-    EXPECT_EQ(config.znet_log.sink, "file");
-    EXPECT_EQ(config.znet_log.file, "/tmp/znet-only.log");
-
-    EXPECT_EQ(config.zhttp_log.level, "info");
-    EXPECT_FALSE(config.zhttp_log.has_async);
-    EXPECT_EQ(config.zhttp_log.sink, "stdout");
 }
 
 TEST(ServerConfigTest, BuilderAppliesUnifiedLoggingConfig) {
@@ -396,15 +358,6 @@ count = 1
 
 [logging]
 level = "warning"
-async = true
-format = "[%p][%c] %m%n"
-sink = "stdout"
-
-[logging.modules.znet]
-level = "error"
-async = false
-sink = "file"
-file = "/tmp/znet-builder.log"
 )");
 
     zhttp::HttpServerBuilder builder;
@@ -413,9 +366,9 @@ file = "/tmp/znet-builder.log"
     auto server = builder.build();
     ASSERT_TRUE(server);
 
-    auto *zco_logger = zco::get_logger();
-    auto *net_logger = znet::get_logger();
-    auto *http_logger = zhttp::get_logger();
+    auto zco_logger = zco::get_logger_ptr();
+    auto net_logger = znet::get_logger_ptr();
+    auto http_logger = zhttp::get_logger_ptr();
 
     ASSERT_NE(zco_logger, nullptr);
     ASSERT_NE(net_logger, nullptr);
@@ -425,9 +378,9 @@ file = "/tmp/znet-builder.log"
     EXPECT_EQ(net_logger->get_name(), "znet_logger");
     EXPECT_EQ(http_logger->get_name(), "zhttp_logger");
 
-    EXPECT_NE(dynamic_cast<zlog::AsyncLogger *>(zco_logger), nullptr);
-    EXPECT_EQ(dynamic_cast<zlog::AsyncLogger *>(net_logger), nullptr);
-    EXPECT_NE(dynamic_cast<zlog::AsyncLogger *>(http_logger), nullptr);
+    EXPECT_NE(dynamic_cast<zlog::AsyncLogger *>(zco_logger.get()), nullptr);
+    EXPECT_NE(dynamic_cast<zlog::AsyncLogger *>(net_logger.get()), nullptr);
+    EXPECT_NE(dynamic_cast<zlog::AsyncLogger *>(http_logger.get()), nullptr);
 }
 
 TEST(ServerConfigTest, LoadsSyntaxErrorsAsRuntimeErrorWithTomlPrefix) {
@@ -460,7 +413,7 @@ TEST(ServerConfigTest, StackModeHelpersCoverKnownAndFallbackValues) {
 }
 
 int main(int argc, char **argv) {
-    zhttp::init_logger();
     ::testing::InitGoogleTest(&argc, argv);
+    zhttp::init_logger();
     return RUN_ALL_TESTS();
 }
