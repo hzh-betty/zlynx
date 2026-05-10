@@ -17,6 +17,8 @@
 
 #include <gtest/gtest.h>
 
+#include "znet/znet_logger.h"
+
 #include "znet/tls_context.h"
 
 namespace znet {
@@ -680,5 +682,6 @@ TEST_F(TcpServerUnitTest, DataIsConsumedEvenWithoutMessageCallback) {
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
+    znet::init_logger();
     return RUN_ALL_TESTS();
 }
