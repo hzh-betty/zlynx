@@ -17,42 +17,55 @@ void init_logger(zlog::LogLevel::value level = zlog::LogLevel::value::INFO);
  */
 zlog::Logger::ptr get_logger_ptr();
 
+bool should_log(zlog::LogLevel::value level);
+
 } // namespace zhttp
 
 // 便捷日志宏，统一走 zhttp 自己的日志器实例。
 #define ZHTTP_LOG_DEBUG(fmt, ...)                                              \
     do {                                                                       \
-        auto zhttp_logger__ = ::zhttp::get_logger_ptr();                       \
-        if (zhttp_logger__) {                                                  \
-            zhttp_logger__->debug(__FILE__, __LINE__, fmt, ##__VA_ARGS__);     \
+        if (::zhttp::should_log(::zlog::LogLevel::value::DEBUG)) {             \
+            auto zhttp_logger__ = ::zhttp::get_logger_ptr();                   \
+            if (zhttp_logger__) {                                              \
+                zhttp_logger__->debug(__FILE__, __LINE__, fmt, ##__VA_ARGS__); \
+            }                                                                  \
         }                                                                      \
     } while (0)
 #define ZHTTP_LOG_INFO(fmt, ...)                                               \
     do {                                                                       \
-        auto zhttp_logger__ = ::zhttp::get_logger_ptr();                       \
-        if (zhttp_logger__) {                                                  \
-            zhttp_logger__->info(__FILE__, __LINE__, fmt, ##__VA_ARGS__);      \
+        if (::zhttp::should_log(::zlog::LogLevel::value::INFO)) {              \
+            auto zhttp_logger__ = ::zhttp::get_logger_ptr();                   \
+            if (zhttp_logger__) {                                              \
+                zhttp_logger__->info(__FILE__, __LINE__, fmt, ##__VA_ARGS__);  \
+            }                                                                  \
         }                                                                      \
     } while (0)
 #define ZHTTP_LOG_WARN(fmt, ...)                                               \
     do {                                                                       \
-        auto zhttp_logger__ = ::zhttp::get_logger_ptr();                       \
-        if (zhttp_logger__) {                                                  \
-            zhttp_logger__->warning(__FILE__, __LINE__, fmt, ##__VA_ARGS__);   \
+        if (::zhttp::should_log(::zlog::LogLevel::value::WARNING)) {           \
+            auto zhttp_logger__ = ::zhttp::get_logger_ptr();                   \
+            if (zhttp_logger__) {                                              \
+                zhttp_logger__->warning(__FILE__, __LINE__, fmt,               \
+                                        ##__VA_ARGS__);                        \
+            }                                                                  \
         }                                                                      \
     } while (0)
 #define ZHTTP_LOG_ERROR(fmt, ...)                                              \
     do {                                                                       \
-        auto zhttp_logger__ = ::zhttp::get_logger_ptr();                       \
-        if (zhttp_logger__) {                                                  \
-            zhttp_logger__->error(__FILE__, __LINE__, fmt, ##__VA_ARGS__);     \
+        if (::zhttp::should_log(::zlog::LogLevel::value::ERROR)) {             \
+            auto zhttp_logger__ = ::zhttp::get_logger_ptr();                   \
+            if (zhttp_logger__) {                                              \
+                zhttp_logger__->error(__FILE__, __LINE__, fmt, ##__VA_ARGS__); \
+            }                                                                  \
         }                                                                      \
     } while (0)
 #define ZHTTP_LOG_FATAL(fmt, ...)                                              \
     do {                                                                       \
-        auto zhttp_logger__ = ::zhttp::get_logger_ptr();                       \
-        if (zhttp_logger__) {                                                  \
-            zhttp_logger__->fatal(__FILE__, __LINE__, fmt, ##__VA_ARGS__);     \
+        if (::zhttp::should_log(::zlog::LogLevel::value::FATAL)) {             \
+            auto zhttp_logger__ = ::zhttp::get_logger_ptr();                   \
+            if (zhttp_logger__) {                                              \
+                zhttp_logger__->fatal(__FILE__, __LINE__, fmt, ##__VA_ARGS__); \
+            }                                                                  \
         }                                                                      \
     } while (0)
 

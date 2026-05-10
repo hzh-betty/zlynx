@@ -8,28 +8,11 @@ namespace zco {
 constexpr const char *kLoggerName = "zco_logger";
 constexpr const char *kDefaultFormatter = "[%d{%H:%M:%S}][%c][%p]%T%m%n";
 
-inline void
-init_logger(zlog::LogLevel::value level = zlog::LogLevel::value::INFO) {
-    zlog::GlobalLoggerBuilder builder;
-    builder.build_logger_name(kLoggerName);
-    builder.build_logger_level(level);
-    builder.build_logger_type(zlog::LoggerType::LOGGER_ASYNC);
-    builder.build_logger_formatter(kDefaultFormatter);
-    builder.build_logger_sink<zlog::StdOutSink>();
+void init_logger(zlog::LogLevel::value level = zlog::LogLevel::value::INFO);
 
-    zlog::Logger::ptr logger = builder.build();
-    zlog::LoggerManager::get_instance().upsert_logger(kLoggerName, logger);
-}
+zlog::Logger::ptr get_logger_ptr();
 
-inline zlog::Logger::ptr get_logger_ptr() {
-    zlog::Logger::ptr logger =
-        zlog::LoggerManager::get_instance().get_logger(kLoggerName);
-    if (!logger) {
-        init_logger(zlog::LogLevel::value::INFO);
-        logger = zlog::LoggerManager::get_instance().get_logger(kLoggerName);
-    }
-    return logger;
-}
+bool should_log(zlog::LogLevel::value level);
 
 } // namespace zco
 
@@ -38,9 +21,11 @@ inline zlog::Logger::ptr get_logger_ptr() {
  */
 #define ZCO_LOG_DEBUG(...)                                                     \
     do {                                                                       \
-        auto zco_logger__ = ::zco::get_logger_ptr();                           \
-        if (zco_logger__) {                                                    \
-            zco_logger__->debug(__FILE__, __LINE__, __VA_ARGS__);              \
+        if (::zco::should_log(::zlog::LogLevel::value::DEBUG)) {               \
+            auto zco_logger__ = ::zco::get_logger_ptr();                       \
+            if (zco_logger__) {                                                \
+                zco_logger__->debug(__FILE__, __LINE__, __VA_ARGS__);          \
+            }                                                                  \
         }                                                                      \
     } while (0)
 
@@ -49,9 +34,11 @@ inline zlog::Logger::ptr get_logger_ptr() {
  */
 #define ZCO_LOG_INFO(...)                                                      \
     do {                                                                       \
-        auto zco_logger__ = ::zco::get_logger_ptr();                           \
-        if (zco_logger__) {                                                    \
-            zco_logger__->info(__FILE__, __LINE__, __VA_ARGS__);               \
+        if (::zco::should_log(::zlog::LogLevel::value::INFO)) {                \
+            auto zco_logger__ = ::zco::get_logger_ptr();                       \
+            if (zco_logger__) {                                                \
+                zco_logger__->info(__FILE__, __LINE__, __VA_ARGS__);           \
+            }                                                                  \
         }                                                                      \
     } while (0)
 
@@ -60,9 +47,11 @@ inline zlog::Logger::ptr get_logger_ptr() {
  */
 #define ZCO_LOG_WARN(...)                                                      \
     do {                                                                       \
-        auto zco_logger__ = ::zco::get_logger_ptr();                           \
-        if (zco_logger__) {                                                    \
-            zco_logger__->warning(__FILE__, __LINE__, __VA_ARGS__);            \
+        if (::zco::should_log(::zlog::LogLevel::value::WARNING)) {             \
+            auto zco_logger__ = ::zco::get_logger_ptr();                       \
+            if (zco_logger__) {                                                \
+                zco_logger__->warning(__FILE__, __LINE__, __VA_ARGS__);        \
+            }                                                                  \
         }                                                                      \
     } while (0)
 
@@ -71,9 +60,11 @@ inline zlog::Logger::ptr get_logger_ptr() {
  */
 #define ZCO_LOG_ERROR(...)                                                     \
     do {                                                                       \
-        auto zco_logger__ = ::zco::get_logger_ptr();                           \
-        if (zco_logger__) {                                                    \
-            zco_logger__->error(__FILE__, __LINE__, __VA_ARGS__);              \
+        if (::zco::should_log(::zlog::LogLevel::value::ERROR)) {               \
+            auto zco_logger__ = ::zco::get_logger_ptr();                       \
+            if (zco_logger__) {                                                \
+                zco_logger__->error(__FILE__, __LINE__, __VA_ARGS__);          \
+            }                                                                  \
         }                                                                      \
     } while (0)
 
@@ -82,9 +73,11 @@ inline zlog::Logger::ptr get_logger_ptr() {
  */
 #define ZCO_LOG_FATAL(...)                                                     \
     do {                                                                       \
-        auto zco_logger__ = ::zco::get_logger_ptr();                           \
-        if (zco_logger__) {                                                    \
-            zco_logger__->fatal(__FILE__, __LINE__, __VA_ARGS__);              \
+        if (::zco::should_log(::zlog::LogLevel::value::FATAL)) {               \
+            auto zco_logger__ = ::zco::get_logger_ptr();                       \
+            if (zco_logger__) {                                                \
+                zco_logger__->fatal(__FILE__, __LINE__, __VA_ARGS__);          \
+            }                                                                  \
         }                                                                      \
     } while (0)
 

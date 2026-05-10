@@ -16,42 +16,54 @@ void init_logger(zlog::LogLevel::value level = zlog::LogLevel::value::INFO);
  * @return 日志器智能指针，若初始化失败可能返回空。
  */
 zlog::Logger::ptr get_logger_ptr();
+
+bool should_log(zlog::LogLevel::value level);
 } // namespace znet
 
 // 便捷日志宏：自动补充文件和行号。
 #define ZNET_LOG_DEBUG(...)                                                    \
     do {                                                                       \
-        auto znet_logger__ = ::znet::get_logger_ptr();                         \
-        if (znet_logger__) {                                                   \
-            znet_logger__->debug(__FILE__, __LINE__, __VA_ARGS__);             \
+        if (::znet::should_log(::zlog::LogLevel::value::DEBUG)) {              \
+            auto znet_logger__ = ::znet::get_logger_ptr();                     \
+            if (znet_logger__) {                                               \
+                znet_logger__->debug(__FILE__, __LINE__, __VA_ARGS__);         \
+            }                                                                  \
         }                                                                      \
     } while (0)
 #define ZNET_LOG_INFO(...)                                                     \
     do {                                                                       \
-        auto znet_logger__ = ::znet::get_logger_ptr();                         \
-        if (znet_logger__) {                                                   \
-            znet_logger__->info(__FILE__, __LINE__, __VA_ARGS__);              \
+        if (::znet::should_log(::zlog::LogLevel::value::INFO)) {               \
+            auto znet_logger__ = ::znet::get_logger_ptr();                     \
+            if (znet_logger__) {                                               \
+                znet_logger__->info(__FILE__, __LINE__, __VA_ARGS__);          \
+            }                                                                  \
         }                                                                      \
     } while (0)
 #define ZNET_LOG_WARN(...)                                                     \
     do {                                                                       \
-        auto znet_logger__ = ::znet::get_logger_ptr();                         \
-        if (znet_logger__) {                                                   \
-            znet_logger__->warning(__FILE__, __LINE__, __VA_ARGS__);           \
+        if (::znet::should_log(::zlog::LogLevel::value::WARNING)) {            \
+            auto znet_logger__ = ::znet::get_logger_ptr();                     \
+            if (znet_logger__) {                                               \
+                znet_logger__->warning(__FILE__, __LINE__, __VA_ARGS__);       \
+            }                                                                  \
         }                                                                      \
     } while (0)
 #define ZNET_LOG_ERROR(...)                                                    \
     do {                                                                       \
-        auto znet_logger__ = ::znet::get_logger_ptr();                         \
-        if (znet_logger__) {                                                   \
-            znet_logger__->error(__FILE__, __LINE__, __VA_ARGS__);             \
+        if (::znet::should_log(::zlog::LogLevel::value::ERROR)) {              \
+            auto znet_logger__ = ::znet::get_logger_ptr();                     \
+            if (znet_logger__) {                                               \
+                znet_logger__->error(__FILE__, __LINE__, __VA_ARGS__);         \
+            }                                                                  \
         }                                                                      \
     } while (0)
 #define ZNET_LOG_FATAL(...)                                                    \
     do {                                                                       \
-        auto znet_logger__ = ::znet::get_logger_ptr();                         \
-        if (znet_logger__) {                                                   \
-            znet_logger__->fatal(__FILE__, __LINE__, __VA_ARGS__);             \
+        if (::znet::should_log(::zlog::LogLevel::value::FATAL)) {              \
+            auto znet_logger__ = ::znet::get_logger_ptr();                     \
+            if (znet_logger__) {                                               \
+                znet_logger__->fatal(__FILE__, __LINE__, __VA_ARGS__);         \
+            }                                                                  \
         }                                                                      \
     } while (0)
 

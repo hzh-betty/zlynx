@@ -591,8 +591,9 @@ bool HttpServer::handle_request(const znet::TcpConnection::ptr &conn,
 
     if (!use_chunked) {
         // 非 chunked 路径一次性序列化并发送完整报文。
-        std::string response_str = response.serialize();
-        if (conn->send(response_str.data(), response_str.size()) < 0) {
+        thread_local std::string response_buffer;
+        response.serialize_to(&response_buffer);
+        if (conn->send(response_buffer.data(), response_buffer.size()) < 0) {
             ZHTTP_LOG_WARN("Send HTTP response failed: fd={}", conn->fd());
             return false;
         }

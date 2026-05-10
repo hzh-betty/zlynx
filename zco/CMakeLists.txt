@@ -13,6 +13,7 @@ option(ZCO_BUILD_TESTS "Build zco tests" ON)
 
 set(ZCO_SOURCES
 		src/sched.cc
+		src/zco_log.cc
 		src/context.cc
 		src/steal_queue.cc
 		src/fiber_pool.cc

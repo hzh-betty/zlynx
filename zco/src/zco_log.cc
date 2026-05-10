@@ -1,24 +1,19 @@
-#include "znet/znet_logger.h"
-
 #include "zco/zco_log.h"
 
 #include <atomic>
 #include <memory>
 
-namespace znet {
+namespace zco {
 
 namespace {
 
-constexpr char kLoggerName[] = "znet_logger";
-constexpr char kDefaultFormatter[] = "[%d{%H:%M:%S}][%c][%p]%T%m%n";
 std::atomic<int> g_log_level{static_cast<int>(zlog::LogLevel::value::INFO)};
-zlog::Logger::ptr znet_logger;
+zlog::Logger::ptr zco_logger;
 
 } // namespace
 
 void init_logger(zlog::LogLevel::value level) {
     g_log_level.store(static_cast<int>(level), std::memory_order_release);
-    zco::init_logger(level);
 
     zlog::GlobalLoggerBuilder builder;
     builder.build_logger_name(kLoggerName);
@@ -29,25 +24,25 @@ void init_logger(zlog::LogLevel::value level) {
 
     zlog::Logger::ptr logger = builder.build();
     zlog::LoggerManager::get_instance().upsert_logger(kLoggerName, logger);
-    std::atomic_store_explicit(&znet_logger, logger, std::memory_order_release);
+    std::atomic_store_explicit(&zco_logger, logger, std::memory_order_release);
 }
 
 zlog::Logger::ptr get_logger_ptr() {
     zlog::Logger::ptr logger =
-        std::atomic_load_explicit(&znet_logger, std::memory_order_acquire);
+        std::atomic_load_explicit(&zco_logger, std::memory_order_acquire);
     if (logger) {
         return logger;
     }
 
     logger = zlog::LoggerManager::get_instance().get_logger(kLoggerName);
     if (logger) {
-        std::atomic_store_explicit(&znet_logger, logger,
+        std::atomic_store_explicit(&zco_logger, logger,
                                    std::memory_order_release);
         return logger;
     }
 
     init_logger(zlog::LogLevel::value::INFO);
-    return std::atomic_load_explicit(&znet_logger, std::memory_order_acquire);
+    return std::atomic_load_explicit(&zco_logger, std::memory_order_acquire);
 }
 
 bool should_log(zlog::LogLevel::value level) {
@@ -58,4 +53,4 @@ bool should_log(zlog::LogLevel::value level) {
     return static_cast<int>(level) >= configured;
 }
 
-} // namespace znet
+} // namespace zco
