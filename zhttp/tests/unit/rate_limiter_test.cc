@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include "zhttp/zhttp_logger.h"
+
 #include "zhttp/mid/rate_limiter_middleware.h"
 #include "zhttp/router.h"
 
@@ -266,5 +268,6 @@ TEST_F(RateLimiterTest, MiddlewareWorksWithDefaultLimiterAndKeyResolver) {
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
+    zhttp::init_logger();
     return RUN_ALL_TESTS();
 }
