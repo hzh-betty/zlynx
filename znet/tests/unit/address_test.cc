@@ -10,6 +10,8 @@
 
 #include <gtest/gtest.h>
 
+#include "znet/znet_logger.h"
+
 namespace znet {
 namespace {
 
@@ -98,5 +100,6 @@ TEST_F(AddressUnitTest, UnixAddressTruncatesLongPathSafely) {
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
+    znet::init_logger();
     return RUN_ALL_TESTS();
 }
