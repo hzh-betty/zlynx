@@ -113,10 +113,6 @@ TEST(HttpServerBuilderTest, BuildConfiguresRoutesMiddlewareAndHandlers) {
         .write_timeout(456)
         .keepalive_timeout(789)
         .log_level("WARN")
-        .log_async(false)
-        .log_format("[%p] %m")
-        .log_sink("file+stdout")
-        .log_file("/tmp/zhttp-builder.log")
         .daemon(false)
         .homepage("landing")
         .server_name("builder-test-server");
@@ -268,7 +264,8 @@ TEST(HttpServerBuilderTest, RunThrowsWhenBuildFails) {
 } // namespace zhttp
 
 int main(int argc, char **argv) {
-    zhttp::init_logger();
     ::testing::InitGoogleTest(&argc, argv);
+
+    zhttp::init_logger();
     return RUN_ALL_TESTS();
 }
