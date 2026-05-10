@@ -273,5 +273,6 @@ TEST_F(RuntimeStressTest, FiftyRoundsDeterministicConcurrencyStability) {
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
+    zco::init_logger(zlog::LogLevel::value::OFF);
     return RUN_ALL_TESTS();
 }
