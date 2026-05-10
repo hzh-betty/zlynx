@@ -4,9 +4,7 @@
 #include "zhttp/zhttp_logger.h"
 
 #include "zco/sched.h"
-#include "zco/zco_log.h"
 #include "znet/address.h"
-#include "znet/znet_logger.h"
 
 #include <algorithm>
 #include <array>
@@ -41,114 +39,8 @@ static zlog::LogLevel::value parse_log_level(std::string s) {
     return zlog::LogLevel::value::INFO;
 }
 
-struct UnifiedLoggerOptions {
-    zlog::LogLevel::value level = zlog::LogLevel::value::INFO;
-    bool async = true;
-    std::string formatter = "[%d{%H:%M:%S}][%c][%p]%T%m%n";
-    std::string sink = "stdout";
-    std::string file_path;
-};
-
-static std::string normalize_token(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
-    return s;
-}
-
-static std::string parse_sink_name(std::string s) {
-    s = normalize_token(std::move(s));
-
-    if (s == "file") {
-        return "file";
-    }
-    if (s == "both" || s == "stdout+file" || s == "file+stdout") {
-        return "both";
-    }
-    return "stdout";
-}
-
-static UnifiedLoggerOptions
-apply_module_override(const UnifiedLoggerOptions &base,
-                      const ModuleLogConfig &override_cfg,
-                      const std::string &default_file) {
-    UnifiedLoggerOptions options = base;
-
-    if (!override_cfg.level.empty()) {
-        options.level = parse_log_level(override_cfg.level);
-    }
-    if (!override_cfg.format.empty()) {
-        options.formatter = override_cfg.format;
-    }
-    if (!override_cfg.sink.empty()) {
-        options.sink = parse_sink_name(override_cfg.sink);
-    }
-    if (!override_cfg.file.empty()) {
-        options.file_path = override_cfg.file;
-    }
-    if (override_cfg.has_async) {
-        options.async = override_cfg.async;
-    }
-
-    if ((options.sink == "file" || options.sink == "both") &&
-        options.file_path.empty()) {
-        options.file_path = default_file;
-    }
-
-    return options;
-}
-
-static zco::LoggerInitOptions
-to_coroutine_options(const UnifiedLoggerOptions &options) {
-    zco::LoggerInitOptions converted;
-    converted.level = options.level;
-    converted.async = options.async;
-    converted.formatter = options.formatter;
-    converted.sink = options.sink;
-    converted.file_path = options.file_path;
-    return converted;
-}
-
-static znet::LoggerInitOptions
-to_znet_options(const UnifiedLoggerOptions &options) {
-    znet::LoggerInitOptions converted;
-    converted.level = options.level;
-    converted.async = options.async;
-    converted.formatter = options.formatter;
-    converted.sink = options.sink;
-    converted.file_path = options.file_path;
-    return converted;
-}
-
-static zhttp::LoggerInitOptions
-to_zhttp_options(const UnifiedLoggerOptions &options) {
-    zhttp::LoggerInitOptions converted;
-    converted.level = options.level;
-    converted.async = options.async;
-    converted.formatter = options.formatter;
-    converted.sink = options.sink;
-    converted.file_path = options.file_path;
-    return converted;
-}
-
 static void configure_unified_logging(const ServerConfig &config) {
-    UnifiedLoggerOptions global;
-    global.level = parse_log_level(config.log_level);
-    global.async = config.log_async;
-    global.formatter = config.log_format;
-    global.sink = parse_sink_name(config.log_sink);
-    global.file_path = config.log_file;
-
-    const UnifiedLoggerOptions zco_options =
-        apply_module_override(global, config.zco_log, "./logfile/zco.log");
-    const UnifiedLoggerOptions znet_options =
-        apply_module_override(global, config.znet_log, "./logfile/znet.log");
-    const UnifiedLoggerOptions zhttp_options =
-        apply_module_override(global, config.zhttp_log, "./logfile/zhttp.log");
-
-    zco::init_logger(to_coroutine_options(zco_options));
-    znet::init_logger(to_znet_options(znet_options));
-    zhttp::init_logger(to_zhttp_options(zhttp_options));
+    zhttp::init_logger(parse_log_level(config.log_level));
 }
 
 static bool is_any_address_host(const std::string &host) {
@@ -396,26 +288,6 @@ HttpServerBuilder::exception_handler(Router::ExceptionHandler handler) {
 
 HttpServerBuilder &HttpServerBuilder::log_level(const std::string &level) {
     config_.log_level = level;
-    return *this;
-}
-
-HttpServerBuilder &HttpServerBuilder::log_async(bool enable) {
-    config_.log_async = enable;
-    return *this;
-}
-
-HttpServerBuilder &HttpServerBuilder::log_format(const std::string &format) {
-    config_.log_format = format;
-    return *this;
-}
-
-HttpServerBuilder &HttpServerBuilder::log_sink(const std::string &sink) {
-    config_.log_sink = sink;
-    return *this;
-}
-
-HttpServerBuilder &HttpServerBuilder::log_file(const std::string &file_path) {
-    config_.log_file = file_path;
     return *this;
 }
 
