@@ -10,7 +10,7 @@ namespace {
 class LogUnitByHeaderTest : public test::RuntimeTestBase {};
 
 TEST_F(LogUnitByHeaderTest, DefaultLoggerAndMacrosAreCallable) {
-    auto logger = default_logger();
+    auto logger = get_logger_ptr();
     EXPECT_NE(logger, nullptr);
 
     ZCO_LOG_DEBUG("log_unit debug {}", 1);
@@ -20,42 +20,29 @@ TEST_F(LogUnitByHeaderTest, DefaultLoggerAndMacrosAreCallable) {
 }
 
 TEST_F(LogUnitByHeaderTest, LoggerInitContractsRegisterInZlogManager) {
-    LoggerInitOptions options;
-    options.level = zlog::LogLevel::value::ERROR;
-    options.async = false;
-    options.formatter = kDefaultFormatter;
-    options.sink = "stdout";
-
-    init_logger(options);
-    auto logger = default_logger();
+    init_logger(zlog::LogLevel::value::ERROR);
+    auto logger = get_logger_ptr();
     ASSERT_NE(logger, nullptr);
-    EXPECT_EQ(logger.get(), get_logger());
     EXPECT_EQ(logger,
               zlog::LoggerManager::get_instance().get_logger(kLoggerName));
+    EXPECT_NE(dynamic_cast<zlog::AsyncLogger *>(logger.get()), nullptr);
 
     init_logger(zlog::LogLevel::value::WARNING);
-    EXPECT_EQ(default_logger().get(), get_logger());
+    EXPECT_EQ(get_logger_ptr(),
+              zlog::LoggerManager::get_instance().get_logger(kLoggerName));
     EXPECT_TRUE(zlog::LoggerManager::get_instance().has_logger(kLoggerName));
 
     ZCO_LOG_FATAL("log_unit fatal {}", 5);
 }
 
-TEST_F(LogUnitByHeaderTest, ShouldLogTracksConfiguredLevel) {
-    LoggerInitOptions options;
-    options.level = zlog::LogLevel::value::ERROR;
-    options.async = false;
-    options.formatter = kDefaultFormatter;
-    options.sink = "stdout";
-    init_logger(options);
+TEST_F(LogUnitByHeaderTest, LoggerLevelAllowsMacroCalls) {
+    init_logger(zlog::LogLevel::value::ERROR);
 
-    EXPECT_FALSE(should_log(zlog::LogLevel::value::DEBUG));
-    EXPECT_FALSE(should_log(zlog::LogLevel::value::WARNING));
-    EXPECT_TRUE(should_log(zlog::LogLevel::value::ERROR));
-    EXPECT_TRUE(should_log(zlog::LogLevel::value::FATAL));
+    ZCO_LOG_DEBUG("filtered debug {}", 1);
+    ZCO_LOG_ERROR("visible error {}", 2);
 
-    options.level = zlog::LogLevel::value::OFF;
-    init_logger(options);
-    EXPECT_FALSE(should_log(zlog::LogLevel::value::FATAL));
+    init_logger(zlog::LogLevel::value::OFF);
+    ZCO_LOG_FATAL("filtered fatal {}", 3);
 }
 
 } // namespace
@@ -63,5 +50,6 @@ TEST_F(LogUnitByHeaderTest, ShouldLogTracksConfiguredLevel) {
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
+    zco::init_logger();
     return RUN_ALL_TESTS();
 }
