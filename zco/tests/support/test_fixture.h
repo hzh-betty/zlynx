@@ -50,11 +50,7 @@ class RuntimeTestBase : public ::testing::Test {
         co_stack_size(128 * 1024);
         co_stack_model(StackModel::kShared);
 
-        LoggerInitOptions options;
-        options.level = ParseLogLevelFromEnv();
-        options.async = false;
-        options.sink = "stdout";
-        init_logger(options);
+        init_logger(ParseLogLevelFromEnv());
     }
 
     void TearDown() override { shutdown(); }
