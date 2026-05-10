@@ -7,7 +7,6 @@
 namespace znet {
 namespace {
 
-
 class ZnetLoggerUnitTest : public ::testing::Test {};
 
 TEST_F(ZnetLoggerUnitTest, GetLoggerLazilyInitializesDefaultLogger) {
@@ -23,11 +22,26 @@ TEST_F(ZnetLoggerUnitTest, InitLoggerLevelOverloadWorks) {
     ASSERT_NE(logger, nullptr);
     EXPECT_EQ(logger->get_name(), "znet_logger");
     EXPECT_NE(dynamic_cast<zlog::AsyncLogger *>(logger.get()), nullptr);
+    EXPECT_TRUE(should_log(zlog::LogLevel::value::DEBUG));
 
     ZNET_LOG_DEBUG("debug {}", 1);
     ZNET_LOG_WARN("warn {}", 2);
     ZNET_LOG_ERROR("error {}", 3);
     ZNET_LOG_FATAL("fatal {}", 4);
+}
+
+TEST_F(ZnetLoggerUnitTest, InitLoggerRefreshesCachedLogger) {
+    init_logger(zlog::LogLevel::value::INFO);
+    zlog::Logger::ptr first = get_logger_ptr();
+    ASSERT_NE(first, nullptr);
+
+    init_logger(zlog::LogLevel::value::OFF);
+    zlog::Logger::ptr second = get_logger_ptr();
+    ASSERT_NE(second, nullptr);
+    EXPECT_NE(first, second);
+    EXPECT_EQ(second,
+              zlog::LoggerManager::get_instance().get_logger("znet_logger"));
+    EXPECT_FALSE(should_log(zlog::LogLevel::value::FATAL));
 }
 
 TEST_F(ZnetLoggerUnitTest, InitLoggerAlsoInitializesZcoLogger) {

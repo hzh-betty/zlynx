@@ -26,6 +26,8 @@ TEST_F(LogUnitByHeaderTest, LoggerInitContractsRegisterInZlogManager) {
     EXPECT_EQ(logger,
               zlog::LoggerManager::get_instance().get_logger(kLoggerName));
     EXPECT_NE(dynamic_cast<zlog::AsyncLogger *>(logger.get()), nullptr);
+    EXPECT_FALSE(should_log(zlog::LogLevel::value::WARNING));
+    EXPECT_TRUE(should_log(zlog::LogLevel::value::ERROR));
 
     init_logger(zlog::LogLevel::value::WARNING);
     EXPECT_EQ(get_logger_ptr(),
@@ -33,6 +35,20 @@ TEST_F(LogUnitByHeaderTest, LoggerInitContractsRegisterInZlogManager) {
     EXPECT_TRUE(zlog::LoggerManager::get_instance().has_logger(kLoggerName));
 
     ZCO_LOG_FATAL("log_unit fatal {}", 5);
+}
+
+TEST_F(LogUnitByHeaderTest, InitLoggerRefreshesCachedLogger) {
+    init_logger(zlog::LogLevel::value::INFO);
+    auto first = get_logger_ptr();
+    ASSERT_NE(first, nullptr);
+
+    init_logger(zlog::LogLevel::value::OFF);
+    auto second = get_logger_ptr();
+    ASSERT_NE(second, nullptr);
+    EXPECT_NE(first, second);
+    EXPECT_EQ(second,
+              zlog::LoggerManager::get_instance().get_logger(kLoggerName));
+    EXPECT_FALSE(should_log(zlog::LogLevel::value::FATAL));
 }
 
 TEST_F(LogUnitByHeaderTest, LoggerLevelAllowsMacroCalls) {

@@ -133,6 +133,65 @@ TEST_F(EpollerUnitTest, RegisterSameWaiterTwiceIsIdempotent) {
     epoller.stop();
 }
 
+TEST_F(EpollerUnitTest, InactiveExistingWaiterDoesNotBlockNewWaiter) {
+    Epoller epoller;
+    ASSERT_TRUE(epoller.start());
+
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+
+    std::shared_ptr<IoWaiter> old_waiter = std::make_shared<IoWaiter>();
+    old_waiter->fd = pair[0];
+    old_waiter->events = EPOLLIN;
+    old_waiter->active.store(true, std::memory_order_release);
+    ASSERT_TRUE(epoller.register_waiter(old_waiter));
+
+    old_waiter->active.store(false, std::memory_order_release);
+
+    std::shared_ptr<IoWaiter> new_waiter = std::make_shared<IoWaiter>();
+    new_waiter->fd = pair[0];
+    new_waiter->events = EPOLLIN;
+    new_waiter->active.store(true, std::memory_order_release);
+    EXPECT_TRUE(epoller.register_waiter(new_waiter));
+
+    epoller.unregister_waiter(new_waiter);
+    ::close(pair[0]);
+    ::close(pair[1]);
+    epoller.stop();
+}
+
+TEST_F(EpollerUnitTest, CancelFdRemovesWaitersAndAllowsFdReuse) {
+    Epoller epoller;
+    ASSERT_TRUE(epoller.start());
+
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+
+    std::shared_ptr<IoWaiter> waiter = std::make_shared<IoWaiter>();
+    waiter->fd = pair[0];
+    waiter->events = EPOLLIN;
+    waiter->active.store(true, std::memory_order_release);
+    waiter->error.store(0, std::memory_order_release);
+    ASSERT_TRUE(epoller.register_waiter(waiter));
+
+    std::vector<std::shared_ptr<IoWaiter>> cancelled =
+        epoller.cancel_fd(pair[0], EBADF);
+    ASSERT_EQ(cancelled.size(), 1u);
+    EXPECT_EQ(cancelled[0].get(), waiter.get());
+    EXPECT_EQ(waiter->error.load(std::memory_order_acquire), EBADF);
+
+    std::shared_ptr<IoWaiter> reused_fd_waiter = std::make_shared<IoWaiter>();
+    reused_fd_waiter->fd = pair[0];
+    reused_fd_waiter->events = EPOLLIN;
+    reused_fd_waiter->active.store(true, std::memory_order_release);
+    EXPECT_TRUE(epoller.register_waiter(reused_fd_waiter));
+
+    epoller.unregister_waiter(reused_fd_waiter);
+    ::close(pair[0]);
+    ::close(pair[1]);
+    epoller.stop();
+}
+
 TEST_F(EpollerUnitTest, RegisterBeforeStartFailsWithEinval) {
     Epoller epoller;
     std::shared_ptr<IoWaiter> waiter = std::make_shared<IoWaiter>();

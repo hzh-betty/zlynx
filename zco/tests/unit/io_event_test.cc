@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include "support/test_fixture.h"
+#include "zco/hook.h"
 #include "zco/io_event.h"
 
 namespace zco {
@@ -177,6 +178,39 @@ TEST_F(IoEventUnitTest, CoroutineZeroTimeoutWithoutReadyEventReturnsEtimedout) {
 
     ::close(pair[0]);
     ::close(pair[1]);
+}
+
+TEST_F(IoEventUnitTest, CoCloseCancelsPendingWaitWithEbadf) {
+    init(1);
+
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+
+    WaitGroup done(2);
+    std::atomic<bool> wait_returned(false);
+    std::atomic<int> captured_errno(0);
+
+    go([&]() {
+        IoEvent event(pair[1], IoEventType::kRead);
+        errno = 0;
+        const bool ok = event.wait(kInfiniteTimeoutMs);
+        wait_returned.store(!ok, std::memory_order_release);
+        captured_errno.store(errno, std::memory_order_release);
+        done.done();
+    });
+
+    go([&]() {
+        co_sleep_for(10);
+        EXPECT_EQ(co_close(pair[1]), 0);
+        pair[1] = -1;
+        done.done();
+    });
+
+    done.wait();
+    EXPECT_TRUE(wait_returned.load(std::memory_order_acquire));
+    EXPECT_EQ(captured_errno.load(std::memory_order_acquire), EBADF);
+
+    ::close(pair[0]);
 }
 
 } // namespace

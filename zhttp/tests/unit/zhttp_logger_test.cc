@@ -18,12 +18,28 @@ TEST(ZhttpLoggerTest, InitLoggerLevelOverloadWorks) {
     ASSERT_NE(logger, nullptr);
     EXPECT_EQ(logger->get_name(), "zhttp_logger");
     EXPECT_NE(dynamic_cast<zlog::AsyncLogger *>(logger.get()), nullptr);
+    EXPECT_FALSE(zhttp::should_log(zlog::LogLevel::value::WARNING));
+    EXPECT_TRUE(zhttp::should_log(zlog::LogLevel::value::ERROR));
 
     ZHTTP_LOG_DEBUG("debug {}", 1);
     ZHTTP_LOG_INFO("info {}", 2);
     ZHTTP_LOG_WARN("warn {}", 3);
     ZHTTP_LOG_ERROR("error {}", 4);
     ZHTTP_LOG_FATAL("fatal {}", 5);
+}
+
+TEST(ZhttpLoggerTest, InitLoggerRefreshesCachedLogger) {
+    zhttp::init_logger(zlog::LogLevel::value::INFO);
+    zlog::Logger::ptr first = zhttp::get_logger_ptr();
+    ASSERT_NE(first, nullptr);
+
+    zhttp::init_logger(zlog::LogLevel::value::OFF);
+    zlog::Logger::ptr second = zhttp::get_logger_ptr();
+    ASSERT_NE(second, nullptr);
+    EXPECT_NE(first, second);
+    EXPECT_EQ(second,
+              zlog::LoggerManager::get_instance().get_logger("zhttp_logger"));
+    EXPECT_FALSE(zhttp::should_log(zlog::LogLevel::value::FATAL));
 }
 
 TEST(ZhttpLoggerTest, InitLoggerAlsoInitializesDependencies) {
