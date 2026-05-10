@@ -99,5 +99,6 @@ TEST_F(SharedStackBufferUnitTest, ConstAccessorsExposeSamePointers) {
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
+    zco::init_logger();
     return RUN_ALL_TESTS();
 }
