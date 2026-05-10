@@ -39,6 +39,17 @@ static void SetManyAndCheckSome(PM &pm, uintptr_t start, uintptr_t step,
     EXPECT_EQ(pm.get(k1), &values[count - 1]);
 }
 
+template <typename PM>
+static void SetRangeWithoutPriorEnsure(PM &pm, uintptr_t start, size_t n) {
+    int value = 42;
+
+    pm.set_range(start, n, &value);
+
+    for (size_t i = 0; i < n; ++i) {
+        EXPECT_EQ(pm.get(start + static_cast<uintptr_t>(i)), &value);
+    }
+}
+
 } // namespace
 
 class PageMap1Test : public ::testing::Test {
@@ -128,6 +139,10 @@ TEST_F(PageMap1Test, EnsureCrossesEndIsOutOfRange) {
 TEST_F(PageMap1Test, ManySequentialSets) { SetManyAndCheckSome(pm, 0, 1, 32); }
 
 TEST_F(PageMap1Test, ManyStrideSets) { SetManyAndCheckSome(pm, 1, 7, 32); }
+
+TEST_F(PageMap1Test, SetRangeInitializesMappingWithoutPriorEnsure) {
+    SetRangeWithoutPriorEnsure(pm, 100, 7);
+}
 
 TEST_F(PageMap1Test, SparseSetsDoNotAffectOthers) {
     int a = 11;
@@ -252,6 +267,10 @@ TEST_F(PageMap2Test, EnsureLargeRangeOutOfRange) {
 TEST_F(PageMap2Test, ManySequentialSets) { SetManyAndCheckSome(pm, 0, 1, 48); }
 
 TEST_F(PageMap2Test, ManyStrideSets) { SetManyAndCheckSome(pm, 7, 97, 48); }
+
+TEST_F(PageMap2Test, SetRangeInitializesMappingWithoutPriorEnsure) {
+    SetRangeWithoutPriorEnsure(pm, 2046, 5);
+}
 
 TEST_F(PageMap2Test, SparseSetsAndNullGaps) {
     int a = 1;
@@ -397,6 +416,10 @@ TEST_F(PageMap3Test, EnsureLargeRangeOutOfRange) {
 TEST_F(PageMap3Test, ManySequentialSets) { SetManyAndCheckSome(pm, 0, 1, 60); }
 
 TEST_F(PageMap3Test, ManyStrideSets) { SetManyAndCheckSome(pm, 5, 97, 60); }
+
+TEST_F(PageMap3Test, SetRangeInitializesMappingWithoutPriorEnsure) {
+    SetRangeWithoutPriorEnsure(pm, 4094, 5);
+}
 
 TEST_F(PageMap3Test, SparseSetsAndNullGaps) {
     int a = 1;

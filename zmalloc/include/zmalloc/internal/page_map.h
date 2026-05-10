@@ -77,7 +77,11 @@ template <int BITS> class PageMap1 {
         if (n == 0) {
             return;
         }
-        assert(ensure(start, n));
+        const bool ok = ensure(start, n);
+        assert(ok);
+        if (!ok) {
+            return;
+        }
         const Number last = start + static_cast<Number>(n - 1);
         for (Number k = start; k <= last; ++k) {
             array_[static_cast<size_t>(k)] = v;
@@ -132,7 +136,11 @@ template <int BITS> class PageMap2 {
         if (n == 0) {
             return;
         }
-        assert(ensure(start, n));
+        const bool ok = ensure(start, n);
+        assert(ok);
+        if (!ok) {
+            return;
+        }
         const Number last = start + static_cast<Number>(n - 1);
         for (Number k = start; k <= last; ++k) {
             const Number i1 = k >> LEAF_BITS;
@@ -217,7 +225,11 @@ template <int BITS> class PageMap3 {
         if (n == 0) {
             return;
         }
-        assert(ensure(start, n));
+        const bool ok = ensure(start, n);
+        assert(ok);
+        if (!ok) {
+            return;
+        }
 
         const Number last = start + static_cast<Number>(n - 1);
         for (Number k = start; k <= last; ++k) {
