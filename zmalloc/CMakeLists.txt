@@ -2,25 +2,19 @@ cmake_minimum_required(VERSION 3.18)
 
 project(zmalloc VERSION 1.0.0 LANGUAGES CXX)
 
-# C++11 标准
-set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+# 模块既可被根工程 add_subdirectory，也可独立配置构建。
+# 独立构建时需要手动加载公共 helper，保持 target/install/test 行为一致。
+if(NOT COMMAND zlynx_apply_common_options)
+    set(ZLYNX_CMAKE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../cmake")
+    list(APPEND CMAKE_MODULE_PATH "${ZLYNX_CMAKE_DIR}")
+    include(ZlynxOptions)
+    include(ZlynxPackage)
+    include(ZlynxTesting)
+endif()
 
-# 查找线程库
 find_package(Threads REQUIRED)
 
-function(zmalloc_enable_coverage target_name)
-    if(ENABLE_COVERAGE)
-        if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-            target_compile_options(${target_name} PRIVATE -O0 -g --coverage)
-            target_link_options(${target_name} PUBLIC --coverage)
-        else()
-            message(WARNING "ENABLE_COVERAGE is ON, but compiler ${CMAKE_CXX_COMPILER_ID} is not supported")
-        endif()
-    endif()
-endfunction()
-
-# 源文件
+# allocator 主库只包含正常分配器实现；全局替换符号放在 zmalloc_override。
 set(ZMALLOC_SOURCES
     src/size_class.cc
     src/system_alloc.cc
@@ -32,66 +26,43 @@ set(ZMALLOC_SOURCES
     src/span_list.cc
 )
 
-# 头文件目录
-set(ZMALLOC_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
-
-# 构建库
 add_library(zmalloc ${ZMALLOC_SOURCES})
+add_library(zmalloc::zmalloc ALIAS zmalloc)
 
-add_library(zmalloc_override STATIC
-    src/override.cc
-)
-zmalloc_enable_coverage(zmalloc)
-zmalloc_enable_coverage(zmalloc_override)
-
+# 头文件作为 PUBLIC 用法需求导出，消费者链接 zmalloc::zmalloc 后自动获得 include。
 target_include_directories(zmalloc
     PUBLIC
-        $<BUILD_INTERFACE:${ZMALLOC_INCLUDE_DIR}>
-        $<INSTALL_INTERFACE:include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
+target_link_libraries(zmalloc PUBLIC Threads::Threads)
+zlynx_apply_common_options(zmalloc)
+
+# 安装后保持版本化 soname，并导出为 zmalloc::zmalloc。
+set_target_properties(zmalloc PROPERTIES
+    VERSION ${PROJECT_VERSION}
+    SOVERSION ${PROJECT_VERSION_MAJOR}
+    EXPORT_NAME zmalloc
 )
 
-target_include_directories(zmalloc_override
-    PUBLIC
-        $<BUILD_INTERFACE:${ZMALLOC_INCLUDE_DIR}>
-        $<INSTALL_INTERFACE:include>
+# zmalloc_override 提供全局 new/delete/malloc 替换符号。
+# 它单独建成目标，避免所有消费者被迫启用 allocator override。
+add_library(zmalloc_override STATIC src/override.cc)
+add_library(zmalloc::override ALIAS zmalloc_override)
+target_link_libraries(zmalloc_override PUBLIC zmalloc)
+zlynx_apply_common_options(zmalloc_override)
+set_target_properties(zmalloc_override PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+    EXPORT_NAME override
 )
 
-target_link_libraries(zmalloc
-    PUBLIC
-        Threads::Threads
-)
-
-target_link_libraries(zmalloc_override
-    PUBLIC
-        zmalloc
-)
-
-# 编译选项
-target_compile_options(zmalloc PRIVATE
-    -Wall
-    -Wextra
-    -Wpedantic
-)
-
-target_compile_options(zmalloc_override PRIVATE
-    -Wall
-    -Wextra
-    -Wpedantic
-)
-
-# 测试子目录
-if(ENABLE_TESTS)
+# benchmark/perf 源码位于 tests/benchmark，所以 perf 构建也需要进入 tests。
+if(BUILD_TESTING OR ZLYNX_BUILD_PERF_TESTS)
     add_subdirectory(tests)
 endif()
 
-# 导出
-set_target_properties(zmalloc PROPERTIES
+zlynx_install_module(zmalloc zmalloc
     VERSION ${PROJECT_VERSION}
-    SOVERSION 1
+    DEPENDENCIES Threads
 )
-
-set_target_properties(zmalloc_override PROPERTIES
-    VERSION ${PROJECT_VERSION}
-    SOVERSION 1
-    POSITION_INDEPENDENT_CODE ON
-)
+zlynx_install_extra_target(zmalloc zmalloc_override)

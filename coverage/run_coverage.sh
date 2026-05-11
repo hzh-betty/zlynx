@@ -50,9 +50,11 @@ find "${REPORT_ROOT}" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 
 if [[ ! -f "${BUILD_DIR}/CMakeCache.txt" ]]; then
     cmake -S "${ROOT_DIR}" -B "${BUILD_DIR}" \
+        -G Ninja \
+        -DCMAKE_CXX_COMPILER=clang++ \
         -DCMAKE_BUILD_TYPE=Debug \
-        -DENABLE_TESTS=ON \
-        -DENABLE_COVERAGE=ON
+        -DBUILD_TESTING=ON \
+        -DZLYNX_ENABLE_COVERAGE=ON
 fi
 
 cmake --build "${BUILD_DIR}" -j"$(nproc)"
