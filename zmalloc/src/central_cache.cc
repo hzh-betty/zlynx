@@ -15,6 +15,7 @@ namespace zmalloc {
 
 namespace {
 
+#ifndef NDEBUG
 bool span_freelist_contains(Span *span, void *target) {
     for (void *it = span->free_list; it != nullptr; it = next_obj(it)) {
         if (it == target) {
@@ -23,6 +24,7 @@ bool span_freelist_contains(Span *span, void *target) {
     }
     return false;
 }
+#endif
 
 } // namespace
 
@@ -102,7 +104,6 @@ Span *CentralCache::get_one_span(CentralFreeList &free_list, size_t size) {
     // 计算大块内存的起始地址和字节数
     char *start = reinterpret_cast<char *>(span->page_id << PAGE_SHIFT);
     const size_t bytes = span->n << PAGE_SHIFT;
-    char *const obj_end = start + bytes;
 
     // 关键步骤：把 [span_start, span_end) 切分成 size 大小对象，构建单链表。
     // 这里不做额外对齐：align_size 已由 SizeClass 查表保证。
@@ -113,7 +114,6 @@ Span *CentralCache::get_one_span(CentralFreeList &free_list, size_t size) {
     start += size;
 
     for (size_t i = 1; i < obj_count; ++i) {
-        assert(start + size <= obj_end);
         next_obj(tail) = start;
         tail = start;
         start += size;

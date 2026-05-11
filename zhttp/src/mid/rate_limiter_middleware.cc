@@ -232,7 +232,6 @@ RateLimiter::Milliseconds
 TokenBucketRateLimiter::retryAfter(const std::string &key) const {
     // 注意：此处为了只读估算，不会推进 b.last / b.tokens（不引入副作用）。
     // 因此在低频访问下，该估算可能偏保守（等待时间略大）。
-    const auto t = now();
     const double cap = static_cast<double>(capacity_);
     const double rate = cap / unitDuration().count();
 
