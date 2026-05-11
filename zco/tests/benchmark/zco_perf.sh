@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 BUILD_DIR="${BUILD_DIR:-${ROOT_DIR}/build-zco-perf-nooverride}"
 BIN="${BIN:-${BUILD_DIR}/zco/tests/stack_model_performance}"
 MODE="${1:-baseline}"
-OUT_ROOT="${ROOT_DIR}/zco/tests/stress/perf_results"
+OUT_ROOT="${ROOT_DIR}/zco/tests/benchmark/perf_results"
 STAMP="$(date +%Y%m%d_%H%M%S)"
 OUT_DIR="${OUT_ROOT}/${MODE}_${STAMP}"
 
