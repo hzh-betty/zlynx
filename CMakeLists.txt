@@ -16,7 +16,7 @@ list(APPEND CMAKE_MODULE_PATH "${ZLYNX_CMAKE_DIR}")
 # 三个公共 helper 分别负责：
 # - ZlynxOptions：target 级编译选项、coverage、perf 参数；
 # - ZlynxPackage：install/export/find_package；
-# - ZlynxTesting：unit/integration/stress/perf 测试目标封装。
+# - ZlynxTesting：unit/integration/perf 测试目标封装。
 include(ZlynxOptions)
 include(ZlynxPackage)
 include(ZlynxTesting)
@@ -59,7 +59,6 @@ message(STATUS "Build shared libs   : ${BUILD_SHARED_LIBS}")
 message(STATUS "Build testing       : ${BUILD_TESTING}")
 message(STATUS "Coverage            : ${ZLYNX_ENABLE_COVERAGE}")
 message(STATUS "zmalloc override    : ${ZLYNX_USE_ZMALLOC_OVERRIDE}")
-message(STATUS "Build stress bins   : ${ZLYNX_BUILD_STRESS_TESTS}")
 message(STATUS "Build perf bins     : ${ZLYNX_BUILD_PERF_TESTS}")
 message(STATUS "Install prefix      : ${CMAKE_INSTALL_PREFIX}")
 message(STATUS "Modules             : zmalloc, zlog, zco, znet, zhttp")

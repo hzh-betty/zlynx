@@ -73,15 +73,15 @@ set_target_properties(zco PROPERTIES
 
 # 测试专用 zco_stdalloc 使用同一份源码，但不链接项目级 zmalloc_override。
 # 这样 allocator 敏感的协程/栈测试不会被全局分配器替换影响。
-if(BUILD_TESTING OR ZLYNX_BUILD_STRESS_TESTS OR ZLYNX_BUILD_PERF_TESTS)
+if(BUILD_TESTING OR ZLYNX_BUILD_PERF_TESTS)
     add_library(zco_stdalloc STATIC ${ZCO_SOURCES})
     target_include_directories(zco_stdalloc PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
     target_link_libraries(zco_stdalloc PUBLIC ${ZCO_ZLOG_TARGET} Threads::Threads)
     zlynx_apply_common_options(zco_stdalloc)
 endif()
 
-# stress/perf 源码都在 tests 下，因此三类测试任一打开都需要进入 tests 子目录。
-if(BUILD_TESTING OR ZLYNX_BUILD_STRESS_TESTS OR ZLYNX_BUILD_PERF_TESTS)
+# perf 源码在 tests 下，因此 BUILD_TESTING 或 perf 打开时需要进入 tests 子目录。
+if(BUILD_TESTING OR ZLYNX_BUILD_PERF_TESTS)
     add_subdirectory(tests)
 endif()
 

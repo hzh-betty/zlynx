@@ -37,7 +37,7 @@ set(ZHTTP_UNIT_TESTS
 )
 
 if(BUILD_TESTING)
-    # unit/integration 进入 CTest；stress/perf 不进入 CTest。
+    # unit/integration 进入 CTest；perf 不进入 CTest。
     foreach(test_name ${ZHTTP_UNIT_TESTS})
         zlynx_add_gtest(${test_name} unit/${test_name}.cc zhttp unit zhttp)
     endforeach()

@@ -2,9 +2,8 @@
 #
 # 约定：
 # - unit/integration 使用 zlynx_add_gtest()，自动注册到 CTest；
-# - stress 使用 zlynx_add_standalone_test()，只生成可执行文件，不进入 CTest；
 # - perf/benchmark 使用 zlynx_add_perf_target()，只生成可执行文件，并附加性能参数；
-# - labels 同时包含模块名和测试分类，便于 `ctest -L zco -L unit` 过滤。
+# - labels 只包含测试分类，让 CTest Label Time Summary 聚合为 unit/integration。
 
 include_guard(GLOBAL)
 
@@ -24,21 +23,8 @@ function(zlynx_add_gtest target_name source_file module_name test_kind library_t
     add_test(NAME ${module_name}.${test_kind}.${target_name} COMMAND ${target_name})
     set_tests_properties(${module_name}.${test_kind}.${target_name}
         PROPERTIES
-            LABELS "${module_name};${test_kind}"
+            LABELS "${test_kind}"
             TIMEOUT 90
-    )
-endfunction()
-
-function(zlynx_add_standalone_test target_name source_file library_target)
-    # stress 测试可能耗时长、消耗系统资源或依赖特殊环境，因此不调用 add_test()。
-    add_executable(${target_name} ${source_file})
-    target_link_libraries(${target_name}
-        PRIVATE
-            ${library_target}
-            GTest::gtest
-            GTest::gmock
-            Threads::Threads
-            zlynx_coverage_options
     )
 endfunction()
 

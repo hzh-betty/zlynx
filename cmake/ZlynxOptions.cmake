@@ -15,8 +15,7 @@ option(ZLYNX_ENABLE_COVERAGE "Enable coverage instrumentation for supported comp
 # allocator override 是运行时选择，不作为各模块安装包的 PUBLIC 依赖导出。
 option(ZLYNX_USE_ZMALLOC_OVERRIDE "Link zmalloc_override into runtime modules" ON)
 
-# stress/perf 目标可以被构建和手动运行，但不会注册进 CTest。
-option(ZLYNX_BUILD_STRESS_TESTS "Build stress test binaries without registering them in CTest" OFF)
+# perf 目标可以被构建和手动运行，但不会注册进 CTest。
 option(ZLYNX_BUILD_PERF_TESTS "Build benchmark/performance binaries without registering them in CTest" OFF)
 
 set(ZLYNX_PERF_COMPILE_OPTIONS

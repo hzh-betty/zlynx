@@ -44,13 +44,12 @@
     {
       "name": "perf",
       "displayName": "Performance binaries (RelWithDebInfo, Clang + Ninja)",
-      "description": "性能测试预设：使用 RelWithDebInfo，保留优化和调试符号，stress/perf 二进制不注册进 CTest。",
+      "description": "性能测试预设：使用 RelWithDebInfo，保留优化和调试符号，perf 二进制不注册进 CTest。",
       "inherits": "release",
       "binaryDir": "${sourceDir}/build/perf",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "ZLYNX_BUILD_PERF_TESTS": "ON",
-        "ZLYNX_BUILD_STRESS_TESTS": "ON"
+        "ZLYNX_BUILD_PERF_TESTS": "ON"
       }
     }
   ],
