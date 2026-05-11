@@ -15,3 +15,4 @@ logfile/
 .claude/
 tmp/
 *.tmp
+.clangd

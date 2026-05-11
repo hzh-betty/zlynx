@@ -62,6 +62,8 @@ if(BUILD_TESTING)
     foreach(test_name ${ZHTTP_INTEGRATION_TESTS})
         zlynx_add_gtest(${test_name} integration/${test_name}.cc zhttp integration zhttp)
     endforeach()
+
+    zlynx_add_module_test_targets(zhttp)
 endif()
 
 if(ZLYNX_BUILD_PERF_TESTS)

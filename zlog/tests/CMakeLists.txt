@@ -21,6 +21,8 @@ if(BUILD_TESTING)
         get_filename_component(test_name ${test_src} NAME_WE)
         zlynx_add_gtest(zlog_${test_name} ${test_src} zlog integration zlog)
     endforeach()
+
+    zlynx_add_module_test_targets(zlog)
 endif()
 
 if(ZLYNX_BUILD_PERF_TESTS)

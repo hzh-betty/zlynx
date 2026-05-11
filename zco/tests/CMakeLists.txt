@@ -14,7 +14,7 @@ function(add_zco_gtest target_name src_file labels timeout_seconds)
     target_link_libraries(${target_name} PRIVATE ${zco_test_runtime} GTest::gtest Threads::Threads zlynx_coverage_options)
     target_include_directories(${target_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     add_test(NAME zco.${labels}.${target_name} COMMAND ${target_name})
-    set_tests_properties(zco.${labels}.${target_name} PROPERTIES LABELS "${labels}" TIMEOUT ${timeout_seconds})
+    set_tests_properties(zco.${labels}.${target_name} PROPERTIES LABELS "${labels};total" TIMEOUT ${timeout_seconds})
 endfunction()
 
 file(GLOB ZCO_UNIT_TESTS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/unit/*.cc")
@@ -51,14 +51,6 @@ if(ZLYNX_BUILD_PERF_TESTS)
     endforeach()
 endif()
 
-add_custom_target(zco_test_unit
-    COMMAND ${CMAKE_CTEST_COMMAND} -R "^zco\\.unit\\." -L unit --output-on-failure
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    COMMENT "Run zco unit tests"
-)
-
-add_custom_target(zco_test_integration
-    COMMAND ${CMAKE_CTEST_COMMAND} -R "^zco\\.integration\\." -L integration --output-on-failure
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    COMMENT "Run zco integration tests"
-)
+if(BUILD_TESTING)
+    zlynx_add_module_test_targets(zco)
+endif()

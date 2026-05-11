@@ -31,6 +31,8 @@ if(BUILD_TESTING)
             )
         endif()
     endforeach()
+
+    zlynx_add_module_test_targets(znet)
 endif()
 
 if(ZLYNX_BUILD_PERF_TESTS)

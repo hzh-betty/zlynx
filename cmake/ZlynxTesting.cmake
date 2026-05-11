@@ -3,7 +3,7 @@
 # 约定：
 # - unit/integration 使用 zlynx_add_gtest()，自动注册到 CTest；
 # - perf/benchmark 使用 zlynx_add_perf_target()，只生成可执行文件，并附加性能参数；
-# - labels 只包含测试分类，让 CTest Label Time Summary 聚合为 unit/integration。
+# - labels 包含测试分类和 total，让模块级 CTest 汇总输出 unit/integration/total。
 
 include_guard(GLOBAL)
 
@@ -23,8 +23,36 @@ function(zlynx_add_gtest target_name source_file module_name test_kind library_t
     add_test(NAME ${module_name}.${test_kind}.${target_name} COMMAND ${target_name})
     set_tests_properties(${module_name}.${test_kind}.${target_name}
         PROPERTIES
-            LABELS "${test_kind}"
+            LABELS "${test_kind};total"
             TIMEOUT 90
+    )
+endfunction()
+
+function(zlynx_add_module_test_targets module_name)
+    add_custom_target(${module_name}_test
+        COMMAND ${CMAKE_CTEST_COMMAND}
+                -R "^${module_name}\\."
+                --output-on-failure
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        COMMENT "Run ${module_name} tests with unit/integration/total summary"
+    )
+
+    add_custom_target(${module_name}_test_unit
+        COMMAND ${CMAKE_CTEST_COMMAND}
+                -R "^${module_name}\\.unit\\."
+                --output-on-failure
+                --no-label-summary
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        COMMENT "Run ${module_name} unit tests"
+    )
+
+    add_custom_target(${module_name}_test_integration
+        COMMAND ${CMAKE_CTEST_COMMAND}
+                -R "^${module_name}\\.integration\\."
+                --output-on-failure
+                --no-label-summary
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        COMMENT "Run ${module_name} integration tests"
     )
 endfunction()
 

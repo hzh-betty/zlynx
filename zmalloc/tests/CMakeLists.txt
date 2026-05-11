@@ -38,6 +38,8 @@ if(BUILD_TESTING)
     foreach(test_name ${ZMALLOC_INTEGRATION_TESTS})
         zlynx_add_gtest(zmalloc_${test_name} integration/${test_name}.cc zmalloc integration zmalloc)
     endforeach()
+
+    zlynx_add_module_test_targets(zmalloc)
 endif()
 
 if(ZLYNX_BUILD_PERF_TESTS)
