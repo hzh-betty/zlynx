@@ -1,100 +1,47 @@
 cmake_minimum_required(VERSION 3.18)
 
-# 测试配置
 find_package(GTest QUIET)
+find_package(Threads REQUIRED)
 
 if(NOT GTest_FOUND)
-    message(STATUS "GTest not found, zmalloc tests disabled")
+    message(STATUS "zmalloc tests disabled: GTest was not found")
     return()
 endif()
 
-enable_testing()
-
-find_package(Threads REQUIRED)
-
-function(zmalloc_test_enable_coverage target_name)
-    if(ENABLE_COVERAGE)
-        if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-            target_compile_options(${target_name} PRIVATE -O0 -g --coverage)
-            target_link_options(${target_name} PRIVATE --coverage)
-        endif()
-    endif()
-endfunction()
-
-# zmalloc 头文件目录
-set(ZMALLOC_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
-
-# 单元测试
-set(UNIT_TESTS
-    size_class_test
-    free_list_test
-    object_pool_test
-    transfer_cache_test
-    zmalloc_test
-    page_map_test
-    page_cache_test
-    central_cache_test
-    thread_cache_test
-    system_alloc_test
-    override_whitebox_test
-)
-
-foreach(TEST_NAME ${UNIT_TESTS})
-    add_executable(zmalloc_${TEST_NAME} unit/${TEST_NAME}.cc)
-    target_link_libraries(zmalloc_${TEST_NAME}
-        PRIVATE
-            zmalloc
-            GTest::gtest
+# unit/integration 是常规验证目标，会注册进 CTest；benchmark/performance 单独构建。
+if(BUILD_TESTING)
+    # allocator 相关测试需要明确列出，避免 override 测试误链接到普通 zmalloc 目标。
+    set(ZMALLOC_UNIT_TESTS
+        size_class_test
+        free_list_test
+        object_pool_test
+        transfer_cache_test
+        zmalloc_test
+        page_map_test
+        page_cache_test
+        central_cache_test
+        thread_cache_test
+        system_alloc_test
+        override_whitebox_test
     )
-    target_include_directories(zmalloc_${TEST_NAME} PRIVATE ${ZMALLOC_INCLUDE_DIR})
-    zmalloc_test_enable_coverage(zmalloc_${TEST_NAME})
-    add_test(NAME zmalloc_${TEST_NAME} COMMAND zmalloc_${TEST_NAME})
-endforeach()
 
-add_executable(zmalloc_allocator_override_test unit/allocator_override_test.cc)
-target_link_libraries(zmalloc_allocator_override_test
-    PRIVATE
-        zmalloc_override
-        GTest::gtest
-)
-target_include_directories(zmalloc_allocator_override_test PRIVATE ${ZMALLOC_INCLUDE_DIR})
-zmalloc_test_enable_coverage(zmalloc_allocator_override_test)
-add_test(NAME zmalloc_allocator_override_test COMMAND zmalloc_allocator_override_test)
+    foreach(test_name ${ZMALLOC_UNIT_TESTS})
+        zlynx_add_gtest(zmalloc_${test_name} unit/${test_name}.cc zmalloc unit zmalloc)
+    endforeach()
 
-# 集成测试
-set(INTEGRATION_TESTS
-    concurrent_alloc_test
-)
+    zlynx_add_gtest(zmalloc_allocator_override_test unit/allocator_override_test.cc zmalloc unit zmalloc_override)
 
-foreach(TEST_NAME ${INTEGRATION_TESTS})
-    add_executable(zmalloc_${TEST_NAME} integration/${TEST_NAME}.cc)
-    target_link_libraries(zmalloc_${TEST_NAME}
-        PRIVATE
-            zmalloc
-            GTest::gtest
+    set(ZMALLOC_INTEGRATION_TESTS
+        concurrent_alloc_test
     )
-    target_include_directories(zmalloc_${TEST_NAME} PRIVATE ${ZMALLOC_INCLUDE_DIR})
-    zmalloc_test_enable_coverage(zmalloc_${TEST_NAME})
-    add_test(NAME zmalloc_${TEST_NAME} COMMAND zmalloc_${TEST_NAME})
-endforeach()
 
-# 基准测试
-add_executable(zmalloc_benchmark benchmark/zmalloc_benchmark.cc)
-target_link_libraries(zmalloc_benchmark
-    PRIVATE
-        zmalloc
-        Threads::Threads
-)
-target_include_directories(zmalloc_benchmark PRIVATE ${ZMALLOC_INCLUDE_DIR})
-zmalloc_test_enable_coverage(zmalloc_benchmark)
+    foreach(test_name ${ZMALLOC_INTEGRATION_TESTS})
+        zlynx_add_gtest(zmalloc_${test_name} integration/${test_name}.cc zmalloc integration zmalloc)
+    endforeach()
+endif()
 
-# perf 性能分析驱动
-add_executable(zmalloc_performance benchmark/zmalloc_performance.cc)
-target_link_libraries(zmalloc_performance
-    PRIVATE
-        zmalloc
-        Threads::Threads
-)
-target_include_directories(zmalloc_performance PRIVATE ${ZMALLOC_INCLUDE_DIR})
-target_compile_options(zmalloc_performance PRIVATE -g -O2)
-zmalloc_test_enable_coverage(zmalloc_performance)
+if(ZLYNX_BUILD_PERF_TESTS)
+    # 性能目标使用 RelWithDebInfo preset 和 zlynx_perf_options，便于 perf 采样。
+    zlynx_add_perf_target(zmalloc_benchmark benchmark/zmalloc_benchmark.cc zmalloc)
+    zlynx_add_perf_target(zmalloc_performance benchmark/zmalloc_performance.cc zmalloc)
+endif()

@@ -1,82 +1,39 @@
+cmake_minimum_required(VERSION 3.18)
+
 find_package(GTest REQUIRED)
 find_package(Threads REQUIRED)
 
-function(add_znet_test target_name src_file labels)
-  add_executable(${target_name} ${src_file})
-  target_link_libraries(${target_name}
-    PRIVATE
-      znet
-      zco
-      GTest::gtest
-      Threads::Threads
-  )
-  target_include_directories(${target_name}
-    PRIVATE
-      ${PROJECT_SOURCE_DIR}/include
-  )
-  if(ENABLE_COVERAGE)
-    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-      target_compile_options(${target_name} PRIVATE -O0 -g --coverage)
-      target_link_options(${target_name} PRIVATE --coverage)
-    endif()
-  endif()
-  add_test(NAME ${target_name} COMMAND ${target_name})
-  set_tests_properties(${target_name} PROPERTIES LABELS "${labels}" TIMEOUT 90)
-endfunction()
+# znet 的网络测试对 socket/thread 资源敏感；仅 unit/integration 注册进 CTest。
+if(BUILD_TESTING)
+    file(GLOB ZNET_UNIT_TESTS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/unit/*.cc")
+    file(GLOB ZNET_INTEGRATION_TESTS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/integration/*.cc")
 
-file(GLOB ZNET_UNIT_TESTS CONFIGURE_DEPENDS
-  "${CMAKE_CURRENT_SOURCE_DIR}/unit/*.cc"
-)
+    foreach(test_src ${ZNET_UNIT_TESTS})
+        get_filename_component(test_name ${test_src} NAME_WE)
+        zlynx_add_gtest(${test_name} ${test_src} znet unit znet)
+    endforeach()
 
-file(GLOB ZNET_INTEGRATION_TESTS CONFIGURE_DEPENDS
-  "${CMAKE_CURRENT_SOURCE_DIR}/integration/*.cc"
-)
+    foreach(test_src ${ZNET_INTEGRATION_TESTS})
+        get_filename_component(test_name ${test_src} NAME_WE)
+        zlynx_add_gtest(${test_name} ${test_src} znet integration znet)
+    endforeach()
 
-foreach(test_src ${ZNET_UNIT_TESTS})
-  get_filename_component(test_name ${test_src} NAME_WE)
-  add_znet_test(${test_name} ${test_src} "znet;unit;quick")
-endforeach()
+    foreach(test_name buffer_test server_test tcp_server_test)
+        if(TARGET ${test_name})
+            # 这些测试在高并发 CTest 下更容易受运行时/socket 资源影响，保持串行。
+            set(serial_test_kind unit)
+            if(test_name STREQUAL "tcp_server_test")
+                set(serial_test_kind integration)
+            endif()
+            set_tests_properties(znet.${serial_test_kind}.${test_name} PROPERTIES
+                RUN_SERIAL TRUE
+                RESOURCE_LOCK zco_runtime
+            )
+        endif()
+    endforeach()
+endif()
 
-foreach(test_src ${ZNET_INTEGRATION_TESTS})
-  get_filename_component(test_name ${test_src} NAME_WE)
-  add_znet_test(${test_name} ${test_src} "znet;integration;quick")
-endforeach()
-
-# These tests are sensitive to system-level socket/thread pressure when many
-# binaries run concurrently. Serialize them to reduce flaky crashes.
-set(ZNET_SERIAL_TESTS
-  buffer_test
-  server_test
-  tcp_server_test
-)
-foreach(test_name ${ZNET_SERIAL_TESTS})
-  if(TARGET ${test_name})
-    set_tests_properties(${test_name} PROPERTIES
-      RUN_SERIAL TRUE
-      RESOURCE_LOCK zco_runtime
-    )
-  endif()
-endforeach()
-
-add_executable(znet_wrk_benchmark
-  benchmark/znet_wrk_benchmark.cc
-)
-
-target_link_libraries(znet_wrk_benchmark
-  PRIVATE
-    znet
-    zco
-    Threads::Threads
-)
-
-target_include_directories(znet_wrk_benchmark
-  PRIVATE
-    ${PROJECT_SOURCE_DIR}/include
-)
-
-if(ENABLE_COVERAGE)
-  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(znet_wrk_benchmark PRIVATE -O0 -g --coverage)
-    target_link_options(znet_wrk_benchmark PRIVATE --coverage)
-  endif()
+if(ZLYNX_BUILD_PERF_TESTS)
+    # wrk benchmark 只生成二进制，不注册 CTest，避免默认验证跑压测。
+    zlynx_add_perf_target(znet_wrk_benchmark benchmark/znet_wrk_benchmark.cc znet)
 endif()

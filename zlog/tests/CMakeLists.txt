@@ -1,65 +1,37 @@
 cmake_minimum_required(VERSION 3.18)
 
 find_package(GTest REQUIRED)
-
-find_package(benchmark QUIET)
-
+find_package(Threads REQUIRED)
 find_package(spdlog QUIET)
-
 find_package(glog QUIET)
 
-function(zlog_test_enable_coverage target_name)
-    if(ENABLE_COVERAGE)
-        if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-            target_compile_options(${target_name} PRIVATE -O0 -g --coverage)
-            target_link_options(${target_name} PRIVATE --coverage)
-        endif()
-    endif()
-endfunction()
+# BUILD_TESTING 只控制 unit/integration 的 CTest 注册。
+# benchmark/performance 由 ZLYNX_BUILD_PERF_TESTS 单独控制，避免默认测试跑性能用例。
+if(BUILD_TESTING)
+    # zlog 测试文件按目录分类；CONFIGURE_DEPENDS 让新增测试文件时自动触发重新配置。
+    file(GLOB ZLOG_UNIT_TESTS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/unit/*.cc")
+    file(GLOB ZLOG_INTEGRATION_TESTS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/integration/*.cc")
 
-# 收集单元测试源文件
-file(GLOB UNIT_TEST_SOURCES "unit/*.cc")
-message(STATUS "Project source dir: ${PROJECT_SOURCE_DIR}")
-foreach(TEST_SRC ${UNIT_TEST_SOURCES})
-    get_filename_component(TEST_NAME ${TEST_SRC} NAME_WE)
-    add_executable(${TEST_NAME} ${TEST_SRC})
-    target_link_libraries(${TEST_NAME} PRIVATE zlog_static GTest::gtest GTest::gmock Threads::Threads)
-    target_include_directories(${TEST_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/include)
-    zlog_test_enable_coverage(${TEST_NAME})
-    add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
-endforeach()
+    foreach(test_src ${ZLOG_UNIT_TESTS})
+        get_filename_component(test_name ${test_src} NAME_WE)
+        zlynx_add_gtest(zlog_${test_name} ${test_src} zlog unit zlog)
+    endforeach()
 
-# 收集集成测试源文件
-file(GLOB INTEGRATION_TEST_SOURCES "integration/*.cc")
-foreach(TEST_SRC ${INTEGRATION_TEST_SOURCES})
-    get_filename_component(TEST_NAME ${TEST_SRC} NAME_WE)
-    add_executable(${TEST_NAME} ${TEST_SRC})
-    target_link_libraries(${TEST_NAME} PRIVATE zlog_static GTest::gtest GTest::gmock Threads::Threads)
-    target_include_directories(${TEST_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/include)
-    zlog_test_enable_coverage(${TEST_NAME})
-    add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
-endforeach()
-
-# 基准测试
-if(spdlog_FOUND AND glog_FOUND)
-    add_executable(zlog_benchmark benchmark/zlog_benchmark.cc)
-    target_link_libraries(zlog_benchmark PRIVATE 
-        zlog_static 
-        spdlog::spdlog
-        glog::glog
-        Threads::Threads
-    )
-    target_include_directories(zlog_benchmark PRIVATE ${PROJECT_SOURCE_DIR}/include)
-    zlog_test_enable_coverage(zlog_benchmark)
-else()
-    message(STATUS "Skipping zlog_benchmark (requires spdlog, glog)")
+    foreach(test_src ${ZLOG_INTEGRATION_TESTS})
+        get_filename_component(test_name ${test_src} NAME_WE)
+        zlynx_add_gtest(zlog_${test_name} ${test_src} zlog integration zlog)
+    endforeach()
 endif()
 
-# 性能测试
-add_executable(zlog_performance benchmark/zlog_performance.cc)
-target_link_libraries(zlog_performance PRIVATE 
-    zlog_static 
-    Threads::Threads
-)
-target_include_directories(zlog_performance PRIVATE ${PROJECT_SOURCE_DIR}/include)
-zlog_test_enable_coverage(zlog_performance)
+if(ZLYNX_BUILD_PERF_TESTS)
+    # 对比 benchmark 依赖第三方日志库，缺依赖时跳过该目标，但保留自有 performance 目标。
+    if(spdlog_FOUND AND glog_FOUND)
+        add_executable(zlog_benchmark benchmark/zlog_benchmark.cc)
+        target_link_libraries(zlog_benchmark PRIVATE zlog spdlog::spdlog glog::glog Threads::Threads)
+        zlynx_apply_perf_options(zlog_benchmark)
+    else()
+        message(STATUS "zlog benchmark target disabled: spdlog or glog was not found")
+    endif()
+
+    zlynx_add_perf_target(zlog_performance benchmark/zlog_performance.cc zlog)
+endif()
