@@ -1,12 +1,12 @@
 # zlynx
 
 `zlynx` 是一个 Linux C++ 学习项目，也是一组从底层到上层逐步搭出来的高性能网络组件。
-它的目标不是替代成熟生产库，而是把 Linux C++ 学习阶段的大多数核心知识串成一个可以
-阅读、调试、测试、压测和扩展的完整工程。
+它的目标不是替代成熟生产库，而是把 Linux C++ 学习阶段的大多数核心知识串成一个可以阅读、
+调试、测试、压测和扩展的完整工程。
 
-如果你已经学过 C++ 语法、Linux 系统编程、网络编程、并发、内存管理、CMake 和测试，
-这个项目可以把这些知识放在同一条链路里重新走一遍：从 allocator，到日志，到协程，
-到 TCP 网络，再到 HTTP/WebSocket 服务。
+如果你已经学过 C++ 语法、数据结构与算法、Linux 系统编程、网络编程、内存管理、
+设计模式、CMake 和测试，这个项目可以把这些知识放在同一条链路里重新走一遍：
+从 allocator，到日志，到协程，到 TCP 网络，再到 HTTP/WebSocket 服务。
 
 ## 模块概览
 
@@ -31,29 +31,40 @@ zmalloc 可选全局 allocator override，也可显式使用 zmalloc/zfree
 
 `zlynx` 会借鉴成熟项目的思想，但并不是逐行复刻：
 
-- `zlog` 参考 `spdlog`：学习 logger、formatter、sink、同步/异步日志和易用 API。
-- `zmalloc` 参考 `tcmalloc`：学习 thread cache、central cache、page cache、size class、
-  span、page map 和 allocator override。
-- `zco` 参考 `coost`：学习协程调度、共享栈/独立栈、hook、事件等待、定时器和同步原语。
+- `zlog` 参考 `spdlog`：学习 logger、formatter、sink、同步/异步日志、双缓冲策略，
+  以及单例、工厂、建造者等常见模式。
+- `zmalloc` 参考 `tcmalloc`：学习对象池、thread cache、central cache、page cache、
+  size class、span、page map 和 allocator override 等内存池策略。
+- `zco` 参考 `coost`：学习 GMP 模型、协程调度、共享栈/独立栈、hook、事件等待、
+  定时器、`Channel`/`WaitGroup` 等同步原语和工作窃取队列。
 - `znet` 参考 `muduo`：学习 TCP server、connection、buffer、acceptor、回调模型和 TLS。
-  不同点是 znet 没有采用 muduo 典型的 one loop per thread，而是基于 `zco` runtime 和
-  每连接邮箱模型，让连接读写/关闭事件在连接内部串行化。
-- `zhttp` 参考 `dragon` 框架：学习路由、中间件、请求/响应抽象、静态文件、压缩、限流、
-  Session、HTTPS 和 WebSocket。
+  `znet` 同时引入 actor/信箱模型，让连接的读、写、关闭事件在连接内部串行化，
+  以降低多线程场景下的锁竞争。
+- `zhttp` 参考 `dragon` 框架：学习路由、中间件、请求/响应抽象、静态文件、压缩、
+  限流、Session、HTTPS 和 WebSocket。
 
 ## 能学到什么
 
 这个仓库覆盖的知识点很密：
 
 - C++14 工程组织、target 级 CMake、install/export/find_package
-- RAII、智能指针、模板、类型擦除、回调、builder 模式
+- RAII、智能指针、类型擦除、设计模式
 - 多线程、原子变量、锁、条件变量、自旋锁、线程本地缓存
-- 高性能日志、格式化、异步生产者/消费者、缓冲区设计
-- 内存分配器、size class、free list、span、page cache、全局 new/delete override
-- 协程调度器、上下文切换、共享栈、工作窃取、定时器、epoll、系统调用 hook
-- TCP server、socket、acceptor、connection 状态机、buffer、TLS
-- HTTP parser、router、middleware、multipart、range、static file、WebSocket
-- GTest、CTest、覆盖率、benchmark、wrk、perf、valgrind
+- 高性能日志、格式化、异步生产者/消费者、双缓冲区设计
+- 内存分配器、对象池、内存池、全局 new/delete override
+- 协程调度器、GMP 模型、上下文切换、共享栈、工作窃取、定时器、epoll、系统调用 hook
+- TCP server、socket、acceptor、connection 状态机、buffer、TLS、actor 模型
+- 路由、中间件、请求/响应抽象、multipart、断点续传、WebSocket
+- GTest、CMock、测试覆盖率、benchmark、wrk、perf、valgrind
+- 性能优化思路：
+  - 数据结构：例如用基数树减少锁竞争、优化路由查找。
+  - 缓存局部性：例如优化 Cache/内存布局、自旋锁减少Cache Miss。
+  - CPU 执行效率：例如利用分支预测减少热点路径开销。
+  - 设计策略：双缓冲区、actor模型减少锁竞争，提高并发。
+  - 内存管理：例如对象池、减少拷贝、控制生命周期，以及优化日志消息。
+  - 系统开销：例如减少系统调用、批处理、零拷贝和缓存日志时间格式化结果。
+  - IO 策略：例如缓存常用静态文件、顺序化访问、减少磁盘访问。
+  - 其他：用模板代替`std::function` 减少`std::function` 的间接调用开销。
 
 ## 构建
 
@@ -185,4 +196,3 @@ zhttp::zhttp
 
 每一层都可以单独构建、单独测试、单独压测；把五层连起来看，则是一条完整的 Linux C++
 网络服务学习路线。
-
