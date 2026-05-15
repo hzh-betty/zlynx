@@ -593,6 +593,62 @@ TEST_F(TcpConnectionUnitTest, ReentrantDispatchPathWorksInsideInlineActor) {
     ::close(pair[1]);
 }
 
+TEST_F(TcpConnectionUnitTest,
+       SameThreadDifferentCoroutineDoesNotBypassActorMailbox) {
+    zco::init(1);
+
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+    auto conn =
+        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    ASSERT_NE(conn, nullptr);
+
+    zco::WaitGroup read_entered(1);
+    zco::WaitGroup send_entered(1);
+    zco::WaitGroup done(2);
+    std::atomic<bool> send_done(false);
+
+    zco::go([&]() {
+        read_entered.done();
+        EXPECT_EQ(conn->read(4, 1000), 4);
+        done.done();
+    });
+
+    zco::go([&]() {
+        read_entered.wait();
+        zco::sleep_for(20);
+        send_entered.done();
+        EXPECT_EQ(conn->send("z", 1, 1000), 1);
+        send_done.store(true, std::memory_order_release);
+        done.done();
+    });
+
+    send_entered.wait();
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    char out = '\0';
+    errno = 0;
+    const ssize_t early_recv = ::recv(pair[1], &out, 1, MSG_DONTWAIT);
+    EXPECT_EQ(early_recv, -1);
+    if (early_recv < 0) {
+        EXPECT_TRUE(errno == EAGAIN || errno == EWOULDBLOCK);
+    }
+    const bool send_completed_early =
+        send_done.load(std::memory_order_acquire);
+    EXPECT_FALSE(send_completed_early);
+
+    ASSERT_EQ(::send(pair[1], "ping", 4, 0), 4);
+    done.wait();
+
+    if (!send_completed_early && early_recv < 0) {
+        ASSERT_EQ(::recv(pair[1], &out, 1, 0), 1);
+        EXPECT_EQ(out, 'z');
+    }
+
+    conn->close();
+    ::close(pair[1]);
+}
+
 TEST_F(TcpConnectionUnitTest, SendInternalReturnsErrorOutsideCoroutineContext) {
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);

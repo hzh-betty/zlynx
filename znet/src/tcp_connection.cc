@@ -39,7 +39,7 @@ TcpConnection::TcpConnection(Socket::ptr socket,
       write_complete_callback_(), high_water_mark_callback_(),
       high_water_mark_(64 * 1024 * 1024), write_timeout_ms_(0),
       tls_channel_(nullptr), context_(nullptr), actor_mutex_(), mailbox_(),
-      actor_running_(false), actor_thread_id_(),
+      actor_running_(false), actor_coroutine_(nullptr),
       actor_scheduler_(actor_scheduler), actor_sched_id_(-1) {
     if (actor_scheduler_) {
         actor_sched_id_ = actor_scheduler_->id();
@@ -117,12 +117,14 @@ TcpConnection::dispatch_event_and_wait(const std::shared_ptr<Event> &event) {
     // 避免“再派发一个协程”带来的额外调度开销。
     bool run_inline = false;
 
-    // 重入场景：若当前已在 actor 执行线程内，再次 dispatch 时必须直接执行，
-    // 否则会出现“自己等待自己”的死锁。
+    // 重入场景：若当前已在 actor 执行协程内，再次 dispatch 时必须直接执行，
+    // 否则会出现“自己等待自己”的死锁。注意不能用线程 id 判断：同一
+    // 调度线程会轮流运行多个协程，只有同一个协程才是真正的 actor 重入。
     bool reentrant = false;
     {
         std::unique_lock<std::mutex> lock(actor_mutex_);
-        if (actor_running_ && actor_thread_id_ == std::this_thread::get_id()) {
+        if (actor_running_ && actor_coroutine_ != nullptr &&
+            actor_coroutine_ == zco::current_coroutine()) {
             reentrant = true;
         } else {
             mailbox_.push_back(event);
@@ -181,7 +183,7 @@ bool TcpConnection::try_begin_inline_actor() {
     }
 
     actor_running_ = true;
-    actor_thread_id_ = std::this_thread::get_id();
+    actor_coroutine_ = zco::current_coroutine();
     return true;
 }
 
@@ -190,7 +192,7 @@ void TcpConnection::finish_inline_actor() { drain_mailbox(); }
 void TcpConnection::drain_mailbox() {
     {
         std::unique_lock<std::mutex> lock(actor_mutex_);
-        actor_thread_id_ = std::this_thread::get_id();
+        actor_coroutine_ = zco::current_coroutine();
     }
 
     while (true) {
@@ -200,7 +202,7 @@ void TcpConnection::drain_mailbox() {
             if (mailbox_.empty()) {
                 // 邮箱耗尽后释放 actor_running_，下一个事件可重新拉起 worker。
                 actor_running_ = false;
-                actor_thread_id_ = std::thread::id();
+                actor_coroutine_ = nullptr;
                 return;
             }
             event = mailbox_.front();

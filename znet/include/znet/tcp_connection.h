@@ -13,8 +13,6 @@
 #include <mutex>
 #include <string>
 
-#include <thread>
-
 #include "znet/buffer.h"
 #include "znet/internal/noncopyable.h"
 #include "znet/socket.h"
@@ -181,7 +179,7 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>,
     mutable std::mutex actor_mutex_;
     std::deque<std::shared_ptr<Event>> mailbox_;
     bool actor_running_; // actor 是否正在运行
-    std::thread::id actor_thread_id_;
+    void *actor_coroutine_; // 当前 actor 执行协程句柄，仅用于重入识别
     zco::Scheduler *actor_scheduler_;
     int actor_sched_id_;
 };
