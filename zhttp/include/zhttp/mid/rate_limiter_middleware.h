@@ -1,3 +1,9 @@
+/**
+ * @file rate_limiter_middleware.h
+ * @brief rate_limiter_middleware 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZHTTP_RATE_LIMITER_MIDDLEWARE_H_
 #define ZHTTP_RATE_LIMITER_MIDDLEWARE_H_
 

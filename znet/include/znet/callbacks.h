@@ -1,3 +1,9 @@
+/**
+ * @file callbacks.h
+ * @brief callbacks 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZNET_CALLBACKS_H_
 #define ZNET_CALLBACKS_H_
 

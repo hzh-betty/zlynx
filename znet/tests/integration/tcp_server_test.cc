@@ -1,3 +1,9 @@
+/**
+ * @file tcp_server_test.cc
+ * @brief 集成测试。
+ * @author hzh-betty
+ */
+
 #define private public
 #include "znet/tcp_server.h"
 #undef private

@@ -1,3 +1,9 @@
+/**
+ * @file multipart.h
+ * @brief multipart 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZHTTP_MULTIPART_H_
 #define ZHTTP_MULTIPART_H_
 

@@ -1,3 +1,9 @@
+/**
+ * @file tcp_connection.cc
+ * @brief tcp_connection 实现。
+ * @author hzh-betty
+ */
+
 #include "znet/tcp_connection.h"
 
 #include <algorithm>

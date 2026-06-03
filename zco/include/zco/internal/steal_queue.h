@@ -1,3 +1,9 @@
+/**
+ * @file steal_queue.h
+ * @brief steal_queue 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZCO_INTERNAL_STEAL_QUEUE_H_
 #define ZCO_INTERNAL_STEAL_QUEUE_H_
 

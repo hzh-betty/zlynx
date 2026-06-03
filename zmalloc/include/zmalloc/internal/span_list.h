@@ -1,3 +1,9 @@
+/**
+ * @file span_list.h
+ * @brief span_list 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZMALLOC_INTERNAL_SPAN_LIST_H_
 #define ZMALLOC_INTERNAL_SPAN_LIST_H_
 

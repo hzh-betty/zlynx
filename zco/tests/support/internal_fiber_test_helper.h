@@ -1,3 +1,9 @@
+/**
+ * @file internal_fiber_test_helper.h
+ * @brief 测试支持。
+ * @author hzh-betty
+ */
+
 #ifndef ZCO_TESTS_SUPPORT_INTERNAL_FIBER_TEST_HELPER_H_
 #define ZCO_TESTS_SUPPORT_INTERNAL_FIBER_TEST_HELPER_H_
 

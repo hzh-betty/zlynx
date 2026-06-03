@@ -1,3 +1,9 @@
+/**
+ * @file address.h
+ * @brief address 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZNET_ADDRESS_H_
 #define ZNET_ADDRESS_H_
 

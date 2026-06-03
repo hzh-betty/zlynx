@@ -1,3 +1,9 @@
+/**
+ * @file snapshot_buffer_pool.cc
+ * @brief snapshot_buffer_pool 实现。
+ * @author hzh-betty
+ */
+
 #include "zco/internal/snapshot_buffer_pool.h"
 
 namespace zco {

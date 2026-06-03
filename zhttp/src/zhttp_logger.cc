@@ -1,3 +1,9 @@
+/**
+ * @file zhttp_logger.cc
+ * @brief zhttp_logger 实现。
+ * @author hzh-betty
+ */
+
 #include "zhttp/zhttp_logger.h"
 
 #include "znet/znet_logger.h"

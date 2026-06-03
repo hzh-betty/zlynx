@@ -1,3 +1,9 @@
+/**
+ * @file security_middleware.cc
+ * @brief security_middleware 实现。
+ * @author hzh-betty
+ */
+
 #include "zhttp/mid/security_middleware.h"
 
 namespace zhttp {

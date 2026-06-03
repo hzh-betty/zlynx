@@ -1,3 +1,9 @@
+/**
+ * @file multipart.cc
+ * @brief multipart 实现。
+ * @author hzh-betty
+ */
+
 #include "zhttp/multipart.h"
 
 #include "zhttp/http_common.h"

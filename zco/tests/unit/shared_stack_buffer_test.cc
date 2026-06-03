@@ -1,3 +1,9 @@
+/**
+ * @file shared_stack_buffer_test.cc
+ * @brief 单元测试。
+ * @author hzh-betty
+ */
+
 #include <gtest/gtest.h>
 
 #include "support/test_fixture.h"

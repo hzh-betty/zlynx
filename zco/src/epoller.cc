@@ -1,3 +1,9 @@
+/**
+ * @file epoller.cc
+ * @brief epoller 实现。
+ * @author hzh-betty
+ */
+
 #include "zco/internal/epoller.h"
 
 #include <errno.h>
@@ -9,7 +15,7 @@
 #include <utility>
 #include <vector>
 
-#include "zco/zco_log.h"
+#include "zco/zco_logger.h"
 
 namespace zco {
 
@@ -118,15 +124,18 @@ bool Epoller::register_waiter(const std::shared_ptr<IoWaiter> &waiter) {
         return false;
     }
 
+    // 1. 先把 waiter 注册到状态表里，更新 fd 的兴趣位
     const bool want_read = (waiter->events & EPOLLIN) != 0;
     const bool want_write = (waiter->events & EPOLLOUT) != 0;
     if (!want_read && !want_write) {
-        errno = EINVAL;
+        errno = EINVAL; 
         return false;
     }
 
     std::lock_guard<std::mutex> lock(waiter_mutex_);
 
+    // 2。检查竞争状态：如果同一 fd 的同一方向上已经有一个活跃的 waiter，
+    // 就拒绝注册，避免覆盖掉前一个 waiter 导致它永远无法被唤醒。
     FdWaitState &state = fd_wait_states_[waiter->fd];
     FdWaitState old_state = state;
 
@@ -155,6 +164,7 @@ bool Epoller::register_waiter(const std::shared_ptr<IoWaiter> &waiter) {
         state.write_waiter = waiter;
     }
 
+    // 3。更新 epoll 里的兴趣位，如果失败就回滚状态表，保证原子语义。
     if (update_interest_locked(waiter->fd, &state)) {
         return true;
     }
@@ -171,6 +181,7 @@ void Epoller::unregister_waiter(const std::shared_ptr<IoWaiter> &waiter) {
         return;
     }
 
+    // 1. 先把 waiter 从状态表里摘除，更新 fd 的兴趣位
     std::lock_guard<std::mutex> lock(waiter_mutex_);
     auto it = fd_wait_states_.find(waiter->fd);
     if (it == fd_wait_states_.end()) {
@@ -180,6 +191,7 @@ void Epoller::unregister_waiter(const std::shared_ptr<IoWaiter> &waiter) {
     FdWaitState &state = it->second;
     bool changed = false;
 
+    // 2. 只有当状态表里对应槽位的 waiter 恰好是当前要注销的 waiter 时才进行摘除和兴趣位更新，
     if ((waiter->events & EPOLLIN) && state.read_waiter.get() == waiter.get()) {
         state.read_waiter.reset();
         changed = true;
@@ -195,6 +207,7 @@ void Epoller::unregister_waiter(const std::shared_ptr<IoWaiter> &waiter) {
         (void)update_interest_locked(waiter->fd, &state);
     }
 
+    // 3. 如果这个 fd 已经没有任何 waiter 了，就从状态表里删除，避免表无限增长。
     if (!state.registered && !state.read_waiter && !state.write_waiter) {
         fd_wait_states_.erase(it);
     }
@@ -239,6 +252,7 @@ bool Epoller::update_interest_locked(int fd, FdWaitState *state) {
         return false;
     }
 
+    // 1. 根据当前状态计算出 fd 应该注册的兴趣位。
     uint32_t desired_events = 0;
     if (state->read_waiter &&
         state->read_waiter->active.load(std::memory_order_acquire)) {
@@ -249,6 +263,7 @@ bool Epoller::update_interest_locked(int fd, FdWaitState *state) {
         desired_events |= EPOLLOUT;
     }
 
+    // 2. 如果没有任何兴趣了，就从 epoll 里删除
     if (desired_events == 0) {
         if (state->registered) {
             if (epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr) != 0 &&
@@ -268,6 +283,9 @@ bool Epoller::update_interest_locked(int fd, FdWaitState *state) {
         return true;
     }
 
+    // 3. 更新 epoll 里的兴趣位，如果失败就回滚状态表，保证原子语义。
+    //   errno == EEXIST 可能是因为之前的 EPOLL_CTL_ADD 在多线程竞争下被另一个线程抢先成功了，
+    //   errno == ENOENT 可能是因为之前的 EPOLL_CTL_MOD 在多线程竞争下被另一个线程抢先删除了，
     epoll_event ev;
     ::memset(&ev, 0, sizeof(ev));
     ev.events = desired_events;
@@ -302,6 +320,7 @@ void Epoller::wait_events(
         return;
     }
 
+    // 1. 调用 epoll_wait 等待事件，获取就绪的 fd 列表。
     epoll_event events[kMaxEpollEvents];
     const int event_count =
         epoll_wait(epoll_fd_, events, kMaxEpollEvents, timeout_ms);
@@ -312,6 +331,8 @@ void Epoller::wait_events(
         return;
     }
 
+
+    // 2. 遍历就绪事件列表，收集对应的 waiter 和就绪事件类型，准备后续回调。
     std::vector<std::pair<std::shared_ptr<IoWaiter>, uint32_t>> ready_waiters;
     ready_waiters.reserve(static_cast<size_t>(event_count) * 2);
 
@@ -326,6 +347,8 @@ void Epoller::wait_events(
         const uint32_t ready_events = events[i].events;
 
         std::lock_guard<std::mutex> lock(waiter_mutex_);
+        // 如果 fd 没有对应的状态了，说明可能是之前的事件被取消了，
+        // 这时就直接忽略这个事件，等待下一轮 epoll_wait。
         auto it = fd_wait_states_.find(fd);
         if (it == fd_wait_states_.end()) {
             continue;
@@ -337,6 +360,8 @@ void Epoller::wait_events(
         const bool write_ready =
             (ready_events & (EPOLLOUT | EPOLLHUP | EPOLLERR)) != 0;
 
+        // 读写两个槽位可以分别完成，因此同一个 epoll 事件可能同时唤醒
+        // 两个 waiter。这里把它们分开发给上层，之后再统一清理槽位。
         if (read_ready && state.read_waiter) {
             ready_waiters.push_back(
                 std::make_pair(state.read_waiter, ready_events));
@@ -373,6 +398,8 @@ void Epoller::consume_wakeup_fd() {
     }
 
     uint64_t value = 0;
+    // wake_fd 可能被多次写入而只触发一次 epoll 事件，所以这里一直读到
+    // EAGAIN，把累计的唤醒标记一次性清空。
     // 一次可能积累多个写入，循环读空避免下一轮 epoll 立即被同一事件触发。
     while (read(wake_fd_, &value, sizeof(value)) == sizeof(value)) {
     }

@@ -1,3 +1,9 @@
+/**
+ * @file tcp_connection.h
+ * @brief tcp_connection 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZNET_TCP_CONNECTION_H_
 #define ZNET_TCP_CONNECTION_H_
 

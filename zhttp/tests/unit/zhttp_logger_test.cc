@@ -1,6 +1,6 @@
 #include "zhttp/zhttp_logger.h"
 
-#include "zco/zco_log.h"
+#include "zco/zco_logger.h"
 #include "znet/znet_logger.h"
 
 #include <gtest/gtest.h>

@@ -1,3 +1,9 @@
+/**
+ * @file timeout_middleware.h
+ * @brief timeout_middleware 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZHTTP_TIMEOUT_MIDDLEWARE_H_
 #define ZHTTP_TIMEOUT_MIDDLEWARE_H_
 

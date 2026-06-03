@@ -1,3 +1,9 @@
+/**
+ * @file format.cc
+ * @brief format 实现。
+ * @author hzh-betty
+ */
+
 #include "zlog/format.h"
 
 #include <stdexcept>

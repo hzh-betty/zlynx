@@ -1,3 +1,9 @@
+/**
+ * @file http_request.cc
+ * @brief http_request 实现。
+ * @author hzh-betty
+ */
+
 #include "zhttp/http_request.h"
 
 #include "zhttp/http_common.h"

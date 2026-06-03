@@ -1,3 +1,9 @@
+/**
+ * @file session.h
+ * @brief session 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZHTTP_SESSION_H_
 #define ZHTTP_SESSION_H_
 

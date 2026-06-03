@@ -1,3 +1,9 @@
+/**
+ * @file noncopyable.h
+ * @brief noncopyable 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZCO_INTERNAL_NONCOPYABLE_H_
 #define ZCO_INTERNAL_NONCOPYABLE_H_
 

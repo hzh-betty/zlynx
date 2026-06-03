@@ -1,3 +1,9 @@
+/**
+ * @file buffer.cc
+ * @brief buffer 实现。
+ * @author hzh-betty
+ */
+
 #include "zlog/internal/buffer.h"
 
 #include <sys/mman.h>

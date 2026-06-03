@@ -1,3 +1,9 @@
+/**
+ * @file hook.h
+ * @brief hook 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZCO_HOOK_H_
 #define ZCO_HOOK_H_
 

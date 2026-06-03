@@ -1,6 +1,12 @@
+/**
+ * @file znet_logger_test.cc
+ * @brief 单元测试。
+ * @author hzh-betty
+ */
+
 #include "znet/znet_logger.h"
 
-#include "zco/zco_log.h"
+#include "zco/zco_logger.h"
 
 #include <gtest/gtest.h>
 

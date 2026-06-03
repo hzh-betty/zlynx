@@ -1,3 +1,9 @@
+/**
+ * @file mutex.h
+ * @brief mutex 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZCO_MUTEX_H_
 #define ZCO_MUTEX_H_
 

@@ -1,3 +1,9 @@
+/**
+ * @file auth_middleware.cc
+ * @brief auth_middleware 实现。
+ * @author hzh-betty
+ */
+
 #include "zhttp/mid/auth_middleware.h"
 
 #include <unordered_set>

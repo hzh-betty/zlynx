@@ -1,6 +1,7 @@
 /**
  * @file size_class.cc
  * @brief SizeClass 成员函数实现
+ * @author hzh-betty
  */
 
 #include "zmalloc/internal/size_class.h"

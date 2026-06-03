@@ -1,3 +1,9 @@
+/**
+ * @file epoller_test.cc
+ * @brief 单元测试。
+ * @author hzh-betty
+ */
+
 #include <errno.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>

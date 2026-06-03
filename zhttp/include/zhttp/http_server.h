@@ -1,3 +1,9 @@
+/**
+ * @file http_server.h
+ * @brief http_server 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZHTTP_HTTP_SERVER_H_
 #define ZHTTP_HTTP_SERVER_H_
 

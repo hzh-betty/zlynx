@@ -1,3 +1,9 @@
+/**
+ * @file acceptor.cc
+ * @brief acceptor 实现。
+ * @author hzh-betty
+ */
+
 #include "znet/acceptor.h"
 
 #include <cerrno>

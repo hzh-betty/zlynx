@@ -1,8 +1,14 @@
+/**
+ * @file wait_group.cc
+ * @brief wait_group 实现。
+ * @author hzh-betty
+ */
+
 #include "zco/wait_group.h"
 
 #include <stdexcept>
 
-#include "zco/zco_log.h"
+#include "zco/zco_logger.h"
 
 namespace zco {
 

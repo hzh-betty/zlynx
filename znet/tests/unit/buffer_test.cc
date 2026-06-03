@@ -1,3 +1,9 @@
+/**
+ * @file buffer_test.cc
+ * @brief 单元测试。
+ * @author hzh-betty
+ */
+
 #include "znet/buffer.h"
 #include "znet/socket.h"
 

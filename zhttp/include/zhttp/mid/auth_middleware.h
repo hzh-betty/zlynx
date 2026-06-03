@@ -1,3 +1,9 @@
+/**
+ * @file auth_middleware.h
+ * @brief auth_middleware 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZHTTP_AUTH_MIDDLEWARE_H_
 #define ZHTTP_AUTH_MIDDLEWARE_H_
 

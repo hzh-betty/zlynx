@@ -1,3 +1,9 @@
+/**
+ * @file zco_logger.h
+ * @brief zco_logger 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZCO_LOG_H_
 #define ZCO_LOG_H_
 

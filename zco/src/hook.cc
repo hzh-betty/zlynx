@@ -1,3 +1,9 @@
+/**
+ * @file hook.cc
+ * @brief hook 实现。
+ * @author hzh-betty
+ */
+
 #include "zco/hook.h"
 
 #include <errno.h>
@@ -17,7 +23,7 @@
 
 #include "zco/internal/runtime_manager.h"
 #include "zco/io_event.h"
-#include "zco/zco_log.h"
+#include "zco/zco_logger.h"
 
 namespace zco {
 namespace {

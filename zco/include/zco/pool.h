@@ -1,3 +1,9 @@
+/**
+ * @file pool.h
+ * @brief pool 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZCO_POOL_H_
 #define ZCO_POOL_H_
 

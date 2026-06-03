@@ -1,3 +1,9 @@
+/**
+ * @file buffer.h
+ * @brief buffer 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZLOG_INTERNAL_BUFFER_H_
 #define ZLOG_INTERNAL_BUFFER_H_
 #include <cstddef>

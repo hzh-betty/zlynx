@@ -1,3 +1,9 @@
+/**
+ * @file logger.cc
+ * @brief logger 实现。
+ * @author hzh-betty
+ */
+
 #include "zlog/logger.h"
 #include "zlog/internal/util.h"
 

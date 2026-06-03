@@ -1,4 +1,10 @@
-﻿#ifndef ZLOG_LOGGER_H_
+﻿/**
+ * @file logger.h
+ * @brief logger 定义。
+ * @author hzh-betty
+ */
+
+#ifndef ZLOG_LOGGER_H_
 #define ZLOG_LOGGER_H_
 /**
  * @brief 日志器模块

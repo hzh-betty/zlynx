@@ -1,3 +1,9 @@
+/**
+ * @file http_response.cc
+ * @brief http_response 实现。
+ * @author hzh-betty
+ */
+
 #include "zhttp/http_response.h"
 
 #include <sstream>

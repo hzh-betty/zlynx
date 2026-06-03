@@ -1,3 +1,9 @@
+/**
+ * @file tls_context.h
+ * @brief tls_context 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZNET_TLS_CONTEXT_H_
 #define ZNET_TLS_CONTEXT_H_
 

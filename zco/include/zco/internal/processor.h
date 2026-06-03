@@ -1,3 +1,9 @@
+/**
+ * @file processor.h
+ * @brief processor 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZCO_INTERNAL_PROCESSOR_H_
 #define ZCO_INTERNAL_PROCESSOR_H_
 

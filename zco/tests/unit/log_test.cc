@@ -1,7 +1,13 @@
+/**
+ * @file log_test.cc
+ * @brief 单元测试。
+ * @author hzh-betty
+ */
+
 #include <gtest/gtest.h>
 
 #include "support/test_fixture.h"
-#include "zco/zco_log.h"
+#include "zco/zco_logger.h"
 #include "zlog/logger.h"
 
 namespace zco {

@@ -1,3 +1,9 @@
+/**
+ * @file sink.cc
+ * @brief sink 实现。
+ * @author hzh-betty
+ */
+
 #include "zlog/sink.h"
 
 #include "zlog/internal/util.h"

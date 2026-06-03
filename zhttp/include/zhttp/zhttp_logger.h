@@ -1,3 +1,9 @@
+/**
+ * @file zhttp_logger.h
+ * @brief zhttp_logger 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZHTTP_LOGGER_H_
 #define ZHTTP_LOGGER_H_
 

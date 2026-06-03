@@ -1,3 +1,9 @@
+/**
+ * @file http_request.h
+ * @brief http_request 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZHTTP_HTTP_REQUEST_H_
 #define ZHTTP_HTTP_REQUEST_H_
 

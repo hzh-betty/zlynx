@@ -1,3 +1,9 @@
+/**
+ * @file sched.cc
+ * @brief sched 实现。
+ * @author hzh-betty
+ */
+
 #include "zco/sched.h"
 
 #include <chrono>

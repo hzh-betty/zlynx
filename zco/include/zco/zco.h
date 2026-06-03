@@ -1,3 +1,9 @@
+/**
+ * @file zco.h
+ * @brief zco 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZCO_ZCO_H_
 #define ZCO_ZCO_H_
 
@@ -9,7 +15,7 @@
 #include "zco/pool.h"
 #include "zco/sched.h"
 #include "zco/wait_group.h"
-#include "zco/zco_log.h"
+#include "zco/zco_logger.h"
 
 namespace zco {
 

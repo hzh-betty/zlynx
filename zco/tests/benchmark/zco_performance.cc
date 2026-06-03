@@ -1,3 +1,9 @@
+/**
+ * @file zco_performance.cc
+ * @brief 性能测试。
+ * @author hzh-betty
+ */
+
 #include <atomic>
 #include <cerrno>
 #include <chrono>
@@ -19,7 +25,7 @@
 #include "zco/hook.h"
 #include "zco/sched.h"
 #include "zco/wait_group.h"
-#include "zco/zco_log.h"
+#include "zco/zco_logger.h"
 
 namespace zco {
 namespace {

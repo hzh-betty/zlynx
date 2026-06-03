@@ -1,3 +1,9 @@
+/**
+ * @file coroutine_waiter_test.cc
+ * @brief 单元测试。
+ * @author hzh-betty
+ */
+
 #include <deque>
 #include <vector>
 

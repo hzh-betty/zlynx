@@ -1,3 +1,9 @@
+/**
+ * @file error_middleware.cc
+ * @brief error_middleware 实现。
+ * @author hzh-betty
+ */
+
 #include "zhttp/mid/error_middleware.h"
 
 #include <sstream>

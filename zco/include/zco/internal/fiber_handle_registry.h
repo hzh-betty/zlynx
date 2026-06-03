@@ -1,3 +1,9 @@
+/**
+ * @file fiber_handle_registry.h
+ * @brief fiber_handle_registry 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZCO_INTERNAL_FIBER_HANDLE_REGISTRY_H_
 #define ZCO_INTERNAL_FIBER_HANDLE_REGISTRY_H_
 

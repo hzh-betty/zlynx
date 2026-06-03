@@ -1,3 +1,9 @@
+/**
+ * @file epoller.h
+ * @brief epoller 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZCO_INTERNAL_EPOLLER_H_
 #define ZCO_INTERNAL_EPOLLER_H_
 
@@ -103,6 +109,12 @@ class Epoller : public Poller {
                                  uint32_t ready_events)> &on_ready) override;
 
   private:
+    /**
+     * @brief 更新 fd 的 epoll 兴趣位。
+     * @param fd 文件描述符。
+     * @param state fd 的等待状态。
+     * @return true 表示更新成功。
+     */
     bool update_interest_locked(int fd, FdWaitState *state);
 
     /**

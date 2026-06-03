@@ -1,3 +1,9 @@
+/**
+ * @file channel.h
+ * @brief channel 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZCO_CHANNEL_H_
 #define ZCO_CHANNEL_H_
 
@@ -10,7 +16,7 @@
 #include <vector>
 
 #include "zco/event.h"
-#include "zco/zco_log.h"
+#include "zco/zco_logger.h"
 
 namespace zco {
 

@@ -1,3 +1,9 @@
+/**
+ * @file event.h
+ * @brief event 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZCO_EVENT_H_
 #define ZCO_EVENT_H_
 

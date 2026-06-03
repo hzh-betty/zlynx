@@ -1,3 +1,9 @@
+/**
+ * @file http_utils.cc
+ * @brief http_utils 实现。
+ * @author hzh-betty
+ */
+
 #include "zhttp/internal/http_utils.h"
 
 #include "zhttp/http_common.h"

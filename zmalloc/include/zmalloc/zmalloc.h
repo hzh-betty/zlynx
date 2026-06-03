@@ -1,12 +1,13 @@
-#ifndef ZMALLOC_ZMALLOC_H_
-#define ZMALLOC_ZMALLOC_H_
-
 /**
  * @file zmalloc.h
  * @brief zmalloc 对外统一接口
+ * @author hzh-betty
  *
  * 提供高性能的内存分配和释放 API。
  */
+
+#ifndef ZMALLOC_ZMALLOC_H_
+#define ZMALLOC_ZMALLOC_H_
 
 #include "zmalloc/internal/page_cache.h"
 #include "zmalloc/internal/size_class.h"

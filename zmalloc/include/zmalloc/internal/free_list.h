@@ -1,3 +1,9 @@
+/**
+ * @file free_list.h
+ * @brief free_list 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZMALLOC_INTERNAL_FREE_LIST_H_
 #define ZMALLOC_INTERNAL_FREE_LIST_H_
 

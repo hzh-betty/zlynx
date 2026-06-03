@@ -1,3 +1,9 @@
+/**
+ * @file common.h
+ * @brief common 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZMALLOC_INTERNAL_COMMON_H_
 #define ZMALLOC_INTERNAL_COMMON_H_
 

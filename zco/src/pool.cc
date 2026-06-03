@@ -1,3 +1,9 @@
+/**
+ * @file pool.cc
+ * @brief pool 实现。
+ * @author hzh-betty
+ */
+
 #include "zco/pool.h"
 
 #include <mutex>
@@ -6,7 +12,7 @@
 #include <utility>
 #include <vector>
 
-#include "zco/zco_log.h"
+#include "zco/zco_logger.h"
 
 namespace zco {
 

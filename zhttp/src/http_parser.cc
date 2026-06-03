@@ -1,3 +1,9 @@
+/**
+ * @file http_parser.cc
+ * @brief http_parser 实现。
+ * @author hzh-betty
+ */
+
 #include "zhttp/internal/http_parser.h"
 
 #include <algorithm>

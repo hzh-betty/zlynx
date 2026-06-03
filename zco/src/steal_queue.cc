@@ -1,3 +1,9 @@
+/**
+ * @file steal_queue.cc
+ * @brief steal_queue 实现。
+ * @author hzh-betty
+ */
+
 #include "zco/internal/steal_queue.h"
 
 #include <algorithm>

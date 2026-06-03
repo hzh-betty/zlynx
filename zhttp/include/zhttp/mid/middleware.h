@@ -1,3 +1,9 @@
+/**
+ * @file middleware.h
+ * @brief middleware 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZHTTP_MIDDLEWARE_H_
 #define ZHTTP_MIDDLEWARE_H_
 

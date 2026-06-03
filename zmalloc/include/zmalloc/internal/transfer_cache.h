@@ -1,15 +1,16 @@
-#ifndef ZMALLOC_INTERNAL_TRANSFER_CACHE_H_
-#define ZMALLOC_INTERNAL_TRANSFER_CACHE_H_
-
 /**
  * @file transfer_cache.h
  * @brief 传输缓存，位于 ThreadCache 和 CentralCache 之间的批量缓存层
+ * @author hzh-betty
  *
  * 参考 tcmalloc 的 Transfer Cache 设计：
  * - 使用环形缓冲区存储批量对象指针
  * - 减少 ThreadCache 与 CentralCache 之间的锁竞争
  * - 批量传输提高缓存效率
  */
+
+#ifndef ZMALLOC_INTERNAL_TRANSFER_CACHE_H_
+#define ZMALLOC_INTERNAL_TRANSFER_CACHE_H_
 
 #include <atomic>
 

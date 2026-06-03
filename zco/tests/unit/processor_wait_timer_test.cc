@@ -1,3 +1,9 @@
+/**
+ * @file processor_wait_timer_test.cc
+ * @brief 单元测试。
+ * @author hzh-betty
+ */
+
 #include <atomic>
 #include <errno.h>
 #include <sys/epoll.h>

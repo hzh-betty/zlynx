@@ -1,3 +1,9 @@
+/**
+ * @file poller.h
+ * @brief poller 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZCO_INTERNAL_POLLER_H_
 #define ZCO_INTERNAL_POLLER_H_
 

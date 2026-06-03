@@ -1,3 +1,8 @@
+/**
+* @file context.h
+* @brief 协程上下文类定义。
+* @author hzh-betty
+ */
 #ifndef ZCO_INTERNAL_CONTEXT_H_
 #define ZCO_INTERNAL_CONTEXT_H_
 

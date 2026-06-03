@@ -1,3 +1,9 @@
+/**
+ * @file http_utils.h
+ * @brief http_utils 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZHTTP_INTERNAL_HTTP_UTILS_H_
 #define ZHTTP_INTERNAL_HTTP_UTILS_H_
 

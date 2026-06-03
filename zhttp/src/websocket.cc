@@ -1,3 +1,9 @@
+/**
+ * @file websocket.cc
+ * @brief websocket 实现。
+ * @author hzh-betty
+ */
+
 #include "zhttp/websocket.h"
 
 #include "zhttp/http_common.h"

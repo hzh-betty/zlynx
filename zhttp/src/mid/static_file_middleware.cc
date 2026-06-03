@@ -1,3 +1,9 @@
+/**
+ * @file static_file_middleware.cc
+ * @brief static_file_middleware 实现。
+ * @author hzh-betty
+ */
+
 #include "zhttp/mid/static_file_middleware.h"
 
 #include <vector>

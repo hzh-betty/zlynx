@@ -1,9 +1,15 @@
+/**
+ * @file timer.cc
+ * @brief timer 实现。
+ * @author hzh-betty
+ */
+
 #include "zco/internal/timer.h"
 
 #include <algorithm>
 #include <chrono>
 
-#include "zco/zco_log.h"
+#include "zco/zco_logger.h"
 
 namespace zco {
 

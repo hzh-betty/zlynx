@@ -1,3 +1,9 @@
+/**
+ * @file security_middleware.h
+ * @brief security_middleware 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZHTTP_SECURITY_MIDDLEWARE_H_
 #define ZHTTP_SECURITY_MIDDLEWARE_H_
 

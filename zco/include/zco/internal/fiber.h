@@ -1,3 +1,9 @@
+/**
+ * @file fiber.h
+ * @brief fiber 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZCO_INTERNAL_FIBER_H_
 #define ZCO_INTERNAL_FIBER_H_
 

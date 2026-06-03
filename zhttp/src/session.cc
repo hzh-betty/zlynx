@@ -1,3 +1,9 @@
+/**
+ * @file session.cc
+ * @brief session 实现。
+ * @author hzh-betty
+ */
+
 #include "zhttp/session.h"
 
 #include <random>

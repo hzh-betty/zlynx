@@ -1,3 +1,9 @@
+/**
+ * @file acceptor.h
+ * @brief acceptor 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZNET_ACCEPTOR_H_
 #define ZNET_ACCEPTOR_H_
 

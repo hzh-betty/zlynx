@@ -1,3 +1,9 @@
+/**
+ * @file session_middleware.cc
+ * @brief session_middleware 实现。
+ * @author hzh-betty
+ */
+
 #include "zhttp/mid/session_middleware.h"
 
 namespace zhttp {

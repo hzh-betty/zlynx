@@ -28,7 +28,7 @@ endif()
 
 set(ZCO_SOURCES
     src/sched.cc
-    src/zco_log.cc
+    src/zco_logger.cc
     src/context.cc
     src/steal_queue.cc
     src/fiber_pool.cc

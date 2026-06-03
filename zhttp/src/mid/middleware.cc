@@ -1,3 +1,9 @@
+/**
+ * @file middleware.cc
+ * @brief middleware 实现。
+ * @author hzh-betty
+ */
+
 #include "zhttp/mid/middleware.h"
 
 namespace zhttp {

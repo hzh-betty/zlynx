@@ -1,3 +1,9 @@
+/**
+ * @file http_response.h
+ * @brief http_response 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZHTTP_HTTP_RESPONSE_H_
 #define ZHTTP_HTTP_RESPONSE_H_
 

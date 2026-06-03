@@ -1,3 +1,9 @@
+/**
+ * @file buffer.h
+ * @brief buffer 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZNET_BUFFER_H_
 #define ZNET_BUFFER_H_
 

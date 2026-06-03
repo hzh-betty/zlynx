@@ -1,3 +1,9 @@
+/**
+ * @file tcp_server.h
+ * @brief tcp_server 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZNET_TCP_SERVER_H_
 #define ZNET_TCP_SERVER_H_
 

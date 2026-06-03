@@ -1,3 +1,9 @@
+/**
+ * @file websocket_frame.h
+ * @brief websocket_frame 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZHTTP_WEBSOCKET_FRAME_H_
 #define ZHTTP_WEBSOCKET_FRAME_H_
 

@@ -1,3 +1,9 @@
+/**
+ * @file test_fixture.h
+ * @brief 测试支持。
+ * @author hzh-betty
+ */
+
 #ifndef ZCO_TESTS_SUPPORT_TEST_FIXTURE_H_
 #define ZCO_TESTS_SUPPORT_TEST_FIXTURE_H_
 
@@ -11,7 +17,7 @@
 #include <gtest/gtest.h>
 
 #include "zco/zco.h"
-#include "zco/zco_log.h"
+#include "zco/zco_logger.h"
 
 namespace zco {
 namespace test {

@@ -1,3 +1,9 @@
+/**
+ * @file daemon.h
+ * @brief daemon 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZHTTP_DAEMON_H_
 #define ZHTTP_DAEMON_H_
 

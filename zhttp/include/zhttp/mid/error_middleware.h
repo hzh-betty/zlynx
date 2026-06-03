@@ -1,3 +1,9 @@
+/**
+ * @file error_middleware.h
+ * @brief error_middleware 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZHTTP_ERROR_MIDDLEWARE_H_
 #define ZHTTP_ERROR_MIDDLEWARE_H_
 

@@ -1,3 +1,9 @@
+/**
+ * @file event.cc
+ * @brief event 实现。
+ * @author hzh-betty
+ */
+
 #include "zco/event.h"
 
 #include <algorithm>
@@ -11,7 +17,7 @@
 #include "zco/internal/coroutine_waiter.h"
 #include "zco/internal/fiber.h"
 #include "zco/internal/runtime_manager.h"
-#include "zco/zco_log.h"
+#include "zco/zco_logger.h"
 
 namespace zco {
 

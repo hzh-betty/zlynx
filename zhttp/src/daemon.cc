@@ -1,3 +1,9 @@
+/**
+ * @file daemon.cc
+ * @brief daemon 实现。
+ * @author hzh-betty
+ */
+
 #include "zhttp/daemon.h"
 #include "zhttp/zhttp_logger.h"
 

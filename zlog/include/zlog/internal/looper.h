@@ -1,3 +1,9 @@
+/**
+ * @file looper.h
+ * @brief looper 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZLOG_INTERNAL_LOOPER_H_
 #define ZLOG_INTERNAL_LOOPER_H_
 #include <atomic>

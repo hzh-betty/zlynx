@@ -1,3 +1,9 @@
+/**
+ * @file session_middleware.h
+ * @brief session_middleware 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZHTTP_SESSION_MIDDLEWARE_H_
 #define ZHTTP_SESSION_MIDDLEWARE_H_
 

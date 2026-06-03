@@ -1,3 +1,9 @@
+/**
+ * @file size_class.h
+ * @brief size_class 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZMALLOC_INTERNAL_SIZE_CLASS_H_
 #define ZMALLOC_INTERNAL_SIZE_CLASS_H_
 

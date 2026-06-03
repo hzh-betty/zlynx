@@ -1,3 +1,9 @@
+/**
+ * @file fiber_pool.h
+ * @brief Fiber 池类定义
+ * @author hzh-betty
+ */
+
 #ifndef ZCO_INTERNAL_FIBER_POOL_H_
 #define ZCO_INTERNAL_FIBER_POOL_H_
 

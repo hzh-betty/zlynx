@@ -1,3 +1,9 @@
+/**
+ * @file io_event.h
+ * @brief io_event 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZCO_IO_EVENT_H_
 #define ZCO_IO_EVENT_H_
 

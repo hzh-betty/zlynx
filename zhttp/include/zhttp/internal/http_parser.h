@@ -1,3 +1,9 @@
+/**
+ * @file http_parser.h
+ * @brief http_parser 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZHTTP_INTERNAL_HTTP_PARSER_H_
 #define ZHTTP_INTERNAL_HTTP_PARSER_H_
 

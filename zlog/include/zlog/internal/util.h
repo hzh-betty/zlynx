@@ -1,3 +1,9 @@
+/**
+ * @file util.h
+ * @brief util 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZLOG_INTERNAL_UTIL_H_
 #define ZLOG_INTERNAL_UTIL_H_
 

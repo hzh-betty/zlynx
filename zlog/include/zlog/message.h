@@ -1,3 +1,9 @@
+/**
+ * @file message.h
+ * @brief message 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZLOG_MESSAGE_H_
 #define ZLOG_MESSAGE_H_
 #include <thread>

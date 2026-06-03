@@ -1,3 +1,9 @@
+/**
+ * @file processor_test.cc
+ * @brief 单元测试。
+ * @author hzh-betty
+ */
+
 #include <atomic>
 #include <chrono>
 #include <deque>

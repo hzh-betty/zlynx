@@ -1,3 +1,9 @@
+/**
+ * @file runtime_manager.h
+ * @brief runtime_manager 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZCO_INTERNAL_RUNTIME_MANAGER_H_
 #define ZCO_INTERNAL_RUNTIME_MANAGER_H_
 

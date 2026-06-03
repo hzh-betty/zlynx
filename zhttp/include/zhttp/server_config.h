@@ -1,3 +1,9 @@
+/**
+ * @file server_config.h
+ * @brief server_config 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZHTTP_SERVER_CONFIG_H_
 #define ZHTTP_SERVER_CONFIG_H_
 

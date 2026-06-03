@@ -1,3 +1,9 @@
+/**
+* @file coroutine_waiter.h
+* @brief 协程等待器相关定义。
+* @author hzh-betty
+*/
+
 #ifndef ZCO_INTERNAL_COROUTINE_WAITER_H_
 #define ZCO_INTERNAL_COROUTINE_WAITER_H_
 

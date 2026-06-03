@@ -1,3 +1,9 @@
+/**
+ * @file socket_test.cc
+ * @brief 集成测试。
+ * @author hzh-betty
+ */
+
 #include "znet/socket.h"
 
 #include <errno.h>

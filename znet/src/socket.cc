@@ -1,3 +1,9 @@
+/**
+ * @file socket.cc
+ * @brief socket 实现。
+ * @author hzh-betty
+ */
+
 #include "znet/socket.h"
 
 #include <errno.h>

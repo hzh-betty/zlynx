@@ -1,3 +1,9 @@
+/**
+ * @file fiber_handle_registry.cc
+ * @brief fiber_handle_registry 实现。
+ * @author hzh-betty
+ */
+
 #include "zco/internal/fiber_handle_registry.h"
 
 namespace zco {

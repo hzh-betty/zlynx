@@ -1,13 +1,14 @@
-#ifndef ZMALLOC_INTERNAL_PAGE_MAP_H_
-#define ZMALLOC_INTERNAL_PAGE_MAP_H_
-
 /**
  * @file page_map.h
  * @brief 基数树实现，用于页号到 Span 的高效映射
+ * @author hzh-betty
  *
  * X86 (32位): 二层基数树 PageMap2
  * X64 (64位): 三层基数树 PageMap3
  */
+
+#ifndef ZMALLOC_INTERNAL_PAGE_MAP_H_
+#define ZMALLOC_INTERNAL_PAGE_MAP_H_
 
 #include <cassert>
 #include <cstddef>

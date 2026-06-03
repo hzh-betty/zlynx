@@ -1,3 +1,9 @@
+/**
+ * @file shared_stack_buffer.cc
+ * @brief shared_stack_buffer 实现。
+ * @author hzh-betty
+ */
+
 #include "zco/internal/shared_stack_buffer.h"
 
 namespace zco {

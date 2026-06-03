@@ -1,3 +1,9 @@
+/**
+ * @file socket.h
+ * @brief socket 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZNET_SOCKET_H_
 #define ZNET_SOCKET_H_
 

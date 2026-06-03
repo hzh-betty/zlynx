@@ -1,3 +1,9 @@
+/**
+ * @file http_server.cc
+ * @brief http_server 实现。
+ * @author hzh-betty
+ */
+
 #include "zhttp/http_server.h"
 
 #include <atomic>

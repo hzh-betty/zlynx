@@ -1,3 +1,9 @@
+/**
+ * @file http_common.cc
+ * @brief http_common 实现。
+ * @author hzh-betty
+ */
+
 #include "zhttp/http_common.h"
 
 #include <algorithm>

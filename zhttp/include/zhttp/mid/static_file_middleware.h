@@ -1,3 +1,9 @@
+/**
+ * @file static_file_middleware.h
+ * @brief static_file_middleware 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZHHTP_STATIC_OPT_H_
 #define ZHHTP_STATIC_OPT_H_
 

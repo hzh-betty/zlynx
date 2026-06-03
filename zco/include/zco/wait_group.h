@@ -1,3 +1,9 @@
+/**
+ * @file wait_group.h
+ * @brief wait_group 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZCO_WAIT_GROUP_H_
 #define ZCO_WAIT_GROUP_H_
 

@@ -1,3 +1,9 @@
+/**
+ * @file timer.h
+ * @brief timer 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZCO_INTERNAL_TIMER_H_
 #define ZCO_INTERNAL_TIMER_H_
 

@@ -1,3 +1,9 @@
+/**
+ * @file compression_middleware.cc
+ * @brief compression_middleware 实现。
+ * @author hzh-betty
+ */
+
 #include "zhttp/mid/compression_middleware.h"
 
 #include <brotli/encode.h>

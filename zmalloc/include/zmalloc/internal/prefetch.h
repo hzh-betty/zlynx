@@ -1,13 +1,14 @@
-#ifndef ZMALLOC_INTERNAL_PREFETCH_H_
-#define ZMALLOC_INTERNAL_PREFETCH_H_
-
 /**
  * @file prefetch.h
  * @brief 内存预取指令封装
+ * @author hzh-betty
  *
  * 提供跨平台的内存预取接口，用于优化内存访问性能。
  * 参考 tcmalloc 的 prefetch.h 实现。
  */
+
+#ifndef ZMALLOC_INTERNAL_PREFETCH_H_
+#define ZMALLOC_INTERNAL_PREFETCH_H_
 
 namespace zmalloc {
 

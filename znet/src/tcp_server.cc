@@ -1,3 +1,9 @@
+/**
+ * @file tcp_server.cc
+ * @brief tcp_server 实现。
+ * @author hzh-betty
+ */
+
 #include "znet/tcp_server.h"
 
 #include <atomic>

@@ -1,3 +1,9 @@
+/**
+ * @file processor.cc
+ * @brief processor 实现。
+ * @author hzh-betty
+ */
+
 #include "zco/internal/processor.h"
 
 #include <errno.h>
@@ -9,7 +15,7 @@
 #include <utility>
 
 #include "zco/internal/runtime_manager.h"
-#include "zco/zco_log.h"
+#include "zco/zco_logger.h"
 
 namespace zco {
 
@@ -200,6 +206,9 @@ bool Processor::wait_fd(int fd, uint32_t events, uint32_t milliseconds) {
         return false;
     }
 
+    // 这里的 waiter 是一次性等待句柄：它同时绑定 fd、感兴趣事件、
+    // 当前协程以及可选的超时定时器。后续所有唤醒路径都只会竞争这
+    // 一个对象，避免 IO 和超时分别恢复同一协程。
     ZCO_LOG_DEBUG("wait_fd start, sched_id={}, fiber_id={}, fd={}, "
                   "events={}, timeout_ms={}",
                   id_, current_fiber_->id(), fd, events, milliseconds);
@@ -223,13 +232,17 @@ bool Processor::wait_fd(int fd, uint32_t events, uint32_t milliseconds) {
         ZCO_LOG_ERROR(
             "epoll add/mod failed, sched_id={}, fd={}, events={}, errno={}",
             id_, fd, events, errno);
+        // 注册失败时必须把协程状态恢复为 running，否则调用方会认为它
+        // 已经进入等待态，但实际上并没有挂到 epoll 上。
         waiter->active.store(false, std::memory_order_release);
         current_fiber_->mark_running();
         return false;
     }
 
     if (milliseconds != kInfiniteTimeoutMs) {
-        // timeout 回调与 IO 回调通过 waiter->active 竞争，只有一个路径生效。
+        // timeout 回调与 IO 回调通过 waiter->active 竞争，只有一个路径
+        // 能真正把协程重新投递回调度器。这样即使超时和可读/可写几乎同
+        // 时到达，也不会出现重复 resume。
         waiter->timer = add_timer(milliseconds, [this, waiter]() {
             if (!waiter->active.exchange(false, std::memory_order_acq_rel)) {
                 return;
@@ -249,6 +262,9 @@ bool Processor::wait_fd(int fd, uint32_t events, uint32_t milliseconds) {
     const bool ok = park_current();
     const int waiter_error = waiter->error.load(std::memory_order_acquire);
 
+    // 协程恢复后无论是正常 IO、超时还是 fd 被取消，都要撤销本次 wait
+    // 句柄的活跃状态，并解除 epoll 里的兴趣注册，保证下次等待从干净状
+    // 态重新开始。
     waiter->active.store(false, std::memory_order_release);
     if (waiter->timer) {
         waiter->timer->cancelled.store(true, std::memory_order_release);
@@ -276,6 +292,9 @@ void Processor::cancel_fd_waiters(int fd, int error) {
         return;
     }
 
+    // fd 被外部关闭或整体取消时，先让 poller 收集该 fd 上的所有等待者，
+    // 再统一把错误码传播给每个协程。这样 IO 路径和超时路径就不会再独
+    // 立消费同一个等待句柄。
     std::vector<std::shared_ptr<IoWaiter>> waiters =
         poller_->cancel_fd(fd, error);
     for (size_t i = 0; i < waiters.size(); ++i) {
@@ -352,15 +371,20 @@ void Processor::run_loop() {
     while (running_.load(std::memory_order_acquire)) {
         const auto loop_begin = std::chrono::steady_clock::now();
 
-        // 先消化新任务和就绪队列，尽量降低调度延迟。
+        // 调度循环按“新任务 -> 就绪协程 -> 定时器 -> 再次就绪”展开。
+        // 这样做的目的是让刚入队的工作尽可能在本轮内被执行，减少被 IO
+        // 等待和空闲窃取放大的尾延迟。
         drain_new_tasks();
         run_ready_tasks();
 
-        // 再处理定时器，确保超时路径及时生效。
+        // 定时器放在 ready 之后处理，既保证超时能及时触发，也避免因为
+        // 先执行定时器而把本轮刚恢复的协程再次延后到下一轮。
         process_timers();
         run_ready_tasks();
 
         if (!has_ready_tasks()) {
+            // 没有立即可跑的协程时，才进入 IO 等待和任务窃取；这两步都
+            // 只在空闲态执行，避免和前面的热路径争用调度时间。
             wait_io_events_when_idle();
             steal_tasks_when_idle();
         }
@@ -404,6 +428,8 @@ void Processor::wait_io_events_when_idle() {
 
 void Processor::steal_tasks_when_idle() {
     // 空闲时尝试从其他处理器批量窃取待创建任务，提升整体吞吐。
+    // 这里先做两个不同起点的探测，再按对方积压量挑一个“更值得偷”的
+    // 目标，避免所有空闲线程都盯着同一个 victim。
     const std::vector<std::unique_ptr<Processor>> &all =
         Runtime::instance().processors();
     if (all.size() <= 1) {
@@ -435,6 +461,8 @@ void Processor::steal_tasks_when_idle() {
     }
 
     std::deque<Task> stolen_batch;
+    // 优先从选中的 victim 批量偷取，失败或数量不足时再尝试备选 victim。
+    // 这样能兼顾局部性和负载均衡，减少无谓的全局扫描。
     if (chosen && chosen->steal_tasks(&stolen_batch, 64, 2) > 0) {
     } else if (victim_b && victim_b != chosen &&
                victim_b->steal_tasks(&stolen_batch, 64, 2) > 0) {
@@ -481,6 +509,9 @@ void Processor::drain_new_tasks() {
 
     std::deque<Fiber::ptr> ready_batch;
 
+    // Task 只在调度线程里实体化成 Fiber，这样可以把上下文初始化、共享
+    // 栈槽位分配和 Fiber 注册都限制在单线程内完成，避免跨线程构造复杂
+    // 的协程上下文。
     while (!pending.empty()) {
         Task task = std::move(pending.front());
         pending.pop_front();
@@ -505,6 +536,9 @@ void Processor::run_ready_tasks() {
                 continue;
             }
 
+            // Fiber 从 ready 队列进入运行态后，只有两种结局：主动让出后
+            // 重新回到 ready，或者执行完成后回收。中间状态都在切换回来后
+            // 统一收口。
             Fiber::ptr resumed = switch_to_fiber(std::move(fiber));
             const Fiber::State state = finalize_after_switch(resumed);
             dispatch_resumed_fiber(std::move(resumed), state);
@@ -654,6 +688,8 @@ void Processor::save_fiber_stack(Fiber *fiber) {
         return;
     }
 
+    // 共享栈保存的是当前活跃栈帧区间，而不是整块栈内存。通过当前 SP 计
+    // 算已使用范围，再把这段内容快照到 Fiber 自己的保存区里。
     if (stack_sp < stack_bottom || stack_sp > stack_top) {
         ZCO_LOG_WARN("shared stack save failed, sp out of range, "
                      "sched_id={}, fiber_id={}, sp={}",
@@ -696,6 +732,8 @@ void Processor::restore_fiber_stack(const Fiber::ptr &fiber) {
         return;
     }
 
+    // 恢复时把保存区直接拷回共享栈尾部，保持调用栈相对栈顶的布局不变，
+    // 这样 ucontext 恢复后协程就能继续从上次让出的精确位置运行。
     char *dst = reinterpret_cast<char *>(stack_data) + (stack_size - used);
     std::memcpy(dst, fiber->saved_stack_data(), used);
     ZCO_LOG_DEBUG(
@@ -709,6 +747,9 @@ void Processor::prepare_shared_stack_for(const Fiber::ptr &fiber) {
     }
 
     const size_t stack_slot = fiber->stack_slot();
+    // 共享栈模型下，同一时刻一个 stack_slot 只能被一个 Fiber 占用。
+    // 如果这里切换到另一个 Fiber，就要先把旧 Fiber 的现场保存下来，
+    // 再把新 Fiber 的快照恢复到该槽位。
     const SharedStackOwner owner = shared_stacks_.occupy_fiber(stack_slot);
     if (owner.fiber == fiber.get() && owner.fiber_id == fiber->id()) {
         return;

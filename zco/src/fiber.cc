@@ -1,3 +1,9 @@
+/**
+ * @file fiber.cc
+ * @brief fiber 实现。
+ * @author hzh-betty
+ */
+
 #include "zco/internal/fiber.h"
 
 #include <cstring>
@@ -5,7 +11,7 @@
 #include <utility>
 
 #include "zco/internal/processor.h"
-#include "zco/zco_log.h"
+#include "zco/zco_logger.h"
 
 namespace zco {
 

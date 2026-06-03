@@ -1,3 +1,9 @@
+/**
+ * @file websocket.h
+ * @brief websocket 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZHTTP_WEBSOCKET_H_
 #define ZHTTP_WEBSOCKET_H_
 

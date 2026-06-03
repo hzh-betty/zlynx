@@ -1,3 +1,9 @@
+/**
+ * @file range_parse.h
+ * @brief range_parse 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZHTTP_INTERNAL_RANGE_PARSE_H_
 #define ZHTTP_INTERNAL_RANGE_PARSE_H_
 

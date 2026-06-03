@@ -1,3 +1,9 @@
+/**
+ * @file zlog.h
+ * @brief zlog 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZLOG_ZLOG_H_
 #define ZLOG_ZLOG_H_
 #include <stdexcept>

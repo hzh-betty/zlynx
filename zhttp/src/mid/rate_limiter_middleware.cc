@@ -1,3 +1,9 @@
+/**
+ * @file rate_limiter_middleware.cc
+ * @brief rate_limiter_middleware 实现。
+ * @author hzh-betty
+ */
+
 #include "zhttp/mid/rate_limiter_middleware.h"
 
 #include <cmath>

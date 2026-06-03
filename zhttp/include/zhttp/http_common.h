@@ -1,3 +1,9 @@
+/**
+ * @file http_common.h
+ * @brief http_common 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZHTTP_HTTP_COMMON_H_
 #define ZHTTP_HTTP_COMMON_H_
 

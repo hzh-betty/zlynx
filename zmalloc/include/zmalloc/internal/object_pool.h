@@ -1,10 +1,11 @@
-#ifndef ZMALLOC_INTERNAL_OBJECT_POOL_H_
-#define ZMALLOC_INTERNAL_OBJECT_POOL_H_
-
 /**
  * @file object_pool.h
  * @brief 定长内存池，用于高效分配固定大小的对象（如 Span）
+ * @author hzh-betty
  */
+
+#ifndef ZMALLOC_INTERNAL_OBJECT_POOL_H_
+#define ZMALLOC_INTERNAL_OBJECT_POOL_H_
 
 #include <algorithm>
 #include <cstdint>

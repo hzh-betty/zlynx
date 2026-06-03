@@ -1,3 +1,9 @@
+/**
+ * @file timeout_middleware.cc
+ * @brief timeout_middleware 实现。
+ * @author hzh-betty
+ */
+
 #include "zhttp/mid/timeout_middleware.h"
 
 namespace zhttp {

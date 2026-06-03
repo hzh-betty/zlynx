@@ -1,3 +1,9 @@
+/**
+ * @file shared_stack_buffer.h
+ * @brief shared_stack_buffer 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZCO_INTERNAL_SHARED_STACK_BUFFER_H_
 #define ZCO_INTERNAL_SHARED_STACK_BUFFER_H_
 
@@ -10,6 +16,10 @@ namespace zco {
 
 class Fiber;
 
+/**
+ * @brief 共享栈所有者
+ * @details 表示占用共享栈的 Fiber 对象及其 ID。
+ */
 struct SharedStackOwner {
     Fiber *fiber;
     int fiber_id;

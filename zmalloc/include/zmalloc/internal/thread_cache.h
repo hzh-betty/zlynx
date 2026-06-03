@@ -1,10 +1,11 @@
-#ifndef ZMALLOC_INTERNAL_THREAD_CACHE_H_
-#define ZMALLOC_INTERNAL_THREAD_CACHE_H_
-
 /**
  * @file thread_cache.h
  * @brief 线程本地缓存，每个线程独享，无锁快速分配小对象
+ * @author hzh-betty
  */
+
+#ifndef ZMALLOC_INTERNAL_THREAD_CACHE_H_
+#define ZMALLOC_INTERNAL_THREAD_CACHE_H_
 
 #include "common.h"
 #include "zmalloc/internal/free_list.h"

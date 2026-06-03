@@ -1,3 +1,9 @@
+/**
+ * @file sink.h
+ * @brief sink 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZLOG_SINK_H_
 #define ZLOG_SINK_H_
 

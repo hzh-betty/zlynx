@@ -1,3 +1,9 @@
+/**
+ * @file zmalloc_config.h
+ * @brief zmalloc_config 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZMALLOC_INTERNAL_CONFIG_H_
 #define ZMALLOC_INTERNAL_CONFIG_H_
 

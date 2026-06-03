@@ -1,3 +1,9 @@
+/**
+* @file sched.h
+* @brief 协程调度器接口定义。
+* @author hzh-betty
+*/
+
 #ifndef ZCO_SCHED_H_
 #define ZCO_SCHED_H_
 

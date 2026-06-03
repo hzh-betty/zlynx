@@ -1,3 +1,9 @@
+/**
+ * @file fiber_pool.cc
+ * @brief fiber_pool 实现。
+ * @author hzh-betty
+ */
+
 #include "zco/internal/fiber_pool.h"
 
 namespace zco {

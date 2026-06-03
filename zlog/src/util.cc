@@ -1,3 +1,9 @@
+/**
+ * @file util.cc
+ * @brief util 实现。
+ * @author hzh-betty
+ */
+
 #include "zlog/internal/util.h"
 
 #include <chrono>

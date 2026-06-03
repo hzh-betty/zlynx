@@ -1,3 +1,9 @@
+/**
+ * @file range_parse.cc
+ * @brief range_parse 实现。
+ * @author hzh-betty
+ */
+
 #include "zhttp/internal/range_parse.h"
 
 #include "zhttp/http_common.h"

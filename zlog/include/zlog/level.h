@@ -1,3 +1,9 @@
+/**
+ * @file level.h
+ * @brief level 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZLOG_LEVEL_H_
 #define ZLOG_LEVEL_H_
 #include <string>

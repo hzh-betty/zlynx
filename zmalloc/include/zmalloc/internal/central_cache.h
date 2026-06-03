@@ -1,10 +1,11 @@
-#ifndef ZMALLOC_INTERNAL_CENTRAL_CACHE_H_
-#define ZMALLOC_INTERNAL_CENTRAL_CACHE_H_
-
 /**
  * @file central_cache.h
  * @brief 中心缓存，跨线程共享，使用桶锁同步
+ * @author hzh-betty
  */
+
+#ifndef ZMALLOC_INTERNAL_CENTRAL_CACHE_H_
+#define ZMALLOC_INTERNAL_CENTRAL_CACHE_H_
 
 #include "common.h"
 #include "span_list.h"

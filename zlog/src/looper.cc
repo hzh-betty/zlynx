@@ -1,3 +1,9 @@
+/**
+ * @file looper.cc
+ * @brief looper 实现。
+ * @author hzh-betty
+ */
+
 #include "zlog/internal/looper.h"
 
 namespace zlog {

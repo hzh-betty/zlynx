@@ -1,3 +1,9 @@
+/**
+ * @file cors_middleware.h
+ * @brief cors_middleware 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZHTTP_CORS_MIDDLEWARE_H_
 #define ZHTTP_CORS_MIDDLEWARE_H_
 

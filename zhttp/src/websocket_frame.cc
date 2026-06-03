@@ -1,3 +1,9 @@
+/**
+ * @file websocket_frame.cc
+ * @brief websocket_frame 实现。
+ * @author hzh-betty
+ */
+
 #include "zhttp/websocket_frame.h"
 
 #include <limits>

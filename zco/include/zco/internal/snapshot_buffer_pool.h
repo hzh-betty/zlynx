@@ -1,3 +1,9 @@
+/**
+ * @file snapshot_buffer_pool.h
+ * @brief snapshot_buffer_pool 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZCO_INTERNAL_SNAPSHOT_BUFFER_POOL_H_
 #define ZCO_INTERNAL_SNAPSHOT_BUFFER_POOL_H_
 

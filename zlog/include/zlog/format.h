@@ -1,3 +1,9 @@
+/**
+ * @file format.h
+ * @brief format 定义。
+ * @author hzh-betty
+ */
+
 #ifndef ZLOG_FORMAT_H_
 #define ZLOG_FORMAT_H_
 #include <memory>
