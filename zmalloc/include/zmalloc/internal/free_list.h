@@ -40,10 +40,13 @@ class FreeList {
     bool empty() const;
     size_t size() const;
     size_t &max_size();
+    size_t low_water() const { return low_water_; }
+    void reset_low_water() { low_water_ = size_; }
 
   private:
     void *free_list_ = nullptr; // 链表头。
     size_t size_ = 0;           // 当前空闲对象数量。
+    size_t low_water_ = 0;
     size_t max_size_ = 1;       // 批量回填/回收的动态阈值。
 };
 

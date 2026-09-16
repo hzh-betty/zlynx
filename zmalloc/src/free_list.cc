@@ -6,6 +6,7 @@
 
 #include "zmalloc/internal/free_list.h"
 
+#include <algorithm>
 #include <cassert>
 
 #include "zmalloc/internal/prefetch.h"
@@ -26,6 +27,7 @@ void *FreeList::pop() {
     void *next = next_obj(free_list_);
     free_list_ = next;
     --size_;
+    low_water_ = std::min(low_water_, size_);
     // 预取下一节点，降低后续连续 pop 时的缓存未命中概率。
     prefetch_next(next);
     return obj;
@@ -55,6 +57,7 @@ void FreeList::pop_range(void *&start, void *&end, size_t n) {
     free_list_ = next_obj(end);
     next_obj(end) = nullptr;
     size_ -= n;
+    low_water_ = std::min(low_water_, size_);
 }
 
 size_t FreeList::pop_batch(void **batch, size_t n) {
@@ -76,6 +79,7 @@ size_t FreeList::pop_batch(void **batch, size_t n) {
     free_list_ = cur;
     next_obj(batch[n - 1]) = nullptr;
     size_ -= n;
+    low_water_ = std::min(low_water_, size_);
     return n;
 }
 

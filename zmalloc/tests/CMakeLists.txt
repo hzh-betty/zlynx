@@ -44,6 +44,7 @@ endif()
 
 if(ZLYNX_BUILD_PERF_TESTS)
     # 性能目标使用 RelWithDebInfo preset 和 zlynx_perf_options，便于 perf 采样。
+    zlynx_add_perf_target(zmalloc_thread_cache_benchmark benchmark/thread_cache_benchmark.cc zmalloc)
     zlynx_add_perf_target(zmalloc_benchmark benchmark/zmalloc_benchmark.cc zmalloc)
     zlynx_add_perf_target(zmalloc_performance benchmark/zmalloc_performance.cc zmalloc)
 endif()

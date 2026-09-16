@@ -7,6 +7,8 @@
 #ifndef ZMALLOC_INTERNAL_CENTRAL_CACHE_H_
 #define ZMALLOC_INTERNAL_CENTRAL_CACHE_H_
 
+#include <new>
+
 #include "common.h"
 #include "span_list.h"
 #include "zmalloc_config.h"
@@ -28,8 +30,10 @@ class CentralCache : public NonCopyable {
      * @brief 获取单例实例
      */
     static CentralCache &get_instance() {
-        static CentralCache instance;
-        return instance;
+        // 全局 malloc/free 在静态析构期间仍可能调用；底层缓存保留到进程结束。
+        alignas(CentralCache) static unsigned char storage[sizeof(CentralCache)];
+        static CentralCache *instance = new (storage) CentralCache;
+        return *instance;
     }
 
     /**

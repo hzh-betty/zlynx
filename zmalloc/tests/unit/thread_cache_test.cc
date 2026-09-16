@@ -1,8 +1,10 @@
 #include <gtest/gtest.h>
 
+#include <cstdlib>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+#include <thread>
 
 #include "zmalloc/internal/size_class.h"
 #include "zmalloc/internal/zmalloc_config.h"
@@ -59,7 +61,13 @@ static void TriggerListTooLongOnce(zmalloc::ThreadCache *tc, size_t size,
 
 class ThreadCacheTest : public ::testing::Test {
   protected:
-    zmalloc::ThreadCache *tc = zmalloc::get_thread_cache();
+    zmalloc::ThreadCache cache;
+    zmalloc::ThreadCache *tc = &cache;
+    void SetUp() override { zmalloc::get_thread_cache()->cleanup(); }
+    void TearDown() override {
+        cache.cleanup();
+        zmalloc::get_thread_cache()->cleanup();
+    }
 };
 class ThreadCacheAllocFreeParamTest
     : public ThreadCacheTest, public ::testing::WithParamInterface<size_t> {};
@@ -168,74 +176,136 @@ TEST_F(ThreadCacheTest, TouchingMemoryDoesNotCrash) {
     tc->deallocate(p, 128);
 }
 
-TEST_F(ThreadCacheTest, FetchFromCentralCacheWrapperReturnsObject) {
-    const zmalloc::SizeClassLookup &e = zmalloc::SizeClass::lookup(64);
-    void *p = tc->fetch_from_central_cache(static_cast<size_t>(e.index),
-                                           static_cast<size_t>(e.align_size));
-    ASSERT_NE(p, nullptr);
+TEST_F(ThreadCacheTest, AccountingUsesAlignedSize) {
+    void *p = tc->allocate(65);
+    const size_t before = tc->cached_bytes();
+    tc->deallocate(p, 65);
+    EXPECT_EQ(tc->cached_bytes(), before + zmalloc::SizeClass::round_up(65));
+    EXPECT_EQ(tc->allocate(65), p);
+    EXPECT_EQ(tc->cached_bytes(), before);
+    tc->deallocate(p, 65);
+}
+
+TEST_F(ThreadCacheTest, CleanupDrainsMoreThanOneBatchAndKeepsLiveObjects) {
+    void *live = tc->allocate(64);
+    auto *span = zmalloc::PageCache::get_instance().map_object_to_span(live);
+    std::vector<void *> objects;
+    for (size_t i = 0; i < 300; ++i) {
+        objects.push_back(tc->allocate(64));
+    }
+    const size_t index = zmalloc::SizeClass::index(64);
+    tc->free_lists_[index].max_size() = 1024;
+    for (void *p : objects) {
+        tc->deallocate(p, 64);
+    }
+    ASSERT_GT(tc->free_lists_[index].size(), 128u);
+    tc->cleanup();
+    EXPECT_EQ(tc->cached_bytes(), 0u);
+    EXPECT_TRUE(tc->free_lists_[index].empty());
+    EXPECT_EQ(span->use_count, 1u);
+    static_cast<char *>(live)[63] = 42;
+    tc->cleanup();
+    tc->deallocate(live, 64);
+}
+
+TEST_F(ThreadCacheTest, LowWaterScavengesUnusedObjects) {
+    std::vector<void *> objects;
+    for (size_t i = 0; i < 200; ++i) {
+        objects.push_back(tc->allocate(64));
+    }
+    const size_t index = zmalloc::SizeClass::index(64);
+    tc->free_lists_[index].max_size() = 1024;
+    for (void *p : objects) {
+        tc->deallocate(p, 64);
+    }
+    tc->scavenge(); // 建立观察窗口。
+    const size_t before = tc->cached_bytes();
+    void *p = tc->allocate(64);
     tc->deallocate(p, 64);
+    tc->scavenge();
+    EXPECT_LT(tc->cached_bytes(), before);
+    EXPECT_GT(tc->cached_bytes(), 0u);
 }
 
-TEST_F(ThreadCacheTest, ListTooLongHandlesEmptyListAndReturnsEarly) {
-    const size_t size = 64;
-    const size_t index = zmalloc::SizeClass::index_fast(size);
-    zmalloc::FreeList &list = tc->free_lists_[index];
-
-    size_t old_max = list.max_size();
-    list.max_size() = 1; // count = max/2 == 0 -> 经修正后可能回到 0 并早退
-    tc->list_too_long(list, size, index);
-    EXPECT_TRUE(list.empty());
-    list.max_size() = old_max;
-}
-
-TEST_F(ThreadCacheTest, ListTooLongClampsCountAndReleasesBatch) {
-    const size_t size = 64;
-    const size_t index = zmalloc::SizeClass::index_fast(size);
-    zmalloc::FreeList &list = tc->free_lists_[index];
-    const size_t old_max = list.max_size();
-    list.max_size() = 400; // count 先到 200，再被 clamp 到 128
-
-    std::vector<void *> objs;
-    objs.reserve(140);
-    for (size_t i = 0; i < 140; ++i) {
+TEST_F(ThreadCacheTest, MixedSizeBudgetTriggersScavenging) {
+    // 不同规格共同超过预算，验证全线程预算而不只是单链表上限。
+    for (size_t size = 8192; size <= zmalloc::MAX_BYTES; size += 8192) {
         void *p = tc->allocate(size);
-        ASSERT_NE(p, nullptr);
-        objs.push_back(p);
-    }
-    for (void *p : objs) {
-        list.push(p);
-    }
-    ASSERT_GE(list.size(), 128u);
-
-    tc->list_too_long(list, size, index);
-
-    EXPECT_LT(list.size(), 140u);
-    while (!list.empty()) {
-        void *p = list.pop();
         tc->deallocate(p, size);
     }
-    list.max_size() = old_max;
+    EXPECT_LE(tc->cached_bytes(), 2 * zmalloc::ThreadCache::kCacheBudget);
+    tc->cleanup();
+    EXPECT_EQ(tc->cached_bytes(), 0u);
 }
 
-TEST_F(ThreadCacheTest, ListTooLongWhenCountExceedsListSize) {
-    const size_t size = 64;
-    const size_t index = zmalloc::SizeClass::index_fast(size);
-    zmalloc::FreeList &list = tc->free_lists_[index];
-    const size_t old_max = list.max_size();
-    list.max_size() = 100; // count = 50
+TEST_F(ThreadCacheTest, ProducerConsumerCapacityShrinks) {
+    const auto &e = zmalloc::SizeClass::lookup(64);
+    std::vector<void *> objects;
+    for (size_t i = 0; i < 3000; ++i) {
+        objects.push_back(tc->allocate(64));
+    }
+    const size_t peak = tc->free_lists_[e.index].max_size();
+    EXPECT_LE(peak, 4u * e.num_move);
+    for (void *p : objects) {
+        tc->deallocate(p, 64);
+    }
+    EXPECT_LT(tc->free_lists_[e.index].max_size(), peak);
+}
 
-    void *p1 = tc->allocate(size);
-    void *p2 = tc->allocate(size);
-    ASSERT_NE(p1, nullptr);
-    ASSERT_NE(p2, nullptr);
-    list.push(p1);
-    list.push(p2);
-    ASSERT_EQ(list.size(), 2u);
+TEST_F(ThreadCacheTest, ShutdownBypassesCacheAndIsIdempotent) {
+    void *p = tc->allocate(64);
+    tc->deallocate(p, 64);
+    tc->shutdown();
+    for (int i = 0; i < 10; ++i) {
+        p = tc->allocate(65);
+        tc->deallocate(p, 65);
+        EXPECT_EQ(tc->cached_bytes(), 0u);
+    }
+    tc->shutdown();
+}
 
-    tc->list_too_long(list, size, index);
+TEST_F(ThreadCacheTest, ThreadExitReturnsObjectsButPreservesLiveAllocation) {
+    for (int iteration = 0; iteration < 50; ++iteration) {
+        void *live = nullptr;
+        std::thread worker([&] {
+            live = zmalloc::zmalloc(64);
+            static_cast<char *>(live)[63] = 42;
+            std::vector<void *> objects;
+            for (int i = 0; i < 300; ++i) {
+                objects.push_back(zmalloc::zmalloc(64));
+            }
+            for (void *p : objects) {
+                zmalloc::zfree(p);
+            }
+        });
+        worker.join();
+        auto *span = zmalloc::PageCache::get_instance().map_object_to_span(live);
+        EXPECT_EQ(span->use_count, 1u);
+        EXPECT_EQ(static_cast<char *>(live)[63], 42);
+        zmalloc::zfree(live);
+        zmalloc::get_thread_cache()->cleanup();
+    }
+}
 
-    EXPECT_EQ(list.size(), 0u);
-    list.max_size() = old_max;
+TEST_F(ThreadCacheTest, LaterTlsDestructorCanAllocateAndFree) {
+    bool finished = false;
+    std::thread worker([&] {
+        struct LateCleanup {
+            bool *finished;
+            void *live = nullptr;
+            ~LateCleanup() {
+                zmalloc::zfree(live);
+                void *p = zmalloc::zmalloc(128);
+                zmalloc::zfree(p);
+                *finished = zmalloc::get_thread_cache()->cached_bytes() == 0;
+            }
+        };
+        // 先注册，后析构：确保运行在 ThreadCache 的退出钩子之后。
+        thread_local LateCleanup late{&finished};
+        late.live = zmalloc::zmalloc(64);
+    });
+    worker.join();
+    EXPECT_TRUE(finished);
 }
 
 TEST_P(ThreadCacheAllocFreeParamTest, AllocTouchFreeBySize) {
@@ -260,6 +330,21 @@ INSTANTIATE_TEST_SUITE_P(Sizes, ThreadCacheTooLongParamTest,
                                            4096u, 8192u, 65536u, 131072u));
 
 int main(int argc, char **argv) {
+    // 主线程 TLS 清理后仍需支持静态退出阶段的分配和释放。
+    if (std::atexit([] {
+            void *small = zmalloc::zmalloc(64);
+            void *large = zmalloc::zmalloc(zmalloc::MAX_BYTES + 16);
+            static_cast<char *>(small)[63] = 42;
+            static_cast<char *>(large)[zmalloc::MAX_BYTES] = 42;
+            zmalloc::zfree(small);
+            zmalloc::zfree(large);
+            if (zmalloc::get_thread_cache()->cached_bytes() != 0) {
+                std::abort();
+            }
+        }) != 0) {
+        return 1;
+    }
+    (void)zmalloc::get_thread_cache();
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }

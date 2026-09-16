@@ -10,6 +10,8 @@
 #include <cassert>
 #include <mutex>
 
+#include <new>
+
 #include "common.h"
 #include "object_pool.h"
 #include "page_map.h"
@@ -29,8 +31,10 @@ class PageCache : public NonCopyable {
      * @brief 获取单例实例
      */
     static PageCache &get_instance() {
-        static PageCache instance;
-        return instance;
+        // 全局 malloc/free 在静态析构期间仍可能调用；底层缓存保留到进程结束。
+        alignas(PageCache) static unsigned char storage[sizeof(PageCache)];
+        static PageCache *instance = new (storage) PageCache;
+        return *instance;
     }
 
     /**

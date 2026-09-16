@@ -5,6 +5,10 @@
 #include <cstdlib>
 #include <cstring>
 #include <new>
+#include <thread>
+#include <pthread.h>
+
+#include "zmalloc/internal/thread_cache.h"
 
 #include <gtest/gtest.h>
 
@@ -13,6 +17,53 @@ namespace {
 
 
 class AllocatorOverrideTest : public ::testing::Test {};
+
+TEST_F(AllocatorOverrideTest, MallocWorksAfterThreadCacheShutdown) {
+    bool finished = false;
+    std::thread worker([&] {
+        void *live = std::malloc(65);
+        get_thread_cache()->shutdown();
+        std::free(live);
+        void *p = std::malloc(128);
+        if (p != nullptr) {
+            std::memset(p, 42, 128);
+            std::free(p);
+            finished = get_thread_cache()->cached_bytes() == 0;
+        }
+    });
+    worker.join();
+    EXPECT_TRUE(finished);
+}
+
+TEST_F(AllocatorOverrideTest, PthreadDestructorRunsAfterCacheCleanup) {
+    struct ExitState {
+        bool finished = false;
+        void *live = nullptr;
+    } state;
+    pthread_key_t key;
+    ASSERT_EQ(pthread_key_create(&key, [](void *value) {
+        auto *state = static_cast<ExitState *>(value);
+        std::free(state->live);
+        void *p = std::malloc(128);
+        if (p != nullptr) {
+            std::memset(p, 42, 128);
+            std::free(p);
+            state->finished = get_thread_cache()->cached_bytes() == 0;
+        }
+    }), 0);
+    int registered = -1;
+    std::thread worker([&] {
+        state.live = std::malloc(65);
+        registered = pthread_setspecific(key, &state);
+        if (registered != 0) {
+            std::free(state.live);
+        }
+    });
+    worker.join();
+    EXPECT_EQ(registered, 0);
+    EXPECT_TRUE(state.finished);
+    EXPECT_EQ(pthread_key_delete(key), 0);
+}
 
 #if defined(__GLIBC__)
 extern "C" void *__libc_malloc(size_t size) noexcept;
