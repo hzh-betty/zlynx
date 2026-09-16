@@ -12,6 +12,7 @@
 #include <exception>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <thread>
 
 #include "zlog/internal/buffer.h"
@@ -51,6 +52,8 @@ class AsyncLooper {
      * @brief 向生产缓冲区推送数据
      * @param data 数据指针
      * @param len 数据长度
+     * @throws std::length_error 单条日志超过模式允许的容量。
+     * @throws std::runtime_error 循环器已停止，包括等待期间停止。
      */
     void push(const char *data, size_t len);
 
@@ -80,6 +83,7 @@ class AsyncLooper {
     Spinlock mutex_;                       // 互斥锁（自旋锁）
     std::condition_variable_any cond_pro_; // 生产者条件变量
     std::condition_variable_any cond_con_; // 消费者条件变量
+    std::mutex stop_mutex_;                // 串行化 stop/join
     std::thread thread_;                   // 工作线程
     Functor callback_;                     // 回调函数
     std::chrono::milliseconds milliseco_;  // 最大等待时间

@@ -238,6 +238,72 @@ TEST_F(LooperTest, CallbackUnknownException) {
     EXPECT_GE(count.load(), 1);
 }
 
+TEST_F(LooperTest, OversizedMessagesAreRejectedBeforeWaiting) {
+    for (AsyncType mode : {AsyncType::ASYNC_SAFE, AsyncType::ASYNC_UNSAFE}) {
+        AsyncLooper looper([](Buffer &) {}, mode, std::chrono::milliseconds(1));
+        const size_t limit = mode == AsyncType::ASYNC_SAFE
+                                 ? kDefaultBufferSize : kMaxBufferSize;
+        EXPECT_THROW(looper.push("x", limit + 1), std::length_error);
+        looper.push("ok", 2);
+        looper.stop();
+        EXPECT_THROW(looper.push("x", 1), std::runtime_error);
+    }
+}
+
+TEST_F(LooperTest, StopWakesAllBlockedProducersAndDrainsAcceptedData) {
+    std::mutex gate;
+    std::condition_variable cv;
+    bool consuming = false, release = false;
+    size_t received = 0;
+    AsyncLooper looper([&](Buffer &buf) {
+        std::unique_lock<std::mutex> lock(gate);
+        consuming = true;
+        cv.notify_all();
+        cv.wait(lock, [&]() { return release; });
+        received += buf.readable_size();
+    }, AsyncType::ASYNC_SAFE, std::chrono::milliseconds(1));
+    const std::string full(kDefaultBufferSize, 'x');
+    looper.push(full.data(), full.size());
+    {
+        std::unique_lock<std::mutex> lock(gate);
+        cv.wait(lock, [&]() { return consuming; });
+    }
+    looper.push(full.data(), full.size());
+    std::atomic<int> rejected(0);
+    std::vector<std::thread> producers;
+    for (int i = 0; i < 3; ++i) {
+        producers.emplace_back([&]() {
+            try { looper.push("x", 1); }
+            catch (const std::runtime_error &) { ++rejected; }
+        });
+    }
+    std::thread stopper([&]() { looper.stop(); });
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (rejected.load() != 3 && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    EXPECT_EQ(rejected.load(), 3);
+    {
+        std::lock_guard<std::mutex> lock(gate);
+        release = true;
+    }
+    cv.notify_all();
+    for (auto &producer : producers) producer.join();
+    stopper.join();
+    EXPECT_EQ(received, 2 * full.size());
+}
+
+TEST_F(LooperTest, ConcurrentStopIsIdempotent) {
+    AsyncLooper looper([](Buffer &) {}, AsyncType::ASYNC_SAFE,
+                       std::chrono::milliseconds(1));
+    looper.push("x", 1);
+    std::thread first([&]() { looper.stop(); });
+    std::thread second([&]() { looper.stop(); });
+    first.join();
+    second.join();
+    EXPECT_NO_THROW(looper.stop());
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

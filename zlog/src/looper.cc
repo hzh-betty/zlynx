@@ -6,24 +6,36 @@
 
 #include "zlog/internal/looper.h"
 
+#include <stdexcept>
+
 namespace zlog {
 
 AsyncLooper::AsyncLooper(Functor func, const AsyncType looper_type,
                          const std::chrono::milliseconds milliseco)
     : looper_type_(looper_type), stop_(false),
-      thread_(std::thread(&AsyncLooper::thread_entry, this)),
-      callback_(std::move(func)), milliseco_(milliseco) {}
+      callback_(std::move(func)), milliseco_(milliseco) {
+    // 所有成员初始化完成后才允许工作线程访问 this。
+    thread_ = std::thread(&AsyncLooper::thread_entry, this);
+}
 
 void AsyncLooper::push(const char *data, const size_t len) {
+    const size_t limit = looper_type_ == AsyncType::ASYNC_SAFE
+                             ? kDefaultBufferSize : kMaxBufferSize;
+    if (len > limit) {
+        throw std::length_error("log message exceeds async buffer capacity");
+    }
     std::unique_lock<Spinlock> lock(mutex_);
     if (looper_type_ == AsyncType::ASYNC_SAFE) {
         // 安全模式下等待缓冲区有空闲空间
-        cond_pro_.wait(lock, [&]() { return pro_buf_.writable_size() >= len; });
+        cond_pro_.wait(lock, [&]() { return stop_ || pro_buf_.writable_size() >= len; });
     } else {
         // UNSAFE模式下，如果扩容会超过最大缓冲区大小，则阻塞等待
-        cond_pro_.wait(lock, [&]() { return pro_buf_.can_accommodate(len); });
+        cond_pro_.wait(lock, [&]() { return stop_ || pro_buf_.can_accommodate(len); });
     }
 
+    if (stop_) {
+        throw std::runtime_error("async logger is stopped");
+    }
     pro_buf_.push(data, len); // 向缓冲区推送数据
 
     if (pro_buf_.readable_size() >=
@@ -40,7 +52,12 @@ AsyncLooper::~AsyncLooper() noexcept {
 }
 
 void AsyncLooper::stop() {
-    stop_ = true;
+    std::lock_guard<std::mutex> stop_lock(stop_mutex_);
+    {
+        std::unique_lock<Spinlock> lock(mutex_);
+        stop_ = true;
+    }
+    cond_pro_.notify_all();
     cond_con_.notify_all();
     if (thread_.joinable()) {
         thread_.join(); // 等待工作线程退出
@@ -77,7 +94,7 @@ void AsyncLooper::thread_entry() {
             con_buf_.swap(pro_buf_);
 
             // 3. 唤醒生产者
-            cond_pro_.notify_one();
+            cond_pro_.notify_all();
         }
 
         // 4. 处理数据并初始化
