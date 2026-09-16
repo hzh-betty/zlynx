@@ -225,93 +225,56 @@ bool StaticFileMiddleware::before(const HttpRequest::ptr &request,
     }
 
     // 阶段 4：编码协商（仅做“候选顺序”决策，真正选文件在后面）。
-    std::vector<std::string> encoding_candidates;
-    // 编码协商顺序：br -> gzip -> identity。
-    if (options_.br_static && accepts_encoding(request, "br")) {
-        encoding_candidates.push_back("br");
-    }
-    if (options_.gzip_static && accepts_encoding(request, "gzip")) {
-        encoding_candidates.push_back("gzip");
-    }
-    encoding_candidates.push_back("");
+    const auto encoding_candidates = accepted_content_encodings(
+        request->header("Accept-Encoding"), options_.br_static, options_.gzip_static);
 
     const std::string content_type =
         FileOperator::detect_content_type(disk_path);
 
-    // 阶段 5：先查内存缓存（命中可直接返回，避免磁盘 I/O）。
-    if (options_.enable_memory_cache && options_.memory_cache_time > 0) {
-        // 缓存 key 由“原始请求路径 + 编码”构成，避免不同编码体互相污染。
-        std::lock_guard<std::mutex> lock(cache_mutex_);
-        for (const auto &enc : encoding_candidates) {
-            const std::string cache_key = path + "|" + enc;
-            auto it = cache_.find(cache_key);
-            if (it == cache_.end()) {
-                continue;
-            }
-
-            if (TimerHelper::steady_now() <= it->second.expires_at) {
-                // 命中未过期缓存：优先走内存返回，不触发磁盘 stat/read。
-                if (try_handle_conditional_not_modified(
-                        request, response, options_, it->second.etag,
-                        it->second.last_modified,
-                        it->second.content_encoding)) {
-                    return false;
-                }
-
-                response.status(HttpStatus::OK);
-                apply_entity_headers(response, options_,
-                                     it->second.content_type,
-                                     it->second.content_encoding,
-                                     it->second.etag, it->second.last_modified);
-
-                const ParsedRange parsed_range =
-                    parse_range_request(request, it->second.content_length,
-                                        it->second.last_modified);
-                write_payload_by_range(request, response, parsed_range,
-                                       it->second.content_length,
-                                       it->second.body);
-                response.set_keep_alive(request->is_keep_alive());
-                return false;
-            }
-
-            // 过期缓存懒删除：仅在访问到该 key 时清理。
-            cache_.erase(it);
-        }
-    }
-
-    // 阶段 6：缓存未命中时，按候选顺序选择磁盘文件。
-    // 注意：`content_type` 基于原始目标路径（不带 .br/.gz）推断，保证 MIME
-    // 正确。
+    // 按协商优先级逐个检查缓存和文件，低权重缓存不能抢在高权重文件之前。
     std::string content_encoding;
     std::string selected_path;
     for (const auto &enc : encoding_candidates) {
-        // 按候选顺序短路：找到第一个存在文件即停止，确保协商顺序生效。
-        if (enc == "br") {
-            std::string br_path = disk_path + ".br";
-            if (FileOperator::is_regular_file(br_path)) {
-                selected_path = br_path;
-                content_encoding = "br";
-                break;
+        if (options_.enable_memory_cache && options_.memory_cache_time > 0) {
+            std::lock_guard<std::mutex> lock(cache_mutex_);
+            auto it = cache_.find(path + "|" + enc);
+            if (it != cache_.end()) {
+                if (TimerHelper::steady_now() <= it->second.expires_at) {
+                    if (try_handle_conditional_not_modified(
+                            request, response, options_, it->second.etag,
+                            it->second.last_modified, it->second.content_encoding)) {
+                        return false;
+                    }
+                    response.status(HttpStatus::OK);
+                    apply_entity_headers(response, options_, it->second.content_type,
+                                         it->second.content_encoding, it->second.etag,
+                                         it->second.last_modified);
+                    const ParsedRange parsed_range = parse_range_request(
+                        request, it->second.content_length, it->second.last_modified);
+                    write_payload_by_range(request, response, parsed_range,
+                                           it->second.content_length, it->second.body);
+                    response.set_keep_alive(request->is_keep_alive());
+                    return false;
+                }
+                cache_.erase(it);
             }
-            continue;
         }
-        if (enc == "gzip") {
-            std::string gzip_path = disk_path + ".gz";
-            if (FileOperator::is_regular_file(gzip_path)) {
-                selected_path = gzip_path;
-                content_encoding = "gzip";
-                break;
-            }
-            continue;
-        }
-        if (FileOperator::is_regular_file(disk_path)) {
-            selected_path = disk_path;
-            content_encoding.clear();
+        const std::string candidate = disk_path + (enc.empty() ? "" : enc == "br" ? ".br" : ".gz");
+        if (FileOperator::is_regular_file(candidate)) {
+            selected_path = candidate;
+            content_encoding = enc;
             break;
         }
     }
 
     if (selected_path.empty()) {
+        if (FileOperator::is_regular_file(disk_path) ||
+            FileOperator::is_regular_file(disk_path + ".br") ||
+            FileOperator::is_regular_file(disk_path + ".gz")) {
+            response.status(HttpStatus::NOT_ACCEPTABLE).body("");
+            response.header("Vary", "Accept-Encoding");
+            return false;
+        }
         // 中间件不强制 404，交给后续业务路由（可用于 SPA fallback 等场景）。
         return true;
     }
@@ -374,15 +337,6 @@ void StaticFileMiddleware::after(const HttpRequest::ptr &, HttpResponse &) {}
 
 bool StaticFileMiddleware::should_handle_path(const std::string &path) const {
     return PathOperator::should_handle_path(path, normalized_prefix_);
-}
-
-bool StaticFileMiddleware::accepts_encoding(const HttpRequest::ptr &request,
-                                            const std::string &encoding) const {
-    // 简化匹配：将请求头与目标编码统一为小写后做子串查找。
-    // 该实现追求轻量，未解析 q 值优先级。
-    std::string header = to_lower(request->header("Accept-Encoding"));
-    std::string token = to_lower(encoding);
-    return header.find(token) != std::string::npos;
 }
 
 } // namespace mid

@@ -103,15 +103,6 @@ class StaticFileMiddleware : public Middleware {
      */
     bool should_handle_path(const std::string &path) const;
 
-    /**
-     * @brief 判断客户端是否声明支持指定内容编码
-     * @param request HTTP 请求对象
-     * @param encoding 编码名称，例如 `br` / `gzip`
-     * @return true 表示 `Accept-Encoding` 中包含该编码
-     */
-    bool accepts_encoding(const HttpRequest::ptr &request,
-                          const std::string &encoding) const;
-
   private:
     Options options_;
     std::string normalized_prefix_; // 规范化后的 URI 前缀，便于快速匹配

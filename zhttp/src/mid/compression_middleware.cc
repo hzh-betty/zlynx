@@ -10,6 +10,9 @@
 #include <zlib.h>
 
 #include "zhttp/http_common.h"
+#include "zhttp/internal/http_utils.h"
+
+#include <algorithm>
 
 namespace zhttp {
 namespace mid {
@@ -20,53 +23,6 @@ CompressionMiddleware::CompressionMiddleware(
 
 bool CompressionMiddleware::before(const HttpRequest::ptr &, HttpResponse &) {
     return true;
-}
-
-bool CompressionMiddleware::has_encoding_token(
-    const std::string &accept_encoding, const std::string &token) const {
-    // 这里采用轻量匹配策略：
-    // - 先统一小写；
-    // - 再按 ',' 分段；
-    // - 对每段取 ';' 前 token 做精确比较。
-    // 这样可以兼容 "gzip;q=0.8"、"br, gzip" 等常见写法，
-    // 同时避免把 "x-gzip" 误判为 "gzip"。
-    const std::string lowered = to_lower(accept_encoding);
-    const std::string lowered_token = to_lower(token);
-    std::vector<std::string> segments = split_string(lowered, ',');
-    for (auto &segment : segments) {
-        trim(segment);
-        if (segment.empty()) {
-            continue;
-        }
-
-        size_t semicolon = segment.find(';');
-        std::string name = (semicolon == std::string::npos)
-                               ? segment
-                               : segment.substr(0, semicolon);
-        trim(name);
-        if (name == lowered_token) {
-            return true;
-        }
-    }
-    return false;
-}
-
-CompressionMiddleware::Encoding CompressionMiddleware::negotiate_encoding(
-    const HttpRequest::ptr &request) const {
-    const std::string accept_encoding = request->header("Accept-Encoding");
-    if (accept_encoding.empty()) {
-        // 客户端未声明可接受压缩编码时，按 HTTP 语义回退为 identity。
-        return Encoding::NONE;
-    }
-
-    // 与 drogon 保持一致：在客户端同时声明可接受时，优先 br，再回退 gzip。
-    if (options_.enable_br && has_encoding_token(accept_encoding, "br")) {
-        return Encoding::BR;
-    }
-    if (options_.enable_gzip && has_encoding_token(accept_encoding, "gzip")) {
-        return Encoding::GZIP;
-    }
-    return Encoding::NONE;
 }
 
 bool CompressionMiddleware::is_compressible_content_type(
@@ -249,64 +205,37 @@ void CompressionMiddleware::append_vary_accept_encoding(
 
 void CompressionMiddleware::after(const HttpRequest::ptr &request,
                                   HttpResponse &response) {
-    // 压缩主流程：
-    // 1) 先判断是否值得压缩；
-    // 2) 按协商结果选择 br/gzip；
-    // 3) 若 br 失败且客户端支持 gzip，则回退 gzip；
-    // 4) 仅在“压缩后更小”时替换响应体，避免负优化。
-    if (!can_compress(request, response)) {
+    // 已编码和流式实体由各自发送路径负责协商，避免重写其元数据。
+    const int status = static_cast<int>(response.status_code());
+    if (response.headers().count("Content-Encoding") ||
+        response.is_chunked_enabled() || response.has_stream_callback() ||
+        response.has_async_stream_callback() || request->method() == HttpMethod::HEAD ||
+        status < 200 || status == 204 || status == 304 ||
+        (options_.only_compress_success_response && status >= 300)) {
         return;
     }
-
-    const Encoding encoding = negotiate_encoding(request);
-    if (encoding == Encoding::NONE) {
-        return;
-    }
-
-    std::string compressed;
-    bool success = false;
-    if (encoding == Encoding::BR) {
-        success = compress_with_brotli(response.body_content(), compressed);
-        if (success && !compressed.empty() &&
-            compressed.size() < response.body_content().size()) {
-            response.body(std::move(compressed));
-            response.header("Content-Encoding", "br");
-        } else {
-            success = false;
-        }
-    }
-
-    // br 压缩失败时，按协商结果若客户端也支持 gzip，则尝试回退 gzip。
-    if (!success && encoding == Encoding::BR && options_.enable_gzip &&
-        has_encoding_token(request->header("Accept-Encoding"), "gzip")) {
-        if (compress_with_gzip(response.body_content(), compressed) &&
-            !compressed.empty() &&
-            compressed.size() < response.body_content().size()) {
-            response.body(std::move(compressed));
-            response.header("Content-Encoding", "gzip");
-            success = true;
-        }
-    }
-
-    if (!success && encoding == Encoding::GZIP) {
-        if (compress_with_gzip(response.body_content(), compressed) &&
-            !compressed.empty() &&
-            compressed.size() < response.body_content().size()) {
-            response.body(std::move(compressed));
-            response.header("Content-Encoding", "gzip");
-            success = true;
-        }
-    }
-
-    if (!success) {
-        // 压缩失败或收益不足时保持原响应，确保功能正确优先于压缩率。
-        return;
-    }
-
-    // 响应体变化后，保证 Content-Length 与实体长度一致。
-    response.header("Content-Length",
-                    std::to_string(response.body_content().size()));
+    const auto encodings = accepted_content_encodings(
+        request->header("Accept-Encoding"), options_.enable_br, options_.enable_gzip);
+    const bool identity_allowed =
+        std::find(encodings.begin(), encodings.end(), "") != encodings.end();
+    const bool compressible = can_compress(request, response);
     append_vary_accept_encoding(response);
+    for (const auto &encoding : encodings) {
+        if (encoding.empty()) return;
+        if (!compressible) continue;
+        std::string compressed;
+        const bool ok = encoding == "br"
+                            ? compress_with_brotli(response.body_content(), compressed)
+                            : compress_with_gzip(response.body_content(), compressed);
+        if (ok && (!identity_allowed || compressed.size() < response.body_content().size())) {
+            response.body(std::move(compressed));
+            response.header("Content-Encoding", encoding);
+            response.header("Content-Length", std::to_string(response.body_content().size()));
+            return;
+        }
+    }
+    // 客户端也禁止 identity 时不能静默回退到未压缩正文。
+    response.status(HttpStatus::NOT_ACCEPTABLE).body("").header("Content-Length", "0");
 }
 
 } // namespace mid

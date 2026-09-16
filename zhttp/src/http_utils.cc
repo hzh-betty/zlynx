@@ -8,6 +8,7 @@
 
 #include "zhttp/http_common.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <fstream>
 #include <sstream>
@@ -15,6 +16,66 @@
 #include <vector>
 
 namespace zhttp {
+
+namespace {
+
+// qvalue 使用千分整数，避免浮点和宽松数值解析接受非法输入。
+int parse_encoding_quality(const std::string &value) {
+    if (value.empty() || (value[0] != '0' && value[0] != '1')) return 0;
+    if (value.size() == 1) return value[0] == '1' ? 1000 : 0;
+    if (value[1] != '.' || value.size() > 5) return 0;
+    int quality = value[0] == '1' ? 1000 : 0;
+    int place = 100;
+    for (size_t i = 2; i < value.size(); ++i, place /= 10) {
+        if (value[i] < '0' || value[i] > '9' ||
+            (value[0] == '1' && value[i] != '0')) return 0;
+        quality += (value[i] - '0') * place;
+    }
+    return quality;
+}
+
+} // namespace
+
+std::vector<std::string> accepted_content_encodings(
+    const std::string &header, bool enable_br, bool enable_gzip) {
+    // 保留默认行为：未指定编码时返回原始实体。
+    if (header.empty()) return {""};
+    int br = -1, gzip = -1, identity = -1, wildcard = -1;
+    for (std::string item : split_string(to_lower(header), ',')) {
+        const size_t semi = item.find(';');
+        std::string token = item.substr(0, semi);
+        trim(token);
+        int *target = token == "br" ? &br : token == "gzip" ? &gzip :
+                      token == "identity" ? &identity : token == "*" ? &wildcard : nullptr;
+        if (!target) continue;
+        int quality = 1000;
+        if (semi != std::string::npos) {
+            std::string parameter = item.substr(semi + 1);
+            const size_t equal = parameter.find('=');
+            std::string name = parameter.substr(0, equal);
+            trim(name);
+            std::string value = equal == std::string::npos ? "" : parameter.substr(equal + 1);
+            trim(value);
+            quality = name == "q" ? parse_encoding_quality(value) : 0;
+        }
+        // 重复项取较严格值，显式 q=0 不能被另一个重复项覆盖。
+        *target = *target < 0 ? quality : std::min(*target, quality);
+    }
+    std::vector<std::pair<std::string, int>> ranked;
+    const int br_quality = br < 0 ? wildcard : br;
+    const int gzip_quality = gzip < 0 ? wildcard : gzip;
+    if (enable_br && br_quality > 0) ranked.emplace_back("br", br_quality);
+    if (enable_gzip && gzip_quality > 0) ranked.emplace_back("gzip", gzip_quality);
+    if (identity > 0) ranked.emplace_back("", identity);
+    std::stable_sort(ranked.begin(), ranked.end(), [](const auto &a, const auto &b) {
+        return a.second > b.second;
+    });
+    std::vector<std::string> result;
+    for (const auto &entry : ranked) result.push_back(entry.first);
+    if (identity < 0 && wildcard != 0) result.emplace_back("");
+    return result;
+}
+
 
 std::string TimerHelper::format_http_date_gmt(std::time_t timestamp) {
     struct tm tm_value;

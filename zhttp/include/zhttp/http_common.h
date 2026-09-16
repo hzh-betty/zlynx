@@ -70,6 +70,7 @@ enum class HttpStatus {
     FORBIDDEN = 403, // 禁止，表示服务器理解请求，但拒绝执行
     NOT_FOUND = 404, // 未找到，表示请求的资源不存在
     METHOD_NOT_ALLOWED = 405, // 方法不允许，表示请求方法不被允许
+    NOT_ACCEPTABLE = 406,
     REQUEST_TIMEOUT = 408, // 请求超时，表示服务器等待请求时超时
     CONFLICT = 409, // 冲突，表示请求与服务器当前状态冲突
     LENGTH_REQUIRED = 411, // 长度要求，表示请求需要 Content-Length 头

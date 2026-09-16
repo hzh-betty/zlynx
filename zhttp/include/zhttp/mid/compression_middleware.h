@@ -20,7 +20,7 @@ namespace mid {
  * @brief 响应压缩中间件（动态压缩）
  * @details
  * 该中间件在响应阶段根据客户端 `Accept-Encoding` 对响应体进行动态压缩。
- * - 在客户端同时支持时优先选择 `br`（brotli），其次 `gzip`；
+ * - 按客户端 q 权重选择编码，同权重时优先 `br`，其次 `gzip`；
  * - 仅在响应可压缩且收益合理时执行压缩；
  * - 已带 `Content-Encoding` 的响应不重复压缩。
  */
@@ -72,12 +72,6 @@ class CompressionMiddleware : public Middleware {
                HttpResponse &response) override;
 
   private:
-    enum class Encoding {
-        NONE,
-        GZIP,
-        BR,
-    };
-
     /**
      * @brief 判断是否可以压缩响应
      * @details
@@ -99,22 +93,6 @@ class CompressionMiddleware : public Middleware {
      * - 精确类型规则（如 application/json）。
      */
     bool is_compressible_content_type(const HttpResponse &response) const;
-
-    /**
-     * @brief 协商最佳压缩编码
-     * @return Encoding::NONE 表示不支持任何压缩；否则返回首选编码。
-     */
-    Encoding negotiate_encoding(const HttpRequest::ptr &request) const;
-
-    /**
-     * @brief 判断 Accept-Encoding 头是否包含特定编码 token
-     * @param accept_encoding 原始 Accept-Encoding 头值
-     * @param token 待匹配的编码 token（例如 "gzip"）
-     * @return true 表示包含；false 表示不包含
-     * @details 匹配时会忽略大小写并处理逗号分隔的多个编码值。
-     */
-    bool has_encoding_token(const std::string &accept_encoding,
-                            const std::string &token) const;
 
     /**
      * @brief 使用 gzip 压缩数据

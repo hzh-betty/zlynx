@@ -11,8 +11,14 @@
 #include <cstdint>
 #include <ctime>
 #include <string>
+#include <vector>
 
 namespace zhttp {
+
+// 按客户端权重排列可用编码；同权重优先 br，再 gzip，空串表示 identity。
+// 未显式声明的 identity 作为最后回退；空结果表示没有可接受的编码。
+std::vector<std::string> accepted_content_encodings(
+    const std::string &header, bool enable_br, bool enable_gzip);
 
 /**
  * @brief 日期时间公共操作集合

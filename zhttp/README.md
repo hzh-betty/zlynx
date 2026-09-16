@@ -68,6 +68,11 @@ target_link_libraries(zhttp_demo PRIVATE zhttp::zhttp)
 默认 30 秒，0 禁用。后续分片不会刷新时限，超时直接关闭连接；完成请求后清除
 截止时间，Keep-Alive 的空闲策略仍由 `set_keepalive_timeout()` 控制。
 
+动态压缩和静态文件共用 `Accept-Encoding` 协商规则：遵守 q 权重、`q=0`
+排除项与 `*` 通配符，同权重优先 br，再 gzip。未显式声明的 identity 作为
+最后回退；客户端禁止 identity 且没有可用编码时返回 406。非法 q 值按不可接受
+处理，重复编码取最低权重。缓存命中不会改变编码优先级。
+
 ## 项目架构
 
 `zhttp` 位于 zlynx 依赖链的最上层：

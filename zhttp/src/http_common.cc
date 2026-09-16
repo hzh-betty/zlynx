@@ -106,6 +106,8 @@ const char *status_to_string(HttpStatus status) {
         return "Not Found";
     case HttpStatus::METHOD_NOT_ALLOWED:
         return "Method Not Allowed";
+    case HttpStatus::NOT_ACCEPTABLE:
+        return "Not Acceptable";
     case HttpStatus::REQUEST_TIMEOUT:
         return "Request Timeout";
     case HttpStatus::CONFLICT:

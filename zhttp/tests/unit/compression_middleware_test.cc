@@ -361,6 +361,63 @@ TEST(CompressionMiddlewareTest, VaryHeaderIsAppendedOrKeptWithoutDuplicate) {
     }
 }
 
+
+TEST(CompressionMiddlewareTest, HonorsEncodingWeightsExclusionsAndWildcard) {
+    struct Case { const char *header; const char *encoding; };
+    const Case cases[] = {
+        {"gzip;q=0, br;q=0", ""},
+        {"br;q=0.2, gzip;q=0.9", "gzip"},
+        {"br;q=0.9, gzip;q=0.2", "br"},
+        {"br;q=0.5, gzip;q=0.5", "br"},
+        {"*;q=0.7, br;q=0", "gzip"},
+        {"*;q=0, gzip;q=0.5", "gzip"},
+        {"identity;q=1, gzip;q=0.5", ""},
+        {" BR ; Q=0, GZip ; q=1.000", "gzip"},
+        {"x-gzip, notbr", ""},
+        {"gzip;q=0, gzip;q=1", ""},
+        {"br;q=nan, gzip;q=1.5", ""},
+        {"*;q=0, identity;q=0.5", ""},
+
+    };
+    CompressionMiddleware middleware;
+    for (const auto &item : cases) {
+        SCOPED_TRACE(item.header);
+        auto request = std::make_shared<HttpRequest>();
+        request->set_method(HttpMethod::GET);
+        request->set_header("Accept-Encoding", item.header);
+        HttpResponse response;
+        const std::string plain(4096, 'a');
+        response.text(plain);
+        middleware.after(request, response);
+        EXPECT_EQ(response.status_code(), HttpStatus::OK);
+        auto it = response.headers().find("Content-Encoding");
+        EXPECT_EQ(it == response.headers().end() ? "" : it->second, item.encoding);
+        if (std::string(item.encoding) == "gzip") {
+            EXPECT_EQ(gzip_decompress_for_test(response.body_content()), plain);
+        } else if (std::string(item.encoding) == "br") {
+            EXPECT_EQ(brotli_decompress_for_test(response.body_content(), plain.size()), plain);
+        } else {
+            EXPECT_EQ(response.body_content(), plain);
+        }
+        EXPECT_EQ(response.headers().at("Vary"), "Accept-Encoding");
+    }
+}
+
+TEST(CompressionMiddlewareTest, RejectsWhenAllAvailableRepresentationsAreExcluded) {
+    for (const char *header : {"*;q=0", "gzip;q=0, br;q=0, identity;q=0"}) {
+        auto request = std::make_shared<HttpRequest>();
+        request->set_method(HttpMethod::GET);
+        request->set_header("Accept-Encoding", header);
+        HttpResponse response;
+        response.text(std::string(4096, 'a'));
+        CompressionMiddleware middleware;
+        middleware.after(request, response);
+        EXPECT_EQ(response.status_code(), HttpStatus::NOT_ACCEPTABLE);
+        EXPECT_TRUE(response.body_content().empty());
+        EXPECT_EQ(response.headers().at("Content-Length"), "0");
+    }
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     zhttp::init_logger();

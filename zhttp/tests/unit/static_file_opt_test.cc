@@ -538,6 +538,63 @@ TEST_F(StaticFileMiddlewareTest, SkipCachingWhenFileExceedsConfiguredMaxSize) {
     EXPECT_TRUE(middleware.before(second_req, second_resp));
 }
 
+
+TEST_F(StaticFileMiddlewareTest, HonorsSameEncodingWeightsWithColdAndWarmCache) {
+    TempDir dir;
+    dir.write_file("data.txt", "plain");
+    dir.write_file("data.txt.br", "brotli");
+    dir.write_file("data.txt.gz", "gzip");
+    StaticFileMiddleware middleware(make_options("/assets", dir.path(), true, 60));
+    struct Case { const char *header; const char *encoding; };
+    const Case cases[] = {
+        {"gzip;q=0, br;q=0", ""},
+        {"br;q=0.2, gzip;q=0.9", "gzip"},
+        {"br;q=0.9, gzip;q=0.2", "br"},
+        {"br;q=0.5, gzip;q=0.5", "br"},
+        {"*;q=0.7, br;q=0", "gzip"},
+        {"*;q=0, gzip;q=0.5", "gzip"},
+        {"identity;q=1, gzip;q=0.5", ""},
+        {" BR ; Q=0, GZip ; q=1.000", "gzip"},
+        {"x-gzip, notbr", ""},
+        {"gzip;q=0, gzip;q=1", ""},
+        {"br;q=nan, gzip;q=1.5", ""},
+        {"*;q=0, identity;q=0.5", ""},
+
+    };
+    for (int round = 0; round < 2; ++round) {
+        for (const auto &item : cases) {
+            SCOPED_TRACE(item.header);
+            auto request = make_request(HttpMethod::GET, "/assets/data.txt");
+            request->set_header("Accept-Encoding", item.header);
+            HttpResponse response;
+            EXPECT_FALSE(middleware.before(request, response));
+            EXPECT_EQ(response.status_code(), HttpStatus::OK);
+            auto it = response.headers().find("Content-Encoding");
+            EXPECT_EQ(it == response.headers().end() ? "" : it->second, item.encoding);
+        }
+    }
+}
+
+TEST_F(StaticFileMiddlewareTest, RejectsExcludedIdentityWhenNoAcceptedFileExists) {
+    TempDir dir;
+    dir.write_file("data.txt", "plain");
+    StaticFileMiddleware middleware(make_options("/assets", dir.path(), true, 60));
+    auto warm = make_request(HttpMethod::GET, "/assets/data.txt");
+    HttpResponse cached;
+    EXPECT_FALSE(middleware.before(warm, cached));
+    for (const char *header : {"*;q=0", "gzip, identity;q=0"}) {
+        auto request = make_request(HttpMethod::GET, "/assets/data.txt");
+        request->set_header("Accept-Encoding", header);
+        HttpResponse response;
+        EXPECT_FALSE(middleware.before(request, response));
+        EXPECT_EQ(response.status_code(), HttpStatus::NOT_ACCEPTABLE);
+    }
+    auto missing = make_request(HttpMethod::GET, "/assets/missing.txt");
+    missing->set_header("Accept-Encoding", "*;q=0");
+    HttpResponse response;
+    EXPECT_TRUE(middleware.before(missing, response));
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     zhttp::init_logger();
