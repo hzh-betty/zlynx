@@ -104,6 +104,11 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>,
         return write_timeout_ms_.load(std::memory_order_acquire);
     }
 
+    // 从调用时起限制后续读操作的总等待时间，0 清除截止时间。
+    // 应在两次 read 之间设置，不会中断已经发起的读操作。
+    void set_read_deadline(uint32_t timeout_ms);
+    bool read_deadline_expired() const;
+
     ssize_t read(size_t max_read_bytes = 4096, uint32_t timeout_ms = 0);
     ssize_t flush_output(uint32_t timeout_ms = kUseConnectionWriteTimeout);
     ssize_t send(const void *data, size_t length,
@@ -177,6 +182,7 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>,
     HighWaterMarkCallback high_water_mark_callback_;
     size_t high_water_mark_;
     std::atomic<uint32_t> write_timeout_ms_;
+    std::atomic<uint64_t> read_deadline_ms_{0};
 
     std::unique_ptr<TlsChannel> tls_channel_;
 

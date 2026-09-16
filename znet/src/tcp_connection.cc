@@ -6,6 +6,8 @@
 
 #include "znet/tcp_connection.h"
 
+#include <chrono>
+
 #include <algorithm>
 #include <cerrno>
 #include <limits>
@@ -93,6 +95,22 @@ int TcpConnection::fd() const {
         return -1;
     }
     return socket_->fd();
+}
+
+namespace {
+uint64_t steady_now_ms() {
+    return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+}
+
+void TcpConnection::set_read_deadline(uint32_t timeout_ms) {
+    read_deadline_ms_.store(timeout_ms ? steady_now_ms() + timeout_ms : 0);
+}
+
+bool TcpConnection::read_deadline_expired() const {
+    const uint64_t deadline = read_deadline_ms_.load();
+    return deadline != 0 && steady_now_ms() >= deadline;
 }
 
 void TcpConnection::set_state(State state) {
@@ -263,6 +281,19 @@ ssize_t TcpConnection::read_internal(size_t max_read_bytes,
         errno = EINVAL;
         ZNET_LOG_WARN("TcpConnection::read max_read_bytes must be > 0");
         return -1;
+    }
+
+    const uint64_t deadline = read_deadline_ms_.load();
+    if (deadline != 0) {
+        const uint64_t now = steady_now_ms();
+        if (now >= deadline) {
+            errno = ETIMEDOUT;
+            return -1;
+        }
+        const uint32_t remaining = static_cast<uint32_t>(deadline - now);
+        if (timeout_ms == 0 || timeout_ms > remaining) {
+            timeout_ms = remaining;
+        }
     }
 
     if (tls_channel_) {

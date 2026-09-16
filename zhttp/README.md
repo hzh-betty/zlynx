@@ -57,6 +57,17 @@ add_executable(zhttp_demo main.cc)
 target_link_libraries(zhttp_demo PRIVATE zhttp::zhttp)
 ```
 
+## 请求接收限制
+
+`HttpServer` 默认限制请求行 8 KiB、头部与 trailer 合计 64 KiB / 100 项、
+正文 8 MiB、chunk-size 行 1 KiB；行长度包含 CRLF。chunked 正文按累计解码
+长度检查，超限时在继续接收正文前拒绝请求，分别返回 414、431 或 413。
+
+可在 `start()` 前通过 `set_request_limits(HttpParser::Limits)` 调整大小限制。
+`set_request_timeout(milliseconds)` 设置从首批请求数据到请求收齐的总时限，
+默认 30 秒，0 禁用。后续分片不会刷新时限，超时直接关闭连接；完成请求后清除
+截止时间，Keep-Alive 的空闲策略仍由 `set_keepalive_timeout()` 控制。
+
 ## 项目架构
 
 `zhttp` 位于 zlynx 依赖链的最上层：

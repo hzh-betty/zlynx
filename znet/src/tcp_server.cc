@@ -222,6 +222,9 @@ void TcpServer::handle_connection(Socket::ptr client) {
 
             const int read_err = errno;
             if (read_err == ETIMEDOUT) {
+                if (connection->read_deadline_expired()) {
+                    break;
+                }
                 // 读超时不直接断开，只有累计空闲时间超过 keepalive 才关闭。
                 if (self->keepalive_timeout_ms_ > 0 && read_timeout_ms > 0) {
                     idle_elapsed_ms += read_timeout_ms;

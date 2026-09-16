@@ -19,13 +19,26 @@
 namespace zhttp {
 
 // 构造时就准备一个空请求对象，后续解析过程中逐步填充字段。
-HttpParser::HttpParser() : request_(std::make_shared<HttpRequest>()) {}
+HttpParser::HttpParser() : HttpParser(Limits{}) {}
+
+HttpParser::HttpParser(const Limits &limits)
+    : limits_(limits), request_(std::make_shared<HttpRequest>()) {}
+
+ParseResult HttpParser::fail(HttpStatus status, const char *message) {
+    error_status_ = status;
+    error_ = message;
+    state_ = ParseState::ERROR;
+    return ParseResult::ERROR;
+}
 
 // 把解析器恢复到初始状态，便于在同一连接上继续解析下一条请求。
 void HttpParser::reset() {
     state_ = ParseState::REQUEST_LINE;
     request_ = std::make_shared<HttpRequest>();
     error_.clear();
+    error_status_ = HttpStatus::BAD_REQUEST;
+    header_bytes_ = 0;
+    header_count_ = 0;
     content_length_ = 0;
     chunked_body_ = false;
     chunk_state_ = ChunkParseState::SIZE_LINE;
@@ -59,6 +72,16 @@ ParseResult HttpParser::parse(znet::Buffer *buffer) {
             state_ == ParseState::HEADERS) {
             // 请求行和头部都是逐行解析，所以先找一行结尾。
             const char *crlf = buffer->find_crlf();
+            const size_t bytes = crlf ? static_cast<size_t>(crlf - buffer->peek()) + 2
+                                      : buffer->readable_bytes();
+            if (state_ == ParseState::REQUEST_LINE) {
+                if (bytes > limits_.max_request_line_bytes) {
+                    return fail(HttpStatus::URI_TOO_LONG, "Request line too long");
+                }
+            } else if (bytes > limits_.max_header_bytes - header_bytes_) {
+                return fail(HttpStatus::REQUEST_HEADER_FIELDS_TOO_LARGE,
+                            "Request headers too large");
+            }
             if (crlf == nullptr) {
                 ZHTTP_LOG_DEBUG("Need more data, current state: {}",
                                 state_ == ParseState::REQUEST_LINE
@@ -76,6 +99,11 @@ ParseResult HttpParser::parse(znet::Buffer *buffer) {
                                 std::string(begin, end));
                 result = parse_request_line(begin, end);
             } else {
+                header_bytes_ += bytes;
+                if (begin != end && ++header_count_ > limits_.max_header_count) {
+                    return fail(HttpStatus::REQUEST_HEADER_FIELDS_TOO_LARGE,
+                                "Too many request headers");
+                }
                 ZHTTP_LOG_DEBUG("Parsing header: {}", std::string(begin, end));
                 result = parse_headers(begin, end);
             }
@@ -173,7 +201,20 @@ ParseResult HttpParser::parse_headers(const char *begin, const char *end) {
             state_ = ParseState::BODY;
             content_length_ = 0;
         } else {
-            content_length_ = request_->content_length();
+            // 在等待正文之前校验长度，避免溢出或收完整个大请求后才拒绝。
+            const std::string length = request_->header("Content-Length");
+            content_length_ = 0;
+            for (char c : length) {
+                if (c < '0' || c > '9') {
+                    return fail(HttpStatus::BAD_REQUEST, "Invalid Content-Length");
+                }
+                const size_t digit = static_cast<size_t>(c - '0');
+                if (digit > limits_.max_body_bytes ||
+                    content_length_ > (limits_.max_body_bytes - digit) / 10) {
+                    return fail(HttpStatus::PAYLOAD_TOO_LARGE, "Request body too large");
+                }
+                content_length_ = content_length_ * 10 + digit;
+            }
             if (content_length_ > 0) {
                 state_ = ParseState::BODY;
             } else {
@@ -270,14 +311,16 @@ bool HttpParser::parse_chunk_size_line(const std::string &line,
         }
     }
 
-    const unsigned long long parsed =
-        std::strtoull(chunk_line.c_str(), nullptr, 16);
-    if (parsed >
-        static_cast<unsigned long long>(std::numeric_limits<size_t>::max())) {
-        return false;
+    size_t parsed = 0;
+    for (char c : chunk_line) {
+        const size_t digit = c <= '9' ? c - '0' :
+            (c <= 'F' ? c - 'A' + 10 : c - 'a' + 10);
+        if (parsed > (std::numeric_limits<size_t>::max() - digit) / 16) {
+            return false;
+        }
+        parsed = parsed * 16 + digit;
     }
-
-    *chunk_size = static_cast<size_t>(parsed);
+    *chunk_size = parsed;
     return true;
 }
 
@@ -292,6 +335,11 @@ ParseResult HttpParser::parse_chunked_body(znet::Buffer *buffer) {
         if (chunk_state_ == ChunkParseState::SIZE_LINE) {
             // 读取当前块的 size 行，支持 "<hex>[;ext]" 形式。
             const char *crlf = buffer->find_crlf();
+            const size_t bytes = crlf ? static_cast<size_t>(crlf - buffer->peek()) + 2
+                                      : buffer->readable_bytes();
+            if (bytes > limits_.max_chunk_line_bytes) {
+                return fail(HttpStatus::BAD_REQUEST, "Chunk size line too long");
+            }
             if (crlf == nullptr) {
                 return ParseResult::NEED_MORE;
             }
@@ -307,6 +355,9 @@ ParseResult HttpParser::parse_chunked_body(znet::Buffer *buffer) {
                 return ParseResult::ERROR;
             }
 
+            if (chunk_size > limits_.max_body_bytes - chunked_body_buffer_.size()) {
+                return fail(HttpStatus::PAYLOAD_TOO_LARGE, "Request body too large");
+            }
             // size=0 表示进入 trailer 区；否则读取该 chunk 的数据段。
             content_length_ = chunk_size;
             chunk_state_ = (chunk_size == 0) ? ChunkParseState::TRAILERS
@@ -346,8 +397,19 @@ ParseResult HttpParser::parse_chunked_body(znet::Buffer *buffer) {
 
         // 读取 trailer 区，直到遇到空行。trailer 字段当前只做语法校验并跳过。
         const char *crlf = buffer->find_crlf();
+        const size_t bytes = crlf ? static_cast<size_t>(crlf - buffer->peek()) + 2
+                                  : buffer->readable_bytes();
+        if (bytes > limits_.max_header_bytes - header_bytes_) {
+            return fail(HttpStatus::REQUEST_HEADER_FIELDS_TOO_LARGE,
+                        "Request trailers too large");
+        }
         if (crlf == nullptr) {
             return ParseResult::NEED_MORE;
+        }
+        header_bytes_ += bytes;
+        if (crlf != buffer->peek() && ++header_count_ > limits_.max_header_count) {
+            return fail(HttpStatus::REQUEST_HEADER_FIELDS_TOO_LARGE,
+                        "Too many request trailers");
         }
 
         const char *begin = buffer->peek();

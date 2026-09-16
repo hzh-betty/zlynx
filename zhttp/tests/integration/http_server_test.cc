@@ -949,6 +949,93 @@ TEST(HttpServerIntegrationTest, HandlesAsyncAndStreamErrorPaths) {
     }
 }
 
+
+TEST(HttpServerIntegrationTest, RejectsOversizedBodyBeforeBodyIsSent) {
+    const uint16_t port = find_free_port();
+    ASSERT_NE(port, 0);
+    auto server = std::make_shared<HttpServer>(std::make_shared<znet::IPv4Address>("127.0.0.1", port));
+    ScopedServer cleanup(server);
+    HttpParser::Limits limits;
+    limits.max_body_bytes = 4;
+    server->set_request_limits(limits);
+    ASSERT_TRUE(server->start());
+    const int fd = connect_with_retry(port, 20, 5);
+    ASSERT_GE(fd, 0);
+    EXPECT_TRUE(send_all(fd, "POST / HTTP/1.1\r\nContent-Length: 5\r\n\r\n"));
+    const std::string response = recv_until_close(fd, 1000);
+    ::close(fd);
+    EXPECT_NE(response.find("413"), std::string::npos);
+}
+
+TEST(HttpServerIntegrationTest, RequestDeadlineClosesSilentPartialRequestWithInfiniteReadTimeout) {
+    const uint16_t port = find_free_port();
+    ASSERT_NE(port, 0);
+    auto server = std::make_shared<HttpServer>(std::make_shared<znet::IPv4Address>("127.0.0.1", port));
+    ScopedServer cleanup(server);
+    server->set_request_timeout(50);
+    server->set_recv_timeout(0);
+    ASSERT_TRUE(server->start());
+    const int fd = connect_with_retry(port, 20, 5);
+    ASSERT_GE(fd, 0);
+    EXPECT_TRUE(send_all(fd, "GET / HTTP/1.1\r\nX: "));
+    pollfd pfd{fd, POLLIN | POLLHUP, 0};
+    const int ready = ::poll(&pfd, 1, 2000);
+    EXPECT_GT(ready, 0);
+    if (ready > 0) {
+        char byte;
+        EXPECT_EQ(::recv(fd, &byte, 1, MSG_DONTWAIT), 0);
+    }
+    ::close(fd);
+}
+
+TEST(HttpServerIntegrationTest, SlowFragmentsDoNotRenewRequestDeadline) {
+    const uint16_t port = find_free_port();
+    ASSERT_NE(port, 0);
+    auto server = std::make_shared<HttpServer>(std::make_shared<znet::IPv4Address>("127.0.0.1", port));
+    ScopedServer cleanup(server);
+    server->set_request_timeout(80);
+    server->set_recv_timeout(0);
+    ASSERT_TRUE(server->start());
+    const int fd = connect_with_retry(port, 20, 5);
+    ASSERT_GE(fd, 0);
+    EXPECT_TRUE(send_all(fd, "GET / HTTP/1.1\r\nX: "));
+    bool closed = false;
+    for (int i = 0; i < 50 && !closed; ++i) {
+        ::send(fd, "a", 1, MSG_NOSIGNAL);
+        pollfd pfd{fd, POLLIN | POLLHUP, 0};
+        if (::poll(&pfd, 1, 10) > 0) {
+            char byte;
+            closed = ::recv(fd, &byte, 1, MSG_DONTWAIT) == 0;
+        }
+    }
+    ::close(fd);
+    EXPECT_TRUE(closed);
+}
+
+TEST(HttpServerIntegrationTest, CompleteRequestClearsDeadlineForKeepAlive) {
+    const uint16_t port = find_free_port();
+    ASSERT_NE(port, 0);
+    auto server = std::make_shared<HttpServer>(std::make_shared<znet::IPv4Address>("127.0.0.1", port));
+    ScopedServer cleanup(server);
+    server->set_request_timeout(30);
+    server->set_recv_timeout(0);
+    server->router().get("/", [](const HttpRequest::ptr &, HttpResponse &response) { response.text("ok"); });
+    ASSERT_TRUE(server->start());
+    const int fd = connect_with_retry(port, 20, 5);
+    ASSERT_GE(fd, 0);
+    EXPECT_TRUE(send_all(fd, "GET / HTTP/1.1\r\n\r\n"));
+    pollfd pfd{fd, POLLIN, 0};
+    EXPECT_GT(::poll(&pfd, 1, 1000), 0);
+    char data[4096];
+    EXPECT_GT(::recv(fd, data, sizeof(data), MSG_DONTWAIT), 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    const std::string request = "GET / HTTP/1.1\r\nConnection: close\r\n\r\n";
+    EXPECT_EQ(::send(fd, request.data(), request.size(), MSG_NOSIGNAL), static_cast<ssize_t>(request.size()));
+    const std::string response = recv_until_close(fd, 1000);
+    ::close(fd);
+    EXPECT_NE(response.find("200 OK"), std::string::npos);
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     zhttp::init_logger();

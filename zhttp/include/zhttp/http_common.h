@@ -80,6 +80,7 @@ enum class HttpStatus {
     REQUESTED_RANGE_NOT_SATISFIABLE =
         416, // 请求范围不满足，表示请求的 Range 头无效
     TOO_MANY_REQUESTS = 429, // 请求过多，表示客户端发送了过多请求
+    REQUEST_HEADER_FIELDS_TOO_LARGE = 431,
 
     // 5xx Server Error
     INTERNAL_SERVER_ERROR =

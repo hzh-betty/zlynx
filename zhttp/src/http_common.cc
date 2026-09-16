@@ -120,6 +120,8 @@ const char *status_to_string(HttpStatus status) {
         return "Unsupported Media Type";
     case HttpStatus::REQUESTED_RANGE_NOT_SATISFIABLE:
         return "Requested Range Not Satisfiable";
+    case HttpStatus::REQUEST_HEADER_FIELDS_TOO_LARGE:
+        return "Request Header Fields Too Large";
     case HttpStatus::TOO_MANY_REQUESTS:
         return "Too Many Requests";
     // 5xx

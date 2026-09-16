@@ -388,6 +388,104 @@ TEST_F(HttpParserTest, ParseIncrementalChunkedRequest) {
     EXPECT_EQ(parser_->request()->body(), "Wikipedia");
 }
 
+
+TEST(HttpParserLimitsTest, RejectsOversizedPartialAndCompleteRequestLines) {
+    HttpParser::Limits limits;
+    limits.max_request_line_bytes = 16;
+    for (const std::string &suffix : {std::string{}, std::string("\r\n")}) {
+        HttpParser parser(limits);
+        znet::Buffer buffer;
+        buffer.append(std::string("GET /") + std::string(20, 'x') + suffix);
+        EXPECT_EQ(parser.parse(&buffer), ParseResult::ERROR);
+        EXPECT_EQ(parser.error_status(), HttpStatus::URI_TOO_LONG);
+    }
+}
+
+TEST(HttpParserLimitsTest, CountsHeadersAcrossFragmentsAndResetsForNextRequest) {
+    HttpParser::Limits limits;
+    limits.max_header_bytes = 12;
+    HttpParser parser(limits);
+    znet::Buffer buffer;
+    buffer.append("GET / HTTP/1.1\r\nX: a\r\n");
+    ASSERT_EQ(parser.parse(&buffer), ParseResult::NEED_MORE);
+    buffer.append("Y: aaaa");
+    EXPECT_EQ(parser.parse(&buffer), ParseResult::ERROR);
+    EXPECT_EQ(parser.error_status(), HttpStatus::REQUEST_HEADER_FIELDS_TOO_LARGE);
+    buffer.retrieve_all();
+    parser.reset();
+    buffer.append("GET / HTTP/1.1\r\nX: abcde\r\n\r\n");
+    EXPECT_EQ(parser.parse(&buffer), ParseResult::COMPLETE); // 正好 12 字节。
+    parser.reset();
+    buffer.append("GET / HTTP/1.1\r\n\r\nGET / HTTP/1.1\r\n\r\n");
+    EXPECT_EQ(parser.parse(&buffer), ParseResult::COMPLETE);
+    parser.reset();
+    EXPECT_EQ(parser.parse(&buffer), ParseResult::COMPLETE);
+}
+
+TEST(HttpParserLimitsTest, EnforcesHeaderCountIncludingTrailers) {
+    HttpParser::Limits limits;
+    limits.max_header_count = 1;
+    for (const std::string &request : {
+        std::string("GET / HTTP/1.1\r\nX: a\r\nY: b\r\n\r\n"),
+        std::string("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n0\r\nX: a\r\n\r\n")}) {
+        HttpParser parser(limits);
+        znet::Buffer buffer;
+        buffer.append(request);
+        EXPECT_EQ(parser.parse(&buffer), ParseResult::ERROR);
+        EXPECT_EQ(parser.error_status(), HttpStatus::REQUEST_HEADER_FIELDS_TOO_LARGE);
+    }
+}
+
+TEST(HttpParserLimitsTest, RejectsDeclaredBodyBeforeReceivingIt) {
+    HttpParser::Limits limits;
+    limits.max_body_bytes = 4;
+    for (const char *length : {"5", "999999999999999999999999999999"}) {
+        HttpParser parser(limits);
+        znet::Buffer buffer;
+        buffer.append(std::string("POST / HTTP/1.1\r\nContent-Length: ") + length + "\r\n\r\n");
+        EXPECT_EQ(parser.parse(&buffer), ParseResult::ERROR);
+        EXPECT_EQ(parser.error_status(), HttpStatus::PAYLOAD_TOO_LARGE);
+    }
+    HttpParser parser(limits);
+    znet::Buffer buffer;
+    buffer.append("POST / HTTP/1.1\r\nContent-Length: 4\r\n\r\n1234");
+    EXPECT_EQ(parser.parse(&buffer), ParseResult::COMPLETE);
+}
+
+TEST(HttpParserLimitsTest, LimitsChunkedBodyCumulativelyBeforeNextChunkArrives) {
+    HttpParser::Limits limits;
+    limits.max_body_bytes = 4;
+    HttpParser parser(limits);
+    znet::Buffer buffer;
+    buffer.append("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabc\r\n");
+    ASSERT_EQ(parser.parse(&buffer), ParseResult::NEED_MORE);
+    buffer.append("2\r\n");
+    EXPECT_EQ(parser.parse(&buffer), ParseResult::ERROR);
+    EXPECT_EQ(parser.error_status(), HttpStatus::PAYLOAD_TOO_LARGE);
+    buffer.retrieve_all();
+    parser.reset();
+    buffer.append("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nab\r\n2\r\ncd\r\n0\r\n\r\n");
+    EXPECT_EQ(parser.parse(&buffer), ParseResult::COMPLETE);
+    EXPECT_EQ(parser.request()->body(), "abcd");
+}
+
+TEST(HttpParserLimitsTest, LimitsChunkMetadataAndRejectsSizeOverflow) {
+    for (const std::string &chunk : {std::string(1100, 'f'),
+                                   std::string("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF\r\n")}) {
+        HttpParser parser;
+        znet::Buffer buffer;
+        buffer.append("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n" + chunk);
+        EXPECT_EQ(parser.parse(&buffer), ParseResult::ERROR);
+    }
+    HttpParser::Limits limits;
+    limits.max_header_bytes = 40;
+    HttpParser parser(limits);
+    znet::Buffer buffer;
+    buffer.append("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n0\r\nX: " + std::string(30, 'a'));
+    EXPECT_EQ(parser.parse(&buffer), ParseResult::ERROR);
+    EXPECT_EQ(parser.error_status(), HttpStatus::REQUEST_HEADER_FIELDS_TOO_LARGE);
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
 

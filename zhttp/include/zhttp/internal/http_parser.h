@@ -59,7 +59,17 @@ enum class ParseResult {
  */
 class HttpParser {
   public:
+    struct Limits {
+        size_t max_request_line_bytes = 8 * 1024; // 包括 CRLF。
+        size_t max_header_bytes = 64 * 1024; // 包括头部、trailer 和 CRLF。
+        size_t max_header_count = 100; // 包括 trailer，不计终止空行。
+        size_t max_body_bytes = 8 * 1024 * 1024; // chunked 按累计解码长度。
+        size_t max_chunk_line_bytes = 1024;
+    };
+
     HttpParser();
+    explicit HttpParser(const Limits &limits);
+    HttpStatus error_status() const { return error_status_; }
 
     /**
      * @brief 解析缓冲区中的数据
@@ -145,6 +155,12 @@ class HttpParser {
                                size_t *chunk_size) const;
 
   private:
+    ParseResult fail(HttpStatus status, const char *message);
+    Limits limits_;
+    size_t header_bytes_ = 0;
+    size_t header_count_ = 0;
+    HttpStatus error_status_ = HttpStatus::BAD_REQUEST;
+
     // 当前状态机阶段。
     ParseState state_ = ParseState::REQUEST_LINE;
 

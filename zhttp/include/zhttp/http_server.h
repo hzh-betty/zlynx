@@ -60,6 +60,11 @@ class HttpServer {
 
     void set_keepalive_timeout(uint64_t timeout_ms);
 
+    // 在 start 前设置；限制应用于每条请求，正文默认最多 8 MiB。
+    void set_request_limits(const HttpParser::Limits &limits) { request_limits_ = limits; }
+    // 从请求首批数据到收齐的总时限，默认 30 秒，0 禁用。
+    void set_request_timeout(uint32_t timeout_ms) { request_timeout_ms_ = timeout_ms; }
+
     /**
      * @brief 启用 HTTPS（TLS）
      * @param cert_file 证书文件路径
@@ -143,6 +148,8 @@ class HttpServer {
 
     // 负责路径匹配、中间件执行和业务处理器调度。
     Router router_;
+    HttpParser::Limits request_limits_;
+    uint32_t request_timeout_ms_ = 30000;
 
     // Server 响应头默认值。
     std::string server_name_ = "zhttp/1.0";

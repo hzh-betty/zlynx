@@ -21,8 +21,10 @@ namespace zhttp {
 namespace {
 
 struct HttpConnectionContext {
+    explicit HttpConnectionContext(const HttpParser::Limits &limits) : parser(limits) {}
     HttpParser parser;
     std::string remote_addr;
+    bool receiving = false;
 };
 
 uint32_t clamp_timeout_to_u32(const uint64_t timeout_ms) {
@@ -376,7 +378,7 @@ HttpParser *HttpServer::ensure_parser(const znet::TcpConnection::ptr &conn) {
 
     auto *ctx = static_cast<HttpConnectionContext *>(conn->context());
     if (!ctx) {
-        ctx = new HttpConnectionContext();
+        ctx = new HttpConnectionContext(request_limits_);
         if (conn->socket()) {
             auto remote_addr = conn->socket()->get_remote_address();
             if (remote_addr) {
@@ -448,7 +450,16 @@ void HttpServer::on_message(const znet::TcpConnection::ptr &conn,
             return;
         }
 
+        auto *ctx = static_cast<HttpConnectionContext *>(conn->context());
+        if (!ctx->receiving) {
+            ctx->receiving = true;
+            conn->set_read_deadline(request_timeout_ms_);
+        }
         ParseResult result = parser->parse(&buffer);
+        if (result == ParseResult::COMPLETE || result == ParseResult::ERROR) {
+            ctx->receiving = false;
+            conn->set_read_deadline(0);
+        }
 
         if (result == ParseResult::COMPLETE) {
             // 一条完整请求已经拿到，可以交给业务层处理。
@@ -470,16 +481,16 @@ void HttpServer::on_message(const znet::TcpConnection::ptr &conn,
             // 半包场景，等待下一次 on_message 再继续解析。
             return;
         } else if (result == ParseResult::ERROR) {
-            // 请求报文不合法时直接返回 400，并关闭连接，避免后续状态混乱。
+            // 按解析错误类型返回状态码并关闭连接，避免后续状态混乱。
             ZHTTP_LOG_WARN("HTTP parse error: {}", parser->error());
             HttpResponse response;
-            response.status(HttpStatus::BAD_REQUEST)
+            response.status(parser->error_status())
                 .content_type("text/plain")
                 .body("Bad Request: " + parser->error());
             response.set_keep_alive(false);
             const std::string payload = response.serialize();
             if (conn->send(payload.data(), payload.size()) < 0) {
-                ZHTTP_LOG_WARN("Send HTTP 400 failed: fd={}", conn->fd());
+                ZHTTP_LOG_WARN("Send HTTP parse error response failed: fd={}", conn->fd());
             }
             conn->shutdown();
             return;
