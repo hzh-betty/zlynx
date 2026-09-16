@@ -548,6 +548,7 @@ ssize_t TcpConnection::send_internal(const char *data, size_t length,
 void TcpConnection::shutdown_internal() {
     const State current = state();
     if (current == State::kDisconnected) {
+        close_internal();
         return;
     }
 
@@ -562,11 +563,7 @@ void TcpConnection::shutdown_internal() {
 }
 
 void TcpConnection::close_internal() {
-    const State current = state();
-    if (current == State::kDisconnected) {
-        return;
-    }
-
+    // EOF 只改变逻辑状态，资源关闭仍需执行；Socket::close 本身幂等。
     set_state(State::kDisconnected);
     close_tls_internal();
     if (socket_) {

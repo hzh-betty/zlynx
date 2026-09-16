@@ -8,6 +8,7 @@
 #include "znet/tcp_connection.h"
 #undef private
 
+#include <fcntl.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -114,6 +115,41 @@ class FakeTlsContext : public TlsContext {
         return std::unique_ptr<TlsChannel>(channel.release());
     }
 };
+
+TEST_F(TcpConnectionUnitTest, CloseAndShutdownReleaseSocketAfterEof) {
+    for (bool use_shutdown : {false, true}) {
+        int pair[2];
+        ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+        auto socket = std::make_shared<Socket>(pair[0]);
+        auto conn = std::make_shared<TcpConnection>(socket);
+        ASSERT_EQ(::shutdown(pair[1], SHUT_WR), 0);
+        ASSERT_EQ(conn->read(16, 100), 0);
+        EXPECT_EQ(conn->state(), TcpConnection::State::kDisconnected);
+        if (use_shutdown) {
+            conn->shutdown();
+        } else {
+            conn->close();
+        }
+        EXPECT_FALSE(socket->is_valid());
+        EXPECT_EQ(::fcntl(pair[0], F_GETFD), -1);
+        EXPECT_EQ(errno, EBADF);
+        conn->close();
+        ::close(pair[1]);
+    }
+}
+
+TEST_F(TcpConnectionUnitTest, CloseReleasesTlsChannelAfterEof) {
+    int pair[2];
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+    auto conn = std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto ctx = std::make_shared<FakeTlsContext>();
+    ASSERT_TRUE(conn->enable_tls_server(ctx, 100));
+    EXPECT_EQ(conn->read(16, 100), 0);
+    conn->close();
+    EXPECT_FALSE(conn->is_tls_enabled());
+    EXPECT_EQ(conn->fd(), -1);
+    ::close(pair[1]);
+}
 
 TEST_F(TcpConnectionUnitTest, ReadIntoInputBufferAndFlushOutputBuffer) {
     zco::init(2);

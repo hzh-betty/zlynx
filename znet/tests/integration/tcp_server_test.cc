@@ -481,10 +481,59 @@ TEST_F(TcpServerUnitTest, RegisterAndRemoveConnectionHandleNullAndErase) {
     server->register_connection(conn);
     ASSERT_EQ(server->connections_.size(), 1U);
 
-    server->remove_connection(fd);
+    server->remove_connection(fd, conn);
     EXPECT_TRUE(server->connections_.empty());
 
     conn->close();
+    ::close(pair[1]);
+}
+
+TEST_F(TcpServerUnitTest, RemovalUsesOriginalKeyAndChecksConnectionIdentity) {
+    int first[2], second[2];
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, first), 0);
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, second), 0);
+    auto server = std::make_shared<TcpServer>(Address::ptr{}, 16);
+    auto old_conn = std::make_shared<TcpConnection>(std::make_shared<Socket>(first[0]));
+    auto new_conn = std::make_shared<TcpConnection>(std::make_shared<Socket>(second[0]));
+    const int key = old_conn->fd();
+    server->register_connection(old_conn);
+    old_conn->close();
+    EXPECT_EQ(old_conn->fd(), -1);
+    server->remove_connection(key, old_conn);
+    EXPECT_TRUE(server->connections_.empty());
+
+    // 模拟同一个 fd 键已由后来的连接占用。
+    server->connections_[key] = new_conn;
+    server->remove_connection(key, old_conn);
+    EXPECT_EQ(server->connections_.at(key), new_conn);
+    server->remove_connection(key, new_conn);
+    EXPECT_TRUE(server->connections_.empty());
+    new_conn->close();
+    ::close(first[1]);
+    ::close(second[1]);
+}
+
+TEST_F(TcpServerUnitTest, ActiveCloseRemovesRegisteredConnection) {
+    zco::init(1);
+    int pair[2];
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+    auto server = std::make_shared<TcpServer>(Address::ptr{}, 16);
+    std::atomic<bool> closed(false);
+    server->set_on_connection([](const TcpConnection::ptr &conn) { conn->close(); });
+    server->set_on_close([&](const TcpConnection::ptr &) { closed.store(true); });
+    server->handle_connection(std::make_shared<Socket>(pair[0]));
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    bool empty = false;
+    while (std::chrono::steady_clock::now() < deadline) {
+        {
+            std::lock_guard<std::mutex> lock(server->connections_mutex_);
+            empty = closed.load() && server->connections_.empty();
+        }
+        if (empty) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    EXPECT_TRUE(empty);
+    zco::shutdown();
     ::close(pair[1]);
 }
 

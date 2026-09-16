@@ -108,7 +108,7 @@ class TcpServer : public std::enable_shared_from_this<TcpServer>,
     void do_stop();
 
     void handle_connection(Socket::ptr client);
-    void remove_connection(int fd);
+    void remove_connection(int fd, const TcpConnection::ptr &connection);
     void register_connection(const TcpConnection::ptr &connection);
 
   private:

@@ -10,6 +10,7 @@
 #include "znet/internal/noncopyable.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>

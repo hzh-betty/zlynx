@@ -189,6 +189,8 @@ void TcpServer::handle_connection(Socket::ptr client) {
             }
         }
 
+        // 保存注册时的键，关闭 socket 后 fd() 会变为 -1。
+        const int connection_fd = connection->fd();
         self->register_connection(connection);
 
         if (self->on_connection_callback_) {
@@ -257,7 +259,7 @@ void TcpServer::handle_connection(Socket::ptr client) {
         }
 
         connection->close();
-        self->remove_connection(connection->fd());
+        self->remove_connection(connection_fd, connection);
         ZNET_LOG_INFO("TcpServer::handle_connection end: fd={}",
                       connection->fd());
     };
@@ -288,11 +290,15 @@ void TcpServer::register_connection(const TcpConnection::ptr &connection) {
                    fd, total);
 }
 
-void TcpServer::remove_connection(int fd) {
+void TcpServer::remove_connection(int fd, const TcpConnection::ptr &connection) {
     size_t total = 0;
     {
         std::lock_guard<std::mutex> lock(connections_mutex_);
-        connections_.erase(fd);
+        const auto it = connections_.find(fd);
+        // fd 可能已被新连接复用，旧连接退出不能删除新连接。
+        if (it != connections_.end() && it->second == connection) {
+            connections_.erase(it);
+        }
         total = connections_.size();
     }
     ZNET_LOG_DEBUG("TcpServer::remove_connection success: fd={}, total={}", fd,
