@@ -87,7 +87,7 @@ TEST_F(ProcessorInternalUnitTest, RunLoopAndWaitIoGuardHandleMissingPoller) {
     Processor processor(23, 64 * 1024);
     processor.poller_.reset();
 
-    processor.wait_io_events_when_idle();
+    processor.poll_io_events();
 
     processor.running_.store(true, std::memory_order_release);
     processor.run_loop();

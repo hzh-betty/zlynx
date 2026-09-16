@@ -8,6 +8,8 @@
 #include <chrono>
 #include <deque>
 #include <sys/epoll.h>
+#include <sys/socket.h>
+#include <unistd.h>
 #include <thread>
 
 #include <gtest/gtest.h>
@@ -166,6 +168,47 @@ TEST_F(ProcessorUnitTest, YieldingTaskIsRescheduledAndEventuallyCompletes) {
     processor.join();
 }
 
+TEST_F(ProcessorUnitTest, YieldingTaskDoesNotStarveTimersIoOrNewTasks) {
+    init_logger(zlog::LogLevel::value::OFF);
+    Processor processor(0, 128 * 1024);
+    int pair[2];
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+    std::atomic<bool> release(false), started(false), timer(false);
+    std::atomic<bool> io(false), submitted(false);
+
+    processor.enqueue_task([&]() {
+        io.store(processor.wait_fd(pair[0], EPOLLIN, 1000));
+    });
+    processor.enqueue_task([&]() {
+        processor.add_timer(10, [&]() { timer.store(true); });
+        started.store(true);
+        while (!release.load()) {
+            yield();
+        }
+    });
+    processor.start();
+    const auto deadline = std::chrono::steady_clock::now() +
+                          std::chrono::seconds(2);
+    while (!started.load() && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    processor.enqueue_task([&]() { submitted.store(true); });
+    const char marker = 'x';
+    EXPECT_EQ(::write(pair[1], &marker, 1), 1);
+    while ((!timer.load() || !io.load() || !submitted.load()) &&
+           std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    // 在释放持续就绪任务前取样，避免它退出后才处理事件而掩盖饥饿。
+    const bool progressed = timer.load() && io.load() && submitted.load();
+    release.store(true);
+    processor.stop();
+    processor.join();
+    ::close(pair[0]);
+    ::close(pair[1]);
+    EXPECT_TRUE(progressed);
+}
+
 TEST_F(ProcessorUnitTest, IdleProcessorStealsPendingTasksFromBusyVictim) {
     Runtime &runtime = Runtime::instance();
     runtime.init(2);
@@ -207,7 +250,13 @@ TEST_F(ProcessorUnitTest, IdleProcessorStealsPendingTasksFromBusyVictim) {
         });
     }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(80));
+    // 空闲 poller 最长等待 1 秒，等待实际窃取而非假设 80ms 内完成。
+    const auto steal_deadline = std::chrono::steady_clock::now() +
+                                std::chrono::seconds(2);
+    while (ran_on_other.load() == 0 &&
+           std::chrono::steady_clock::now() < steal_deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
     release_blocker.store(true, std::memory_order_release);
     done.wait();
 

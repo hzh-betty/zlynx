@@ -334,11 +334,11 @@ class Processor : public NonCopyable {
     bool has_ready_tasks() const;
 
     /**
-     * @brief 在空闲时等待 IO 事件。
+     * @brief 检查 IO 事件，有任务时不阻塞。
      * @param 无参数。
      * @return 无返回值。
      */
-    void wait_io_events_when_idle();
+    void poll_io_events();
 
     /**
      * @brief 在空闲时窃取其他处理器的任务。

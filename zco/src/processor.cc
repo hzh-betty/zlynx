@@ -382,10 +382,9 @@ void Processor::run_loop() {
         process_timers();
         run_ready_tasks();
 
+        // 就绪队列持续非空时也检查 I/O，避免读写事件被饿死。
+        poll_io_events();
         if (!has_ready_tasks()) {
-            // 没有立即可跑的协程时，才进入 IO 等待和任务窃取；这两步都
-            // 只在空闲态执行，避免和前面的热路径争用调度时间。
-            wait_io_events_when_idle();
             steal_tasks_when_idle();
         }
 
@@ -412,13 +411,15 @@ bool Processor::has_ready_tasks() const {
     return !run_queue_.empty();
 }
 
-void Processor::wait_io_events_when_idle() {
+void Processor::poll_io_events() {
     if (!poller_) {
         return;
     }
 
-    const int timeout_ms = next_timeout_ms();
-    // 没有 ready 任务时进入 epoll_wait，timeout 由最近定时器决定。
+    // 有就绪协程或待创建任务时只做非阻塞检查。
+    const int timeout_ms = (has_ready_tasks() || pending_task_count() > 0)
+                               ? 0
+                               : next_timeout_ms();
     poller_->wait_events(
         timeout_ms,
         [this](const std::shared_ptr<IoWaiter> &waiter, uint32_t ready_events) {
@@ -528,7 +529,8 @@ void Processor::run_ready_tasks() {
     constexpr size_t kReadyDispatchBatchLimit = 256;
 
     std::deque<Fiber::ptr> ready_batch;
-    while (drain_ready_fibers(&ready_batch, kReadyDispatchBatchLimit) > 0) {
+    // 每次最多执行一批；主动 yield 的协程留给下一轮。
+    if (drain_ready_fibers(&ready_batch, kReadyDispatchBatchLimit) > 0) {
         while (!ready_batch.empty()) {
             Fiber::ptr fiber = std::move(ready_batch.front());
             ready_batch.pop_front();
