@@ -10,9 +10,22 @@
 #include <cstring>
 #include <mutex>
 
+#include "zmalloc/internal/size_class.h"
+
 namespace zmalloc {
 
 constexpr size_t TransferCacheEntry::kMaxCacheSlots;
+
+TransferCache::TransferCache() {
+    // 每规格最多保留 64KiB（大对象至少两个），避免 2048 个大对象常驻。
+    for (size_t size = 1; size <= MAX_BYTES;) {
+        const auto &e = SizeClass::lookup(size);
+        entries_[e.index].capacity_ =
+            std::min<size_t>(TransferCacheEntry::kMaxCacheSlots,
+                             std::max<size_t>(2, 64 * 1024 / e.align_size));
+        size = e.align_size + 1;
+    }
+}
 
 size_t TransferCacheEntry::insert_range(void *batch[], size_t count) {
     if (count == 0) {
@@ -21,7 +34,7 @@ size_t TransferCacheEntry::insert_range(void *batch[], size_t count) {
 
     // 快路径：锁外快速判断是否已满，尽量减少锁竞争。
     const size_t cur = count_.load(std::memory_order_relaxed);
-    if (cur >= kMaxCacheSlots) {
+    if (cur >= capacity_) {
         return 0;
     }
 
@@ -30,7 +43,7 @@ size_t TransferCacheEntry::insert_range(void *batch[], size_t count) {
 
     // 计算可插入的数量
     const size_t cur_locked = count_.load(std::memory_order_relaxed);
-    const size_t available = kMaxCacheSlots - cur_locked;
+    const size_t available = capacity_ - cur_locked;
     const size_t to_insert = std::min(count, available);
 
     // 二次确认：锁内重新计算，确保并发下正确。
@@ -95,7 +108,7 @@ bool TransferCacheEntry::try_insert_range(void *batch[], size_t count,
 
     // 快路径：锁外快速判断是否已满
     const size_t cur = count_.load(std::memory_order_relaxed);
-    if (cur >= kMaxCacheSlots) {
+    if (cur >= capacity_) {
         return true; // 已满，但操作成功完成（插入0个）
     }
 
@@ -106,7 +119,7 @@ bool TransferCacheEntry::try_insert_range(void *batch[], size_t count,
 
     // 计算可插入的数量
     const size_t cur_locked = count_.load(std::memory_order_relaxed);
-    const size_t available = kMaxCacheSlots - cur_locked;
+    const size_t available = capacity_ - cur_locked;
     const size_t to_insert = std::min(count, available);
 
     if (to_insert > 0) { // GCOVR_EXCL_LINE

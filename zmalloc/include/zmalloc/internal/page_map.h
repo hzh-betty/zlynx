@@ -10,6 +10,7 @@
 #ifndef ZMALLOC_INTERNAL_PAGE_MAP_H_
 #define ZMALLOC_INTERNAL_PAGE_MAP_H_
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -89,6 +90,12 @@ template <int BITS> class PageMap1 {
         }
     }
 
+    // 清除已有映射不应分配 radix tree 节点。
+    void clear_range(Number start, size_t n) {
+        assert(ensure(start, n));
+        std::fill_n(array_ + start, n, nullptr);
+    }
+
     bool ensure(Number start, size_t n) {
         if (n == 0) {
             return true;
@@ -147,6 +154,20 @@ template <int BITS> class PageMap2 {
             const Number i1 = k >> LEAF_BITS;
             const Number i2 = k & (LEAF_LENGTH - 1);
             root_[i1]->values[i2] = v;
+        }
+    }
+
+    void clear_range(Number start, size_t n) {
+        while (n != 0) {
+            const Number i1 = start >> LEAF_BITS;
+            const Number i2 = start & (LEAF_LENGTH - 1);
+            const size_t count = std::min<size_t>(n, LEAF_LENGTH - i2);
+            assert(i1 < ROOT_LENGTH);
+            if (root_[i1] != nullptr) {
+                std::fill_n(root_[i1]->values + i2, count, nullptr);
+            }
+            start += count;
+            n -= count;
         }
     }
 
@@ -215,7 +236,10 @@ template <int BITS> class PageMap3 {
         const Number i2 = (k >> LEAF_BITS) & (INTERIOR_LENGTH - 1);
         const Number i3 = k & (LEAF_LENGTH - 1);
 
-        ensure(k, 1);
+        if (root_->ptrs[i1] == nullptr ||
+            root_->ptrs[i1]->ptrs[i2] == nullptr) {
+            ensure(k, 1);
+        }
         reinterpret_cast<Leaf *>(root_->ptrs[i1]->ptrs[i2])->values[i3] = v;
     }
 
@@ -238,6 +262,24 @@ template <int BITS> class PageMap3 {
             const Number i2 = (k >> LEAF_BITS) & (INTERIOR_LENGTH - 1);
             const Number i3 = k & (LEAF_LENGTH - 1);
             reinterpret_cast<Leaf *>(root_->ptrs[i1]->ptrs[i2])->values[i3] = v;
+        }
+    }
+
+    void clear_range(Number start, size_t n) {
+        while (n != 0) {
+            const Number i1 = start >> (LEAF_BITS + INTERIOR_BITS);
+            const Number i2 = (start >> LEAF_BITS) & (INTERIOR_LENGTH - 1);
+            const Number i3 = start & (LEAF_LENGTH - 1);
+            const size_t count = std::min<size_t>(n, LEAF_LENGTH - i3);
+            assert(i1 < INTERIOR_LENGTH);
+            if (root_->ptrs[i1] != nullptr &&
+                root_->ptrs[i1]->ptrs[i2] != nullptr) {
+                Leaf *leaf =
+                    reinterpret_cast<Leaf *>(root_->ptrs[i1]->ptrs[i2]);
+                std::fill_n(leaf->values + i3, count, nullptr);
+            }
+            start += count;
+            n -= count;
         }
     }
 

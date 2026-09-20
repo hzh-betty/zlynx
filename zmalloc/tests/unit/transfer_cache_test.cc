@@ -71,6 +71,31 @@ static void InsertRemoveExactManager(TransferCache &manager, size_t index,
 }
 
 // 基本插入和获取测试
+TEST_F(TransferCacheTest, BoundedCapacityPreservesFifoAcrossPhysicalWrap) {
+    TransferCacheEntry cache(3);
+    for (uintptr_t round = 0; round < 2048; ++round) {
+        void *input[5];
+        for (uintptr_t i = 0; i < 5; ++i) {
+            input[i] = reinterpret_cast<void *>(1 + round * 5 + i);
+        }
+        ASSERT_EQ(cache.insert_range(input, 5), 3u);
+        EXPECT_TRUE(cache.full());
+        void *output[3];
+        ASSERT_EQ(cache.remove_range(output, 2), 2u);
+        EXPECT_EQ(output[0], input[0]);
+        EXPECT_EQ(output[1], input[1]);
+        size_t inserted = 0;
+        ASSERT_TRUE(cache.try_insert_range(input + 3, 2, inserted));
+        ASSERT_EQ(inserted, 2u);
+        size_t removed = 0;
+        ASSERT_TRUE(cache.try_remove_range(output, 3, removed));
+        ASSERT_EQ(removed, 3u);
+        EXPECT_EQ(output[0], input[2]);
+        EXPECT_EQ(output[1], input[3]);
+        EXPECT_EQ(output[2], input[4]);
+    }
+}
+
 TEST_F(TransferCacheTest, BasicInsertRemove) {
     TransferCacheEntry cache;
 

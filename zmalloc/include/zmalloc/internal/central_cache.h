@@ -7,6 +7,7 @@
 #ifndef ZMALLOC_INTERNAL_CENTRAL_CACHE_H_
 #define ZMALLOC_INTERNAL_CENTRAL_CACHE_H_
 
+#include <mutex>
 #include <new>
 
 #include "common.h"
@@ -72,7 +73,8 @@ class CentralCache : public NonCopyable {
         SpinLock lock;
     };
 
-    Span *get_one_span(CentralFreeList &free_list, size_t size);
+    Span *get_one_span(CentralFreeList &free_list, size_t size,
+                       std::unique_lock<SpinLock> &lock);
 
     /**
      * @brief 将对象链表归还给对应的 Span

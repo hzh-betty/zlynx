@@ -6,6 +6,7 @@
 
 #include "zmalloc/internal/size_class.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <mutex>
 
@@ -62,11 +63,12 @@ size_t SizeClass::num_move_size(size_t size) {
     assert(size > 0); // GCOVR_EXCL_LINE
 
     // 用“目标传输字节数”来决定每次批量对象个数。
-    constexpr size_t kTargetBytes = 4096;
+    constexpr size_t kTargetBytes = 64 * 1024;
     constexpr size_t kMinObjects = 2;
     constexpr size_t kMaxObjects = 128;
 
-    size_t num = kTargetBytes / size;
+    size_t num =
+        size <= 512 ? 4096 / size : std::min<size_t>(32, kTargetBytes / size);
     if (num < kMinObjects) {
         num = kMinObjects;
     }
@@ -77,7 +79,8 @@ size_t SizeClass::num_move_size(size_t size) {
 }
 
 size_t SizeClass::num_move_page(size_t size) {
-    size_t num = num_move_size(size);
+    // 新 span 至少容纳一批，避免冷缓存时实际批次被 span 容量截断。
+    const size_t num = num_move_size(size);
     size_t npage = (num * size + PAGE_SIZE - 1) >> PAGE_SHIFT;
     if (npage == 0) { // GCOVR_EXCL_LINE
         npage = 1;
@@ -89,14 +92,6 @@ SizeClassLookup g_size_class_lookup[kSizeClassLookupLen];
 std::atomic<bool> g_size_class_lookup_ready{false};
 
 namespace {
-
-static inline size_t clamp_min(size_t v, size_t min_v) {
-    return v < min_v ? min_v : v;
-}
-
-static inline size_t clamp_max(size_t v, size_t max_v) {
-    return v > max_v ? max_v : v;
-}
 
 static void init_size_class_lookup() {
     // bucket=0 对应 size==0，保持为 0。
@@ -110,19 +105,8 @@ static void init_size_class_lookup() {
         const size_t index = SizeClass::index(align_size);
 
         // 预计算批量搬运个数/页数（与 SizeClass::num_move_* 的策略一致）。
-        constexpr size_t kTargetBytes = 4096;
-        constexpr size_t kMinObjects = 2;
-        constexpr size_t kMaxObjects = 128;
-
-        size_t num_move = kTargetBytes / align_size;
-        num_move = clamp_min(num_move, kMinObjects);
-        num_move = clamp_max(num_move, kMaxObjects);
-
-        size_t num_pages =
-            (num_move * align_size + PAGE_SIZE - 1) >> PAGE_SHIFT;
-        if (num_pages == 0) { // GCOVR_EXCL_LINE
-            num_pages = 1;
-        }
+        const size_t num_move = SizeClass::num_move_size(align_size);
+        const size_t num_pages = SizeClass::num_move_page(align_size);
 
         SizeClassLookup e;
         e.align_size = static_cast<uint32_t>(align_size);

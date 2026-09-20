@@ -16,7 +16,7 @@ void clear_span_mapping(PageMap &id_span_map, Span *span) {
     if (span == nullptr || span->n == 0) {
         return;
     }
-    id_span_map.set_range(span->page_id, span->n, nullptr);
+    id_span_map.clear_range(span->page_id, span->n);
 }
 
 } // namespace

@@ -13,9 +13,27 @@
 #include "zmalloc/internal/thread_cache.h"
 #undef private
 
+#include "zmalloc/internal/central_cache.h"
+#include "zmalloc/internal/transfer_cache.h"
 #include "zmalloc/zmalloc.h"
+#include <unordered_set>
 
 namespace {
+
+void DrainTransfer(size_t size) {
+    const auto &e = zmalloc::SizeClass::lookup(size);
+    void *objects[128];
+    size_t count;
+    while ((count = zmalloc::TransferCache::get_instance().remove_range(
+                e.index, objects, 128)) != 0) {
+        for (size_t i = 1; i < count; ++i) {
+            zmalloc::next_obj(objects[i - 1]) = objects[i];
+        }
+        zmalloc::next_obj(objects[count - 1]) = nullptr;
+        zmalloc::CentralCache::get_instance().release_list_to_spans(
+            objects[0], e.align_size, e.index);
+    }
+}
 
 static bool IsAligned(void *p, size_t align) {
     return (reinterpret_cast<uintptr_t>(p) & (align - 1)) == 0;
@@ -202,6 +220,7 @@ TEST_F(ThreadCacheTest, CleanupDrainsMoreThanOneBatchAndKeepsLiveObjects) {
     tc->cleanup();
     EXPECT_EQ(tc->cached_bytes(), 0u);
     EXPECT_TRUE(tc->free_lists_[index].empty());
+    DrainTransfer(64); // 共享缓存仍计入 span 外部引用，清空后只剩 live。
     EXPECT_EQ(span->use_count, 1u);
     static_cast<char *>(live)[63] = 42;
     tc->cleanup();
@@ -225,6 +244,31 @@ TEST_F(ThreadCacheTest, LowWaterScavengesUnusedObjects) {
     tc->scavenge();
     EXPECT_LT(tc->cached_bytes(), before);
     EXPECT_GT(tc->cached_bytes(), 0u);
+}
+
+TEST_F(ThreadCacheTest, ScavengeBatchesWithoutExceedingIdleLowWater) {
+    const auto &e = zmalloc::SizeClass::lookup(4096);
+    for (size_t idle : {10u, 24u}) {
+        std::vector<void *> objects;
+        for (size_t i = 0; i < 32; ++i) {
+            objects.push_back(tc->allocate(e.align_size));
+        }
+        tc->cleanup();
+        tc->free_lists_[e.index].max_size() = 64;
+        for (size_t i = 0; i < idle; ++i) {
+            tc->deallocate(objects[i], e.align_size);
+        }
+        tc->free_lists_[e.index].reset_low_water();
+        tc->scavenge();
+        EXPECT_EQ(tc->cached_bytes(),
+                  (idle - std::min<size_t>(idle, e.num_move)) * e.align_size);
+        // 回收仅针对闲置对象，调用方仍持有的对象必须保持可用。
+        for (size_t i = idle; i < objects.size(); ++i) {
+            static_cast<char *>(objects[i])[e.align_size - 1] = 42;
+            tc->deallocate(objects[i], e.align_size);
+        }
+        tc->cleanup();
+    }
 }
 
 TEST_F(ThreadCacheTest, MixedSizeBudgetTriggersScavenging) {
@@ -280,6 +324,7 @@ TEST_F(ThreadCacheTest, ThreadExitReturnsObjectsButPreservesLiveAllocation) {
         });
         worker.join();
         auto *span = zmalloc::PageCache::get_instance().map_object_to_span(live);
+        DrainTransfer(64);
         EXPECT_EQ(span->use_count, 1u);
         EXPECT_EQ(static_cast<char *>(live)[63], 42);
         zmalloc::zfree(live);
@@ -306,6 +351,59 @@ TEST_F(ThreadCacheTest, LaterTlsDestructorCanAllocateAndFree) {
     });
     worker.join();
     EXPECT_TRUE(finished);
+}
+
+TEST_F(ThreadCacheTest, TransferCacheReusesPartialBatchAndFullCacheFallsBack) {
+    const size_t size = 4096;
+    const auto &e = zmalloc::SizeClass::lookup(size);
+    DrainTransfer(size);
+    std::vector<void *> objects;
+    for (size_t i = 0; i < 256; ++i) {
+        objects.push_back(tc->allocate(size));
+    }
+    std::unordered_set<void *> expected(objects.begin(), objects.end());
+    tc->free_lists_[e.index].max_size() = 512;
+    for (void *p : objects) {
+        tc->deallocate(p, size);
+    }
+    // 64KiB 容量只能接收 16 个，其余批次必须安全回退中央层。
+    tc->release_batch(e.index, tc->free_lists_[e.index].size());
+    auto &transfer = zmalloc::TransferCache::get_instance();
+    EXPECT_TRUE(transfer.get_entry(e.index).full());
+    const size_t available = transfer.get_entry(e.index).size();
+    ASSERT_EQ(available, 16u);
+    zmalloc::ThreadCache consumer;
+    consumer.free_lists_[e.index].max_size() = e.num_move;
+    void *first = consumer.allocate(size);
+    EXPECT_EQ(expected.count(first), 1u);
+    EXPECT_EQ(consumer.free_lists_[e.index].size(), available - 1);
+    EXPECT_TRUE(transfer.get_entry(e.index).empty());
+    consumer.deallocate(first, size);
+    consumer.cleanup();
+    EXPECT_EQ(consumer.cached_bytes(), 0u);
+    DrainTransfer(size);
+}
+
+TEST_F(ThreadCacheTest, TransferCachePartialHitKeepsSpanAlive) {
+    const size_t size = 8192;
+    const auto &e = zmalloc::SizeClass::lookup(size);
+    DrainTransfer(size);
+    void *p = tc->allocate(size);
+    tc->cleanup();
+    void *objects[] = {p};
+    ASSERT_EQ(zmalloc::TransferCache::get_instance().insert_range(e.index,
+                                                                  objects, 1),
+              1u);
+    zmalloc::ThreadCache consumer;
+    consumer.free_lists_[e.index].max_size() = e.num_move;
+    EXPECT_EQ(consumer.allocate(size), p);
+    EXPECT_EQ(consumer.cached_bytes(), 0u);
+    static_cast<char *>(p)[size - 1] = 42;
+    EXPECT_EQ(
+        zmalloc::PageCache::get_instance().map_object_to_span(p)->use_count,
+        1u);
+    consumer.deallocate(p, size);
+    consumer.cleanup();
 }
 
 TEST_P(ThreadCacheAllocFreeParamTest, AllocTouchFreeBySize) {

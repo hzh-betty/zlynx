@@ -7,7 +7,11 @@
 #ifndef ZMALLOC_INTERNAL_FREE_LIST_H_
 #define ZMALLOC_INTERNAL_FREE_LIST_H_
 
+#include <algorithm>
+#include <cassert>
 #include <cstddef>
+
+#include "prefetch.h"
 
 namespace zmalloc {
 
@@ -29,17 +33,33 @@ inline void *&next_obj(void *ptr) { return *static_cast<void **>(ptr); }
  */
 class FreeList {
   public:
-    void push(void *obj);
-    void *pop();
+    void push(void *obj) {
+        assert(obj); // GCOVR_EXCL_LINE
+        // 头插法 O(1) 入链，适合高频小对象释放场景。
+        next_obj(obj) = free_list_;
+        free_list_ = obj;
+        ++size_;
+    }
+    void *pop() {
+        assert(free_list_); // GCOVR_EXCL_LINE
+        void *obj = free_list_;
+        void *next = next_obj(free_list_);
+        free_list_ = next;
+        --size_;
+        low_water_ = std::min(low_water_, size_);
+        // 预取下一节点，降低后续连续 pop 时的缓存未命中概率。
+        prefetch_next(next);
+        return obj;
+    }
 
     void push_range(void *start, void *end, size_t n);
     void pop_range(void *&start, void *&end, size_t n);
 
     size_t pop_batch(void **batch, size_t n);
 
-    bool empty() const;
-    size_t size() const;
-    size_t &max_size();
+    bool empty() const { return free_list_ == nullptr; }
+    size_t size() const { return size_; }
+    size_t &max_size() { return max_size_; }
     size_t low_water() const { return low_water_; }
     void reset_low_water() { low_water_ = size_; }
 

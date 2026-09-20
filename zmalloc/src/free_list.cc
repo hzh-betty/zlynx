@@ -13,26 +13,6 @@
 
 namespace zmalloc {
 
-void FreeList::push(void *obj) {
-    assert(obj); // GCOVR_EXCL_LINE
-    // 头插法 O(1) 入链，适合高频小对象释放场景。
-    next_obj(obj) = free_list_;
-    free_list_ = obj;
-    ++size_;
-}
-
-void *FreeList::pop() {
-    assert(free_list_); // GCOVR_EXCL_LINE
-    void *obj = free_list_;
-    void *next = next_obj(free_list_);
-    free_list_ = next;
-    --size_;
-    low_water_ = std::min(low_water_, size_);
-    // 预取下一节点，降低后续连续 pop 时的缓存未命中概率。
-    prefetch_next(next);
-    return obj;
-}
-
 void FreeList::push_range(void *start, void *end, size_t n) {
     assert(start && end); // GCOVR_EXCL_LINE
     // 批量对象已在上层串成链，这里只做一次头拼接。
@@ -82,9 +62,5 @@ size_t FreeList::pop_batch(void **batch, size_t n) {
     low_water_ = std::min(low_water_, size_);
     return n;
 }
-
-bool FreeList::empty() const { return free_list_ == nullptr; }
-size_t FreeList::size() const { return size_; }
-size_t &FreeList::max_size() { return max_size_; }
 
 } // namespace zmalloc

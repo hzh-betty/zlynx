@@ -16,7 +16,7 @@ namespace zmalloc {
 
 class ThreadCache : public NonCopyable {
   public:
-    // 初始软预算；低水位回收不保证单次扫描后立即低于预算。
+    // 释放路径触发的软预算；分配补货及低水位回收不保证立即低于预算。
     static constexpr size_t kCacheBudget = 1024 * 1024;
 
     ZM_ALWAYS_INLINE void *allocate(size_t size) {
@@ -55,7 +55,7 @@ class ThreadCache : public NonCopyable {
   private:
     void *fetch_from_central_cache(const SizeClassLookup &e);
     void release_direct(void *ptr, const SizeClassLookup &e);
-    void release_batch(size_t index, size_t count);
+    void release_batch(size_t index, size_t count, bool use_transfer = true);
     void deallocate_slow(const SizeClassLookup &e);
     void scavenge();
 

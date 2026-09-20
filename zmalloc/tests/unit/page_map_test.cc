@@ -448,6 +448,38 @@ TEST_F(PageMap3Test, SetManyIncludingEnds) {
     EXPECT_EQ(pm.get((1u << 18) - 1), &c);
 }
 
+TEST(PageMapClearRangeTest, ClearsAcrossLeavesWithoutTouchingNeighbors) {
+    zmalloc::PageMap3<18> pm;
+    int value = 42;
+    // 跨多个叶子，并在未建立映射的区间清理。
+    pm.clear_range(0, 4096);
+    pm.set_range(60, 140, &value);
+    pm.clear_range(63, 130);
+    EXPECT_EQ(pm.get(62), &value);
+    EXPECT_EQ(pm.get(193), &value);
+    for (uintptr_t i = 63; i < 193; ++i)
+        EXPECT_EQ(pm.get(i), nullptr);
+    pm.set(100, &value);
+    EXPECT_EQ(pm.get(100), &value);
+    pm.clear_range(0, 0);
+}
+
+TEST(PageMapClearRangeTest, OneAndTwoLevelMapsPreserveNeighbors) {
+    zmalloc::PageMap1<12> one;
+    zmalloc::PageMap2<12> two;
+    int value = 42;
+    one.set_range(120, 160, &value);
+    two.set_range(120, 160, &value);
+    one.clear_range(127, 140);
+    two.clear_range(127, 140);
+    EXPECT_EQ(one.get(126), &value);
+    EXPECT_EQ(two.get(267), &value);
+    for (uintptr_t i = 127; i < 267; ++i) {
+        EXPECT_EQ(one.get(i), nullptr);
+        EXPECT_EQ(two.get(i), nullptr);
+    }
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

@@ -10,6 +10,7 @@
 #include <type_traits>
 
 #include "zmalloc/internal/central_cache.h"
+#include "zmalloc/internal/transfer_cache.h"
 
 namespace zmalloc {
 constexpr size_t ThreadCache::kCacheBudget;
@@ -49,8 +50,21 @@ void *ThreadCache::fetch_from_central_cache(const SizeClassLookup &e) {
     const size_t count = closed_ ? 1 : std::min(list.max_size(), batch);
     void *start = nullptr;
     void *end = nullptr;
-    const size_t got = CentralCache::get_instance().fetch_range_obj(
-        start, end, count, e.align_size, e.index);
+    void *objects[kMaxBatch];
+    size_t got = closed_ ? 0
+                         : TransferCache::get_instance().remove_range(
+                               e.index, objects, count);
+    if (got != 0) {
+        start = objects[0];
+        end = objects[got - 1];
+        for (size_t i = 1; i < got; ++i) {
+            next_obj(objects[i - 1]) = objects[i];
+        }
+        next_obj(end) = nullptr;
+    } else {
+        got = CentralCache::get_instance().fetch_range_obj(
+            start, end, count, e.align_size, e.index);
+    }
     assert(got > 0 && got <= count);
     if (closed_) {
         return start;
@@ -66,9 +80,7 @@ void *ThreadCache::fetch_from_central_cache(const SizeClassLookup &e) {
     } else {
         list.max_size() = std::min(list.max_size() + batch, 4 * batch);
     }
-    if (cached_bytes_ > kCacheBudget) {
-        scavenge();
-    }
+    // 分配补货不回收其他规格刚预取的对象；预算回收由释放慢路径触发。
     return start;
 }
 
@@ -78,18 +90,29 @@ void ThreadCache::release_direct(void *ptr, const SizeClassLookup &e) {
                                                        e.index);
 }
 
-void ThreadCache::release_batch(size_t index, size_t count) {
+void ThreadCache::release_batch(size_t index, size_t count, bool use_transfer) {
     FreeList &list = free_lists_[index];
     count = std::min(count, list.size());
     const size_t size = class_sizes_[index];
     while (count > 0) {
-        // CentralCache 的分组数组最多容纳 128 个 Span。
+        // 使用固定大小的栈上指针数组批量搬运。
         const size_t n = std::min(count, kMaxBatch);
-        void *start = nullptr;
-        void *end = nullptr;
-        list.pop_range(start, end, n);
+        void *objects[kMaxBatch];
+        list.pop_batch(objects, n);
         cached_bytes_ -= n * size;
-        CentralCache::get_instance().release_list_to_spans(start, size, index);
+        const size_t inserted =
+            use_transfer
+                ? TransferCache::get_instance().insert_range(index, objects, n)
+                : 0;
+        // 已插入的指针可能立即被其他线程取走，之后只访问剩余对象。
+        if (inserted < n) {
+            for (size_t i = inserted + 1; i < n; ++i) {
+                next_obj(objects[i - 1]) = objects[i];
+            }
+            next_obj(objects[n - 1]) = nullptr;
+            CentralCache::get_instance().release_list_to_spans(
+                objects[inserted], size, index);
+        }
         count -= n;
     }
 }
@@ -117,9 +140,11 @@ void ThreadCache::scavenge() {
         FreeList &list = free_lists_[i];
         const size_t low = list.low_water();
         if (low > 0) {
-            release_batch(i, std::max<size_t>(1, low / 2));
             const size_t batch = std::min<size_t>(
                 SizeClass::lookup(class_sizes_[i]).num_move, kMaxBatch);
+            // 尽量归还一批，避免扩大批量后低水位回收仍反复搬运零散对象。
+            // 不超过低水位，保留本轮实际使用过的对象。
+            release_batch(i, std::min(low, std::max(batch, low / 2)));
             if (list.max_size() > batch) {
                 list.max_size() = std::max(batch, list.max_size() - batch);
             }
@@ -130,7 +155,7 @@ void ThreadCache::scavenge() {
 
 void ThreadCache::cleanup() {
     for (size_t i = 0; i < NFREELISTS; ++i) {
-        release_batch(i, free_lists_[i].size());
+        release_batch(i, free_lists_[i].size(), false);
         free_lists_[i].max_size() = 1;
         free_lists_[i].reset_low_water();
         length_overages_[i] = 0;

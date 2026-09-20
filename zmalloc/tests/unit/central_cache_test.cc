@@ -2,7 +2,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <thread>
 #include <tuple>
+#include <unordered_set>
 #include <vector>
 
 #include "zmalloc/internal/free_list.h"
@@ -421,6 +423,71 @@ TEST_F(CentralCacheTest, DifferentSizeClassesInterleavedDoesNotCrash) {
     cc.fetch_range_obj(b1, b2, 16, 128);
     cc.release_list_to_spans(a1, 64);
     cc.release_list_to_spans(b1, 128);
+}
+
+TEST_F(CentralCacheTest, FetchCombinesAvailableObjectsFromDifferentSpans) {
+    const size_t size = 4096;
+    const size_t capacity =
+        zmalloc::SizeClass::num_move_page(size) * zmalloc::PAGE_SIZE / size;
+    void *heads[2];
+    void *tails[2];
+    void *rest[2];
+    for (size_t i = 0; i < 2; ++i) {
+        ASSERT_EQ(cc.fetch_range_obj(heads[i], tails[i], capacity, size),
+                  capacity);
+        rest[i] = zmalloc::next_obj(heads[i]);
+    }
+    ASSERT_NE(pc.map_object_to_span(heads[0]), pc.map_object_to_span(heads[1]));
+    for (void *head : heads) {
+        zmalloc::next_obj(head) = nullptr;
+        cc.release_list_to_spans(head, size);
+    }
+    void *start = nullptr;
+    void *end = nullptr;
+    ASSERT_EQ(cc.fetch_range_obj(start, end, 2, size), 2u);
+    EXPECT_NE(pc.map_object_to_span(start), pc.map_object_to_span(end));
+    cc.release_list_to_spans(start, size);
+    for (void *head : rest) {
+        cc.release_list_to_spans(head, size);
+    }
+}
+
+TEST_F(CentralCacheTest, ConcurrentRefillAndLargeReleasePreserveUniqueObjects) {
+    constexpr size_t threads = 8;
+    constexpr size_t count = 512;
+    std::vector<void *> objects[threads];
+    std::vector<std::thread> workers;
+    for (size_t t = 0; t < threads; ++t) {
+        workers.emplace_back([&, t] {
+            while (objects[t].size() < count) {
+                void *head = nullptr;
+                void *tail = nullptr;
+                cc.fetch_range_obj(head, tail, count - objects[t].size(), 4096);
+                for (void *p = head; p != nullptr; p = zmalloc::next_obj(p)) {
+                    objects[t].push_back(p);
+                }
+            }
+        });
+    }
+    for (auto &worker : workers)
+        worker.join();
+    std::unordered_set<void *> unique;
+    for (const auto &batch : objects) {
+        for (void *p : batch)
+            EXPECT_TRUE(unique.insert(p).second);
+    }
+    workers.clear();
+    for (size_t t = 0; t < threads; ++t) {
+        workers.emplace_back([&, t] {
+            for (size_t i = 1; i < count; ++i) {
+                zmalloc::next_obj(objects[t][i - 1]) = objects[t][i];
+            }
+            zmalloc::next_obj(objects[t].back()) = nullptr;
+            cc.release_list_to_spans(objects[t].front(), 4096);
+        });
+    }
+    for (auto &worker : workers)
+        worker.join();
 }
 
 int main(int argc, char **argv) {

@@ -13,6 +13,8 @@
 #define ZMALLOC_INTERNAL_TRANSFER_CACHE_H_
 
 #include <atomic>
+#include <cassert>
+#include <new>
 
 #include "common.h"
 #include "zmalloc_config.h"
@@ -27,13 +29,16 @@ namespace zmalloc {
  */
 class TransferCacheEntry {
   public:
-    // 环形缓冲区最大容量（64个批次，每批次最多128个对象）
+    // 指针槽位的物理上限；各规格另有按字节预算计算的逻辑容量。
     static constexpr size_t kMaxCacheSlots = 2048;
     static constexpr size_t kMask = kMaxCacheSlots - 1;
     static_assert((kMaxCacheSlots & (kMaxCacheSlots - 1)) == 0,
                   "kMaxCacheSlots must be power of two");
 
-    TransferCacheEntry() = default;
+    explicit TransferCacheEntry(size_t capacity = kMaxCacheSlots)
+        : capacity_(capacity) {
+        assert(capacity <= kMaxCacheSlots);
+    }
 
     /**
      * @brief 批量插入对象到缓存
@@ -82,9 +87,11 @@ class TransferCacheEntry {
     /**
      * @brief 缓存是否已满
      */
-    bool full() const { return size() >= kMaxCacheSlots; }
+    bool full() const { return size() >= capacity_; }
 
   private:
+    friend class TransferCache;
+    size_t capacity_;
     mutable SpinLock mtx_;
     void *slots_[kMaxCacheSlots];  // 环形缓冲区
     size_t head_ = 0;              // 插入位置
@@ -103,8 +110,11 @@ class TransferCache : public NonCopyable {
      * @brief 获取单例实例
      */
     static TransferCache &get_instance() {
-        static TransferCache instance;
-        return instance;
+        // 缓存可被晚期 TLS/静态析构访问，生命周期覆盖整个进程。
+        alignas(
+            TransferCache) static unsigned char storage[sizeof(TransferCache)];
+        static TransferCache *instance = new (storage) TransferCache;
+        return *instance;
     }
 
     /**
@@ -154,7 +164,7 @@ class TransferCache : public NonCopyable {
                           size_t &removed);
 
   private:
-    TransferCache() = default;
+    TransferCache();
 
   private:
     TransferCacheEntry entries_[NFREELISTS];

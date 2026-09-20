@@ -87,7 +87,7 @@ TEST_F(SizeClassIndexTest, LargeSizesIndex) {
 }
 
 TEST_F(SizeClassIndexTest, NumMoveSize) {
-    // 优化后算法：目标 4KB 单次传输，最多 128 个对象
+    // 小对象保持原批量；较大对象目标 64KiB、最多 32 个。
     // 小对象 (8字节): 4096/8 = 512，但上限 128
     EXPECT_EQ(SizeClass::num_move_size(8), 128);
     // 大对象上限低
@@ -165,9 +165,9 @@ TEST_F(SizeClassIndexTest, NumMoveSizeMedium) {
 
 TEST_F(SizeClassIndexTest, NumMoveSizeLarge) {
     // 大对象批量少
-    EXPECT_EQ(SizeClass::num_move_size(1024), 4);
-    EXPECT_EQ(SizeClass::num_move_size(2048), 2);
-    EXPECT_EQ(SizeClass::num_move_size(4096), 2);
+    EXPECT_EQ(SizeClass::num_move_size(1024), 32);
+    EXPECT_EQ(SizeClass::num_move_size(2048), 32);
+    EXPECT_EQ(SizeClass::num_move_size(4096), 16);
 }
 
 TEST_F(SizeClassIndexTest, NumMoveSizeMinBound) {
@@ -240,13 +240,13 @@ INSTANTIATE_TEST_SUITE_P(
     BoundaryCases, SizeClassNumMoveSizeParamTest,
     ::testing::Values(std::make_tuple(8u, 128u), std::make_tuple(24u, 128u),
                       std::make_tuple(80u, 51u), std::make_tuple(144u, 28u),
-                      std::make_tuple(1008u, 4u), std::make_tuple(1152u, 3u),
-                      std::make_tuple(4096u, 2u),
+                      std::make_tuple(1008u, 32u), std::make_tuple(1152u, 32u),
+                      std::make_tuple(4096u, 16u),
                       std::make_tuple(73728u, 2u)));
 
 TEST_F(SizeClassIndexTest, NumMovePageRoundsUpToFitWholeBatch) {
-    EXPECT_EQ(SizeClass::num_move_size(5000), 2u);
-    EXPECT_EQ(SizeClass::num_move_page(5000), 2u);
+    EXPECT_EQ(SizeClass::num_move_size(5000), 13u);
+    EXPECT_EQ(SizeClass::num_move_page(5000), 8u);
 }
 
 TEST_P(SizeClassNumMovePageAtLeastParamTest, ReturnsAtLeastOnePage) {
