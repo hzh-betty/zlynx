@@ -7,6 +7,7 @@
 #ifndef ZMALLOC_INTERNAL_CENTRAL_CACHE_H_
 #define ZMALLOC_INTERNAL_CENTRAL_CACHE_H_
 
+#include <array>
 #include <mutex>
 #include <new>
 
@@ -69,7 +70,7 @@ class CentralCache : public NonCopyable {
      * - 这样 fetch 不需要线性扫描，通常 O(1) 取到可用 span。
      * - 同一 sizeclass 的 nonempty/empty 由同一把锁保护。
      */
-    struct alignas(64) CentralFreeList {
+    struct alignas(CACHE_LINE_SIZE) CentralFreeList {
         SpanList nonempty;
         SpanList empty;
         // 保护 nonempty/empty 以及 span 在两者之间的迁移。
@@ -105,7 +106,7 @@ class CentralCache : public NonCopyable {
     CentralCache() = default;
 
   private:
-    CentralFreeList free_lists_[NFREELISTS];
+    std::array<CentralFreeList, NFREELISTS> free_lists_;
 };
 
 } // namespace zmalloc

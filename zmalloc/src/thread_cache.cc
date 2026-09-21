@@ -7,6 +7,7 @@
 
 #include "zmalloc/internal/thread_cache.h"
 
+#include <array>
 #include <algorithm>
 #include <type_traits>
 
@@ -31,8 +32,8 @@ struct ThreadCacheCleanup {
     ~ThreadCacheCleanup() { tls_thread_cache.shutdown(); }
 };
 
-constexpr size_t kMaxBatch = 128;
-constexpr unsigned kMaxOverages = 3;
+constexpr size_t kMaxBatch = MAX_BATCH_SIZE;
+constexpr unsigned kMaxOverages = THREAD_CACHE_MAX_OVERAGES;
 } // namespace
 
 ThreadCache *get_thread_cache() {
@@ -52,11 +53,11 @@ void *ThreadCache::fetch_from_central_cache(const SizeClassLookup &e) {
     const size_t count = closed_ ? 1 : std::min(list.max_size(), batch);
     void *start = nullptr;
     void *end = nullptr;
-    void *objects[kMaxBatch];
+    std::array<void *, kMaxBatch> objects;
     // 第二步：优先从传输缓存接收其他线程归还的对象，避免访问 Span 元数据。
     size_t got = closed_ ? 0
                          : TransferCache::get_instance().remove_range(
-                               e.index, objects, count);
+                               e.index, objects.data(), count);
     if (got != 0) {
         start = objects[0];
         end = objects[got - 1];
@@ -102,13 +103,14 @@ void ThreadCache::release_batch(size_t index, size_t count, bool use_transfer) {
     while (count > 0) {
         // 第一步：使用固定大小的栈上数组从本地自由链表摘出一批指针。
         const size_t n = std::min(count, kMaxBatch);
-        void *objects[kMaxBatch];
-        list.pop_batch(objects, n);
+        std::array<void *, kMaxBatch> objects;
+        list.pop_batch(objects.data(), n);
         cached_bytes_ -= n * size;
         // 第二步：正常回收时先放入传输缓存，线程退出清理时直接跳过该层。
         const size_t inserted =
             use_transfer
-                ? TransferCache::get_instance().insert_range(index, objects, n)
+                ? TransferCache::get_instance().insert_range(index,
+                                                              objects.data(), n)
                 : 0;
         // 第三步：传输缓存放不下的对象重新串链并归还中心缓存。
         // 已插入的指针可能立即被其他线程取走，之后只访问剩余对象。

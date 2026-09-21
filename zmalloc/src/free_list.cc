@@ -50,10 +50,8 @@ size_t FreeList::pop_batch(void **batch, size_t n) {
     for (size_t i = 0; i < n; ++i) {
         batch[i] = cur;
         void *next = next_obj(cur);
-        if (next != nullptr) {
-            // 批量弹出时显式预取后继，平滑 tight loop 的访问延迟。
-            __builtin_prefetch(next, 0, 3);
-        }
+        // 批量弹出时预取后继，平滑 tight loop 的访问延迟。
+        prefetch_next(next);
         cur = next;
     }
     free_list_ = cur;

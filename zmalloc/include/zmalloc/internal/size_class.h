@@ -7,6 +7,7 @@
 #ifndef ZMALLOC_INTERNAL_SIZE_CLASS_H_
 #define ZMALLOC_INTERNAL_SIZE_CLASS_H_
 
+#include <array>
 #include <atomic>
 #include <cassert>
 #include <cstddef>
@@ -28,7 +29,7 @@ struct SizeClassLookup {
     uint16_t num_pages;  // central 向 page cache 申请 span 时的页数建议值。
 };
 
-extern SizeClassLookup g_size_class_lookup[kSizeClassLookupLen];
+extern std::array<SizeClassLookup, kSizeClassLookupLen> g_size_class_lookup;
 extern std::atomic<bool> g_size_class_lookup_ready;
 
 /**

@@ -7,6 +7,8 @@
 #ifndef ZMALLOC_INTERNAL_THREAD_CACHE_H_
 #define ZMALLOC_INTERNAL_THREAD_CACHE_H_
 
+#include <array>
+
 #include "common.h"
 #include "zmalloc/internal/free_list.h"
 #include "zmalloc/internal/size_class.h"
@@ -30,7 +32,7 @@ namespace zmalloc {
 class ThreadCache : public NonCopyable {
   public:
     // 释放路径触发的软预算；分配补货及低水位回收不保证立即低于预算。
-    static constexpr size_t kCacheBudget = 1024 * 1024;
+    static constexpr size_t kCacheBudget = THREAD_CACHE_BUDGET;
 
     /** @brief 为当前线程分配一个小对象；缓存未命中时向共享缓存批量补货。 */
     ZM_ALWAYS_INLINE void *allocate(size_t size) {
@@ -80,9 +82,9 @@ class ThreadCache : public NonCopyable {
     /** @brief 按各大小类低水位回收长期闲置的本地对象。 */
     void scavenge();
 
-    FreeList free_lists_[NFREELISTS];
-    size_t class_sizes_[NFREELISTS] = {};
-    unsigned length_overages_[NFREELISTS] = {};
+    std::array<FreeList, NFREELISTS> free_lists_;
+    std::array<size_t, NFREELISTS> class_sizes_{};
+    std::array<unsigned, NFREELISTS> length_overages_{};
     size_t cached_bytes_ = 0;
     bool closed_ = false;
 };

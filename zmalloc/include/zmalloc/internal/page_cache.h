@@ -7,6 +7,7 @@
 #ifndef ZMALLOC_INTERNAL_PAGE_CACHE_H_
 #define ZMALLOC_INTERNAL_PAGE_CACHE_H_
 
+#include <array>
 #include <cassert>
 #include <mutex>
 
@@ -86,7 +87,7 @@ class PageCache : public NonCopyable {
     PageCache() = default;
 
   private:
-    SpanList span_lists_[NPAGES]; // 按页数分桶
+    std::array<SpanList, NPAGES> span_lists_; // 按页数分桶
     PageMap id_span_map_;         // 页号到 Span 的映射
     ObjectPool<Span> span_pool_;  // Span 对象池
     std::mutex page_mtx_;         // 全局锁

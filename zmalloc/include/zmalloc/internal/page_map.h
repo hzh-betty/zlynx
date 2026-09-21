@@ -13,10 +13,10 @@
 #define ZMALLOC_INTERNAL_PAGE_MAP_H_
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 
 #include "object_pool.h"
 #include "system_alloc.h"
@@ -50,7 +50,7 @@ template <int BITS> class PageMap1 {
         pages_ = aligned_bytes >> PAGE_SHIFT;
 
         array_ = static_cast<void **>(system_alloc(pages_));
-        std::memset(array_, 0, bytes);
+        std::fill_n(array_, LENGTH, nullptr);
     }
 
     /** @brief 归还构造时申请的映射数组。 */
@@ -91,10 +91,7 @@ template <int BITS> class PageMap1 {
         if (!ok) {
             return;
         }
-        const Number last = start + static_cast<Number>(n - 1);
-        for (Number k = start; k <= last; ++k) {
-            array_[static_cast<size_t>(k)] = v;
-        }
+        std::fill_n(array_ + static_cast<size_t>(start), n, v);
     }
 
     // 清除已有映射不应分配 radix tree 节点。
@@ -129,7 +126,7 @@ template <int BITS> class PageMap2 {
 
     /** @brief 初始化根层，并预建可表示地址范围的叶节点。 */
     PageMap2() {
-        std::memset(root_, 0, sizeof(root_));
+        root_.fill(nullptr);
         preallocate_more_memory();
     }
 
@@ -162,11 +159,13 @@ template <int BITS> class PageMap2 {
         if (!ok) {
             return;
         }
-        const Number last = start + static_cast<Number>(n - 1);
-        for (Number k = start; k <= last; ++k) {
-            const Number i1 = k >> LEAF_BITS;
-            const Number i2 = k & (LEAF_LENGTH - 1);
-            root_[i1]->values[i2] = v;
+        while (n != 0) {
+            const Number i1 = start >> LEAF_BITS;
+            const Number i2 = start & (LEAF_LENGTH - 1);
+            const size_t count = std::min<size_t>(n, LEAF_LENGTH - i2);
+            std::fill_n(root_[i1]->values.data() + i2, count, v);
+            start += count;
+            n -= count;
         }
     }
 
@@ -178,7 +177,7 @@ template <int BITS> class PageMap2 {
             const size_t count = std::min<size_t>(n, LEAF_LENGTH - i2);
             assert(i1 < ROOT_LENGTH);
             if (root_[i1] != nullptr) {
-                std::fill_n(root_[i1]->values + i2, count, nullptr);
+                std::fill_n(root_[i1]->values.data() + i2, count, nullptr);
             }
             start += count;
             n -= count;
@@ -197,7 +196,7 @@ template <int BITS> class PageMap2 {
             }
             if (root_[i1] == nullptr) {
                 Leaf *leaf = leaf_pool_.allocate();
-                std::memset(leaf, 0, sizeof(*leaf));
+                leaf->values.fill(nullptr);
                 root_[i1] = leaf;
             }
             key = ((key >> LEAF_BITS) + 1) << LEAF_BITS;
@@ -217,10 +216,10 @@ template <int BITS> class PageMap2 {
     static constexpr int LEAF_LENGTH = 1 << LEAF_BITS;
 
     struct Leaf {
-        void *values[LEAF_LENGTH];
+        std::array<void *, LEAF_LENGTH> values;
     };
 
-    Leaf *root_[ROOT_LENGTH];
+    std::array<Leaf *, ROOT_LENGTH> root_;
     ObjectPool<Leaf> leaf_pool_;
 };
 
@@ -276,12 +275,17 @@ template <int BITS> class PageMap3 {
             return;
         }
 
-        const Number last = start + static_cast<Number>(n - 1);
-        for (Number k = start; k <= last; ++k) {
-            const Number i1 = k >> (LEAF_BITS + INTERIOR_BITS);
-            const Number i2 = (k >> LEAF_BITS) & (INTERIOR_LENGTH - 1);
-            const Number i3 = k & (LEAF_LENGTH - 1);
-            reinterpret_cast<Leaf *>(root_->ptrs[i1]->ptrs[i2])->values[i3] = v;
+        while (n != 0) {
+            const Number i1 = start >> (LEAF_BITS + INTERIOR_BITS);
+            const Number i2 =
+                (start >> LEAF_BITS) & (INTERIOR_LENGTH - 1);
+            const Number i3 = start & (LEAF_LENGTH - 1);
+            const size_t count = std::min<size_t>(n, LEAF_LENGTH - i3);
+            Leaf *leaf =
+                reinterpret_cast<Leaf *>(root_->ptrs[i1]->ptrs[i2]);
+            std::fill_n(leaf->values.data() + i3, count, v);
+            start += count;
+            n -= count;
         }
     }
 
@@ -297,7 +301,7 @@ template <int BITS> class PageMap3 {
                 root_->ptrs[i1]->ptrs[i2] != nullptr) {
                 Leaf *leaf =
                     reinterpret_cast<Leaf *>(root_->ptrs[i1]->ptrs[i2]);
-                std::fill_n(leaf->values + i3, count, nullptr);
+                std::fill_n(leaf->values.data() + i3, count, nullptr);
             }
             start += count;
             n -= count;
@@ -326,7 +330,7 @@ template <int BITS> class PageMap3 {
                 Leaf *leaf = leaf_pool_.allocate();
                 if (leaf == nullptr)
                     return false;
-                std::memset(leaf, 0, sizeof(*leaf));
+                leaf->values.fill(nullptr);
                 root_->ptrs[i1]->ptrs[i2] = reinterpret_cast<Node *>(leaf);
             }
             key = ((key >> LEAF_BITS) + 1) << LEAF_BITS;
@@ -341,17 +345,17 @@ template <int BITS> class PageMap3 {
     static constexpr int LEAF_LENGTH = 1 << LEAF_BITS;
 
     struct Node {
-        Node *ptrs[INTERIOR_LENGTH];
+        std::array<Node *, INTERIOR_LENGTH> ptrs;
     };
 
     struct Leaf {
-        void *values[LEAF_LENGTH];
+        std::array<void *, LEAF_LENGTH> values;
     };
 
     Node *new_node() {
         Node *result = node_pool_.allocate();
         if (result != nullptr) {
-            std::memset(result, 0, sizeof(*result));
+            result->ptrs.fill(nullptr);
         }
         return result;
     }

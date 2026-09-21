@@ -50,7 +50,7 @@ template <typename T> class ObjectPool : public NonCopyable {
 
             auto ensure_block = [&]() {
                 if (memory_ == nullptr || remain_bytes_ < obj_size) {
-                    remain_bytes_ = 128 * 1024;
+                    remain_bytes_ = OBJECT_POOL_BLOCK_SIZE;
                     memory_ = static_cast<char *>(
                         system_alloc(remain_bytes_ >> PAGE_SHIFT));
                 }

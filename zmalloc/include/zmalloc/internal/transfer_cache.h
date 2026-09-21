@@ -12,6 +12,7 @@
 #ifndef ZMALLOC_INTERNAL_TRANSFER_CACHE_H_
 #define ZMALLOC_INTERNAL_TRANSFER_CACHE_H_
 
+#include <array>
 #include <atomic>
 #include <cassert>
 #include <new>
@@ -30,7 +31,7 @@ namespace zmalloc {
 class TransferCacheEntry {
   public:
     // 指针槽位的物理上限；各规格另有按字节预算计算的逻辑容量。
-    static constexpr size_t kMaxCacheSlots = 2048;
+    static constexpr size_t kMaxCacheSlots = TRANSFER_CACHE_SLOTS;
     static constexpr size_t kMask = kMaxCacheSlots - 1;
     static_assert((kMaxCacheSlots & (kMaxCacheSlots - 1)) == 0,
                   "kMaxCacheSlots must be power of two");
@@ -94,7 +95,7 @@ class TransferCacheEntry {
     friend class TransferCache;
     size_t capacity_;
     mutable SpinLock mtx_;
-    void *slots_[kMaxCacheSlots];  // 环形缓冲区
+    std::array<void *, kMaxCacheSlots> slots_; // 环形缓冲区
     size_t head_ = 0;              // 插入位置
     size_t tail_ = 0;              // 取出位置
     std::atomic<size_t> count_{0}; // 当前对象数量
@@ -173,7 +174,7 @@ class TransferCache : public NonCopyable {
     TransferCache();
 
   private:
-    TransferCacheEntry entries_[NFREELISTS];
+    std::array<TransferCacheEntry, NFREELISTS> entries_;
 };
 
 } // namespace zmalloc

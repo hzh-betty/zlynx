@@ -6,6 +6,8 @@
  */
 #include "zmalloc/internal/central_cache.h"
 
+#include <algorithm>
+#include <array>
 #include <cassert>
 
 #include "zmalloc/internal/free_list.h"
@@ -133,11 +135,11 @@ void CentralCache::release_list_to_spans(void *start, size_t size,
         // 2) 持锁阶段：对每个 Span 一次性 splice 链表并批量更新
         // use_count，缩短桶锁持有时间。
         //
-        // 任意长度的归还链表按最多 128 个对象分块，限制栈上分组数组。
-        Span *spans[128];
-        void *group_start[128];
-        void *group_end[128];
-        size_t group_count[128];
+        // 任意长度的归还链表分块处理，限制栈上分组数组。
+        std::array<Span *, CENTRAL_RELEASE_GROUPS> spans;
+        std::array<void *, CENTRAL_RELEASE_GROUPS> group_start;
+        std::array<void *, CENTRAL_RELEASE_GROUPS> group_end;
+        std::array<size_t, CENTRAL_RELEASE_GROUPS> group_count;
         size_t groups = 0;
 
         // last_span 小优化：回收链表中相邻对象常来自同一 span。
@@ -147,7 +149,8 @@ void CentralCache::release_list_to_spans(void *start, size_t size,
         PageId last_begin = 0;
         PageId last_end = 0;
 
-        for (size_t count = 0; start != nullptr && count < 128; ++count) {
+        for (size_t count = 0;
+             start != nullptr && count < CENTRAL_RELEASE_GROUPS; ++count) {
             void *next = next_obj(start);
             next_obj(start) = nullptr;
 
@@ -167,11 +170,10 @@ void CentralCache::release_list_to_spans(void *start, size_t size,
             if (groups > 0 && spans[groups - 1] == span) {
                 gi = groups - 1;
             } else {
-                for (size_t i = 0; i < groups; ++i) {
-                    if (spans[i] == span) {
-                        gi = i;
-                        break;
-                    }
+                const auto found =
+                    std::find(spans.begin(), spans.begin() + groups, span);
+                if (found != spans.begin() + groups) {
+                    gi = static_cast<size_t>(found - spans.begin());
                 }
             }
 
@@ -192,7 +194,7 @@ void CentralCache::release_list_to_spans(void *start, size_t size,
         }
 
         // 桶锁内仅更新对象/链表；空 span 摘除后仍标记在用，直到页锁内回收。
-        Span *free_spans[128];
+        std::array<Span *, CENTRAL_RELEASE_GROUPS> free_spans;
         size_t free_count = 0;
         {
             std::lock_guard<SpinLock> lock(free_list.lock);

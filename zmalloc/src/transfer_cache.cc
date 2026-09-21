@@ -7,7 +7,6 @@
 #include "zmalloc/internal/transfer_cache.h"
 
 #include <algorithm>
-#include <cstring>
 #include <mutex>
 
 #include "zmalloc/internal/size_class.h"
@@ -22,7 +21,8 @@ TransferCache::TransferCache() {
         const auto &e = SizeClass::lookup(size);
         entries_[e.index].capacity_ =
             std::min<size_t>(TransferCacheEntry::kMaxCacheSlots,
-                             std::max<size_t>(2, 64 * 1024 / e.align_size));
+                             std::max<size_t>(
+                                 2, TRANSFER_CACHE_BUDGET / e.align_size));
         size = e.align_size + 1;
     }
 }
@@ -51,12 +51,11 @@ size_t TransferCacheEntry::insert_range(void *batch[], size_t count) {
         return 0;
     }
 
-    // head_ 可能在数组中间，拆成两段 memcpy
+    // head_ 可能在数组中间，拆成两段复制。
     const size_t first = std::min(to_insert, kMaxCacheSlots - head_);
-    std::memcpy(&slots_[head_], batch, first * sizeof(void *));
+    std::copy_n(batch, first, slots_.data() + head_);
     if (to_insert > first) {
-        std::memcpy(&slots_[0], batch + first,
-                    (to_insert - first) * sizeof(void *));
+        std::copy_n(batch + first, to_insert - first, slots_.data());
     }
 
     head_ = (head_ + to_insert) & kMask;
@@ -87,10 +86,9 @@ size_t TransferCacheEntry::remove_range(void *batch[], size_t count) {
     }
 
     const size_t first = std::min(to_remove, kMaxCacheSlots - tail_);
-    std::memcpy(batch, &slots_[tail_], first * sizeof(void *));
+    std::copy_n(slots_.data() + tail_, first, batch);
     if (to_remove > first) {
-        std::memcpy(batch + first, &slots_[0],
-                    (to_remove - first) * sizeof(void *));
+        std::copy_n(slots_.data(), to_remove - first, batch + first);
     }
 
     tail_ = (tail_ + to_remove) & kMask;
@@ -124,10 +122,9 @@ bool TransferCacheEntry::try_insert_range(void *batch[], size_t count,
 
     if (to_insert > 0) { // GCOVR_EXCL_LINE
         const size_t first = std::min(to_insert, kMaxCacheSlots - head_);
-        std::memcpy(&slots_[head_], batch, first * sizeof(void *));
+        std::copy_n(batch, first, slots_.data() + head_);
         if (to_insert > first) {
-            std::memcpy(&slots_[0], batch + first,
-                        (to_insert - first) * sizeof(void *));
+            std::copy_n(batch + first, to_insert - first, slots_.data());
         }
         head_ = (head_ + to_insert) & kMask;
         count_.store(cur_locked + to_insert, std::memory_order_relaxed);
@@ -161,10 +158,9 @@ bool TransferCacheEntry::try_remove_range(void *batch[], size_t count,
 
     if (to_remove > 0) { // GCOVR_EXCL_LINE
         const size_t first = std::min(to_remove, kMaxCacheSlots - tail_);
-        std::memcpy(batch, &slots_[tail_], first * sizeof(void *));
+        std::copy_n(slots_.data() + tail_, first, batch);
         if (to_remove > first) {
-            std::memcpy(batch + first, &slots_[0],
-                        (to_remove - first) * sizeof(void *));
+            std::copy_n(slots_.data(), to_remove - first, batch + first);
         }
         tail_ = (tail_ + to_remove) & kMask;
         count_.store(cur_locked - to_remove, std::memory_order_relaxed);

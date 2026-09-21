@@ -40,7 +40,7 @@ size_t SizeClass::index(size_t bytes, size_t align_shift) {
 
 size_t SizeClass::index(size_t bytes) {
     // 每个区间的桶数量
-    static constexpr size_t kGroupArray[4] = {16, 56, 56, 56};
+    static constexpr std::array<size_t, 4> kGroupArray{{16, 56, 56, 56}};
     if (bytes <= 128) {
         return index(bytes, 3);
     } else if (bytes <= 1024) {
@@ -63,17 +63,17 @@ size_t SizeClass::num_move_size(size_t size) {
     assert(size > 0); // GCOVR_EXCL_LINE
 
     // 用“目标传输字节数”来决定每次批量对象个数。
-    constexpr size_t kTargetBytes = 64 * 1024;
     constexpr size_t kMinObjects = 2;
-    constexpr size_t kMaxObjects = 128;
 
-    size_t num =
-        size <= 512 ? 4096 / size : std::min<size_t>(32, kTargetBytes / size);
+    size_t num = size <= 512
+                     ? 4096 / size
+                     : std::min<size_t>(32,
+                                        SIZE_CLASS_TRANSFER_BYTES / size);
     if (num < kMinObjects) {
         num = kMinObjects;
     }
-    if (num > kMaxObjects) {
-        num = kMaxObjects;
+    if (num > MAX_BATCH_SIZE) {
+        num = MAX_BATCH_SIZE;
     }
     return num;
 }
@@ -88,7 +88,7 @@ size_t SizeClass::num_move_page(size_t size) {
     return npage;
 }
 
-SizeClassLookup g_size_class_lookup[kSizeClassLookupLen];
+std::array<SizeClassLookup, kSizeClassLookupLen> g_size_class_lookup{};
 std::atomic<bool> g_size_class_lookup_ready{false};
 
 namespace {

@@ -10,6 +10,8 @@
 #include <atomic>
 #include <thread>
 
+#include "zmalloc_config.h"
+
 namespace zmalloc {
 
 class NonCopyable {
@@ -33,7 +35,7 @@ class NonCopyable {
  * - unlock 使用 release，形成 happens-before
  * - 指数退避 + 适时 yield，兼顾低竞争与高竞争场景
  */
-class alignas(64) SpinLock : public NonCopyable {
+class alignas(CACHE_LINE_SIZE) SpinLock : public NonCopyable {
   public:
     /** @brief 创建未加锁状态的自旋锁。 */
     SpinLock() noexcept = default;
