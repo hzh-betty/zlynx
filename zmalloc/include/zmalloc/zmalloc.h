@@ -3,6 +3,7 @@
  * @brief zmalloc 对外统一接口
  * @author hzh-betty
  *
+ *
  * 提供高性能的内存分配和释放 API。
  */
 
@@ -22,15 +23,17 @@ namespace zmalloc {
  * @return 内存指针，失败抛出 std::bad_alloc
  */
 ZM_ALWAYS_INLINE void *zmalloc(size_t size) {
+    // 第一步：零字节请求按接口约定直接返回空指针。
     if (ZM_UNLIKELY(size == 0)) {
         return nullptr;
     }
 
     if (ZM_LIKELY(size <= MAX_BYTES)) {
+        // 第二步：小对象进入当前线程缓存，这是最常见的无锁路径。
         return get_thread_cache()->allocate(size);
     }
 
-    // 冷路径：大对象分配
+    // 第三步：大对象按页向 PageCache 申请，记录原始请求大小供释放时分流。
     size_t k_page = (size + PAGE_SIZE - 1) >> PAGE_SHIFT;
     PageCache &pc = PageCache::get_instance();
     pc.page_mtx().lock();
@@ -46,6 +49,7 @@ ZM_ALWAYS_INLINE void *zmalloc(size_t size) {
  * @param ptr 内存指针
  */
 ZM_ALWAYS_INLINE void zfree(void *ptr) {
+    // 第一步：free(nullptr) 无需处理。
     if (ZM_UNLIKELY(ptr == nullptr)) {
         return;
     }
@@ -55,11 +59,12 @@ ZM_ALWAYS_INLINE void zfree(void *ptr) {
     const size_t size = span->obj_size;
 
     if (ZM_LIKELY(size <= MAX_BYTES)) {
+        // 第二步：小对象回到当前线程缓存，后续可能批量流向共享缓存。
         get_thread_cache()->deallocate(ptr, size);
         return;
     }
 
-    // 冷路径：大对象释放
+    // 第三步：大对象整段归还 PageCache；超大 Span 会进一步归还系统。
     pc.page_mtx().lock();
     pc.release_span_to_page_cache(span);
     pc.page_mtx().unlock();

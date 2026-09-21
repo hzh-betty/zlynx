@@ -23,7 +23,14 @@ namespace zmalloc {
 /**
  * @brief 页缓存（单例）
  *
- * 管理 Span 的分配和回收，支持 Span 的合并以减少外碎片。
+ * PageCache 是分配器的页级后端：向系统申请连续页，再按请求页数
+ * 切分为 Span。Span 回收时与相邻空闲 Span 合并，以减少外碎片。
+ *
+ * 空闲 Span 按页数放入 span_lists_。已使用 Span 的每一页通过
+ * PageMap 映射回所属 Span。超过缓存桶上限的大 Span 直接向系统
+ * 申请和归还。
+ *
+ * @note 修改页缓存状态时，调用者必须持有 page_mtx_。
  */
 class PageCache : public NonCopyable {
   public:
@@ -72,9 +79,7 @@ class PageCache : public NonCopyable {
      */
     void release_span_to_page_cache(Span *span);
 
-    /**
-     * @brief 获取页级别锁
-     */
+    /** @brief 返回保护页缓存元数据的互斥锁；调用者负责加锁和解锁。 */
     std::mutex &page_mtx() { return page_mtx_; }
 
   private:

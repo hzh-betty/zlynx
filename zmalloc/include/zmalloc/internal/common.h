@@ -14,12 +14,14 @@ namespace zmalloc {
 
 class NonCopyable {
   public:
+    /** @brief 构造不可复制基类。 */
     NonCopyable() = default;
+    /** @brief 默认析构函数。 */
     ~NonCopyable() = default;
 
-    // 禁止拷贝构造
+    /** @brief 禁止复制，避免派生的锁和缓存对象被意外复制。 */
     NonCopyable(const NonCopyable &) = delete;
-    // 禁止拷贝赋值
+    /** @brief 禁止复制赋值。 */
     NonCopyable &operator=(const NonCopyable &) = delete;
 };
 
@@ -33,7 +35,9 @@ class NonCopyable {
  */
 class alignas(64) SpinLock : public NonCopyable {
   public:
+    /** @brief 创建未加锁状态的自旋锁。 */
     SpinLock() noexcept = default;
+    /** @brief 获取锁；锁被占用时自旋等待。 */
     void lock() noexcept {
         // 快速路径：立即尝试获取锁
         if (!locked_.exchange(true, std::memory_order_acquire)) {
@@ -51,12 +55,14 @@ class alignas(64) SpinLock : public NonCopyable {
         return !locked_.exchange(true, std::memory_order_acquire);
     }
 
+    /** @brief 释放锁，并向后续持锁线程发布临界区写入。 */
     void unlock() noexcept { locked_.store(false, std::memory_order_release); }
 
   private:
     static constexpr int kMaxSpinCount = 64;
     std::atomic<bool> locked_{false};
 
+    /** @brief 执行平台相关的短暂让步指令，降低忙等开销。 */
     static inline void cpu_relax() noexcept {
 #if defined(__x86_64__) || defined(__i386__)
         __builtin_ia32_pause();
@@ -67,6 +73,7 @@ class alignas(64) SpinLock : public NonCopyable {
 #endif
     }
 
+    /** @brief 锁竞争时逐步增加自旋间隔，必要时让出线程时间片。 */
     void lock_slow() noexcept {
         int spin_count = 1;
         for (;;) {

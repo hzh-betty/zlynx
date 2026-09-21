@@ -20,6 +20,12 @@ namespace zmalloc {
 /**
  * @brief 定长内存池模板类
  * @tparam T 管理的对象类型
+ *
+ * ObjectPool 从系统按 128 KiB 大块申请内存，再顺序切分为 T。
+ * 释放的对象利用自身首字串成自由链表并优先复用。它用于 Span、
+ * PageMap 节点等内部元数据，避免内部对象进入 zmalloc 形成递归分配。
+ *
+ * @note ObjectPool 不提供锁，上层组件负责串行化访问。
  */
 template <typename T> class ObjectPool : public NonCopyable {
   public:

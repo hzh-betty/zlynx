@@ -2,6 +2,7 @@
  * @file central_cache.cc
  * @brief CentralCache 实现
  * @author hzh-betty
+
  */
 #include "zmalloc/internal/central_cache.h"
 
@@ -37,6 +38,7 @@ size_t CentralCache::fetch_range_obj(void *&start, void *&end, size_t n,
 
 size_t CentralCache::fetch_range_obj(void *&start, void *&end, size_t n,
                                      size_t size, size_t index) {
+    // 第一步：规范化请求并锁定对应大小类；不同大小类互不阻塞。
     start = end = nullptr;
     if (n == 0) {
         return 0;
@@ -51,6 +53,7 @@ size_t CentralCache::fetch_range_obj(void *&start, void *&end, size_t n,
             break;
         }
         Span *span = get_one_span(free_list, size, lock);
+        // 第二步：从 Span 的自由链表头摘取本次所需的对象段。
         void *head = span->free_list;
         void *tail = head;
         size_t count = 1;
@@ -61,6 +64,7 @@ size_t CentralCache::fetch_range_obj(void *&start, void *&end, size_t n,
         span->free_list = next_obj(tail);
         next_obj(tail) = nullptr;
         span->use_count += count;
+        // 第三步：把多个 Span 提供的对象段拼成一条链返回调用方。
         if (end != nullptr) {
             next_obj(end) = head;
         } else {
@@ -69,6 +73,7 @@ size_t CentralCache::fetch_range_obj(void *&start, void *&end, size_t n,
         end = tail;
         total += count;
         if (span->free_list == nullptr) {
+            // Span 已无可分配对象，移到 empty 链表等待对象归还。
             free_list.nonempty.erase(span);
             free_list.empty.push_front(span);
         }
@@ -78,6 +83,7 @@ size_t CentralCache::fetch_range_obj(void *&start, void *&end, size_t n,
 
 Span *CentralCache::get_one_span(CentralFreeList &free_list, size_t size,
                                  std::unique_lock<SpinLock> &lock) {
+    // 快路径：直接复用已有可分配 Span。
     if (!free_list.nonempty.empty()) {
         return free_list.nonempty.begin();
     }
@@ -93,6 +99,7 @@ Span *CentralCache::get_one_span(CentralFreeList &free_list, size_t size,
         span->is_use = true;
         span->obj_size = size;
     }
+    // 将连续页按固定对象大小原地串成 intrusive 自由链表。
     char *head = reinterpret_cast<char *>(span->page_id << PAGE_SHIFT);
     const size_t count = (span->n << PAGE_SHIFT) / size;
     span->free_list = head;
@@ -101,6 +108,7 @@ Span *CentralCache::get_one_span(CentralFreeList &free_list, size_t size,
         head += size;
     }
     next_obj(head) = nullptr;
+    // 完成初始化后重新获取桶锁，使其他线程只能看到完整的 Span 状态。
     lock.lock();
     free_list.nonempty.push_front(span);
     return span;

@@ -31,8 +31,8 @@ struct Span {
     Span *next = nullptr;
     Span *prev = nullptr;
 
-    size_t obj_size = 0;  // 当前切分后的对象大小（字节）。
-    size_t use_count = 0; // 已分配出去但尚未归还的对象个数。
+    size_t obj_size = 0;       // 当前切分后的对象大小（字节）。
+    size_t use_count = 0;      // 已分配出去但尚未归还的对象个数。
     void *free_list = nullptr; // span 内部空闲对象链表头。
 
     bool is_use = false; // 是否处于活跃分配状态。
@@ -46,15 +46,23 @@ struct Span {
  */
 class SpanList {
   public:
+    /** @brief 创建只含哨兵节点的空循环链表。 */
     SpanList();
 
+    /** @brief 返回首个 Span；空表时返回 end()。 */
     Span *begin() { return head_->next; }
+    /** @brief 返回哨兵节点，作为遍历结束标记。 */
     Span *end() { return head_; }
+    /** @brief 判断链表是否为空。 */
     bool empty() const { return head_ == head_->next; }
 
+    /** @brief 将 Span 插入链表头。 */
     void push_front(Span *span);
+    /** @brief 移除并返回链表头 Span；调用前链表必须非空。 */
     Span *pop_front();
+    /** @brief 将 new_span 插入到 pos 之前。 */
     void insert(Span *pos, Span *new_span);
+    /** @brief 从链表中摘除指定 Span，不释放其元数据。 */
     void erase(Span *pos);
 
   private:

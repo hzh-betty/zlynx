@@ -24,6 +24,7 @@ void clear_span_mapping(PageMap &id_span_map, Span *span) {
 Span *PageCache::new_span(size_t k) {
     assert(k > 0);
 
+    // 第一步：超过桶管理上限的大请求直接向系统申请，不参与切分与合并。
     // 关键策略：
     // - 小于等于 (NPAGES-1) 的 span：在 PageCache
     // 内按页数分桶管理，可切分/合并。
@@ -42,7 +43,7 @@ Span *PageCache::new_span(size_t k) {
         return span;
     }
 
-    // 关键步骤：优先从精确桶（k 页桶）直接取，避免切分。
+    // 第二步：优先从精确桶（k 页桶）直接取，避免切分。
     if (!span_lists_[k].empty()) {
         Span *k_span = span_lists_[k].pop_front();
 
@@ -61,7 +62,7 @@ Span *PageCache::new_span(size_t k) {
         return k_span;
     }
 
-    // 关键步骤：向上找更大的桶，切分一个 k 页 span。
+    // 第三步：精确桶为空时向上找更大的桶，切分出一个 k 页 Span。
     // 切分规则：从大 span 的“头部”切出 k 页，剩余部分回挂到对应桶。
     for (size_t i = k + 1; i < NPAGES; ++i) {
         if (!span_lists_[i].empty()) {
@@ -102,7 +103,8 @@ Span *PageCache::new_span(size_t k) {
         }
     }
 
-    // 没有可切分的大页 span：向系统申请 (NPAGES-1) 页作为“补货”，挂入最大桶。
+    // 第四步：没有可切分 Span 时向系统补充最大缓存块，再重新执行查找。
+    // 向系统申请 (NPAGES-1) 页作为“补货”，挂入最大桶。
     // 然后递归再走一次 new_span(k)（此时一定能在向上搜索中命中）。
     Span *big_span = span_pool_.allocate();
     void *ptr = system_alloc(NPAGES - 1);
@@ -122,9 +124,10 @@ Span *PageCache::new_span(size_t k) {
 }
 
 void PageCache::release_span_to_page_cache(Span *span) {
+    // 第一步：清除旧映射，避免合并过程中查询到已失效的 Span 边界。
     clear_span_mapping(id_span_map_, span);
 
-    // 大于 128 页直接释放给系统
+    // 第二步：未纳入桶管理的大 Span 直接释放给系统。
     if (span->n > NPAGES - 1) {
         void *ptr = reinterpret_cast<void *>(span->page_id << PAGE_SHIFT);
         system_free(ptr, span->n);
@@ -132,7 +135,7 @@ void PageCache::release_span_to_page_cache(Span *span) {
         return;
     }
 
-    // 关键步骤：尝试与相邻空闲 span 合并，减少外碎片。
+    // 第三步：尝试与相邻空闲 Span 合并，减少外碎片。
     // 停止条件：
     // - 相邻 span 不存在
     // - 相邻 span 正在使用（is_use==true）
@@ -184,7 +187,7 @@ void PageCache::release_span_to_page_cache(Span *span) {
         span_pool_.deallocate(next_span);
     }
 
-    // 关键步骤：合并完成后，按最终页数把 span 挂回对应桶，并建立首尾页映射。
+    // 第四步：按合并后的页数挂回对应桶，并重建首尾页映射。
     span->obj_size = 0;
     span->use_count = 0;
     span->free_list = nullptr;

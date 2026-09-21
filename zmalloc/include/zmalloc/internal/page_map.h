@@ -1,10 +1,12 @@
 /**
  * @file page_map.h
  * @brief 基数树实现，用于页号到 Span 的高效映射
+ *
  * @author hzh-betty
  *
  * X86 (32位): 二层基数树 PageMap2
- * X64 (64位): 三层基数树 PageMap3
+ * X64 (64位):
+ * 三层基数树 PageMap3
  */
 
 #ifndef ZMALLOC_INTERNAL_PAGE_MAP_H_
@@ -39,6 +41,7 @@ template <int BITS> class PageMap1 {
 
     static constexpr size_t LENGTH = static_cast<size_t>(1) << BITS;
 
+    /** @brief 分配并清零固定大小的映射数组。 */
     PageMap1() {
         // 需要开辟数组的大小（字节）
         const size_t bytes = sizeof(void *) * LENGTH;
@@ -50,6 +53,7 @@ template <int BITS> class PageMap1 {
         std::memset(array_, 0, bytes);
     }
 
+    /** @brief 归还构造时申请的映射数组。 */
     ~PageMap1() {
         if (array_ != nullptr) {
             system_free(array_, pages_);
@@ -61,6 +65,7 @@ template <int BITS> class PageMap1 {
     PageMap1(const PageMap1 &) = delete;
     PageMap1 &operator=(const PageMap1 &) = delete;
 
+    /** @brief 查询页号 k；超出本层可表示范围时返回 nullptr。 */
     void *get(Number k) const {
         if ((k >> BITS) > 0) {
             return nullptr;
@@ -68,6 +73,7 @@ template <int BITS> class PageMap1 {
         return array_[static_cast<size_t>(k)];
     }
 
+    /** @brief 设置单个页号映射；页号必须在本层范围内。 */
     void set(Number k, void *v) {
         assert((k >> BITS) == 0);
         array_[static_cast<size_t>(k)] = v;
@@ -75,6 +81,7 @@ template <int BITS> class PageMap1 {
 
     // 批量设置 [start, start+n-1] 的映射。
     // 适用于 Span 按页连续建映射的场景。
+    /** @brief 将连续 n 个页号映射到同一指针。 */
     void set_range(Number start, size_t n, void *v) {
         if (n == 0) {
             return;
@@ -91,11 +98,13 @@ template <int BITS> class PageMap1 {
     }
 
     // 清除已有映射不应分配 radix tree 节点。
+    /** @brief 清除连续 n 个页号的映射。 */
     void clear_range(Number start, size_t n) {
         assert(ensure(start, n));
         std::fill_n(array_ + start, n, nullptr);
     }
 
+    /** @brief 检查连续页号范围是否可表示；固定数组不会额外分配节点。 */
     bool ensure(Number start, size_t n) {
         if (n == 0) {
             return true;
@@ -118,11 +127,13 @@ template <int BITS> class PageMap2 {
   public:
     using Number = uintptr_t;
 
+    /** @brief 初始化根层，并预建可表示地址范围的叶节点。 */
     PageMap2() {
         std::memset(root_, 0, sizeof(root_));
         preallocate_more_memory();
     }
 
+    /** @brief 查询页号 k；未建叶节点或页号越界时返回 nullptr。 */
     void *get(Number k) const {
         const Number i1 = k >> LEAF_BITS;
         const Number i2 = k & (LEAF_LENGTH - 1);
@@ -132,6 +143,7 @@ template <int BITS> class PageMap2 {
         return root_[i1]->values[i2];
     }
 
+    /** @brief 设置单个页号映射；对应叶节点须已由 ensure 建立。 */
     void set(Number k, void *v) {
         const Number i1 = k >> LEAF_BITS;
         const Number i2 = k & (LEAF_LENGTH - 1);
@@ -140,6 +152,7 @@ template <int BITS> class PageMap2 {
     }
 
     // 批量设置 [start, start+n-1] 的映射。
+    /** @brief 将连续 n 个页号映射到同一指针，并按需建立叶节点。 */
     void set_range(Number start, size_t n, void *v) {
         if (n == 0) {
             return;
@@ -157,6 +170,7 @@ template <int BITS> class PageMap2 {
         }
     }
 
+    /** @brief 清除连续 n 个页号的映射，不为缺失叶节点分配内存。 */
     void clear_range(Number start, size_t n) {
         while (n != 0) {
             const Number i1 = start >> LEAF_BITS;
@@ -171,6 +185,7 @@ template <int BITS> class PageMap2 {
         }
     }
 
+    /** @brief 确保连续页号范围的叶节点存在；越界时返回 false。 */
     bool ensure(Number start, size_t n) {
         if (n == 0) {
             return true;
@@ -190,6 +205,7 @@ template <int BITS> class PageMap2 {
         return true;
     }
 
+    /** @brief 预建整段页号范围对应的叶节点。 */
     void preallocate_more_memory() {
         ensure(0, static_cast<size_t>(1) << BITS);
     }
@@ -216,8 +232,10 @@ template <int BITS> class PageMap3 {
   public:
     using Number = uintptr_t;
 
+    /** @brief 创建根节点；更深层节点在首次映射时按需建立。 */
     PageMap3() { root_ = new_node(); }
 
+    /** @brief 查询页号 k；路径节点尚未建立或页号越界时返回 nullptr。 */
     void *get(Number k) const {
         const Number i1 = k >> (LEAF_BITS + INTERIOR_BITS);
         const Number i2 = (k >> LEAF_BITS) & (INTERIOR_LENGTH - 1);
@@ -230,6 +248,7 @@ template <int BITS> class PageMap3 {
         return reinterpret_cast<Leaf *>(root_->ptrs[i1]->ptrs[i2])->values[i3];
     }
 
+    /** @brief 设置单个页号映射，必要时建立对应的中间节点和叶节点。 */
     void set(Number k, void *v) {
         assert((k >> BITS) == 0);
         const Number i1 = k >> (LEAF_BITS + INTERIOR_BITS);
@@ -246,6 +265,7 @@ template <int BITS> class PageMap3 {
     // 批量设置 [start, start+n-1] 的映射。
     // 说明：set(k) 内部每次都会 ensure(k, 1)，对连续页映射来说开销较大。
     // 这里改成 ensure(start, n) 一次性建好节点/叶子，再逐页写入。
+    /** @brief 将连续 n 个页号映射到同一指针，先批量建立所需节点。 */
     void set_range(Number start, size_t n, void *v) {
         if (n == 0) {
             return;
@@ -265,6 +285,7 @@ template <int BITS> class PageMap3 {
         }
     }
 
+    /** @brief 清除连续 n 个页号的映射，不为缺失节点分配内存。 */
     void clear_range(Number start, size_t n) {
         while (n != 0) {
             const Number i1 = start >> (LEAF_BITS + INTERIOR_BITS);
@@ -283,6 +304,7 @@ template <int BITS> class PageMap3 {
         }
     }
 
+    /** @brief 确保连续页号范围的路径节点存在；页号越界时返回 false。 */
     bool ensure(Number start, size_t n) {
         if (n == 0) {
             return true;

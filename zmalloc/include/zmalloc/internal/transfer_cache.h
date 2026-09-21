@@ -35,6 +35,7 @@ class TransferCacheEntry {
     static_assert((kMaxCacheSlots & (kMaxCacheSlots - 1)) == 0,
                   "kMaxCacheSlots must be power of two");
 
+    /** @brief 创建一个容量不超过物理槽位数的环形缓存。 */
     explicit TransferCacheEntry(size_t capacity = kMaxCacheSlots)
         : capacity_(capacity) {
         assert(capacity <= kMaxCacheSlots);
@@ -102,7 +103,12 @@ class TransferCacheEntry {
 /**
  * @brief 传输缓存管理器（单例）
  *
- * 管理所有 size class 的 TransferCacheEntry。
+ * TransferCache 位于 ThreadCache 与 CentralCache 之间。一个线程
+ * 归还的批量对象可以直接被另一线程取得，从而减少访问 Span 链表和
+ * PageMap 的次数。
+ *
+ * 每个大小类使用独立的定长环形缓冲区和锁。容量按对象字节数限制，
+ * 避免大对象规格占用过多常驻内存。
  */
 class TransferCache : public NonCopyable {
   public:
@@ -111,8 +117,8 @@ class TransferCache : public NonCopyable {
      */
     static TransferCache &get_instance() {
         // 缓存可被晚期 TLS/静态析构访问，生命周期覆盖整个进程。
-        alignas(
-            TransferCache) static unsigned char storage[sizeof(TransferCache)];
+        alignas(TransferCache) static unsigned char
+            storage[sizeof(TransferCache)];
         static TransferCache *instance = new (storage) TransferCache;
         return *instance;
     }
