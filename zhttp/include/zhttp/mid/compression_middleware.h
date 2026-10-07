@@ -112,12 +112,6 @@ class CompressionMiddleware : public Middleware {
     bool compress_with_brotli(const std::string &input,
                               std::string &output) const;
 
-    /**
-     * @brief 向响应追加 Vary: Accept-Encoding（避免重复）
-     * @param response 响应对象
-     */
-    void append_vary_accept_encoding(HttpResponse &response) const;
-
   private:
     Options options_;
 };

@@ -9,7 +9,6 @@
 
 #include "zhttp/http_common.h"
 
-#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -35,7 +34,6 @@ class HttpRequest {
     using Headers = std::unordered_map<std::string, std::string>;
     using Params = std::unordered_map<std::string, std::string>;
     using Json = nlohmann::json;
-    using RemoteAddrResolver = std::function<std::string()>;
 
     HttpRequest() = default;
 
@@ -237,12 +235,6 @@ class HttpRequest {
     void set_remote_addr(std::string &&addr);
 
     /**
-     * @brief 延迟设置远端地址解析逻辑
-     * @details 只有第一次访问 remote_addr() 时才真正执行 resolver。
-     */
-    void set_remote_addr_resolver(RemoteAddrResolver resolver);
-
-    /**
      * @brief 设置路径参数
      * @param key 参数名称
      * @param value 参数值
@@ -360,9 +352,7 @@ class HttpRequest {
     Headers headers_;
     Headers normalized_headers_;
     std::string body_;
-    mutable std::string remote_addr_;
-    mutable bool remote_addr_resolved_ = true;
-    mutable RemoteAddrResolver remote_addr_resolver_;
+    std::string remote_addr_;
 
     // 路由和查询参数解析结果。
     Params path_params_;  // 路径参数

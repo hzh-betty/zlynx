@@ -15,7 +15,7 @@ TimeoutMiddleware::TimeoutMiddleware(TimeoutMiddleware::Options options)
 bool TimeoutMiddleware::before(const HttpRequest::ptr &request,
                                HttpResponse &) {
     std::lock_guard<std::mutex> lock(mutex_);
-    begin_times_[request.get()] = TimerHelper::steady_now();
+    begin_times_[request.get()] = std::chrono::steady_clock::now();
     return true;
 }
 
@@ -43,7 +43,7 @@ void TimeoutMiddleware::after(const HttpRequest::ptr &request,
     }
 
     const auto elapsed =
-        TimerHelper::to_milliseconds(TimerHelper::steady_now() - begin);
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - begin);
 
     // 若未超时则直接返回，避免不必要的响应覆写逻辑。
     if (elapsed.count() <= static_cast<int64_t>(options_.timeout_ms)) {

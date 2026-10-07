@@ -226,6 +226,29 @@ void trim(std::string &str) {
     }
 }
 
+std::string normalize_mime_type(const std::string &content_type) {
+    std::string mime = content_type.substr(0, content_type.find(';'));
+    trim(mime);
+    return to_lower(mime);
+}
+
+bool header_contains_token(const std::string &header_value,
+                           const std::string &target) {
+    const std::string expected = to_lower(target);
+    for (std::string token : split_string(header_value, ',')) {
+        trim(token);
+        if (!token.empty() && to_lower(token) == expected) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool is_body_allowed(HttpStatus status) {
+    const int code = static_cast<int>(status);
+    return !(code >= 100 && code < 200) && code != 204 && code != 304;
+}
+
 std::vector<std::string> split_string(const std::string &str, char delimiter) {
     std::vector<std::string> parts;
 

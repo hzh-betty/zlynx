@@ -29,35 +29,6 @@ enum class NodeType : uint8_t {
     CATCH_ALL = 2 // 通配符节点 (*)
 };
 
-/**
- * @brief 路由处理器包装类
- */
-class RouteHandlerWrapper {
-  public:
-    RouteHandlerWrapper() = default;
-
-    RouteHandlerWrapper(RouterCallback callback)
-        : callback_(std::move(callback)) {}
-
-    RouteHandlerWrapper(RouteHandler::ptr handler)
-        : handler_(std::move(handler)) {}
-
-    void operator()(const HttpRequest::ptr &request,
-                    HttpResponse &response) const {
-        if (callback_) {
-            callback_(request, response);
-        } else if (handler_) {
-            handler_->handle(request, response);
-        }
-    }
-
-    explicit operator bool() const { return callback_ || handler_; }
-
-  private:
-    RouterCallback callback_;
-    RouteHandler::ptr handler_;
-};
-
 // 前向声明
 class RadixNode;
 using RadixNodePtr = std::shared_ptr<RadixNode>;
@@ -69,7 +40,7 @@ struct NodeRegexRoute {
     std::regex regex;                     // 编译后的正则
     std::string pattern;                  // 原始正则模式
     std::vector<std::string> param_names; // 捕获组参数名
-    std::unordered_map<HttpMethod, RouteHandlerWrapper> handlers;
+    std::unordered_map<HttpMethod, RouterCallback> handlers;
 };
 
 /**
@@ -78,7 +49,7 @@ struct NodeRegexRoute {
  */
 class RadixNode {
   public:
-    using MethodHandlers = std::unordered_map<HttpMethod, RouteHandlerWrapper>;
+    using MethodHandlers = std::unordered_map<HttpMethod, RouterCallback>;
 
     RadixNode() = default;
     explicit RadixNode(const std::string &path,
@@ -164,7 +135,7 @@ class RadixNode {
  */
 struct RouteMatchContext {
     bool found = false;
-    RouteHandlerWrapper handler;
+    RouterCallback handler;
     std::unordered_map<std::string, std::string> params; // 参数名 -> 值
 
     enum class MatchType { NONE, DYNAMIC, REGEX } match_type = MatchType::NONE;
@@ -182,24 +153,19 @@ class RadixTree {
      * @brief 插入动态路由
      */
     void insert(HttpMethod method, const std::string &path,
-                RouteHandlerWrapper handler);
+                RouterCallback handler);
 
     /**
      * @brief 插入正则路由（按前缀分桶）
      */
     void insert_regex(HttpMethod method, const std::string &pattern,
                       const std::vector<std::string> &param_names,
-                      RouteHandlerWrapper handler);
+                      RouterCallback handler);
 
     /**
      * @brief 统一查找（动态路由优先，然后正则路由）
      */
     RouteMatchContext find(const std::string &path, HttpMethod method) const;
-
-    /**
-     * @brief 获取根节点
-     */
-    RadixNodePtr root() const { return root_; }
 
   private:
     /**

@@ -65,34 +65,6 @@ CorsMiddleware::resolve_allow_origin(const std::string &origin) const {
     return origin;
 }
 
-void CorsMiddleware::append_vary_value(HttpResponse &response,
-                                       const std::string &value) const {
-    if (value.empty()) {
-        return;
-    }
-
-    auto it = response.headers().find("Vary");
-    if (it == response.headers().end()) {
-        response.header("Vary", value);
-        return;
-    }
-
-    // 避免重复拼接相同 Vary token（大小写不敏感比较）。
-    std::string existing = it->second;
-    std::vector<std::string> tokens = split_string(existing, ',');
-    const std::string target = to_lower(value);
-    for (auto &token : tokens) {
-        trim(token);
-        if (to_lower(token) == target) {
-            return;
-        }
-    }
-
-    existing += ", ";
-    existing += value;
-    response.header("Vary", existing);
-}
-
 void CorsMiddleware::apply_common_cors_headers(const HttpRequest::ptr &request,
                                                HttpResponse &response) const {
     const std::string origin = request->header(kHeaderOrigin);
@@ -115,7 +87,7 @@ void CorsMiddleware::apply_common_cors_headers(const HttpRequest::ptr &request,
     // 当返回值依赖请求 Origin 时，建议显式声明 Vary: Origin，
     // 防止 CDN/代理把某个 Origin 的响应复用给其它 Origin。
     if (options_.add_vary_origin && allow_origin != "*") {
-        append_vary_value(response, "Origin");
+        response.append_vary("Origin");
     }
 }
 

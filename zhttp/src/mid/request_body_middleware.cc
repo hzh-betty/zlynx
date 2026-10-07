@@ -13,19 +13,6 @@
 namespace zhttp {
 namespace mid {
 
-namespace {
-
-std::string normalize_mime_type(std::string content_type) {
-    const size_t semi = content_type.find(';');
-    if (semi != std::string::npos) {
-        content_type.resize(semi);
-    }
-    trim(content_type);
-    return to_lower(content_type);
-}
-
-} // namespace
-
 RequestBodyMiddleware::RequestBodyMiddleware(
     RequestBodyMiddleware::Options options)
     : options_(std::move(options)) {}

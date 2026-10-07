@@ -11,17 +11,10 @@
 #include <cstdint>
 #include <string>
 
+#include "zco/sched.h"
+
 namespace zhttp {
 
-/**
- * @brief 协程栈模式
- * @details
- * 独立栈模式更直观；共享栈模式通常更省内存，但对运行时切换策略有额外要求。
- */
-enum class StackMode {
-    INDEPENDENT, // 独立栈模式（默认）
-    SHARED       // 共享栈模式
-};
 
 /**
  * @brief HTTP 服务器配置
@@ -36,7 +29,7 @@ struct ServerConfig {
 
     // 线程与协程配置。
     size_t num_threads = 4;
-    StackMode stack_mode = StackMode::INDEPENDENT;
+    zco::StackModel stack_mode = zco::StackModel::kIndependent;
 
     // SSL/TLS 配置。
     bool enable_https = false;
@@ -74,18 +67,18 @@ struct ServerConfig {
 };
 
 /**
- * @brief 将字符串转换为 StackMode
+ * @brief 将字符串转换为 zco::StackModel
  * @param str 字符串形式的栈模式
  * @return 对应的枚举值
  */
-StackMode string_to_stack_mode(const std::string &str);
+zco::StackModel string_to_stack_mode(const std::string &str);
 
 /**
- * @brief 将 StackMode 转换为字符串
+ * @brief 将 zco::StackModel 转换为字符串
  * @param mode 栈模式枚举
  * @return 字符串形式的模式名
  */
-std::string stack_mode_to_string(StackMode mode);
+std::string stack_mode_to_string(zco::StackModel mode);
 
 } // namespace zhttp
 

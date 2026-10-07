@@ -166,18 +166,18 @@ HttpServerBuilder &HttpServerBuilder::threads(size_t num_threads) {
     return *this;
 }
 
-HttpServerBuilder &HttpServerBuilder::stack_mode(StackMode mode) {
+HttpServerBuilder &HttpServerBuilder::stack_mode(zco::StackModel mode) {
     config_.stack_mode = mode;
     return *this;
 }
 
 HttpServerBuilder &HttpServerBuilder::use_shared_stack() {
-    config_.stack_mode = StackMode::SHARED;
+    config_.stack_mode = zco::StackModel::kShared;
     return *this;
 }
 
 HttpServerBuilder &HttpServerBuilder::use_independent_stack() {
-    config_.stack_mode = StackMode::INDEPENDENT;
+    config_.stack_mode = zco::StackModel::kIndependent;
     return *this;
 }
 
@@ -207,56 +207,56 @@ HttpServerBuilder &HttpServerBuilder::use(mid::Middleware::ptr middleware) {
 HttpServerBuilder &HttpServerBuilder::get(const std::string &path,
                                           RouterCallback callback) {
     routes_.emplace_back(HttpMethod::GET, path,
-                         RouteHandlerWrapper(std::move(callback)));
+                         std::move(callback));
     return *this;
 }
 
 HttpServerBuilder &HttpServerBuilder::get(const std::string &path,
                                           RouteHandler::ptr handler) {
     routes_.emplace_back(HttpMethod::GET, path,
-                         RouteHandlerWrapper(std::move(handler)));
+                         make_route_callback(std::move(handler)));
     return *this;
 }
 
 HttpServerBuilder &HttpServerBuilder::post(const std::string &path,
                                            RouterCallback callback) {
     routes_.emplace_back(HttpMethod::POST, path,
-                         RouteHandlerWrapper(std::move(callback)));
+                         std::move(callback));
     return *this;
 }
 
 HttpServerBuilder &HttpServerBuilder::post(const std::string &path,
                                            RouteHandler::ptr handler) {
     routes_.emplace_back(HttpMethod::POST, path,
-                         RouteHandlerWrapper(std::move(handler)));
+                         make_route_callback(std::move(handler)));
     return *this;
 }
 
 HttpServerBuilder &HttpServerBuilder::put(const std::string &path,
                                           RouterCallback callback) {
     routes_.emplace_back(HttpMethod::PUT, path,
-                         RouteHandlerWrapper(std::move(callback)));
+                         std::move(callback));
     return *this;
 }
 
 HttpServerBuilder &HttpServerBuilder::put(const std::string &path,
                                           RouteHandler::ptr handler) {
     routes_.emplace_back(HttpMethod::PUT, path,
-                         RouteHandlerWrapper(std::move(handler)));
+                         make_route_callback(std::move(handler)));
     return *this;
 }
 
 HttpServerBuilder &HttpServerBuilder::del(const std::string &path,
                                           RouterCallback callback) {
     routes_.emplace_back(HttpMethod::DELETE, path,
-                         RouteHandlerWrapper(std::move(callback)));
+                         std::move(callback));
     return *this;
 }
 
 HttpServerBuilder &HttpServerBuilder::del(const std::string &path,
                                           RouteHandler::ptr handler) {
     routes_.emplace_back(HttpMethod::DELETE, path,
-                         RouteHandlerWrapper(std::move(handler)));
+                         make_route_callback(std::move(handler)));
     return *this;
 }
 
@@ -269,7 +269,7 @@ HttpServerBuilder::websocket(const std::string &path,
 
     routes_.emplace_back(
         HttpMethod::GET, path,
-        RouteHandlerWrapper([callbacks_ref, options](const HttpRequest::ptr &,
+        RouterCallback([callbacks_ref, options](const HttpRequest::ptr &,
                                                      HttpResponse &response) {
             response.upgrade_to_websocket(*callbacks_ref, options);
         }));
@@ -277,12 +277,12 @@ HttpServerBuilder::websocket(const std::string &path,
 }
 
 HttpServerBuilder &HttpServerBuilder::not_found(RouterCallback callback) {
-    not_found_handler_ = RouteHandlerWrapper(std::move(callback));
+    not_found_handler_ = std::move(callback);
     return *this;
 }
 
 HttpServerBuilder &HttpServerBuilder::not_found(RouteHandler::ptr handler) {
-    not_found_handler_ = RouteHandlerWrapper(std::move(handler));
+    not_found_handler_ = make_route_callback(std::move(handler));
     return *this;
 }
 
@@ -322,11 +322,7 @@ std::shared_ptr<HttpServer> HttpServerBuilder::build() {
 
     configure_unified_logging(config_);
 
-    if (config_.stack_mode == StackMode::SHARED) {
-        zco::co_stack_model(zco::StackModel::kShared);
-    } else {
-        zco::co_stack_model(zco::StackModel::kIndependent);
-    }
+    zco::co_stack_model(config_.stack_mode);
 
     ZHTTP_LOG_INFO("Creating server with {} threads, stack_mode={}",
                    config_.num_threads,
@@ -367,23 +363,14 @@ std::shared_ptr<HttpServer> HttpServerBuilder::build() {
     for (auto &route : routes_) {
         HttpMethod method = std::get<0>(route);
         const std::string &path = std::get<1>(route);
-        RouteHandlerWrapper &handler = std::get<2>(route);
+        RouterCallback &handler = std::get<2>(route);
 
-        // 使用回调包装
-        server->router().add_route(
-            method, path,
-            [handler](const HttpRequest::ptr &req, HttpResponse &resp) {
-                handler(req, resp);
-            });
+        server->router().add_route(method, path, handler);
     }
 
     // 设置 404 处理器
     if (not_found_handler_) {
-        server->router().set_not_found_handler(
-            [handler = not_found_handler_](const HttpRequest::ptr &req,
-                                           HttpResponse &resp) {
-                handler(req, resp);
-            });
+        server->router().set_not_found_handler(not_found_handler_);
     }
 
     // 设置异常处理器

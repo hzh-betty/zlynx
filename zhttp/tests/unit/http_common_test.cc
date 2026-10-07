@@ -6,6 +6,27 @@
 namespace zhttp {
 namespace {
 
+TEST(HttpCommonTest, HeaderTokenMatchingIsCaseInsensitiveAndExact) {
+    EXPECT_TRUE(header_contains_token("keep-alive, Upgrade", "UPGRADE"));
+    EXPECT_TRUE(header_contains_token(", \tchunked \t,", "chunked"));
+    EXPECT_FALSE(header_contains_token("X-Accept-Encoding", "accept-encoding"));
+    EXPECT_FALSE(header_contains_token("", "chunked"));
+    EXPECT_FALSE(header_contains_token(", ,", ""));
+}
+
+TEST(HttpCommonTest, MimeNormalizationAndBodyStatusRules) {
+    EXPECT_EQ(normalize_mime_type(" Application/JSON ; charset=UTF-8 "),
+              "application/json");
+    EXPECT_EQ(normalize_mime_type(" text/plain "), "text/plain");
+    EXPECT_EQ(normalize_mime_type(""), "");
+    EXPECT_FALSE(is_body_allowed(HttpStatus::CONTINUE));
+    EXPECT_FALSE(is_body_allowed(HttpStatus::SWITCHING_PROTOCOLS));
+    EXPECT_FALSE(is_body_allowed(HttpStatus::NO_CONTENT));
+    EXPECT_FALSE(is_body_allowed(HttpStatus::NOT_MODIFIED));
+    EXPECT_TRUE(is_body_allowed(HttpStatus::OK));
+    EXPECT_TRUE(is_body_allowed(HttpStatus::NOT_FOUND));
+}
+
 TEST(HttpCommonTest, MethodStringConversionsCoverKnownAndUnknownValues) {
     EXPECT_STREQ(method_to_string(HttpMethod::GET), "GET");
     EXPECT_STREQ(method_to_string(HttpMethod::POST), "POST");

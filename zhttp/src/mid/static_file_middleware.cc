@@ -77,7 +77,7 @@ void apply_variant_headers(HttpResponse &response,
         response.header("Cache-Control", options.cache_control);
     }
     if (options.gzip_static || options.br_static) {
-        response.header("Vary", "Accept-Encoding");
+        response.append_vary("Accept-Encoding");
     }
     if (!content_encoding.empty()) {
         response.header("Content-Encoding", content_encoding);
@@ -234,12 +234,13 @@ bool StaticFileMiddleware::before(const HttpRequest::ptr &request,
     // 按协商优先级逐个检查缓存和文件，低权重缓存不能抢在高权重文件之前。
     std::string content_encoding;
     std::string selected_path;
+    struct stat selected_info = {};
     for (const auto &enc : encoding_candidates) {
         if (options_.enable_memory_cache && options_.memory_cache_time > 0) {
             std::lock_guard<std::mutex> lock(cache_mutex_);
             auto it = cache_.find(path + "|" + enc);
             if (it != cache_.end()) {
-                if (TimerHelper::steady_now() <= it->second.expires_at) {
+                if (std::chrono::steady_clock::now() <= it->second.expires_at) {
                     if (try_handle_conditional_not_modified(
                             request, response, options_, it->second.etag,
                             it->second.last_modified, it->second.content_encoding)) {
@@ -260,7 +261,8 @@ bool StaticFileMiddleware::before(const HttpRequest::ptr &request,
             }
         }
         const std::string candidate = disk_path + (enc.empty() ? "" : enc == "br" ? ".br" : ".gz");
-        if (FileOperator::is_regular_file(candidate)) {
+        if (::stat(candidate.c_str(), &selected_info) == 0 &&
+            S_ISREG(selected_info.st_mode)) {
             selected_path = candidate;
             content_encoding = enc;
             break;
@@ -283,11 +285,11 @@ bool StaticFileMiddleware::before(const HttpRequest::ptr &request,
     std::string last_modified;
     std::string etag;
     if (options_.enable_etag) {
-        FileOperator::get_etag(selected_path, etag);
+        etag = FileOperator::get_etag(selected_info);
     }
 
     if (options_.enable_last_modified) {
-        FileOperator::get_last_modified(selected_path, last_modified);
+        last_modified = format_http_date_gmt(selected_info.st_mtime);
     }
 
     if (try_handle_conditional_not_modified(request, response, options_, etag,
@@ -324,8 +326,8 @@ bool StaticFileMiddleware::before(const HttpRequest::ptr &request,
         entry.last_modified = last_modified;
         entry.etag = etag;
         entry.content_length = entry.body.size();
-        entry.expires_at = TimerHelper::steady_now() +
-                           TimerHelper::seconds(options_.memory_cache_time);
+        entry.expires_at = std::chrono::steady_clock::now() +
+                           std::chrono::seconds(options_.memory_cache_time);
         std::lock_guard<std::mutex> lock(cache_mutex_);
         cache_[path + "|" + content_encoding] = std::move(entry);
     }

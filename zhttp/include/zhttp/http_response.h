@@ -62,6 +62,9 @@ class HttpResponse {
      */
     HttpResponse &header(const std::string &key, const std::string &value);
 
+    /** @brief 追加 Vary 字段名，保留已有值并避免重复或改写通配符。 */
+    HttpResponse &append_vary(const std::string &value);
+
     /**
      * @brief 设置 Content-Type
      * @param type MIME 类型

@@ -71,7 +71,7 @@ Router::Router() {
             .content_type("text/html; charset=utf-8")
             .body("<html><body><h1>404 Not Found</h1></body></html>");
     };
-    not_found_handler_ = RouteHandlerWrapper(std::move(default_404));
+    not_found_handler_ = std::move(default_404);
     exception_handler_ = default_exception_handler;
 }
 
@@ -82,7 +82,7 @@ bool Router::is_dynamic_path(const std::string &path) const {
 }
 
 void Router::add_route_internal(HttpMethod method, const std::string &path,
-                                RouteHandlerWrapper wrapper) {
+                                RouterCallback wrapper) {
     ZHTTP_LOG_DEBUG("Router::add_route {} {}", method_to_string(method), path);
 
     if (is_dynamic_path(path)) {
@@ -98,17 +98,17 @@ void Router::add_route_internal(HttpMethod method, const std::string &path,
 
 void Router::add_route(HttpMethod method, const std::string &path,
                        RouterCallback callback) {
-    add_route_internal(method, path, RouteHandlerWrapper(std::move(callback)));
+    add_route_internal(method, path, std::move(callback));
 }
 
 void Router::add_route(HttpMethod method, const std::string &path,
                        RouteHandler::ptr handler) {
-    add_route_internal(method, path, RouteHandlerWrapper(std::move(handler)));
+    add_route_internal(method, path, make_route_callback(std::move(handler)));
 }
 
 void Router::add_regex_route_internal(
     HttpMethod method, const std::string &regex_pattern,
-    const std::vector<std::string> &param_names, RouteHandlerWrapper wrapper) {
+    const std::vector<std::string> &param_names, RouterCallback wrapper) {
     ZHTTP_LOG_DEBUG("Router::add_regex_route {} {}", method_to_string(method),
                     regex_pattern);
 
@@ -122,7 +122,7 @@ void Router::add_regex_route(HttpMethod method,
                              const std::vector<std::string> &param_names,
                              RouterCallback callback) {
     add_regex_route_internal(method, regex_pattern, param_names,
-                             RouteHandlerWrapper(std::move(callback)));
+                             std::move(callback));
 }
 
 void Router::add_regex_route(HttpMethod method,
@@ -130,7 +130,7 @@ void Router::add_regex_route(HttpMethod method,
                              const std::vector<std::string> &param_names,
                              RouteHandler::ptr handler) {
     add_regex_route_internal(method, regex_pattern, param_names,
-                             RouteHandlerWrapper(std::move(handler)));
+                             make_route_callback(std::move(handler)));
 }
 
 void Router::get(const std::string &path, RouterCallback callback) {
@@ -304,7 +304,7 @@ RouteContext Router::find_route(const std::string &path, HttpMethod method) {
     if (should_redirect_to_homepage(path, method)) {
         ctx.found = true;
         std::string target = homepage_;
-        ctx.handler = RouteHandlerWrapper(
+        ctx.handler = RouterCallback(
             [target](const HttpRequest::ptr &, HttpResponse &response) {
                 response.redirect(target);
             });
@@ -319,7 +319,6 @@ RouteContext Router::find_route(const std::string &path, HttpMethod method) {
         if (handler_it != static_it->second.handlers.end()) {
             ctx.found = true;
             ctx.handler = handler_it->second;
-            ctx.middlewares = static_it->second.middlewares;
             ZHTTP_LOG_DEBUG("Found in static routes (hash map): {}", path);
             return ctx;
         }
@@ -380,11 +379,6 @@ bool Router::route(const HttpRequest::ptr &request, HttpResponse &response) {
         }
     }
 
-    // 最后追加路由匹配结果里自带的中间件。
-    for (const auto &mw : ctx.middlewares) {
-        chain.add(mw);
-    }
-
     // before 返回 false 表示提前中断，不再进入业务处理器。
     bool should_continue = false;
     bool has_exception = false;
@@ -401,10 +395,14 @@ bool Router::route(const HttpRequest::ptr &request, HttpResponse &response) {
         try {
             if (ctx.found) {
                 // 命中路由则执行对应处理器。
-                ctx.handler(request, response);
+                if (ctx.handler) {
+                    ctx.handler(request, response);
+                }
             } else {
                 // 未命中则走统一的 404 处理器。
-                not_found_handler_(request, response);
+                if (not_found_handler_) {
+                    not_found_handler_(request, response);
+                }
             }
         } catch (...) {
             has_exception = true;
@@ -425,11 +423,11 @@ bool Router::route(const HttpRequest::ptr &request, HttpResponse &response) {
 }
 
 void Router::set_not_found_handler(RouterCallback callback) {
-    not_found_handler_ = RouteHandlerWrapper(std::move(callback));
+    not_found_handler_ = std::move(callback);
 }
 
 void Router::set_not_found_handler(RouteHandler::ptr handler) {
-    not_found_handler_ = RouteHandlerWrapper(std::move(handler));
+    not_found_handler_ = make_route_callback(std::move(handler));
 }
 
 void Router::set_exception_handler(ExceptionHandler handler) {

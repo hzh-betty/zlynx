@@ -12,6 +12,7 @@
 
 #include <functional>
 #include <memory>
+#include <utility>
 
 namespace zhttp {
 
@@ -45,6 +46,17 @@ class RouteHandler {
  */
 using RouterCallback =
     std::function<void(const HttpRequest::ptr &, HttpResponse &)>;
+
+// 对象处理器仅在注册时适配，路由内部统一保存函数式回调。
+inline RouterCallback make_route_callback(RouteHandler::ptr handler) {
+    if (!handler) {
+        return {};
+    }
+    return [handler = std::move(handler)](const HttpRequest::ptr &request,
+                                          HttpResponse &response) {
+        handler->handle(request, response);
+    };
+}
 
 } // namespace zhttp
 

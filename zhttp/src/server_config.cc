@@ -97,9 +97,6 @@ void parse_ssl_section(const toml::value &data, ServerConfig &config) {
         config.force_http_to_https =
             toml::find<bool>(ssl, "force_http_to_https");
     }
-    if (ssl.contains("force_redirect")) {
-        config.force_http_to_https = toml::find<bool>(ssl, "force_redirect");
-    }
     if (ssl.contains("redirect_http_port")) {
         config.redirect_http_port = parse_port(ssl, "redirect_http_port");
     }
@@ -154,18 +151,18 @@ ServerConfig parse_server_config(const toml::value &data) {
 
 } // namespace
 
-StackMode string_to_stack_mode(const std::string &str) {
+zco::StackModel string_to_stack_mode(const std::string &str) {
     if (str == "shared" || str == "SHARED") {
-        return StackMode::SHARED;
+        return zco::StackModel::kShared;
     }
-    return StackMode::INDEPENDENT;
+    return zco::StackModel::kIndependent;
 }
 
-std::string stack_mode_to_string(StackMode mode) {
+std::string stack_mode_to_string(zco::StackModel mode) {
     switch (mode) {
-    case StackMode::SHARED:
+    case zco::StackModel::kShared:
         return "shared";
-    case StackMode::INDEPENDENT:
+    case zco::StackModel::kIndependent:
     default:
         return "independent";
     }

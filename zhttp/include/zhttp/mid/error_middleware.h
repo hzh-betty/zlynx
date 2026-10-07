@@ -46,13 +46,6 @@ class ErrorMiddleware : public Middleware {
                HttpResponse &response) override;
 
   private:
-    /**
-     * @brief JSON 字符串转义
-     * @param input 原始字符串
-     * @return 转义后的字符串，适合直接嵌入 JSON 文本
-     */
-    static std::string escape_json(const std::string &input);
-
     std::string build_error_json(const HttpRequest::ptr &request,
                                  const HttpResponse &response) const;
 

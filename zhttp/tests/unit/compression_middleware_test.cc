@@ -418,6 +418,23 @@ TEST(CompressionMiddlewareTest, RejectsWhenAllAvailableRepresentationsAreExclude
     }
 }
 
+TEST(CompressionMiddlewareTest, VaryUsesExactTokensAndPreservesWildcard) {
+    auto request = std::make_shared<HttpRequest>();
+    request->set_header("Accept-Encoding", "gzip");
+    CompressionMiddleware middleware;
+
+    for (const char *vary : {"X-Accept-Encoding", "Origin,  ACCEPT-ENCODING ", "*"}) {
+        HttpResponse response;
+        response.text(std::string(4096, 'a')).header("Vary", vary);
+        middleware.after(request, response);
+        ASSERT_EQ(response.headers().at("Content-Encoding"), "gzip");
+        EXPECT_EQ(response.headers().at("Vary"),
+                  std::string(vary) == "X-Accept-Encoding"
+                      ? "X-Accept-Encoding, Accept-Encoding"
+                      : vary);
+    }
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     zhttp::init_logger();

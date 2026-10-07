@@ -7,7 +7,7 @@
 #ifndef ZHTTP_TIMEOUT_MIDDLEWARE_H_
 #define ZHTTP_TIMEOUT_MIDDLEWARE_H_
 
-#include "zhttp/internal/http_utils.h"
+#include <chrono>
 #include "zhttp/mid/middleware.h"
 
 #include <functional>
@@ -24,8 +24,8 @@ namespace mid {
  */
 class TimeoutMiddleware : public Middleware {
   public:
-    using TimePoint = TimerHelper::SteadyTimePoint;
-    using Milliseconds = TimerHelper::Milliseconds;
+    using TimePoint = std::chrono::steady_clock::time_point;
+    using Milliseconds = std::chrono::milliseconds;
     using TimeoutHandler = std::function<void(
         const HttpRequest::ptr &, HttpResponse &, Milliseconds elapsed)>;
 

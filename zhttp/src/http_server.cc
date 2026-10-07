@@ -36,14 +36,6 @@ uint32_t clamp_timeout_to_u32(const uint64_t timeout_ms) {
     return static_cast<uint32_t>(timeout_ms);
 }
 
-bool is_body_allowed(const HttpStatus status) {
-    const int code = static_cast<int>(status);
-    if (code >= 100 && code < 200) {
-        return false;
-    }
-    return code != 204 && code != 304;
-}
-
 bool send_all_or_fail(const znet::TcpConnection::ptr &conn, const char *data,
                       size_t length) {
     if (length == 0) {

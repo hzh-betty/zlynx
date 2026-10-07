@@ -106,7 +106,7 @@ TEST(HttpServerBuilderTest, BuildConfiguresRoutesMiddlewareAndHandlers) {
     HttpServerBuilder builder;
     builder.listen("127.0.0.1", port)
         .threads(1)
-        .stack_mode(StackMode::SHARED)
+        .stack_mode(zco::StackModel::kShared)
         .use_shared_stack()
         .use_independent_stack()
         .read_timeout(123)

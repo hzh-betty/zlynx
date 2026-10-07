@@ -14,14 +14,22 @@
 namespace zhttp {
 
 namespace {
-static std::string normalize_mime_type(const std::string &content_type) {
-    std::string mime = content_type;
-    size_t semi = mime.find(';');
-    if (semi != std::string::npos) {
-        mime = mime.substr(0, semi);
+void parse_urlencoded_params(const std::string &text, HttpRequest::Params &params) {
+    size_t pos = 0;
+    while (pos < text.size()) {
+        size_t end = text.find('&', pos);
+        if (end == std::string::npos) {
+            end = text.size();
+        }
+        const std::string pair = text.substr(pos, end - pos);
+        const size_t eq = pair.find('=');
+        if (eq != std::string::npos) {
+            params[url_decode(pair.substr(0, eq))] = url_decode(pair.substr(eq + 1));
+        } else if (!pair.empty()) {
+            params[url_decode(pair)] = "";
+        }
+        pos = end + 1;
     }
-    trim(mime);
-    return to_lower(mime);
 }
 
 /**
@@ -148,35 +156,14 @@ const HttpRequest::Params &HttpRequest::cookies() const {
     return runtime_.cookies;
 }
 
-const std::string &HttpRequest::remote_addr() const {
-    if (!remote_addr_resolved_) {
-        remote_addr_resolved_ = true;
-        if (remote_addr_resolver_) {
-            remote_addr_ = remote_addr_resolver_();
-            remote_addr_resolver_ = RemoteAddrResolver();
-        } else {
-            remote_addr_.clear();
-        }
-    }
-    return remote_addr_;
-}
+const std::string &HttpRequest::remote_addr() const { return remote_addr_; }
 
 void HttpRequest::set_remote_addr(const std::string &addr) {
     remote_addr_ = addr;
-    remote_addr_resolved_ = true;
-    remote_addr_resolver_ = RemoteAddrResolver();
 }
 
 void HttpRequest::set_remote_addr(std::string &&addr) {
     remote_addr_ = std::move(addr);
-    remote_addr_resolved_ = true;
-    remote_addr_resolver_ = RemoteAddrResolver();
-}
-
-void HttpRequest::set_remote_addr_resolver(RemoteAddrResolver resolver) {
-    remote_addr_.clear();
-    remote_addr_resolved_ = false;
-    remote_addr_resolver_ = std::move(resolver);
 }
 
 // 头字段按原始 key 保存，同时维护一份归一化索引加速大小写不敏感查找。
@@ -209,33 +196,7 @@ void HttpRequest::set_path_param(const std::string &key,
 void HttpRequest::parse_query_params() {
     // 重新解析前先清空，避免请求对象复用时保留旧值。
     query_params_.clear();
-    if (query_.empty()) {
-        return;
-    }
-
-    size_t pos = 0;
-    while (pos < query_.size()) {
-        // 每个参数对通常由 & 分隔。
-        size_t end = query_.find('&', pos);
-        if (end == std::string::npos) {
-            end = query_.size();
-        }
-
-        // 先切出一个完整片段，再看是否存在等号。
-        std::string pair = query_.substr(pos, end - pos);
-        size_t eq = pair.find('=');
-        if (eq != std::string::npos) {
-            // key 和 value 都需要 URL 解码。
-            std::string key = url_decode(pair.substr(0, eq));
-            std::string value = url_decode(pair.substr(eq + 1));
-            query_params_[key] = value;
-        } else if (!pair.empty()) {
-            // 只有 key 没有 value 的场景，统一记为空字符串。
-            query_params_[url_decode(pair)] = "";
-        }
-
-        pos = end + 1;
-    }
+    parse_urlencoded_params(query_, query_params_);
 }
 
 /**
@@ -351,33 +312,7 @@ bool HttpRequest::parse_form_urlencoded() {
         return true;
     }
 
-    if (body_.empty()) {
-        return true;
-    }
-
-    size_t pos = 0;
-    while (pos < body_.size()) {
-        // 每个片段以 '&' 分隔。
-        size_t end = body_.find('&', pos);
-        if (end == std::string::npos) {
-            end = body_.size();
-        }
-
-        std::string pair = body_.substr(pos, end - pos);
-        size_t eq = pair.find('=');
-        if (eq != std::string::npos) {
-            // key/value 均执行 URL 解码（包含 '+' -> 空格）。
-            std::string key = url_decode(pair.substr(0, eq));
-            std::string value = url_decode(pair.substr(eq + 1));
-            runtime_.form_params[key] = value;
-        } else if (!pair.empty()) {
-            // 仅 key 无 value 的场景，统一记为空字符串。
-            runtime_.form_params[url_decode(pair)] = "";
-        }
-
-        pos = end + 1;
-    }
-
+    parse_urlencoded_params(body_, runtime_.form_params);
     return true;
 }
 

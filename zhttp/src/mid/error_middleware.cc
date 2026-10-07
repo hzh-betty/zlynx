@@ -6,8 +6,6 @@
 
 #include "zhttp/mid/error_middleware.h"
 
-#include <sstream>
-
 namespace zhttp {
 namespace mid {
 
@@ -35,42 +33,6 @@ void ErrorMiddleware::after(const HttpRequest::ptr &request,
     response.json(build_error_json(request, response));
 }
 
-std::string ErrorMiddleware::escape_json(const std::string &input) {
-    std::string output;
-    output.reserve(input.size());
-
-    for (char ch : input) {
-        switch (ch) {
-        case '"':
-            output += "\\\"";
-            break;
-        case '\\':
-            output += "\\\\";
-            break;
-        case '\b':
-            output += "\\b";
-            break;
-        case '\f':
-            output += "\\f";
-            break;
-        case '\n':
-            output += "\\n";
-            break;
-        case '\r':
-            output += "\\r";
-            break;
-        case '\t':
-            output += "\\t";
-            break;
-        default:
-            output += ch;
-            break;
-        }
-    }
-
-    return output;
-}
-
 std::string
 ErrorMiddleware::build_error_json(const HttpRequest::ptr &request,
                                   const HttpResponse &response) const {
@@ -82,21 +44,18 @@ ErrorMiddleware::build_error_json(const HttpRequest::ptr &request,
         message = status_to_string(response.status_code());
     }
 
-    std::ostringstream oss;
-    oss << "{\"code\":" << code << ",\"message\":\"" << escape_json(message)
-        << "\"";
+    HttpRequest::Json json = {{"code", code}, {"message", message}};
 
     if (options_.include_method) {
-        oss << ",\"method\":\""
-            << escape_json(method_to_string(request->method())) << "\"";
+        json["method"] = method_to_string(request->method());
     }
 
     if (options_.include_path) {
-        oss << ",\"path\":\"" << escape_json(request->path()) << "\"";
+        json["path"] = request->path();
     }
 
-    oss << "}";
-    return oss.str();
+    // 错误处理路径不能因请求中的非法 UTF-8 再次抛出序列化异常。
+    return json.dump(-1, ' ', false, HttpRequest::Json::error_handler_t::replace);
 }
 
 } // namespace mid

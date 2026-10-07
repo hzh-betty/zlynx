@@ -12,14 +12,6 @@ namespace zhttp {
 
 namespace {
 
-bool is_body_allowed(HttpStatus status) {
-    const int code = static_cast<int>(status);
-    if (code >= 100 && code < 200) {
-        return false;
-    }
-    return code != 204 && code != 304;
-}
-
 bool ascii_iequals(const std::string &lhs, const char *rhs) {
     if (!rhs || lhs.size() != std::char_traits<char>::length(rhs)) {
         return false;
@@ -125,6 +117,24 @@ HttpResponse &HttpResponse::status(int code) {
 HttpResponse &HttpResponse::header(const std::string &key,
                                    const std::string &value) {
     headers_[key] = value;
+    return *this;
+}
+
+HttpResponse &HttpResponse::append_vary(const std::string &value) {
+    std::string token = value;
+    trim(token);
+    if (token.empty()) {
+        return *this;
+    }
+    auto it = headers_.find("Vary");
+    if (it == headers_.end() || it->second.empty() || token == "*") {
+        return header("Vary", token);
+    }
+    if (header_contains_token(it->second, "*") ||
+        header_contains_token(it->second, token)) {
+        return *this;
+    }
+    it->second += ", " + token;
     return *this;
 }
 

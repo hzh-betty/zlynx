@@ -170,6 +170,45 @@ TEST(ErrorMiddlewareTest, EscapesAllControlCharactersInMessageAndPath) {
     EXPECT_NE(body.find("/p\\\"\\b\\f\\n\\r\\t\\\\z"), std::string::npos);
 }
 
+TEST(ErrorMiddlewareTest, SerializesEveryControlCharacterAsValidJson) {
+    std::string controls;
+    for (int ch = 0; ch < 0x20; ++ch) {
+        controls.push_back(static_cast<char>(ch));
+    }
+    ErrorMiddleware::Options options;
+    options.internal_error_message = controls;
+    ErrorMiddleware middleware(options);
+    auto request = std::make_shared<HttpRequest>();
+    request->set_path("/" + controls);
+    HttpResponse response;
+    response.status(HttpStatus::INTERNAL_SERVER_ERROR);
+
+    middleware.after(request, response);
+
+    const auto json = HttpRequest::Json::parse(response.body_content(), nullptr, false);
+    ASSERT_FALSE(json.is_discarded());
+    EXPECT_EQ(json.at("message").get<std::string>(), controls);
+    EXPECT_EQ(json.at("path").get<std::string>(), "/" + controls);
+}
+
+TEST(ErrorMiddlewareTest, ReplacesInvalidUtf8WithoutThrowingWhileHandlingError) {
+    const std::string invalid(1, static_cast<char>(0xff));
+    ErrorMiddleware::Options options;
+    options.internal_error_message = invalid;
+    ErrorMiddleware middleware(options);
+    auto request = std::make_shared<HttpRequest>();
+    request->set_path("/" + invalid);
+    HttpResponse response;
+    response.status(HttpStatus::INTERNAL_SERVER_ERROR);
+
+    EXPECT_NO_THROW(middleware.after(request, response));
+
+    const auto json = HttpRequest::Json::parse(response.body_content(), nullptr, false);
+    ASSERT_FALSE(json.is_discarded());
+    EXPECT_EQ(json.at("message").get<std::string>(), "\xef\xbf\xbd");
+    EXPECT_EQ(json.at("path").get<std::string>(), "/\xef\xbf\xbd");
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     zhttp::init_logger();

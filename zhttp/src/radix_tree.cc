@@ -93,7 +93,7 @@ RadixNodePtr RadixTree::find_or_create_prefix_node(const std::string &prefix) {
 }
 
 void RadixTree::insert(HttpMethod method, const std::string &path,
-                       RouteHandlerWrapper handler) {
+                       RouterCallback handler) {
     ZHTTP_LOG_DEBUG("RadixTree::insert {} {}", method_to_string(method), path);
 
     std::vector<std::string> segments = split_path(path);
@@ -138,7 +138,7 @@ void RadixTree::insert(HttpMethod method, const std::string &path,
 
 void RadixTree::insert_regex(HttpMethod method, const std::string &pattern,
                              const std::vector<std::string> &param_names,
-                             RouteHandlerWrapper handler) {
+                             RouterCallback handler) {
     ZHTTP_LOG_DEBUG("RadixTree::insert_regex {} {}", method_to_string(method),
                     pattern);
 

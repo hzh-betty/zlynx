@@ -33,13 +33,7 @@ bool CompressionMiddleware::is_compressible_content_type(
         return true;
     }
 
-    std::string content_type = to_lower(it->second);
-    // 去掉 charset 等参数，仅保留 MIME 主类型。
-    size_t semicolon = content_type.find(';');
-    if (semicolon != std::string::npos) {
-        content_type = content_type.substr(0, semicolon);
-        trim(content_type);
-    }
+    const std::string content_type = normalize_mime_type(it->second);
 
     for (const auto &allow : options_.compressible_content_types) {
         std::string rule = to_lower(allow);
@@ -185,24 +179,6 @@ bool CompressionMiddleware::compress_with_brotli(const std::string &input,
     return true;
 }
 
-void CompressionMiddleware::append_vary_accept_encoding(
-    HttpResponse &response) const {
-    auto it = response.headers().find("Vary");
-    if (it == response.headers().end()) {
-        response.header("Vary", "Accept-Encoding");
-        return;
-    }
-
-    std::string vary = to_lower(it->second);
-    if (vary.find("accept-encoding") != std::string::npos) {
-        return;
-    }
-
-    std::string new_vary = it->second;
-    new_vary += ", Accept-Encoding";
-    response.header("Vary", new_vary);
-}
-
 void CompressionMiddleware::after(const HttpRequest::ptr &request,
                                   HttpResponse &response) {
     // 已编码和流式实体由各自发送路径负责协商，避免重写其元数据。
@@ -219,7 +195,7 @@ void CompressionMiddleware::after(const HttpRequest::ptr &request,
     const bool identity_allowed =
         std::find(encodings.begin(), encodings.end(), "") != encodings.end();
     const bool compressible = can_compress(request, response);
-    append_vary_accept_encoding(response);
+    response.append_vary("Accept-Encoding");
     for (const auto &encoding : encodings) {
         if (encoding.empty()) return;
         if (!compressible) continue;

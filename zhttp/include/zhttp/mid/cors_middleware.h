@@ -96,14 +96,6 @@ class CorsMiddleware : public Middleware {
     std::string resolve_allow_origin(const std::string &origin) const;
 
     /**
-     * @brief 添加 Vary 响应头的值
-     * @param response 响应对象
-     * @param value 待添加的值
-     */
-    void append_vary_value(HttpResponse &response,
-                           const std::string &value) const;
-
-    /**
      * @brief 应用普通 CORS 头（适用于预检和非预检请求）
      * @details 包括 Access-Control-Allow-Origin / Allow-Credentials /
      * Expose-Headers 等通用头。

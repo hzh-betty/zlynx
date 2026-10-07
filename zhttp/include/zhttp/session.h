@@ -7,7 +7,7 @@
 #ifndef ZHTTP_SESSION_H_
 #define ZHTTP_SESSION_H_
 
-#include "zhttp/internal/http_utils.h"
+#include <chrono>
 
 #include <memory>
 #include <mutex>
@@ -122,11 +122,11 @@ class SessionManager {
      * @brief Session 存储配置
      */
     struct Options {
-        Options() : ttl(TimerHelper::seconds(1800)), cleanup_every(128) {}
-        Options(TimerHelper::Seconds t, size_t cleanupEvery)
+        Options() : ttl(std::chrono::seconds(1800)), cleanup_every(128) {}
+        Options(std::chrono::seconds t, size_t cleanupEvery)
             : ttl(t), cleanup_every(cleanupEvery) {}
 
-        TimerHelper::Seconds ttl; // 会话过期时间；每次访问成功后会顺延
+        std::chrono::seconds ttl; // 会话过期时间；每次访问成功后会顺延
         size_t cleanup_every; // 每执行多少次操作触发一次过期清理
     };
 
@@ -167,14 +167,14 @@ class SessionManager {
   private:
     struct Record {
         Session::Data data;
-        TimerHelper::SteadyTimePoint expires_at; // 绝对过期时间点
+        std::chrono::steady_clock::time_point expires_at; // 绝对过期时间点
     };
 
     // 生成随机 session id，避免可预测性。
     std::string new_session_id();
 
     // 仅在持锁状态下调用，批量清理已过期的会话记录。
-    void cleanup_expired_locked(TimerHelper::SteadyTimePoint now);
+    void cleanup_expired_locked(std::chrono::steady_clock::time_point now);
 
     Options options_;
     std::mutex mutex_;

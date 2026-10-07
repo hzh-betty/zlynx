@@ -21,15 +21,15 @@ namespace {
 static inline RateLimiter::Milliseconds unit_to_ms(RateLimiter::TimeUnit unit) {
     switch (unit) {
     case RateLimiter::TimeUnit::MILLISECOND:
-        return TimerHelper::milliseconds(1);
+        return std::chrono::milliseconds(1);
     case RateLimiter::TimeUnit::SECOND:
-        return TimerHelper::seconds(1);
+        return std::chrono::seconds(1);
     case RateLimiter::TimeUnit::MINUTE:
-        return TimerHelper::seconds(60);
+        return std::chrono::seconds(60);
     case RateLimiter::TimeUnit::HOUR:
-        return TimerHelper::seconds(3600);
+        return std::chrono::seconds(3600);
     }
-    return TimerHelper::seconds(1);
+    return std::chrono::seconds(1);
 }
 
 // 测试可传入自定义时间函数；生产环境默认使用 steady_clock。
@@ -37,10 +37,10 @@ static inline RateLimiter::NowFunc default_now(RateLimiter::NowFunc f) {
     if (f) {
         return f;
     }
-    return [] { return TimerHelper::steady_now(); };
+    return [] { return std::chrono::steady_clock::now(); };
 }
 
-static inline int ceil_div_ms_to_s(TimerHelper::Milliseconds ms) {
+static inline int ceil_div_ms_to_s(std::chrono::milliseconds ms) {
     // HTTP Retry-After 通常使用“秒”为单位的整数；这里做向上取整。
     if (ms.count() <= 0) {
         return 0;
@@ -95,12 +95,12 @@ FixedWindowRateLimiter::retryAfter(const std::string &key) const {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = states_.find(key);
     if (it == states_.end() || !it->second.initialized) {
-        return TimerHelper::milliseconds(0);
+        return std::chrono::milliseconds(0);
     }
 
-    auto elapsed = TimerHelper::to_milliseconds(t - it->second.window_start);
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(t - it->second.window_start);
     if (elapsed >= win) {
-        return TimerHelper::milliseconds(0);
+        return std::chrono::milliseconds(0);
     }
     return win - elapsed;
 }
@@ -151,13 +151,13 @@ SlidingWindowRateLimiter::retryAfter(const std::string &key) const {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = queues_.find(key);
     if (it == queues_.end() || it->second.empty()) {
-        return TimerHelper::milliseconds(0);
+        return std::chrono::milliseconds(0);
     }
 
     // 最早一条记录过期后，窗口内会释放出一个可用名额。
-    auto elapsed = TimerHelper::to_milliseconds(t - it->second.front());
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(t - it->second.front());
     if (elapsed >= win) {
-        return TimerHelper::milliseconds(0);
+        return std::chrono::milliseconds(0);
     }
     return win - elapsed;
 }
@@ -244,13 +244,13 @@ TokenBucketRateLimiter::retryAfter(const std::string &key) const {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = buckets_.find(key);
     if (it == buckets_.end() || !it->second.initialized) {
-        return TimerHelper::milliseconds(0);
+        return std::chrono::milliseconds(0);
     }
 
     const Bucket &b = it->second;
     // 以当前剩余令牌推算距离下一个完整令牌还需等待多久。
     if (b.tokens >= 1.0) {
-        return TimerHelper::milliseconds(0);
+        return std::chrono::milliseconds(0);
     }
 
     double deficit = 1.0 - b.tokens;
@@ -263,7 +263,7 @@ TokenBucketRateLimiter::retryAfter(const std::string &key) const {
     if (ms < 0) {
         ms = 0;
     }
-    return TimerHelper::milliseconds(ms);
+    return std::chrono::milliseconds(ms);
 }
 
 RateLimiterMiddleware::RateLimiterMiddleware(RateLimiterMiddleware::Options opt)

@@ -7,7 +7,7 @@
 #ifndef ZHHTP_STATIC_OPT_H_
 #define ZHHTP_STATIC_OPT_H_
 
-#include "zhttp/internal/http_utils.h"
+#include <chrono>
 #include "zhttp/mid/middleware.h"
 
 #include <mutex>
@@ -32,7 +32,7 @@ namespace mid {
  */
 class StaticFileMiddleware : public Middleware {
   public:
-    using Clock = TimerHelper::SteadyClock;
+    using Clock = std::chrono::steady_clock;
 
     /**
      * @brief 静态文件中间件配置项

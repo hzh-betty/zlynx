@@ -271,20 +271,7 @@ ParseResult HttpParser::parse_body(znet::Buffer *buffer) {
 }
 
 bool HttpParser::is_chunked_transfer_encoding() const {
-    const std::string transfer_encoding = request_->header("Transfer-Encoding");
-    if (transfer_encoding.empty()) {
-        return false;
-    }
-
-    std::vector<std::string> tokens = split_string(transfer_encoding, ',');
-    for (auto &token : tokens) {
-        trim(token);
-        if (to_lower(token) == "chunked") {
-            return true;
-        }
-    }
-
-    return false;
+    return header_contains_token(request_->header("Transfer-Encoding"), "chunked");
 }
 
 bool HttpParser::parse_chunk_size_line(const std::string &line,

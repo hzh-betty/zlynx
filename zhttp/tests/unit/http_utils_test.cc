@@ -27,8 +27,6 @@ class TempDir {
         if (!path_.empty()) {
             // 测试目录只创建少量文件，按固定文件名清理即可。
             std::remove((path_ + "/data.bin").c_str());
-            std::remove((path_ + "/counter.txt").c_str());
-            std::remove((path_ + "/bad-int.txt").c_str());
             ::rmdir(path_.c_str());
         }
     }
@@ -39,18 +37,18 @@ class TempDir {
     std::string path_;
 };
 
-TEST(HttpUtilsTest, TimerHelperProvidesExpectedTimeUtilities) {
-    EXPECT_EQ(TimerHelper::format_http_date_gmt(0),
+TEST(HttpUtilsTest, FormatsHttpDateInGmt) {
+    EXPECT_EQ(format_http_date_gmt(0),
               "Thu, 01 Jan 1970 00:00:00 GMT");
 
-    const auto before = TimerHelper::steady_now();
-    const auto after = TimerHelper::steady_now();
-    EXPECT_LE(before, after);
+}
 
-    EXPECT_EQ(TimerHelper::milliseconds(123).count(), 123);
-    EXPECT_EQ(TimerHelper::seconds(7).count(), 7);
-    EXPECT_EQ(TimerHelper::to_milliseconds(std::chrono::seconds(3)).count(),
-              3000);
+TEST(HttpUtilsTest, EtagUsesProvidedSizeAndNanosecondTimestamp) {
+    struct stat info = {};
+    info.st_size = 123;
+    info.st_mtim.tv_sec = 1;
+    info.st_mtim.tv_nsec = 7;
+    EXPECT_EQ(FileOperator::get_etag(info), "W/\"123-1000000007\"");
 }
 
 TEST(HttpUtilsTest, PathOperatorNormalizesMatchesAndMapsPaths) {
@@ -98,8 +96,6 @@ TEST(HttpUtilsTest, FileOperatorHandlesReadWriteAndMetadata) {
     ASSERT_FALSE(tmp.path().empty());
 
     const std::string file_path = tmp.path() + "/data.bin";
-    const std::string int_path = tmp.path() + "/counter.txt";
-    const std::string bad_int_path = tmp.path() + "/bad-int.txt";
 
     const std::string binary_payload("hello\0world", 11);
     EXPECT_TRUE(FileOperator::write_file_binary(file_path, binary_payload));
@@ -123,28 +119,14 @@ TEST(HttpUtilsTest, FileOperatorHandlesReadWriteAndMetadata) {
     EXPECT_EQ(FileOperator::detect_content_type("trailingdot."),
               "application/octet-stream");
 
-    std::string last_modified;
-    ASSERT_TRUE(FileOperator::get_last_modified(file_path, last_modified));
+    struct stat info = {};
+    ASSERT_EQ(::stat(file_path.c_str(), &info), 0);
+    const std::string last_modified = format_http_date_gmt(info.st_mtime);
     EXPECT_NE(last_modified.find("GMT"), std::string::npos);
-    EXPECT_FALSE(
-        FileOperator::get_last_modified("/tmp/missing-zhttp", last_modified));
 
-    std::string etag;
-    ASSERT_TRUE(FileOperator::get_etag(file_path, etag));
+    const std::string etag = FileOperator::get_etag(info);
     EXPECT_EQ(etag.find("W/\""), 0u);
-    EXPECT_FALSE(FileOperator::get_etag("/tmp/missing-zhttp", etag));
 
-    EXPECT_TRUE(FileOperator::write_int_to_file(int_path, 42));
-    int value = 0;
-    ASSERT_TRUE(FileOperator::read_int_from_file(int_path, value));
-    EXPECT_EQ(value, 42);
-
-    std::ofstream bad_int_file(bad_int_path);
-    bad_int_file << "not-an-int";
-    bad_int_file.close();
-    EXPECT_FALSE(FileOperator::read_int_from_file(bad_int_path, value));
-    EXPECT_FALSE(
-        FileOperator::read_int_from_file("/tmp/missing-zhttp-int", value));
 }
 
 } // namespace

@@ -7,7 +7,7 @@
 #ifndef ZHTTP_RATE_LIMITER_MIDDLEWARE_H_
 #define ZHTTP_RATE_LIMITER_MIDDLEWARE_H_
 
-#include "zhttp/internal/http_utils.h"
+#include <chrono>
 #include "zhttp/mid/middleware.h"
 
 #include <deque>
@@ -37,9 +37,9 @@ namespace mid {
 class RateLimiter {
   public:
     using ptr = std::shared_ptr<RateLimiter>;
-    using Clock = TimerHelper::SteadyClock;
-    using TimePoint = TimerHelper::SteadyTimePoint;
-    using Milliseconds = TimerHelper::Milliseconds;
+    using Clock = std::chrono::steady_clock;
+    using TimePoint = std::chrono::steady_clock::time_point;
+    using Milliseconds = std::chrono::milliseconds;
     using NowFunc = std::function<TimePoint()>;
 
     enum class Type {
@@ -83,7 +83,7 @@ class RateLimiter {
      */
     virtual Milliseconds retryAfter(const std::string &key) const {
         (void)key;
-        return TimerHelper::milliseconds(0);
+        return std::chrono::milliseconds(0);
     }
 
     /**

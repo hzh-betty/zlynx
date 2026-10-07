@@ -193,7 +193,7 @@ redirect_http_port = 18080
     EXPECT_EQ(config.redirect_http_port, 18080);
 }
 
-TEST(ServerConfigTest, SupportsForceRedirectAliasAndSharedStackMode) {
+TEST(ServerConfigTest, SupportsHttpsRedirectAndSharedStackMode) {
     TempTomlFile config_file(R"(
 [server]
 port = 19443
@@ -209,7 +209,7 @@ stack_mode = "SHARED"
 enabled = true
 cert_file = "/tmp/cert.pem"
 key_file = "/tmp/key.pem"
-force_redirect = true
+force_http_to_https = true
 redirect_http_port = 19080
 )");
 
@@ -221,7 +221,7 @@ redirect_http_port = 19080
     EXPECT_EQ(config.homepage, "/portal");
     EXPECT_TRUE(config.daemon);
     EXPECT_EQ(config.num_threads, 3U);
-    EXPECT_EQ(config.stack_mode, zhttp::StackMode::SHARED);
+    EXPECT_EQ(config.stack_mode, zco::StackModel::kShared);
     EXPECT_TRUE(config.enable_https);
     EXPECT_TRUE(config.force_http_to_https);
     EXPECT_EQ(config.redirect_http_port, 19080);
@@ -236,7 +236,7 @@ TEST(ServerConfigTest, UsesDefaultsWhenSectionsAreMissing) {
     EXPECT_EQ(config.host, "0.0.0.0");
     EXPECT_EQ(config.port, 8080);
     EXPECT_EQ(config.num_threads, 4U);
-    EXPECT_EQ(config.stack_mode, zhttp::StackMode::INDEPENDENT);
+    EXPECT_EQ(config.stack_mode, zco::StackModel::kIndependent);
     EXPECT_FALSE(config.enable_https);
 }
 
@@ -403,12 +403,12 @@ port = 8080
 }
 
 TEST(ServerConfigTest, StackModeHelpersCoverKnownAndFallbackValues) {
-    EXPECT_EQ(zhttp::string_to_stack_mode("shared"), zhttp::StackMode::SHARED);
-    EXPECT_EQ(zhttp::string_to_stack_mode("SHARED"), zhttp::StackMode::SHARED);
+    EXPECT_EQ(zhttp::string_to_stack_mode("shared"), zco::StackModel::kShared);
+    EXPECT_EQ(zhttp::string_to_stack_mode("SHARED"), zco::StackModel::kShared);
     EXPECT_EQ(zhttp::string_to_stack_mode("whatever"),
-              zhttp::StackMode::INDEPENDENT);
-    EXPECT_EQ(zhttp::stack_mode_to_string(zhttp::StackMode::SHARED), "shared");
-    EXPECT_EQ(zhttp::stack_mode_to_string(zhttp::StackMode::INDEPENDENT),
+              zco::StackModel::kIndependent);
+    EXPECT_EQ(zhttp::stack_mode_to_string(zco::StackModel::kShared), "shared");
+    EXPECT_EQ(zhttp::stack_mode_to_string(zco::StackModel::kIndependent),
               "independent");
 }
 

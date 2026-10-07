@@ -253,18 +253,6 @@ TEST(HttpRequestTest, ResetBodyInvalidatesBodyParseCache) {
     EXPECT_EQ((*req.json())["v"], 2);
 }
 
-TEST(HttpRequestTest, LazyRemoteAddrResolverRunsOnlyOnce) {
-    HttpRequest req;
-    int calls = 0;
-    req.set_remote_addr_resolver([&calls]() {
-        ++calls;
-        return std::string("127.0.0.1:8080");
-    });
-
-    EXPECT_EQ(req.remote_addr(), "127.0.0.1:8080");
-    EXPECT_EQ(req.remote_addr(), "127.0.0.1:8080");
-    EXPECT_EQ(calls, 1);
-}
 
 TEST(HttpRequestTest, RemoteAddrSettersAndFallbackPaths) {
     HttpRequest req;
@@ -273,14 +261,23 @@ TEST(HttpRequestTest, RemoteAddrSettersAndFallbackPaths) {
     req.set_remote_addr(std::string("10.0.0.1:1000"));
     EXPECT_EQ(req.remote_addr(), "10.0.0.1:1000");
 
-    int calls = 0;
-    req.set_remote_addr_resolver([&calls]() {
-        ++calls;
-        return std::string("192.168.1.10:8080");
-    });
-    EXPECT_EQ(req.remote_addr(), "192.168.1.10:8080");
-    EXPECT_EQ(req.remote_addr(), "192.168.1.10:8080");
-    EXPECT_EQ(calls, 1);
+    const std::string addr = "192.168.1.10:8080";
+    req.set_remote_addr(addr);
+    EXPECT_EQ(req.remote_addr(), addr);
+}
+
+TEST(HttpRequestTest, QueryAndFormUseTheSameUrlencodedParameterSemantics) {
+    for (const char *text : {"", "&&", "flag&empty=&=value",
+                             "a=1&a=2&x=a=b&space=hello+world&%2B=%26&bad=%GG",
+                             "binary=%00%01&trailing=yes&"}) {
+        HttpRequest request;
+        request.set_query(text);
+        request.parse_query_params();
+        request.set_header("Content-Type", " Application/X-WWW-Form-Urlencoded ; charset=UTF-8");
+        request.set_body(text);
+        ASSERT_TRUE(request.parse_form_urlencoded());
+        EXPECT_EQ(request.query_params(), request.form_params());
+    }
 }
 
 int main(int argc, char **argv) {

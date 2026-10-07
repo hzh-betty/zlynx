@@ -161,6 +161,16 @@ std::string to_lower(const std::string &str);
  */
 void trim(std::string &str);
 
+/** @brief 去除 MIME 参数与首尾空白，并将主类型转换为小写。 */
+std::string normalize_mime_type(const std::string &content_type);
+
+/** @brief 在逗号分隔的头部值中按大小写不敏感的完整 token 匹配。 */
+bool header_contains_token(const std::string &header_value,
+                           const std::string &target);
+
+/** @brief 判断状态码是否允许响应正文，不包含 HEAD 方法的特殊规则。 */
+bool is_body_allowed(HttpStatus status);
+
 /**
  * @brief 按指定分隔符切分字符串
  * @param str 输入字符串

@@ -25,6 +25,18 @@ TEST(HttpResponseTest, ChainedSetters) {
     EXPECT_EQ(resp.body_content(), "Hello World");
 }
 
+TEST(HttpResponseTest, AppendVaryPreservesAndDeduplicatesExactTokens) {
+    HttpResponse response;
+    EXPECT_EQ(&response.append_vary(""), &response);
+    EXPECT_EQ(response.headers().count("Vary"), 0U);
+    response.header("Vary", "").append_vary(" Origin ");
+    EXPECT_EQ(response.headers().at("Vary"), "Origin");
+    response.append_vary("origin").append_vary("Accept-Encoding");
+    EXPECT_EQ(response.headers().at("Vary"), "Origin, Accept-Encoding");
+    response.append_vary("*").append_vary("Origin");
+    EXPECT_EQ(response.headers().at("Vary"), "*");
+}
+
 TEST(HttpResponseTest, JsonResponse) {
     HttpResponse resp;
     resp.json("{\"key\":\"value\"}");

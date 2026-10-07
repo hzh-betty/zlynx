@@ -7,7 +7,8 @@
 #ifndef ZHTTP_INTERNAL_HTTP_UTILS_H_
 #define ZHTTP_INTERNAL_HTTP_UTILS_H_
 
-#include <chrono>
+#include <sys/stat.h>
+
 #include <cstdint>
 #include <ctime>
 #include <string>
@@ -20,37 +21,8 @@ namespace zhttp {
 std::vector<std::string> accepted_content_encodings(
     const std::string &header, bool enable_br, bool enable_gzip);
 
-/**
- * @brief 日期时间公共操作集合
- * @details
- * 统一管理 HTTP 场景中的时间类型与常用时间工具函数。
- */
-class TimerHelper {
-  public:
-    using SteadyClock = std::chrono::steady_clock;
-    using SteadyTimePoint = SteadyClock::time_point;
-    using Milliseconds = std::chrono::milliseconds;
-    using Seconds = std::chrono::seconds;
-
-    /**
-     * @brief 将 Unix 时间戳格式化为 HTTP GMT 时间字符串
-     * @param timestamp 秒级 Unix 时间戳
-     * @return 形如 `Wed, 21 Oct 2015 07:28:00 GMT` 的字符串
-     */
-    static std::string format_http_date_gmt(std::time_t timestamp);
-
-    static SteadyTimePoint steady_now();
-
-    static Milliseconds milliseconds(int64_t value);
-
-    static Seconds seconds(int64_t value);
-
-    template <typename Rep, typename Period>
-    static Milliseconds
-    to_milliseconds(const std::chrono::duration<Rep, Period> &duration) {
-        return std::chrono::duration_cast<Milliseconds>(duration);
-    }
-};
+// 将 Unix 时间戳格式化为 HTTP GMT 日期。
+std::string format_http_date_gmt(std::time_t timestamp);
 
 /**
  * @brief 路径相关公共操作集合
@@ -141,7 +113,6 @@ class PathOperator {
  * - 静态文件读取与类型识别；
  * - 文件存在性/类型判断；
  * - 基于 stat 的缓存验证信息（Last-Modified/ETag）；
- * - 轻量配置文件（如 pid 文件）读写。
  */
 class FileOperator {
   public:
@@ -183,39 +154,9 @@ class FileOperator {
      */
     static std::string detect_content_type(const std::string &file_path);
 
-    /**
-     * @brief 获取 Last-Modified 响应头值
-     * @param path 文件路径
-     * @param last_modified 输出 HTTP GMT 时间字符串
-     * @return true 表示成功
-     */
-    static bool get_last_modified(const std::string &path,
-                                  std::string &last_modified);
+    /** @brief 从已取得的文件元信息生成弱 ETag。 */
+    static std::string get_etag(const struct stat &info);
 
-    /**
-     * @brief 基于文件元信息生成弱 ETag
-     * @param path 文件路径
-     * @param etag 输出 ETag（形如 W/"size-mtime_ns"）
-     * @return true 表示成功
-     */
-    static bool get_etag(const std::string &path, std::string &etag);
-
-    /**
-     * @brief 从文本文件读取一个 int
-     * @param path 文件路径
-     * @param value 读取结果
-     * @return true 表示成功
-     * @details 常用于 pid 文件等简单状态文件。
-     */
-    static bool read_int_from_file(const std::string &path, int &value);
-
-    /**
-     * @brief 向文本文件写入一个 int
-     * @param path 文件路径
-     * @param value 待写入整数
-     * @return true 表示成功
-     */
-    static bool write_int_to_file(const std::string &path, int value);
 };
 
 } // namespace zhttp

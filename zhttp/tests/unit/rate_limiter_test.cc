@@ -13,7 +13,7 @@ namespace {
 class StubRateLimiter final : public RateLimiter {
   public:
     bool allow = true;
-    Milliseconds retry_after = TimerHelper::milliseconds(0);
+    Milliseconds retry_after = std::chrono::milliseconds(0);
     mutable std::string last_key;
 
     bool isAllowed(const std::string &key) override {
@@ -221,7 +221,7 @@ TEST_F(RateLimiterTest, MiddlewareWritesRetryAfterWithFloorAndCeiling) {
 
     {
         HttpResponse resp;
-        limiter->retry_after = TimerHelper::milliseconds(0);
+        limiter->retry_after = std::chrono::milliseconds(0);
         EXPECT_FALSE(middleware.before(req, resp));
         EXPECT_EQ(resp.status_code(), HttpStatus::TOO_MANY_REQUESTS);
         ASSERT_TRUE(resp.headers().count("X-Retry") > 0);
@@ -230,7 +230,7 @@ TEST_F(RateLimiterTest, MiddlewareWritesRetryAfterWithFloorAndCeiling) {
 
     {
         HttpResponse resp;
-        limiter->retry_after = TimerHelper::milliseconds(1500);
+        limiter->retry_after = std::chrono::milliseconds(1500);
         EXPECT_FALSE(middleware.before(req, resp));
         EXPECT_EQ(resp.status_code(), HttpStatus::TOO_MANY_REQUESTS);
         ASSERT_TRUE(resp.headers().count("X-Retry") > 0);
@@ -241,7 +241,7 @@ TEST_F(RateLimiterTest, MiddlewareWritesRetryAfterWithFloorAndCeiling) {
 TEST_F(RateLimiterTest, MiddlewareCoercesNonPositiveRetryAfterToOneSecond) {
     auto limiter = std::make_shared<StubRateLimiter>();
     limiter->allow = false;
-    limiter->retry_after = TimerHelper::milliseconds(-123);
+    limiter->retry_after = std::chrono::milliseconds(-123);
 
     RateLimiterMiddleware::Options opt;
     opt.limiter = limiter;

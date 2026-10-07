@@ -595,6 +595,28 @@ TEST_F(StaticFileMiddlewareTest, RejectsExcludedIdentityWhenNoAcceptedFileExists
     EXPECT_TRUE(middleware.before(missing, response));
 }
 
+TEST_F(StaticFileMiddlewareTest, PreservesExistingVaryWhenServingAndRevalidating) {
+    TempDir dir;
+    dir.write_file("data.txt", "plain");
+    auto options = make_options("/assets", dir.path(), true, 60);
+    options.gzip_static = true;
+    StaticFileMiddleware middleware(options);
+    auto request = make_request(HttpMethod::GET, "/assets/data.txt");
+    HttpResponse response;
+    response.header("Vary", "Origin");
+
+    ASSERT_FALSE(middleware.before(request, response));
+    ASSERT_EQ(response.status_code(), HttpStatus::OK);
+    EXPECT_EQ(response.headers().at("Vary"), "Origin, Accept-Encoding");
+
+    request->set_header("If-None-Match", response.headers().at("ETag"));
+    HttpResponse revalidated;
+    revalidated.header("Vary", "Origin");
+    ASSERT_FALSE(middleware.before(request, revalidated));
+    EXPECT_EQ(revalidated.status_code(), HttpStatus::NOT_MODIFIED);
+    EXPECT_EQ(revalidated.headers().at("Vary"), "Origin, Accept-Encoding");
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     zhttp::init_logger();

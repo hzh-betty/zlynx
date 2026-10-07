@@ -77,7 +77,7 @@ std::vector<std::string> accepted_content_encodings(
 }
 
 
-std::string TimerHelper::format_http_date_gmt(std::time_t timestamp) {
+std::string format_http_date_gmt(std::time_t timestamp) {
     struct tm tm_value;
     char buffer[64];
     gmtime_r(&timestamp, &tm_value);
@@ -86,17 +86,8 @@ std::string TimerHelper::format_http_date_gmt(std::time_t timestamp) {
     return buffer;
 }
 
-TimerHelper::SteadyTimePoint TimerHelper::steady_now() {
-    return SteadyClock::now();
-}
 
-TimerHelper::Milliseconds TimerHelper::milliseconds(int64_t value) {
-    return Milliseconds(value);
-}
 
-TimerHelper::Seconds TimerHelper::seconds(int64_t value) {
-    return Seconds(value);
-}
 
 std::string PathOperator::normalize_prefix(const std::string &prefix) {
     // 统一前缀格式，减少调用方分支判断复杂度。
@@ -249,50 +240,18 @@ std::string FileOperator::detect_content_type(const std::string &file_path) {
     return get_mime_type(file_path.substr(dot + 1));
 }
 
-bool FileOperator::get_last_modified(const std::string &path,
-                                     std::string &last_modified) {
-    struct stat st;
-    if (::stat(path.c_str(), &st) != 0) {
-        return false;
-    }
-    last_modified = TimerHelper::format_http_date_gmt(st.st_mtime);
-    return true;
-}
 
-bool FileOperator::get_etag(const std::string &path, std::string &etag) {
-    // 这里采用弱 ETag：W/"size-mtime_ns"。
-    // 好处是无需读文件内容做哈希，性能开销小且足够用于缓存协商。
-    struct stat st;
-    if (::stat(path.c_str(), &st) != 0) {
-        return false;
-    }
-
+std::string FileOperator::get_etag(const struct stat &st) {
+    // 保留弱 ETag 格式：W/"size-mtime_ns"。
     uint64_t mtime_ns = static_cast<uint64_t>(st.st_mtime) * 1000000000ULL;
     mtime_ns += static_cast<uint64_t>(st.st_mtim.tv_nsec);
 
     std::ostringstream oss;
     oss << "W/\"" << static_cast<unsigned long long>(st.st_size) << "-"
         << static_cast<unsigned long long>(mtime_ns) << "\"";
-    etag = oss.str();
-    return true;
+    return oss.str();
 }
 
-bool FileOperator::read_int_from_file(const std::string &path, int &value) {
-    std::ifstream ifs(path);
-    if (!ifs) {
-        return false;
-    }
-    ifs >> value;
-    return static_cast<bool>(ifs);
-}
 
-bool FileOperator::write_int_to_file(const std::string &path, int value) {
-    std::ofstream ofs(path);
-    if (!ofs) {
-        return false;
-    }
-    ofs << value << std::endl;
-    return static_cast<bool>(ofs);
-}
 
 } // namespace zhttp

@@ -20,20 +20,6 @@ namespace {
 
 constexpr char kWebSocketAcceptGuid[] = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
-bool header_contains_token(const std::string &header_value,
-                           const std::string &target) {
-    // Connection 头可能包含逗号分隔 token（如 keep-alive, Upgrade）。
-    // 这里按 token 语义匹配，避免 substring 误判。
-    const auto tokens = split_string(header_value, ',');
-    for (std::string token : tokens) {
-        trim(token);
-        if (to_lower(token) == target) {
-            return true;
-        }
-    }
-    return false;
-}
-
 bool is_http_token_char(const unsigned char ch) {
     if (ch <= 0x1F || ch >= 0x7F) {
         return false;

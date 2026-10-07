@@ -28,8 +28,7 @@ namespace zhttp {
  * 这样匹配时只需要按路径做 O(1) 查找。
  */
 struct StaticRouteEntry {
-    std::unordered_map<HttpMethod, RouteHandlerWrapper> handlers;
-    std::vector<mid::Middleware::ptr> middlewares;
+    std::unordered_map<HttpMethod, RouterCallback> handlers;
 };
 
 /**
@@ -40,8 +39,7 @@ struct StaticRouteEntry {
  */
 struct RouteContext {
     bool found = false;
-    RouteHandlerWrapper handler;
-    std::vector<mid::Middleware::ptr> middlewares;
+    RouterCallback handler;
     std::unordered_map<std::string, std::string> params; //
 };
 
@@ -260,7 +258,7 @@ class Router {
      * @param wrapper 已统一包装好的处理器
      */
     void add_route_internal(HttpMethod method, const std::string &path,
-                            RouteHandlerWrapper wrapper);
+                            RouterCallback wrapper);
 
     /**
      * @brief 注册正则路由内部实现
@@ -272,7 +270,7 @@ class Router {
     void add_regex_route_internal(HttpMethod method,
                                   const std::string &regex_pattern,
                                   const std::vector<std::string> &param_names,
-                                  RouteHandlerWrapper wrapper);
+                                  RouterCallback wrapper);
 
     /**
      * @brief 规范化路由组前缀
@@ -338,7 +336,7 @@ class Router {
     std::vector<mid::Middleware::ptr> global_middlewares_;
 
     // 路由未命中时使用的兜底处理器。
-    RouteHandlerWrapper not_found_handler_;
+    RouterCallback not_found_handler_;
 
     // 捕获到未处理异常后的统一回调。
     ExceptionHandler exception_handler_;

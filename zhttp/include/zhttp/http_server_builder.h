@@ -77,7 +77,7 @@ class HttpServerBuilder {
      * @param mode 栈模式 (INDEPENDENT 或 SHARED)
      * @return 当前 Builder 引用
      */
-    HttpServerBuilder &stack_mode(StackMode mode);
+    HttpServerBuilder &stack_mode(zco::StackModel mode);
 
     /**
      * @brief 使用共享栈模式
@@ -263,13 +263,6 @@ class HttpServerBuilder {
      */
     const ServerConfig &config() const { return config_; }
 
-    /**
-     * @brief 获取 HTTP -> HTTPS 重定向服务实例
-     * @return 若未启用重定向则返回空指针
-     */
-    std::shared_ptr<HttpServer> redirect_server() const {
-        return redirect_server_;
-    }
 
   private:
     // 当前构建中的服务器配置。
@@ -277,11 +270,11 @@ class HttpServerBuilder {
 
     // 待注册到服务器上的全局中间件和路由。
     std::vector<mid::Middleware::ptr> middlewares_;
-    std::vector<std::tuple<HttpMethod, std::string, RouteHandlerWrapper>>
+    std::vector<std::tuple<HttpMethod, std::string, RouterCallback>>
         routes_;
 
     // 可选的自定义 404 处理器。
-    RouteHandlerWrapper not_found_handler_;
+    RouterCallback not_found_handler_;
 
     // 可选的自定义异常处理器。
     Router::ExceptionHandler exception_handler_;
