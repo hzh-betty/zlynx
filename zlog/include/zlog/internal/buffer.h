@@ -64,12 +64,6 @@ class alignas(64) Buffer {
     size_t readable_size() const;
 
     /**
-     * @brief 移动读指针
-     * @param len 要移动的长度
-     */
-    void move_reader(size_t len);
-
-    /**
      * @brief 重置读写位置，初始化缓冲区
      */
     void reset();
@@ -113,17 +107,10 @@ class alignas(64) Buffer {
      */
     size_t calculate_new_size(size_t len) const;
 
-    /**
-     * @brief 移动写指针
-     * @param len 要移动的长度
-     */
-    void move_writer(size_t len);
-
   private:
     char *data_;        // 缓冲区指针
     size_t writer_idx_; // 当前可写数据的下标 (热路径)
     size_t capacity_;   // 缓冲区总容量
-    size_t reader_idx_; // 当前可读数据的下标
 };
 } // namespace zlog
 

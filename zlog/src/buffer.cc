@@ -8,7 +8,6 @@
 
 #include <sys/mman.h>
 
-#include <cassert>
 #include <cstdlib>
 #include <cstring>
 #include <stdexcept>
@@ -35,7 +34,7 @@ static void prefault_memory(char *data, size_t size) {
 
 Buffer::Buffer()
     : data_(static_cast<char *>(malloc(kDefaultBufferSize))), writer_idx_(0),
-      capacity_(kDefaultBufferSize), reader_idx_(0) {
+      capacity_(kDefaultBufferSize) {
     if (!data_) {
         throw std::bad_alloc();
     }
@@ -54,31 +53,26 @@ Buffer::~Buffer() {
 void Buffer::push(const char *data, size_t len) {
     ensure_enough_size(len);
     // 使用编译器内建函数进行更高效的内存拷贝
-    __builtin_memcpy(data_ + writer_idx_, data, len);
+    std::memcpy(data_ + writer_idx_, data, len);
     writer_idx_ += len;
 }
 
-const char *Buffer::begin() const { return data_ + reader_idx_; }
+const char *Buffer::begin() const { return data_; }
 
 size_t Buffer::writable_size() const { return (capacity_ - writer_idx_); }
 
-size_t Buffer::readable_size() const { return writer_idx_ - reader_idx_; }
+size_t Buffer::readable_size() const { return writer_idx_; }
 
-void Buffer::move_reader(size_t len) {
-    assert(len <= readable_size());
-    reader_idx_ += len;
-}
 
-void Buffer::reset() { reader_idx_ = writer_idx_ = 0; }
+void Buffer::reset() { writer_idx_ = 0; }
 
 void Buffer::swap(Buffer &buffer) noexcept {
     std::swap(data_, buffer.data_);
     std::swap(capacity_, buffer.capacity_);
-    std::swap(reader_idx_, buffer.reader_idx_);
     std::swap(writer_idx_, buffer.writer_idx_);
 }
 
-bool Buffer::empty() const { return reader_idx_ == writer_idx_; }
+bool Buffer::empty() const { return writer_idx_ == 0; }
 
 bool Buffer::can_accommodate(size_t len) const {
     if (len <= writable_size()) {
@@ -127,9 +121,5 @@ void Buffer::ensure_enough_size(size_t len) {
     capacity_ = new_size;
 }
 
-void Buffer::move_writer(size_t len) {
-    assert(len <= writable_size());
-    writer_idx_ += len;
-}
 
 } // namespace zlog

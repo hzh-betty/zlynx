@@ -88,42 +88,9 @@ TEST_F(BufferTest, PushWithNullBytes) {
     EXPECT_EQ(std::memcmp(buf.begin(), data, 11), 0);
 }
 
-TEST_F(BufferTest, MoveReaderPartial) {
-    buf.push("hello world", 11);
-    buf.move_reader(6);
 
-    EXPECT_EQ(buf.readable_size(), 5u);
-    EXPECT_EQ(std::string(buf.begin(), buf.readable_size()), "world");
-}
 
-TEST_F(BufferTest, MoveReaderAll) {
-    buf.push("hello", 5);
-    buf.move_reader(5);
 
-    EXPECT_EQ(buf.readable_size(), 0u);
-    EXPECT_TRUE(buf.empty());
-}
-
-TEST_F(BufferTest, MoveReaderZero) {
-    buf.push("hello", 5);
-    buf.move_reader(0);
-
-    EXPECT_EQ(buf.readable_size(), 5u);
-    EXPECT_EQ(std::string(buf.begin(), buf.readable_size()), "hello");
-}
-
-TEST_F(BufferTest, MoveReaderMultipleTimes) {
-    buf.push("abcdefghij", 10);
-
-    buf.move_reader(2);
-    EXPECT_EQ(std::string(buf.begin(), buf.readable_size()), "cdefghij");
-
-    buf.move_reader(3);
-    EXPECT_EQ(std::string(buf.begin(), buf.readable_size()), "fghij");
-
-    buf.move_reader(5);
-    EXPECT_TRUE(buf.empty());
-}
 
 TEST_F(BufferTest, ResetAfterPush) {
     buf.push("hello world", 11);
@@ -134,14 +101,6 @@ TEST_F(BufferTest, ResetAfterPush) {
     EXPECT_EQ(buf.writable_size(), buf.capacity());
 }
 
-TEST_F(BufferTest, ResetAfterPartialRead) {
-    buf.push("hello world", 11);
-    buf.move_reader(5);
-    buf.reset();
-
-    EXPECT_EQ(buf.readable_size(), 0u);
-    EXPECT_TRUE(buf.empty());
-}
 
 TEST_F(BufferTest, ResetOnEmpty) {
     buf.reset();
@@ -321,15 +280,6 @@ TEST_F(BufferTest, BeginPointerConsistency) {
     EXPECT_EQ(p1, p2);
 }
 
-TEST_F(BufferTest, BeginPointerAfterMoveReader) {
-    buf.push("hello world", 11);
-    const char *p1 = buf.begin();
-
-    buf.move_reader(6);
-    const char *p2 = buf.begin();
-
-    EXPECT_EQ(p2, p1 + 6);
-}
 
 TEST_F(BufferTest, ManySmallPushes) {
     const int iterations = 10000;
@@ -340,10 +290,10 @@ TEST_F(BufferTest, ManySmallPushes) {
     EXPECT_EQ(buf.readable_size(), static_cast<size_t>(iterations));
 }
 
-TEST_F(BufferTest, PushReadPushCycle) {
+TEST_F(BufferTest, PushResetPushCycle) {
     for (int cycle = 0; cycle < 100; cycle++) {
         buf.push("test", 4);
-        buf.move_reader(4);
+        buf.reset();
     }
 
     EXPECT_TRUE(buf.empty());
@@ -392,17 +342,11 @@ TEST_F(BufferTest, CanAccommodateReturnsFalseWhenBeyondMax) {
     EXPECT_FALSE(buf.can_accommodate(len));
 }
 
-TEST_F(BufferTest, MoveWriterIncreasesReadableSize) {
-    EXPECT_EQ(buf.readable_size(), 0u);
-    buf.move_writer(8);
-    EXPECT_EQ(buf.readable_size(), 8u);
-}
 
 TEST_F(BufferTest, EnsureEnoughSizeCappedBranchReturnsWithoutRealloc) {
     const size_t old_cap = kMaxBufferSize - 10;
     buf.capacity_ = old_cap;
     buf.writer_idx_ = old_cap;
-    buf.reader_idx_ = 0;
 
     buf.ensure_enough_size(20);
 
@@ -413,7 +357,6 @@ TEST_F(BufferTest, EnsureEnoughSizeCappedBranchReturnsWithoutRealloc) {
 TEST_F(BufferTest, EnsureEnoughSizeCappedBranchReallocPath) {
     buf.capacity_ = kMaxBufferSize - 100;
     buf.writer_idx_ = buf.capacity_ - 50;
-    buf.reader_idx_ = 0;
 
     try {
         buf.ensure_enough_size(120);
