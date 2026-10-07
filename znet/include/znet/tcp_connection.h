@@ -23,7 +23,7 @@
 #include "znet/internal/noncopyable.h"
 #include "znet/socket.h"
 
-#include "zco/wait_group.h"
+#include "zco/event.h"
 
 namespace zco {
 class Scheduler;
@@ -138,7 +138,7 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>,
     struct Event {
         explicit Event(EventType t)
             : type(t), max_read_bytes(0), timeout_ms(0), payload(), result(0),
-              error(0), completion(1) {}
+              error(0), completion(true, false) {}
 
         EventType type;
         size_t max_read_bytes;
@@ -146,7 +146,7 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>,
         std::string payload;
         ssize_t result;
         int error;
-        zco::WaitGroup completion;
+        zco::Event completion;
     };
 
   private:

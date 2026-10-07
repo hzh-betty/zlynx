@@ -24,6 +24,7 @@
 #include "znet/znet_logger.h"
 
 #include "zco/sched.h"
+#include "zco/wait_group.h"
 #include "znet/tls_context.h"
 
 namespace znet {
@@ -47,6 +48,7 @@ class FakeTlsChannel : public TlsChannel {
     ssize_t write_result = 0;
     int forced_errno = 0;
     std::string read_payload = "tls";
+    void *last_read_buffer = nullptr;
 
     bool handshake(uint32_t, const WaitCallback &wait_callback) override {
         if (!handshake_ok) {
@@ -61,6 +63,7 @@ class FakeTlsChannel : public TlsChannel {
 
     ssize_t read(void *buffer, size_t length, uint32_t,
                  const WaitCallback &) override {
+        last_read_buffer = buffer;
         if (forced_errno != 0) {
             errno = forced_errno;
             return -1;
@@ -543,6 +546,39 @@ TEST_F(TcpConnectionUnitTest, EnableTlsServerReadAndWritePathsUseTlsChannel) {
     EXPECT_TRUE(ctx->last_channel->shutdown_called);
     EXPECT_EQ(conn->state(), TcpConnection::State::kDisconnected);
 
+    ::close(pair[1]);
+}
+
+TEST_F(TcpConnectionUnitTest, TlsReadAppendsDirectlyAndDoesNotCommitFailedReads) {
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+    auto conn =
+        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto ctx = std::make_shared<FakeTlsContext>();
+    ctx->read_result = 3;
+    ctx->payload = "abc";
+    ASSERT_TRUE(conn->enable_tls_server(ctx, 100));
+    conn->input_buffer().append("prefix:");
+    conn->input_buffer().ensure_writable_bytes(4096);
+    const void *destination = conn->input_buffer().begin_write();
+
+    ASSERT_EQ(conn->read(4096, 10), 3);
+    EXPECT_EQ(ctx->last_channel->last_read_buffer, destination);
+    EXPECT_EQ(conn->input_buffer().readable_bytes(), 10U);
+    EXPECT_EQ(std::string(conn->input_buffer().peek(), 10), "prefix:abc");
+
+    ctx->last_channel->forced_errno = EIO;
+    EXPECT_EQ(conn->read(16, 10), -1);
+    EXPECT_EQ(errno, EIO);
+    EXPECT_EQ(conn->input_buffer().readable_bytes(), 10U);
+    ctx->last_channel->forced_errno = 0;
+    EXPECT_EQ(conn->read(2, 10), 2);
+    EXPECT_EQ(conn->input_buffer().readable_bytes(), 12U);
+    ctx->last_channel->read_result = 0;
+    EXPECT_EQ(conn->read(16, 10), 0);
+    EXPECT_EQ(conn->state(), TcpConnection::State::kDisconnected);
+    EXPECT_EQ(conn->input_buffer().retrieve_all_as_string(), "prefix:abcab");
+    conn->close();
     ::close(pair[1]);
 }
 

@@ -12,7 +12,6 @@
 #include <cerrno>
 #include <limits>
 #include <utility>
-#include <vector>
 
 #include "zco/io_event.h"
 #include "zco/sched.h"
@@ -234,7 +233,7 @@ void TcpConnection::drain_mailbox() {
         }
 
         process_event(event);
-        event->completion.done();
+        event->completion.signal();
     }
 }
 
@@ -378,18 +377,17 @@ ssize_t TcpConnection::read_tls_internal(size_t max_read_bytes,
 
     const size_t max_chunk = std::min(
         max_read_bytes, static_cast<size_t>(std::numeric_limits<int>::max()));
-    // TLS 读取落到临时缓冲，再 append 到输入缓冲，保持与非 TLS
-    // 路径一致的消费模型。
-    std::vector<char> read_buffer(max_chunk);
+    // Actor 串行执行读取；等待 TLS IO 时不再处理其他邮箱事件。
+    input_buffer_.ensure_writable_bytes(max_chunk);
 
     const ssize_t n = tls_channel_->read(
-        read_buffer.data(), read_buffer.size(), timeout_ms,
+        input_buffer_.begin_write(), max_chunk, timeout_ms,
         [this](bool wait_for_write, uint32_t wait_timeout_ms) {
             return wait_tls_io(wait_for_write, wait_timeout_ms);
         });
 
     if (n > 0) {
-        input_buffer_.append(read_buffer.data(), static_cast<size_t>(n));
+        input_buffer_.has_written(static_cast<size_t>(n));
         return n;
     }
 

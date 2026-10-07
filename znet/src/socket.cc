@@ -52,13 +52,12 @@ namespace znet {
 
 // 按 family/type/protocol 创建新 socket 并执行基础初始化。
 Socket::Socket(int family, int type, int protocol)
-    : sockfd_(-1), family_(family), type_(type), protocol_(protocol),
-      is_connected_(false) {
+    : sockfd_(-1), family_(family), type_(type), protocol_(protocol) {
     new_sock();
 }
 
 // 基于已有 fd 包装：探测属性并补齐统一初始化逻辑。
-Socket::Socket(int sockfd) : sockfd_(sockfd), is_connected_(false) {
+Socket::Socket(int sockfd) : sockfd_(sockfd) {
     socklen_t len = sizeof(family_);
     if (::getsockopt(sockfd_, SOL_SOCKET, SO_DOMAIN, &family_, &len) != 0) {
         family_ = AF_INET;
@@ -225,7 +224,6 @@ bool Socket::connect(const Address::ptr addr, uint64_t timeout_ms) {
         return false;
     }
 
-    is_connected_ = true;
     get_local_address();
     ZNET_LOG_INFO("Socket::connect success: fd={}, remote={}, local={}",
                   sockfd_, remote_address_->to_string(),
@@ -249,7 +247,6 @@ bool Socket::close() {
         return true;
     }
 
-    is_connected_ = false;
     if (zco::co_close(sockfd_) != 0) {
         ZNET_LOG_ERROR("Socket::close failed: fd={}, errno={}, error={}",
                        sockfd_, errno, strerror(errno));
@@ -273,7 +270,6 @@ bool Socket::shutdown_write() {
         return false;
     }
 
-    is_connected_ = false;
     ZNET_LOG_DEBUG("Socket::shutdown_write success: fd={}", sockfd_);
     return true;
 }
@@ -462,11 +458,9 @@ Address::ptr Socket::get_remote_address() {
 // 读取 SO_ERROR 作为最近一次 socket 错误状态。
 int Socket::get_error() {
     int error = 0;
-    socklen_t len = sizeof(error);
     if (!get_option(SOL_SOCKET, SO_ERROR, &error)) {
         return -1;
     }
-    (void)len;
     return error;
 }
 

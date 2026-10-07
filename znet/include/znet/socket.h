@@ -24,7 +24,7 @@ namespace znet {
  * 提供 Socket 的创建、连接、读写、配置等功能
  * 支持 TCP/UDP 协议
  */
-class Socket : public std::enable_shared_from_this<Socket>, public NonCopyable {
+class Socket : public NonCopyable {
   public:
     using ptr = std::shared_ptr<Socket>;
 
@@ -263,7 +263,6 @@ class Socket : public std::enable_shared_from_this<Socket>, public NonCopyable {
     int type_;     // socket 类型
     int protocol_; // 协议
 
-    bool is_connected_; // 是否已连接
 
     Address::ptr local_address_;  // 本地地址
     Address::ptr remote_address_; // 远端地址
