@@ -8,6 +8,7 @@
 #define ZHTTP_HTTP_REQUEST_H_
 
 #include "zhttp/http_common.h"
+#include "zhttp/internal/request_body.h"
 
 #include <memory>
 #include <string>
@@ -71,7 +72,7 @@ class HttpRequest {
      * @brief 获取请求体
      * @return 原始 Body 内容
      */
-    const std::string &body() const { return body_; }
+    const std::string &body() const { return body_.content(); }
 
     /**
      * @brief 获取远端地址（例如 "127.0.0.1:12345"）
@@ -170,7 +171,7 @@ class HttpRequest {
      * @return 最近一次 multipart 解析失败的错误说明
      */
     const std::string &multipart_error() const {
-        return runtime_.multipart_error;
+        return body_.multipart_error();
     }
 
     /**
@@ -208,19 +209,13 @@ class HttpRequest {
      * @brief 设置请求体
      * @param body 请求体内容
      */
-    void set_body(const std::string &body) {
-        body_ = body;
-        invalidate_body_cache();
-    }
+    void set_body(const std::string &body) { body_.set(body); }
 
     /**
      * @brief 设置请求体（移动语义）
      * @param body 请求体内容
      */
-    void set_body(std::string &&body) {
-        body_ = std::move(body);
-        invalidate_body_cache();
-    }
+    void set_body(std::string &&body) { body_.set(std::move(body)); }
 
     /**
      * @brief 设置远端地址（服务器使用）
@@ -289,7 +284,7 @@ class HttpRequest {
      * @brief 获取 JSON 解析错误（若有）
      * @return 最近一次 JSON 解析失败的错误说明
      */
-    const std::string &json_error() const { return runtime_.json_error; }
+    const std::string &json_error() const { return body_.json_error(); }
 
     /**
      * @brief 是否为 application/x-www-form-urlencoded
@@ -325,24 +320,10 @@ class HttpRequest {
 
         bool cookies_parsed = false; // Cookie 是否已经解析过
         Params cookies;              // 解析后的 Cookie 键值表
-
-        bool multipart_parsed = false; // multipart 是否已经解析过
-        std::shared_ptr<MultipartFormData> multipart; // 解析后的 multipart 数据
-        std::string multipart_error; // 最近一次 multipart 解析失败的错误说明
-
-        bool json_parsed = false;   // JSON 是否已经解析过
-        std::shared_ptr<Json> json; // 解析后的 JSON 对象
-        std::string json_error; // 最近一次 JSON 解析失败的错误说明
-
-        bool form_parsed = false; // URL 编码表单是否已经解析过
-        Params form_params;       // 解析后的 URL 编码表单字段
     };
 
     // 按需解析 Cookie，避免不访问 Cookie 的请求也付出额外开销。
     void parse_cookies_if_needed();
-
-    // 请求体相关解析缓存失效。
-    void invalidate_body_cache();
 
     // 解析自请求行和请求头的基础字段。
     HttpMethod method_ = HttpMethod::UNKNOWN;
@@ -351,14 +332,14 @@ class HttpRequest {
     HttpVersion version_ = HttpVersion::HTTP_1_1;
     Headers headers_;
     Headers normalized_headers_;
-    std::string body_;
+    detail::RequestBody body_;
     std::string remote_addr_;
 
     // 路由和查询参数解析结果。
     Params path_params_;  // 路径参数
     Params query_params_; // 查询参数
 
-    // 运行期会话与惰性解析缓存（cookie/multipart/json/form）。
+    // 运行期会话与 Cookie 解析缓存。
     RuntimeData runtime_;
 };
 

@@ -24,6 +24,7 @@ set(ZHTTP_UNIT_TESTS
     cors_middleware_test
     compression_middleware_test
     request_body_middleware_test
+    request_components_test
     timeout_middleware_test
     security_middleware_test
     static_file_opt_test

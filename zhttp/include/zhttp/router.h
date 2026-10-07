@@ -10,6 +10,7 @@
 #include "zhttp/http_request.h"
 #include "zhttp/http_response.h"
 #include "zhttp/internal/radix_tree.h"
+#include "zhttp/internal/request_pipeline.h"
 #include "zhttp/mid/middleware.h"
 #include "zhttp/route_handler.h"
 
@@ -229,7 +230,7 @@ class Router {
      * @return 当前生效的异常处理回调
      */
     const ExceptionHandler &exception_handler() const {
-        return exception_handler_;
+        return pipeline_.exception_handler();
     }
 
   private:
@@ -273,39 +274,6 @@ class Router {
                                   RouterCallback wrapper);
 
     /**
-     * @brief 规范化路由组前缀
-     * @param prefix 原始前缀
-     * @return 规范化后的前缀；若为空或等价于根路径则返回空字符串
-     * @details
-     * 当前实现把空串和 / 都视为“无效组前缀”，避免和全局中间件语义重叠。
-     * 同时会移除末尾多余的 /，让 /api 和 /api/ 归一到同一组。
-     */
-    std::string normalize_group_prefix(const std::string &prefix) const;
-
-    /**
-     * @brief 判断前缀是否严格匹配某个子路由路径
-     * @param prefix 组前缀
-     * @param path 请求路径
-     * @return true 表示 prefix 仅作为 path 的父级前缀命中
-     * @details
-     * 这里要求 path 比 prefix 更长，且 prefix 后面紧跟目录分隔符 /。
-     * 因此 /api 可以匹配 /api/users，但不会匹配 /api 或 /apiv1/users。
-     */
-    bool is_group_prefix_match(const std::string &prefix,
-                               const std::string &path) const;
-
-    /**
-     * @brief 收集请求路径对应的组中间件
-     * @param path 请求路径
-     * @return 按前缀深度从浅到深排列的中间件列表
-     * @details
-     * 例如请求 /api/v1/users 时，会依次尝试 /api 和 /api/v1。
-     * 返回结果保持“浅层组在前、深层组在后”，这样 after 阶段会自然按深到浅回退。
-     */
-    std::vector<mid::Middleware::ptr>
-    collect_group_middlewares(const std::string &path) const;
-
-    /**
      * @brief 判断当前请求是否应该触发首页跳转
      */
     bool should_redirect_to_homepage(const std::string &path,
@@ -323,23 +291,7 @@ class Router {
     // 动态路由和正则路由统一交给基数树管理。
     RadixTree radix_tree_;
 
-    // 路由级中间件映射，key 是注册时的原始路径。
-    std::unordered_map<std::string, std::vector<mid::Middleware::ptr>>
-        route_middlewares_;
-
-    // 前缀路由组中间件，key 是规范化后的静态前缀。
-    // 这里不存动态模式或正则，避免把“组匹配”和“路由匹配”耦合到一起。
-    std::unordered_map<std::string, std::vector<mid::Middleware::ptr>>
-        group_middlewares_;
-
-    // 全局中间件，对每个请求都生效。
-    std::vector<mid::Middleware::ptr> global_middlewares_;
-
-    // 路由未命中时使用的兜底处理器。
-    RouterCallback not_found_handler_;
-
-    // 捕获到未处理异常后的统一回调。
-    ExceptionHandler exception_handler_;
+    detail::RequestPipeline pipeline_;
 
     // 访问 / 或 /home 时的跳转目标；空串表示关闭该功能。
     std::string homepage_;

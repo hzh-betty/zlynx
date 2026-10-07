@@ -35,11 +35,13 @@ endif()
 set(ZHTTP_SOURCES
     src/zhttp_logger.cc
     src/http_common.cc
+    src/request_body.cc
     src/http_request.cc
     src/http_response.cc
     src/http_parser.cc
     src/multipart.cc
     src/radix_tree.cc
+    src/request_pipeline.cc
     src/router.cc
     src/http_utils.cc
     src/range_parse.cc
