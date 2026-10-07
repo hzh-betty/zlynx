@@ -137,7 +137,7 @@ class Buffer : public NonCopyable {
     /**
      * @brief 从 Socket 读取数据并追加到缓冲区。
      * @param socket 目标 socket。
-     * @param max_read_bytes 单次最多读取字节数。
+     * @param max_read_bytes 单次最多读取字节数；读取前预留相应可写空间。
      * @param timeout_ms 本次读取超时（毫秒），0 表示无限等待。
      * @param saved_errno 失败时写回 errno，可为空。
      * @return >0 读取字节数，0 对端关闭，<0 读取失败。

@@ -233,7 +233,7 @@ TEST_F(BufferUnitTest, ReadAndWriteSocketPathWorksInCoroutineContext) {
     zco::shutdown();
 }
 
-TEST_F(BufferUnitTest, ReadFromSocketDoesNotPreGrowToMaxReadBytes) {
+TEST_F(BufferUnitTest, ReadFromSocketPreGrowsWritableSpace) {
     zco::init(1);
 
     int pair[2] = {-1, -1};
@@ -244,7 +244,6 @@ TEST_F(BufferUnitTest, ReadFromSocketDoesNotPreGrowToMaxReadBytes) {
     Buffer input(8);
     input.append("abcd", 4);
     EXPECT_EQ(input.retrieve_as_string(4), "abcd");
-    const size_t writable_before = input.writable_bytes();
 
     zco::WaitGroup done(1);
     zco::go([&]() {
@@ -257,9 +256,35 @@ TEST_F(BufferUnitTest, ReadFromSocketDoesNotPreGrowToMaxReadBytes) {
     });
     done.wait();
 
-    EXPECT_EQ(input.writable_bytes(), writable_before - 2);
+    EXPECT_GE(input.writable_bytes(), 64 * 1024 - 2);
     EXPECT_EQ(input.retrieve_all_as_string(), "xy");
 
+    reader->close();
+    ::close(pair[1]);
+    zco::shutdown();
+}
+
+TEST_F(BufferUnitTest, DirectReadPreservesPrefixHonorsLimitAndHandlesEof) {
+    zco::init(1);
+    int pair[2] = {-1, -1};
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+    auto reader = std::make_shared<Socket>(pair[0]);
+    Buffer input(2);
+    input.append("old", 3);
+    zco::WaitGroup done(1);
+    zco::go([&]() {
+        int saved_errno = 0;
+        EXPECT_EQ(::send(pair[1], "abcdef", 6, 0), 6);
+        EXPECT_EQ(input.read_from_socket(reader, 2, 0, &saved_errno), 2);
+        EXPECT_EQ(input.retrieve_all_as_string(), "oldab");
+        EXPECT_EQ(input.read_from_socket(reader, 4, 200, &saved_errno), 4);
+        EXPECT_EQ(input.retrieve_all_as_string(), "cdef");
+        EXPECT_EQ(::shutdown(pair[1], SHUT_WR), 0);
+        EXPECT_EQ(input.read_from_socket(reader, 4, 200, &saved_errno), 0);
+        EXPECT_EQ(input.readable_bytes(), 0u);
+        done.done();
+    });
+    done.wait();
     reader->close();
     ::close(pair[1]);
     zco::shutdown();
