@@ -23,13 +23,6 @@ set(ZLYNX_PERF_COMPILE_OPTIONS
     CACHE STRING "Semicolon-separated compile options for performance test targets"
 )
 
-# 告警 helper 只在源码树内部使用。可安装库目标不会 PUBLIC 链接它，避免
-# install(EXPORT) 要求下游也存在 zlynx_project_warnings。
-add_library(zlynx_project_warnings INTERFACE)
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(zlynx_project_warnings INTERFACE -Wall -Wextra -Wpedantic)
-endif()
-
 add_library(zlynx_coverage_options INTERFACE)
 if(ZLYNX_ENABLE_COVERAGE)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
