@@ -278,8 +278,8 @@ TEST_F(SinkTest, RollBySizeSinkAutoFlushWritesImmediately) {
     EXPECT_TRUE(found);
 }
 
-TEST_F(SinkTest, SinkFactoryCreateStdOut) {
-    LogSink::ptr sink = SinkFactory::create<StdOutSink>();
+TEST_F(SinkTest, CreateStdOut) {
+    LogSink::ptr sink = std::make_shared<StdOutSink>();
     EXPECT_NE(sink.get(), static_cast<LogSink *>(NULL));
 
     testing::internal::CaptureStdout();
@@ -289,9 +289,9 @@ TEST_F(SinkTest, SinkFactoryCreateStdOut) {
     EXPECT_EQ(output, "factory test\n");
 }
 
-TEST_F(SinkTest, SinkFactoryCreateFileSink) {
+TEST_F(SinkTest, CreateFileSink) {
     std::string filepath = testDir + "/factory_file.log";
-    LogSink::ptr sink = SinkFactory::create<FileSink>(filepath);
+    LogSink::ptr sink = std::make_shared<FileSink>(filepath);
     EXPECT_NE(sink.get(), static_cast<LogSink *>(NULL));
 
     sink->log("factory file test\n", 18);
@@ -300,9 +300,9 @@ TEST_F(SinkTest, SinkFactoryCreateFileSink) {
     EXPECT_EQ(content, "factory file test\n");
 }
 
-TEST_F(SinkTest, SinkFactoryCreateRollBySizeSink) {
+TEST_F(SinkTest, CreateRollBySizeSink) {
     std::string basename = testDir + "/factory_roll";
-    LogSink::ptr sink = SinkFactory::create<RollBySizeSink>(basename, 1024UL);
+    LogSink::ptr sink = std::make_shared<RollBySizeSink>(basename, 1024UL);
     EXPECT_NE(sink.get(), static_cast<LogSink *>(NULL));
 
     sink->log("factory roll test\n", 18);

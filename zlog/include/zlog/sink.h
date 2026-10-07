@@ -8,8 +8,8 @@
 #define ZLOG_SINK_H_
 
 #include <fstream>
+#include <memory>
 #include <string>
-#include <utility>
 
 #include <fmt/core.h>
 #include <fmt/os.h>
@@ -18,7 +18,6 @@
 /**
  * @brief 日志落地模块
  * 实现日志输出到不同目标（控制台、文件、滚动文件）
- * 使用工厂模式进行创建与表示的分离
  */
 namespace zlog {
 /**
@@ -107,24 +106,6 @@ class RollBySizeSink final : public LogSink {
     bool auto_flush_;      // 是否自动flush
 };
 
-/**
- * @brief 日志落地器工厂类
- * 使用工厂模式创建不同类型的日志落地器
- */
-class SinkFactory {
-  public:
-    /**
-     * @brief 创建日志落地器
-     * @tparam SinkType 落地器类型
-     * @tparam Args 构造参数类型
-     * @param args 构造参数
-     * @return 日志落地器智能指针
-     */
-    template <typename SinkType, typename... Args>
-    static LogSink::ptr create(Args &&...args) {
-        return std::make_shared<SinkType>(std::forward<Args>(args)...);
-    }
-};
 } // namespace zlog
 
 #endif // ZLOG_SINK_H_
