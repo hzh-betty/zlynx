@@ -31,6 +31,7 @@ add_library(znet
     src/acceptor.cc
     src/buffer.cc
     src/socket.cc
+    src/connection_actor.cc
     src/tcp_connection.cc
     src/tcp_server.cc
     src/tls_context.cc

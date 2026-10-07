@@ -12,24 +12,25 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
-#include <deque>
 #include <functional>
 #include <limits>
 #include <memory>
-#include <mutex>
 #include <string>
 
 #include "znet/buffer.h"
 #include "znet/internal/noncopyable.h"
 #include "znet/socket.h"
 
-#include "zco/event.h"
-
 namespace zco {
 class Scheduler;
 }
 
 namespace znet {
+namespace detail {
+class ConnectionActor;
+enum class ConnectionEventType : uint8_t;
+struct ConnectionEvent;
+} // 命名空间 detail
 
 class TcpServer;
 class TlsContext;
@@ -127,27 +128,8 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>,
 
     bool wait_tls_io(bool wait_for_write, uint32_t timeout_ms);
 
-    enum class EventType : uint8_t {
-        kRead = 0,
-        kSend = 1,
-        kFlush = 2,
-        kShutdown = 3,
-        kClose = 4,
-    };
-
-    struct Event {
-        explicit Event(EventType t)
-            : type(t), max_read_bytes(0), timeout_ms(0), payload(), result(0),
-              error(0), completion(true, false) {}
-
-        EventType type;
-        size_t max_read_bytes;
-        uint32_t timeout_ms;
-        std::string payload;
-        ssize_t result;
-        int error;
-        zco::Event completion;
-    };
+    using EventType = detail::ConnectionEventType;
+    using Event = detail::ConnectionEvent;
 
   private:
     void set_state(State state);
@@ -157,7 +139,6 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>,
     void finish_inline_actor();
 
     ssize_t dispatch_event_and_wait(const std::shared_ptr<Event> &event);
-    void drain_mailbox();
     void process_event(const std::shared_ptr<Event> &event);
 
     ssize_t read_internal(size_t max_read_bytes, uint32_t timeout_ms);
@@ -188,12 +169,7 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>,
 
     void *context_;
 
-    mutable std::mutex actor_mutex_;
-    std::deque<std::shared_ptr<Event>> mailbox_;
-    bool actor_running_; // actor 是否正在运行
-    void *actor_coroutine_; // 当前 actor 执行协程句柄，仅用于重入识别
-    zco::Scheduler *actor_scheduler_;
-    int actor_sched_id_;
+    std::unique_ptr<detail::ConnectionActor> actor_;
 };
 
 } // namespace znet

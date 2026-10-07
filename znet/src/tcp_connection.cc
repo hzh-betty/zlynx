@@ -5,6 +5,7 @@
  */
 
 #include "znet/tcp_connection.h"
+#include "znet/internal/connection_actor.h"
 
 #include <chrono>
 
@@ -45,22 +46,11 @@ TcpConnection::TcpConnection(Socket::ptr socket,
       state_(static_cast<uint8_t>(State::kConnecting)),
       write_complete_callback_(), high_water_mark_callback_(),
       high_water_mark_(64 * 1024 * 1024), write_timeout_ms_(0),
-      tls_channel_(nullptr), context_(nullptr), actor_mutex_(), mailbox_(),
-      actor_running_(false), actor_coroutine_(nullptr),
-      actor_scheduler_(actor_scheduler), actor_sched_id_(-1) {
-    if (actor_scheduler_) {
-        actor_sched_id_ = actor_scheduler_->id();
-    } else {
-        // 未显式指定时自动选择调度器，优先 next_sched，兜底 main_sched。
-        actor_scheduler_ = zco::next_sched();
-        if (!actor_scheduler_) {
-            actor_scheduler_ = zco::main_sched();
-        }
-        if (actor_scheduler_) {
-            actor_sched_id_ = actor_scheduler_->id();
-        }
-    }
-
+      tls_channel_(nullptr), context_(nullptr),
+      actor_(new detail::ConnectionActor(
+          actor_scheduler,
+          [this](const std::shared_ptr<Event> &event) { process_event(event); },
+          [this]() -> std::shared_ptr<void> { return shared_from_this(); })) {
     if (!socket_ || !socket_->is_valid()) {
         ZNET_LOG_WARN(
             "TcpConnection::TcpConnection created with invalid socket");
@@ -73,7 +63,7 @@ TcpConnection::TcpConnection(Socket::ptr socket,
 
     ZNET_LOG_DEBUG("TcpConnection::TcpConnection initialized: fd={}, state={}, "
                    "actor_sched_id={}",
-                   fd(), state_to_string(state()), actor_sched_id_);
+                   fd(), state_to_string(state()), actor_->scheduler_id());
 }
 
 TcpConnection::~TcpConnection() = default;
@@ -123,119 +113,19 @@ void TcpConnection::set_state(State state) {
 
 // 连接内部采用 Actor 模型串行化所有读写/关闭事件：
 // 1) 外部线程/协程通过 dispatch_event_and_wait 投递 Event。
-// 2) 事件进入 mailbox_，由单个执行者 drain_mailbox() 依次处理。
+// 2) ConnectionActor 在目标调度器上串行执行事件。
 // 3) 处理结果写回 Event(result/error)，唤醒等待方。
 // 该模型的核心目标是：避免同一连接上并发读写导致状态竞争。
 ssize_t
 TcpConnection::dispatch_event_and_wait(const std::shared_ptr<Event> &event) {
-    if (!event) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    // actor 尚未运行时，需要决定谁来启动 drain_mailbox。
-    bool should_launch_worker = false;
-
-    // 当前就在目标协程调度器上时，可直接 inline 处理，
-    // 避免“再派发一个协程”带来的额外调度开销。
-    bool run_inline = false;
-
-    // 重入场景：若当前已在 actor 执行协程内，再次 dispatch 时必须直接执行，
-    // 否则会出现“自己等待自己”的死锁。注意不能用线程 id 判断：同一
-    // 调度线程会轮流运行多个协程，只有同一个协程才是真正的 actor 重入。
-    bool reentrant = false;
-    {
-        std::unique_lock<std::mutex> lock(actor_mutex_);
-        if (actor_running_ && actor_coroutine_ != nullptr &&
-            actor_coroutine_ == zco::current_coroutine()) {
-            reentrant = true;
-        } else {
-            mailbox_.push_back(event);
-            if (!actor_running_) {
-                actor_running_ = true;
-                if (zco::in_coroutine() &&
-                    (actor_sched_id_ < 0 ||
-                     zco::sched_id() == actor_sched_id_)) {
-                    run_inline = true;
-                } else {
-                    should_launch_worker = true;
-                }
-            }
-        }
-    }
-
-    if (reentrant) {
-        process_event(event);
-        if (event->error != 0) {
-            errno = event->error;
-        }
-        return event->result;
-    }
-
-    if (run_inline) {
-        drain_mailbox();
-    } else if (should_launch_worker) {
-        std::shared_ptr<TcpConnection> self = shared_from_this();
-        if (actor_scheduler_) {
-            actor_scheduler_->go([self]() { self->drain_mailbox(); });
-        } else {
-            zco::go([self]() { self->drain_mailbox(); });
-        }
-    }
-
-    event->completion.wait();
-
-    if (event->error != 0) {
-        errno = event->error;
-    }
-    return event->result;
+    return actor_->dispatch(event);
 }
 
 bool TcpConnection::try_begin_inline_actor() {
-    if (!zco::in_coroutine()) {
-        return false;
-    }
-
-    if (actor_sched_id_ >= 0 && zco::sched_id() != actor_sched_id_) {
-        return false;
-    }
-
-    std::unique_lock<std::mutex> lock(actor_mutex_);
-    if (actor_running_) {
-        return false;
-    }
-
-    actor_running_ = true;
-    actor_coroutine_ = zco::current_coroutine();
-    return true;
+    return actor_->try_begin_inline();
 }
 
-void TcpConnection::finish_inline_actor() { drain_mailbox(); }
-
-void TcpConnection::drain_mailbox() {
-    {
-        std::unique_lock<std::mutex> lock(actor_mutex_);
-        actor_coroutine_ = zco::current_coroutine();
-    }
-
-    while (true) {
-        std::shared_ptr<Event> event;
-        {
-            std::unique_lock<std::mutex> lock(actor_mutex_);
-            if (mailbox_.empty()) {
-                // 邮箱耗尽后释放 actor_running_，下一个事件可重新拉起 worker。
-                actor_running_ = false;
-                actor_coroutine_ = nullptr;
-                return;
-            }
-            event = mailbox_.front();
-            mailbox_.pop_front();
-        }
-
-        process_event(event);
-        event->completion.signal();
-    }
-}
+void TcpConnection::finish_inline_actor() { actor_->finish_inline(); }
 
 void TcpConnection::process_event(const std::shared_ptr<Event> &event) {
     errno = 0;

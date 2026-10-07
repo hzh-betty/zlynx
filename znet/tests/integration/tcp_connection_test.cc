@@ -5,6 +5,7 @@
  */
 
 #define private public
+#include "znet/internal/connection_actor.h"
 #include "znet/tcp_connection.h"
 #undef private
 
@@ -262,8 +263,8 @@ TEST_F(TcpConnectionUnitTest,
     ASSERT_NE(conn, nullptr);
 
     // 模拟调度器句柄不可用，验证线程上下文仍可通过 go 投递并完成发送。
-    conn->actor_scheduler_ = nullptr;
-    conn->actor_sched_id_ = -1;
+    conn->actor_->scheduler_ = nullptr;
+    conn->actor_->sched_id_ = -1;
 
     ASSERT_EQ(conn->send("X", 1), 1);
 
@@ -850,7 +851,7 @@ TEST_F(TcpConnectionUnitTest, DispatchUsesInlineAndSchedulerWorkerPaths) {
 
     zco::WaitGroup done(1);
     zco::go([&]() {
-        conn->actor_sched_id_ = zco::sched_id();
+        conn->actor_->sched_id_ = zco::sched_id();
         auto event = std::make_shared<TcpConnection::Event>(
             TcpConnection::EventType::kRead);
         event->max_read_bytes = 0;
@@ -878,13 +879,13 @@ TEST_F(TcpConnectionUnitTest,
 
     zco::WaitGroup done(1);
     zco::go([&]() {
-        conn->actor_sched_id_ = zco::sched_id() + 100;
+        conn->actor_->sched_id_ = zco::sched_id() + 100;
         EXPECT_FALSE(conn->try_begin_inline_actor());
 
-        conn->actor_sched_id_ = zco::sched_id();
-        conn->actor_running_ = true;
+        conn->actor_->sched_id_ = zco::sched_id();
+        conn->actor_->running_ = true;
         EXPECT_FALSE(conn->try_begin_inline_actor());
-        conn->actor_running_ = false;
+        conn->actor_->running_ = false;
         done.done();
     });
     done.wait();
