@@ -64,6 +64,8 @@ set(ZHTTP_SOURCES
     src/session.cc
     src/daemon.cc
     src/server_config.cc
+    src/server_bootstrap.cc
+    src/server_runner.cc
     src/http_server_builder.cc
 )
 
