@@ -8,7 +8,7 @@
 
 namespace zco {
 
-// SharedStackBuffer / SharedStackPool 负责共享栈模式下的“栈实体”管理：
+// SharedStackBuffer 负责共享栈模式下的“栈实体”管理：
 // - 每个槽位只保存一块可复用的栈内存，避免协程切换时频繁申请/释放。
 // - occupy_fiber_ 仅记录当前占用者，用于调度器在共享栈复用前做归属判断。
 
@@ -59,47 +59,6 @@ SharedStackOwner SharedStackBuffer::occupy_fiber() const {
 void SharedStackBuffer::set_occupy_fiber(Fiber *fiber, int fiber_id) {
     // 共享栈不会同时被多个 fiber 持有；这里仅记录最后一个占用者。
     occupy_fiber_ = SharedStackOwner(fiber, fiber ? fiber_id : 0);
-}
-
-SharedStackPool::SharedStackPool(size_t stack_count, size_t stack_size)
-    : stacks_() {
-    // 预分配固定数量的共享栈槽位，避免运行期扩容打断调度热路径。
-    stacks_.reserve(stack_count);
-    for (size_t i = 0; i < stack_count; ++i) {
-        stacks_.emplace_back(stack_size);
-    }
-}
-
-void *SharedStackPool::data(size_t stack_slot) {
-    if (stack_slot >= stacks_.size()) {
-        // 越界直接返回空指针，调用方据此判断共享栈配置是否有效。
-        return nullptr;
-    }
-    return stacks_[stack_slot].data();
-}
-
-size_t SharedStackPool::size(size_t stack_slot) const {
-    if (stack_slot >= stacks_.size()) {
-        return 0;
-    }
-    return stacks_[stack_slot].size();
-}
-
-size_t SharedStackPool::count() const { return stacks_.size(); }
-
-SharedStackOwner SharedStackPool::occupy_fiber(size_t stack_slot) const {
-    if (stack_slot >= stacks_.size()) {
-        return SharedStackOwner();
-    }
-    return stacks_[stack_slot].occupy_fiber();
-}
-
-void SharedStackPool::set_occupy_fiber(size_t stack_slot, Fiber *fiber,
-                                       int fiber_id) {
-    if (stack_slot >= stacks_.size()) {
-        return;
-    }
-    stacks_[stack_slot].set_occupy_fiber(fiber, fiber_id);
 }
 
 } // namespace zco

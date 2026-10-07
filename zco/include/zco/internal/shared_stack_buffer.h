@@ -8,7 +8,6 @@
 #define ZCO_INTERNAL_SHARED_STACK_BUFFER_H_
 
 #include <cstddef>
-#include <vector>
 
 #include "zco/internal/noncopyable.h"
 
@@ -33,7 +32,7 @@ struct SharedStackOwner {
  * @brief 共享栈缓冲区
  * @details
  * - 每个 SharedStackBuffer 代表一个可被 Fiber 占用的栈空间。
- * - 通过 SharedStackPool 管理多个 SharedStackBuffer，实现协程栈的复用。
+ * - 通过 FiberStackManager 管理多个 SharedStackBuffer，实现协程栈的复用。
  * - 协程切换时，保存/恢复占用的 SharedStackBuffer 数据，实现栈内容的迁移。
  */
 class SharedStackBuffer : public NonCopyable {
@@ -66,33 +65,6 @@ class SharedStackBuffer : public NonCopyable {
     char *stack_buffer_;
     size_t stack_size_;
     SharedStackOwner occupy_fiber_;
-};
-
-/**
- * @brief 共享栈池
- * @details 管理多个 SharedStackBuffer，实现协程栈的复用。
- */
-class SharedStackPool : private NonCopyable {
-  public:
-    SharedStackPool(size_t stack_count, size_t stack_size);
-
-    void *data(size_t stack_slot);
-
-    /**
-     * @brief 获取指定栈槽的栈基址指针
-     * @param stack_slot 栈槽索引
-     * @return 栈基址指针
-     */
-    size_t size(size_t stack_slot) const;
-
-    size_t count() const;
-
-    SharedStackOwner occupy_fiber(size_t stack_slot) const;
-
-    void set_occupy_fiber(size_t stack_slot, Fiber *fiber, int fiber_id);
-
-  private:
-    std::vector<SharedStackBuffer> stacks_;
 };
 
 } // namespace zco

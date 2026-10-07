@@ -76,7 +76,7 @@ TEST_F(ProcessorUnitTest, QueueAndLoadMetricsAreQueryable) {
     EXPECT_GE(processor.queue_load(), 1u);
 }
 
-TEST_F(ProcessorUnitTest, IndependentStackModelHasNoSharedStackPool) {
+TEST_F(ProcessorUnitTest, IndependentStackModelHasNoSharedStacks) {
     Processor processor(9, 64 * 1024, 6, StackModel::kIndependent);
 
     EXPECT_EQ(processor.stack_model(), StackModel::kIndependent);

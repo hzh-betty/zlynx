@@ -120,12 +120,12 @@ TEST_F(ProcessorInternalUnitTest, SharedStackOwnerUsesFiberIdToAvoidStaleHit) {
     Fiber::ptr fiber =
         std::make_shared<Fiber>(201, &processor, []() {}, 64 * 1024, 0, true);
 
-    processor.stacks_->stacks_.set_occupy_fiber(0, fiber.get(), fiber->id());
+    processor.stacks_->stacks_[0].set_occupy_fiber(fiber.get(), fiber->id());
     fiber->reset(202, []() {}, 0);
 
     processor.stacks_->prepare(fiber);
 
-    const SharedStackOwner owner = processor.stacks_->stacks_.occupy_fiber(0);
+    const SharedStackOwner owner = processor.stacks_->stacks_[0].occupy_fiber();
     EXPECT_EQ(owner.fiber, fiber.get());
     EXPECT_EQ(owner.fiber_id, fiber->id());
 }
@@ -135,14 +135,46 @@ TEST_F(ProcessorInternalUnitTest, DoneFiberClearsMatchingSharedStackOwner) {
     Fiber::ptr fiber =
         std::make_shared<Fiber>(203, &processor, []() {}, 64 * 1024, 0, true);
 
-    processor.stacks_->stacks_.set_occupy_fiber(0, fiber.get(), fiber->id());
+    processor.stacks_->stacks_[0].set_occupy_fiber(fiber.get(), fiber->id());
     fiber->mark_done();
 
     EXPECT_EQ(processor.finalize_after_switch(fiber), Fiber::State::kDone);
 
-    const SharedStackOwner owner = processor.stacks_->stacks_.occupy_fiber(0);
+    const SharedStackOwner owner = processor.stacks_->stacks_[0].occupy_fiber();
     EXPECT_EQ(owner.fiber, nullptr);
     EXPECT_EQ(owner.fiber_id, 0);
+}
+
+TEST_F(ProcessorInternalUnitTest, ReleasePreservesAnotherFibersStackOwner) {
+    Processor processor(27, 64 * 1024, 1, StackModel::kShared);
+    auto first = std::make_shared<Fiber>(204, &processor, []() {},
+                                        64 * 1024, 0, true);
+    auto second = std::make_shared<Fiber>(205, &processor, []() {},
+                                         64 * 1024, 0, true);
+    processor.stacks_->stacks_[0].set_occupy_fiber(second.get(), second->id());
+    const char payload[] = {'a', 'b'};
+    first->save_stack_data(payload, sizeof(payload));
+
+    processor.stacks_->release(first);
+
+    EXPECT_FALSE(first->has_saved_stack());
+    const auto owner = processor.stacks_->stacks_[0].occupy_fiber();
+    EXPECT_EQ(owner.fiber, second.get());
+    EXPECT_EQ(owner.fiber_id, second->id());
+}
+
+TEST_F(ProcessorInternalUnitTest, InvalidStackSlotIsSafeDuringPrepareAndRelease) {
+    Processor processor(28, 64 * 1024, 1, StackModel::kShared);
+    auto fiber = std::make_shared<Fiber>(206, &processor, []() {},
+                                        64 * 1024, 0, true);
+    fiber->reset(207, []() {}, 9);
+    const char payload[] = {'a', 'b'};
+    fiber->save_stack_data(payload, sizeof(payload));
+
+    processor.stacks_->prepare(fiber);
+    EXPECT_EQ(fiber->saved_stack_size(), sizeof(payload));
+    processor.stacks_->release(fiber);
+    EXPECT_FALSE(fiber->has_saved_stack());
 }
 
 } // namespace

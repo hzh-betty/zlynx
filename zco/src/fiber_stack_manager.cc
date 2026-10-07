@@ -15,11 +15,26 @@ constexpr size_t kStackRedZoneBytes = 0;
 
 FiberStackManager::FiberStackManager(int scheduler_id, size_t stack_count,
                                      size_t stack_size)
-    : scheduler_id_(scheduler_id), stacks_(stack_count, stack_size) {}
+    : scheduler_id_(scheduler_id) {
+    // 固定数量的槽位在构造时分配，运行期间不扩容。
+    stacks_.reserve(stack_count);
+    for (size_t i = 0; i < stack_count; ++i) {
+        stacks_.emplace_back(stack_size);
+    }
+}
 
-void *FiberStackManager::data(size_t slot) { return stacks_.data(slot); }
-size_t FiberStackManager::size(size_t slot) const { return stacks_.size(slot); }
-size_t FiberStackManager::count() const { return stacks_.count(); }
+SharedStackBuffer *FiberStackManager::stack_at(size_t slot) {
+    return slot < stacks_.size() ? &stacks_[slot] : nullptr;
+}
+
+void *FiberStackManager::data(size_t slot) {
+    SharedStackBuffer *stack = stack_at(slot);
+    return stack ? stack->data() : nullptr;
+}
+size_t FiberStackManager::size(size_t slot) const {
+    return slot < stacks_.size() ? stacks_[slot].size() : 0;
+}
+size_t FiberStackManager::count() const { return stacks_.size(); }
 size_t FiberStackManager::next_slot() {
     return count() == 0
                ? 0
@@ -40,8 +55,8 @@ void FiberStackManager::save(Fiber *fiber) {
     }
 
     const size_t stack_slot = fiber->stack_slot();
-    const size_t stack_size = stacks_.size(stack_slot);
-    void *stack_data = stacks_.data(stack_slot);
+    const size_t stack_size = size(stack_slot);
+    void *stack_data = data(stack_slot);
     if (stack_size == 0 || !stack_data) {
         return;
     }
@@ -85,8 +100,8 @@ void FiberStackManager::restore(const Fiber::ptr &fiber) {
     }
 
     const size_t stack_slot = fiber->stack_slot();
-    const size_t stack_size = stacks_.size(stack_slot);
-    void *stack_data = stacks_.data(stack_slot);
+    const size_t stack_size = size(stack_slot);
+    void *stack_data = data(stack_slot);
     if (stack_size == 0 || !stack_data) {
         return;
     }
@@ -117,7 +132,9 @@ void FiberStackManager::prepare(const Fiber::ptr &fiber) {
     // 共享栈模型下，同一时刻一个 stack_slot 只能被一个 Fiber 占用。
     // 如果这里切换到另一个 Fiber，就要先把旧 Fiber 的现场保存下来，
     // 再把新 Fiber 的快照恢复到该槽位。
-    const SharedStackOwner owner = stacks_.occupy_fiber(stack_slot);
+    SharedStackBuffer *stack = stack_at(stack_slot);
+    const SharedStackOwner owner =
+        stack ? stack->occupy_fiber() : SharedStackOwner();
     if (owner.fiber == fiber.get() && owner.fiber_id == fiber->id()) {
         return;
     }
@@ -127,17 +144,21 @@ void FiberStackManager::prepare(const Fiber::ptr &fiber) {
         save(owner.fiber);
     }
 
-    stacks_.set_occupy_fiber(stack_slot, fiber.get(), fiber->id());
+    if (stack) {
+        stack->set_occupy_fiber(fiber.get(), fiber->id());
+    }
     restore(fiber);
 }
 
 void FiberStackManager::release(const std::shared_ptr<Fiber> &fiber) {
     fiber->clear_saved_stack();
     if (fiber->use_shared_stack()) {
-        const SharedStackOwner owner =
-            stacks_.occupy_fiber(fiber->stack_slot());
-        if (owner.fiber == fiber.get() && owner.fiber_id == fiber->id()) {
-            stacks_.set_occupy_fiber(fiber->stack_slot(), nullptr, 0);
+        SharedStackBuffer *stack = stack_at(fiber->stack_slot());
+        if (stack) {
+            const SharedStackOwner owner = stack->occupy_fiber();
+            if (owner.fiber == fiber.get() && owner.fiber_id == fiber->id()) {
+                stack->set_occupy_fiber(nullptr, 0);
+            }
         }
     }
 }

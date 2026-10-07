@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 
 #include "support/test_fixture.h"
+#include "zco/internal/fiber_stack_manager.h"
 #include "zco/internal/shared_stack_buffer.h"
 
 namespace zco {
@@ -75,35 +76,38 @@ TEST_F(SharedStackBufferUnitTest, OccupyFiberSetterAndGetterWork) {
     EXPECT_EQ(buffer.occupy_fiber().fiber_id, 0);
 }
 
-TEST_F(SharedStackBufferUnitTest, SharedStackPoolAccessAndBounds) {
-    SharedStackPool pool(4, 1024);
+TEST_F(SharedStackBufferUnitTest, StackManagerAccessAndBounds) {
+    FiberStackManager stacks(0, 4, 1024);
 
-    EXPECT_EQ(pool.count(), 4u);
-    EXPECT_NE(pool.data(0), nullptr);
-    EXPECT_EQ(pool.size(0), 1024u);
+    EXPECT_EQ(stacks.count(), 4u);
+    EXPECT_NE(stacks.data(0), nullptr);
+    EXPECT_EQ(stacks.size(0), 1024u);
 
-    EXPECT_EQ(pool.data(9), nullptr);
-    EXPECT_EQ(pool.size(9), 0u);
+    EXPECT_EQ(stacks.data(9), nullptr);
+    EXPECT_EQ(stacks.size(9), 0u);
 }
 
-TEST_F(SharedStackBufferUnitTest, SharedStackPoolOwnerTracksFiberAndId) {
-    SharedStackPool pool(2, 1024);
+TEST_F(SharedStackBufferUnitTest, StackManagerSlotsWrapWithoutReallocating) {
+    FiberStackManager stacks(0, 2, 1024);
+    void *first = stacks.data(0);
+    void *second = stacks.data(1);
+    ASSERT_NE(first, nullptr);
+    ASSERT_NE(second, nullptr);
+    EXPECT_NE(first, second);
 
-    Fiber *sentinel = reinterpret_cast<Fiber *>(0x1);
-    pool.set_occupy_fiber(1, sentinel, 42);
+    EXPECT_EQ(stacks.next_slot(), 0u);
+    EXPECT_EQ(stacks.next_slot(), 1u);
+    EXPECT_EQ(stacks.next_slot(), 0u);
+    EXPECT_EQ(stacks.data(0), first);
+    EXPECT_EQ(stacks.data(1), second);
+}
 
-    SharedStackOwner owner = pool.occupy_fiber(1);
-    EXPECT_EQ(owner.fiber, sentinel);
-    EXPECT_EQ(owner.fiber_id, 42);
-
-    pool.set_occupy_fiber(1, nullptr, 42);
-    owner = pool.occupy_fiber(1);
-    EXPECT_EQ(owner.fiber, nullptr);
-    EXPECT_EQ(owner.fiber_id, 0);
-
-    owner = pool.occupy_fiber(9);
-    EXPECT_EQ(owner.fiber, nullptr);
-    EXPECT_EQ(owner.fiber_id, 0);
+TEST_F(SharedStackBufferUnitTest, StackManagerWithNoSlotsIsSafe) {
+    FiberStackManager stacks(0, 0, 1024);
+    EXPECT_EQ(stacks.count(), 0u);
+    EXPECT_EQ(stacks.next_slot(), 0u);
+    EXPECT_EQ(stacks.data(0), nullptr);
+    EXPECT_EQ(stacks.size(0), 0u);
 }
 
 TEST_F(SharedStackBufferUnitTest, ConstAccessorsExposeSamePointers) {

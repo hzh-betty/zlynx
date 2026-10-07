@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 #include "zco/internal/shared_stack_buffer.h"
 #include "zco/internal/snapshot_buffer_pool.h"
@@ -32,10 +33,12 @@ class FiberStackManager {
     void release(const std::shared_ptr<Fiber> &fiber);
 
   private:
+    SharedStackBuffer *stack_at(size_t slot);
+
     int scheduler_id_;
     std::atomic<size_t> next_slot_{0};
     SnapshotBufferPool snapshots_;
-    SharedStackPool stacks_;
+    std::vector<SharedStackBuffer> stacks_;
 };
 } // 命名空间 zco
 

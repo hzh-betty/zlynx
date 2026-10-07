@@ -353,7 +353,7 @@ TEST_F(RuntimeManagerUnitTest, StackConfigAfterRuntimeStartDoesNotTakeEffect) {
     EXPECT_EQ(processor->stack_model(), expected_model);
 }
 
-TEST_F(RuntimeManagerUnitTest, IndependentStackModeRunsWithoutSharedStackPool) {
+TEST_F(RuntimeManagerUnitTest, IndependentStackModeRunsWithoutSharedStacks) {
     co_stack_model(StackModel::kIndependent);
     co_stack_size(64 * 1024);
     co_stack_num(4);
