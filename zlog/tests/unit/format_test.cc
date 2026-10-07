@@ -17,8 +17,8 @@ class FormatTest : public ::testing::Test {
     std::shared_ptr<LogMessage> msg;
 };
 
-TEST_F(FormatTest, MessageFormatItem) {
-    MessageFormatItem item;
+TEST_F(FormatTest, MessageOutput) {
+    Formatter item("%m");
     fmt::memory_buffer buffer;
     item.format(buffer, *msg);
 
@@ -26,9 +26,9 @@ TEST_F(FormatTest, MessageFormatItem) {
     EXPECT_EQ(result, "test message");
 }
 
-TEST_F(FormatTest, MessageFormatItemEmpty) {
+TEST_F(FormatTest, MessageOutputEmpty) {
     LogMessage emptyMsg(LogLevel::value::INFO, "test.cc", 1, "", "logger");
-    MessageFormatItem item;
+    Formatter item("%m");
     fmt::memory_buffer buffer;
     item.format(buffer, emptyMsg);
 
@@ -36,9 +36,9 @@ TEST_F(FormatTest, MessageFormatItemEmpty) {
     EXPECT_EQ(result, "");
 }
 
-TEST_F(FormatTest, MessageFormatItemNullPayload) {
+TEST_F(FormatTest, MessageOutputNullPayload) {
     LogMessage nullMsg(LogLevel::value::INFO, "test.cc", 1, nullptr, "logger");
-    MessageFormatItem item;
+    Formatter item("%m");
     fmt::memory_buffer buffer;
     item.format(buffer, nullMsg);
 
@@ -46,8 +46,8 @@ TEST_F(FormatTest, MessageFormatItemNullPayload) {
     EXPECT_EQ(result, "");
 }
 
-TEST_F(FormatTest, LevelFormatItem) {
-    LevelFormatItem item;
+TEST_F(FormatTest, LevelOutput) {
+    Formatter item("%p");
     fmt::memory_buffer buffer;
     item.format(buffer, *msg);
 
@@ -55,8 +55,8 @@ TEST_F(FormatTest, LevelFormatItem) {
     EXPECT_EQ(result, "INFO");
 }
 
-TEST_F(FormatTest, LevelFormatItemAllLevels) {
-    LevelFormatItem item;
+TEST_F(FormatTest, LevelOutputAllLevels) {
+    Formatter item("%p");
 
     std::vector<std::pair<LogLevel::value, std::string>> levels;
     levels.push_back(
@@ -81,8 +81,8 @@ TEST_F(FormatTest, LevelFormatItemAllLevels) {
     }
 }
 
-TEST_F(FormatTest, TimeFormatItemDefault) {
-    TimeFormatItem item;
+TEST_F(FormatTest, TimeOutputDefault) {
+    Formatter item("%d");
     fmt::memory_buffer buffer;
     item.format(buffer, *msg);
 
@@ -92,28 +92,19 @@ TEST_F(FormatTest, TimeFormatItemDefault) {
     EXPECT_TRUE(std::regex_match(result, timePattern)) << "Got: " << result;
 }
 
-TEST_F(FormatTest, TimeFormatItemCustom) {
-    TimeFormatItem item("%Y-%m-%d");
+TEST_F(FormatTest, TimeOutputCustom) {
+    Formatter item("%d{%Y-%m-%d}");
+    msg->curtime_ = 1700000000;
     fmt::memory_buffer buffer;
     item.format(buffer, *msg);
 
     std::string result(buffer.data(), buffer.size());
-    // 时间格式应该包含日期或时间信息，但不应为空
-    EXPECT_FALSE(result.empty()) << "Got: " << result;
-    // 验证格式基本合理（至少有数字或冒号）
-    bool hasDigit = false;
-    for (char c : result) {
-        if (std::isdigit(c)) {
-            hasDigit = true;
-            break;
-        }
-    }
-    EXPECT_TRUE(hasDigit) << "Time format should contain digits, got: "
-                          << result;
+    const std::regex date_pattern(R"(\d{4}-\d{2}-\d{2})");
+    EXPECT_TRUE(std::regex_match(result, date_pattern)) << "Got: " << result;
 }
 
-TEST_F(FormatTest, TimeFormatItemInvalidFormatFallback) {
-    TimeFormatItem item("");
+TEST_F(FormatTest, TimeOutputOverflowFallback) {
+    Formatter item("%d{" + std::string(64, 'x') + "}");
     LogMessage testMsg(LogLevel::value::INFO, "test.cc", 1, "payload",
                        "logger");
     testMsg.curtime_ = msg->curtime_ + 1;
@@ -124,8 +115,8 @@ TEST_F(FormatTest, TimeFormatItemInvalidFormatFallback) {
     EXPECT_EQ(result, "InvalidTime");
 }
 
-TEST_F(FormatTest, FileFormatItem) {
-    FileFormatItem item;
+TEST_F(FormatTest, FileOutput) {
+    Formatter item("%f");
     fmt::memory_buffer buffer;
     item.format(buffer, *msg);
 
@@ -133,9 +124,9 @@ TEST_F(FormatTest, FileFormatItem) {
     EXPECT_EQ(result, "test_file.cc");
 }
 
-TEST_F(FormatTest, FileFormatItemNullFile) {
+TEST_F(FormatTest, FileOutputNullFile) {
     LogMessage nullMsg(LogLevel::value::INFO, nullptr, 1, "payload", "logger");
-    FileFormatItem item;
+    Formatter item("%f");
     fmt::memory_buffer buffer;
     item.format(buffer, nullMsg);
 
@@ -143,8 +134,8 @@ TEST_F(FormatTest, FileFormatItemNullFile) {
     EXPECT_EQ(result, "");
 }
 
-TEST_F(FormatTest, LineFormatItem) {
-    LineFormatItem item;
+TEST_F(FormatTest, LineOutput) {
+    Formatter item("%l");
     fmt::memory_buffer buffer;
     item.format(buffer, *msg);
 
@@ -152,8 +143,8 @@ TEST_F(FormatTest, LineFormatItem) {
     EXPECT_EQ(result, "42");
 }
 
-TEST_F(FormatTest, ThreadIdFormatItem) {
-    ThreadIdFormatItem item;
+TEST_F(FormatTest, ThreadIdOutput) {
+    Formatter item("%t");
     fmt::memory_buffer buffer;
     item.format(buffer, *msg);
 
@@ -161,8 +152,8 @@ TEST_F(FormatTest, ThreadIdFormatItem) {
     EXPECT_FALSE(result.empty());
 }
 
-TEST_F(FormatTest, ThreadIdFormatItemCacheFastPathOnSameThreadId) {
-    ThreadIdFormatItem item;
+TEST_F(FormatTest, ThreadIdOutputCacheFastPathOnSameThreadId) {
+    Formatter item("%t");
     fmt::memory_buffer first;
     fmt::memory_buffer second;
 
@@ -175,8 +166,8 @@ TEST_F(FormatTest, ThreadIdFormatItemCacheFastPathOnSameThreadId) {
     EXPECT_FALSE(first_str.empty());
 }
 
-TEST_F(FormatTest, LoggerFormatItem) {
-    LoggerFormatItem item;
+TEST_F(FormatTest, LoggerOutput) {
+    Formatter item("%c");
     fmt::memory_buffer buffer;
     item.format(buffer, *msg);
 
@@ -184,9 +175,9 @@ TEST_F(FormatTest, LoggerFormatItem) {
     EXPECT_EQ(result, "test_logger");
 }
 
-TEST_F(FormatTest, LoggerFormatItemNullLoggerName) {
+TEST_F(FormatTest, LoggerOutputNullLoggerName) {
     LogMessage nullMsg(LogLevel::value::INFO, "file.cc", 1, "payload", nullptr);
-    LoggerFormatItem item;
+    Formatter item("%c");
     fmt::memory_buffer buffer;
     item.format(buffer, nullMsg);
 
@@ -194,8 +185,8 @@ TEST_F(FormatTest, LoggerFormatItemNullLoggerName) {
     EXPECT_EQ(result, "");
 }
 
-TEST_F(FormatTest, TabFormatItem) {
-    TabFormatItem item;
+TEST_F(FormatTest, TabOutput) {
+    Formatter item("%T");
     fmt::memory_buffer buffer;
     item.format(buffer, *msg);
 
@@ -203,8 +194,8 @@ TEST_F(FormatTest, TabFormatItem) {
     EXPECT_EQ(result, "\t");
 }
 
-TEST_F(FormatTest, NLineFormatItem) {
-    NLineFormatItem item;
+TEST_F(FormatTest, NLineOutput) {
+    Formatter item("%n");
     fmt::memory_buffer buffer;
     item.format(buffer, *msg);
 
@@ -212,8 +203,9 @@ TEST_F(FormatTest, NLineFormatItem) {
     EXPECT_EQ(result, "\n");
 }
 
-TEST_F(FormatTest, OtherFormatItem) {
-    OtherFormatItem item("[PREFIX]");
+TEST_F(FormatTest, LiteralOutput) {
+    Formatter item("[PREFIX]%m");
+    msg->payload_ = "";
     fmt::memory_buffer buffer;
     item.format(buffer, *msg);
 
