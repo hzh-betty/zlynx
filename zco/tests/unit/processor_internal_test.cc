@@ -14,6 +14,9 @@
 #include "zco/internal/timer.h"
 
 #define private public
+#include "zco/internal/fiber_stack_manager.h"
+#include "zco/internal/io_wait_service.h"
+#include "zco/internal/poller.h"
 #include "zco/internal/processor.h"
 #undef private
 
@@ -58,13 +61,13 @@ TEST_F(ProcessorInternalUnitTest, RecycleAndIoReadyGuardPathsAreExercised) {
     fiber->mark_done();
     EXPECT_TRUE(processor.recycle_if_done_before_run(fiber));
 
-    processor.handle_io_ready(nullptr, 0);
+    processor.io_->handle_ready(nullptr, 0);
 
     std::shared_ptr<IoWaiter> inactive = std::make_shared<IoWaiter>();
     inactive->fd = 3;
     inactive->events = 0;
     inactive->active.store(false, std::memory_order_release);
-    processor.handle_io_ready(inactive, 0);
+    processor.io_->handle_ready(inactive, 0);
 
     std::shared_ptr<IoWaiter> ready = std::make_shared<IoWaiter>();
     ready->fd = 4;
@@ -77,7 +80,7 @@ TEST_F(ProcessorInternalUnitTest, RecycleAndIoReadyGuardPathsAreExercised) {
         ready->fiber = tmp;
     }
 
-    processor.handle_io_ready(ready, 0);
+    processor.io_->handle_ready(ready, 0);
     EXPECT_FALSE(ready->active.load(std::memory_order_acquire));
     ASSERT_NE(ready->timer, nullptr);
     EXPECT_TRUE(ready->timer->cancelled.load(std::memory_order_acquire));
@@ -85,7 +88,7 @@ TEST_F(ProcessorInternalUnitTest, RecycleAndIoReadyGuardPathsAreExercised) {
 
 TEST_F(ProcessorInternalUnitTest, RunLoopAndWaitIoGuardHandleMissingPoller) {
     Processor processor(23, 64 * 1024);
-    processor.poller_.reset();
+    processor.io_->poller_.reset();
 
     processor.poll_io_events();
 
@@ -102,12 +105,12 @@ TEST_F(ProcessorInternalUnitTest,
     Fiber::ptr fiber =
         std::make_shared<Fiber>(104, &processor, []() {}, 64 * 1024, 0, false);
 
-    processor.save_fiber_stack(fiber);
+    processor.stacks_->save(fiber.get());
 
     const char payload[] = {'a', 'b', 'c', 'd'};
     fiber->save_stack_data(payload, sizeof(payload));
     const size_t before = fiber->saved_stack_size();
-    processor.restore_fiber_stack(fiber);
+    processor.stacks_->restore(fiber);
 
     EXPECT_EQ(fiber->saved_stack_size(), before);
 }
@@ -117,12 +120,12 @@ TEST_F(ProcessorInternalUnitTest, SharedStackOwnerUsesFiberIdToAvoidStaleHit) {
     Fiber::ptr fiber =
         std::make_shared<Fiber>(201, &processor, []() {}, 64 * 1024, 0, true);
 
-    processor.shared_stacks_.set_occupy_fiber(0, fiber.get(), fiber->id());
+    processor.stacks_->stacks_.set_occupy_fiber(0, fiber.get(), fiber->id());
     fiber->reset(202, []() {}, 0);
 
-    processor.prepare_shared_stack_for(fiber);
+    processor.stacks_->prepare(fiber);
 
-    const SharedStackOwner owner = processor.shared_stacks_.occupy_fiber(0);
+    const SharedStackOwner owner = processor.stacks_->stacks_.occupy_fiber(0);
     EXPECT_EQ(owner.fiber, fiber.get());
     EXPECT_EQ(owner.fiber_id, fiber->id());
 }
@@ -132,12 +135,12 @@ TEST_F(ProcessorInternalUnitTest, DoneFiberClearsMatchingSharedStackOwner) {
     Fiber::ptr fiber =
         std::make_shared<Fiber>(203, &processor, []() {}, 64 * 1024, 0, true);
 
-    processor.shared_stacks_.set_occupy_fiber(0, fiber.get(), fiber->id());
+    processor.stacks_->stacks_.set_occupy_fiber(0, fiber.get(), fiber->id());
     fiber->mark_done();
 
     EXPECT_EQ(processor.finalize_after_switch(fiber), Fiber::State::kDone);
 
-    const SharedStackOwner owner = processor.shared_stacks_.occupy_fiber(0);
+    const SharedStackOwner owner = processor.stacks_->stacks_.occupy_fiber(0);
     EXPECT_EQ(owner.fiber, nullptr);
     EXPECT_EQ(owner.fiber_id, 0);
 }

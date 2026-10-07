@@ -19,14 +19,14 @@
 #include "zco/internal/fiber.h"
 #include "zco/internal/fiber_pool.h"
 #include "zco/internal/noncopyable.h"
-#include "zco/internal/poller.h"
-#include "zco/internal/shared_stack_buffer.h"
-#include "zco/internal/snapshot_buffer_pool.h"
 #include "zco/internal/steal_queue.h"
 #include "zco/internal/timer.h"
 #include "zco/sched.h"
 
 namespace zco {
+
+class FiberStackManager;
+class IoWaitService;
 
 static constexpr size_t kSharedStackGroupSize =
     8; // 每个处理器的共享栈数量，实际使用时可根据需求调整
@@ -354,32 +354,6 @@ class Processor : public NonCopyable {
     int next_timeout_ms() const;
 
     /**
-     * @brief 处理单个 IO 就绪事件。
-     * @param waiter 等待请求对象。
-     * @return 无返回值。
-     */
-    void handle_io_ready(const std::shared_ptr<IoWaiter> &waiter,
-                         uint32_t ready_events);
-
-    /**
-     * @brief 保存 Fiber 共享栈快照。
-     * @param fiber 协程对象。
-     * @return 无返回值。
-     */
-    void save_fiber_stack(const Fiber::ptr &fiber);
-
-    void save_fiber_stack(Fiber *fiber);
-
-    /**
-     * @brief 恢复 Fiber 共享栈快照。
-     * @param fiber 协程对象。
-     * @return 无返回值。
-     */
-    void restore_fiber_stack(const Fiber::ptr &fiber);
-
-    void prepare_shared_stack_for(const Fiber::ptr &fiber);
-
-    /**
      * @brief 获取 Fiber 对象用于执行任务。
      * @param task 待执行的任务。
      * @return 可用的 Fiber 对象，如果池中没有可用对象且未达到 max_size
@@ -424,18 +398,14 @@ class Processor : public NonCopyable {
     StealQueue steal_queue_;
 
     FiberPool fiber_pool_;
-    std::atomic<size_t> next_stack_slot_; // 下一个共享栈槽位，循环使用，配合
-                                          // steal_probe_cursor_ 实现负载均衡
-
-    SnapshotBufferPool snapshot_pool_;
 
     size_t
         steal_probe_cursor_; // 窃取探测游标，轮询选择窃取对象，避免总是从同一处理器窃取导致负载不均
 
     TimerQueue timer_queue_;
-    std::unique_ptr<Poller> poller_;
+    std::unique_ptr<IoWaitService> io_;
 
-    SharedStackPool shared_stacks_;
+    std::unique_ptr<FiberStackManager> stacks_;
 
     Context scheduler_context_;
     Fiber::ptr current_fiber_;

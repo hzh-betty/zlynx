@@ -39,6 +39,8 @@ set(ZCO_SOURCES
     src/fiber.cc
     src/timer.cc
     src/epoller.cc
+    src/fiber_stack_manager.cc
+    src/io_wait_service.cc
     src/processor.cc
     src/event.cc
     src/mutex.cc

@@ -7,13 +7,14 @@
 #include "zco/internal/processor.h"
 
 #include <errno.h>
-#include <sys/epoll.h>
 
 #include <chrono>
-#include <cstring>
 #include <iterator>
 #include <utility>
 
+#include "zco/internal/fiber_stack_manager.h"
+#include "zco/internal/io_wait_service.h"
+#include "zco/internal/poller.h"
 #include "zco/internal/runtime_manager.h"
 #include "zco/zco_logger.h"
 
@@ -21,18 +22,12 @@ namespace zco {
 
 // Processor 是“单个调度线程”的核心执行体：
 // - 接收 Task 并转化为 Fiber。
-// - 维护就绪队列、IO 等待与定时器。
-// - 负责 Fiber 上下文切换和共享栈快照恢复。
+// - 维护就绪队列、定时器和 Fiber 上下文切换。
+// - 委托 IoWaitService 处理 IO 等待，委托 FiberStackManager 管理共享栈。
 
 namespace {
 
 thread_local Processor *tls_processor = nullptr;
-
-#if defined(__x86_64__)
-constexpr size_t kStackRedZoneBytes = 128;
-#else
-constexpr size_t kStackRedZoneBytes = 0;
-#endif
 
 } // namespace
 
@@ -42,14 +37,17 @@ Processor::Processor(int id, size_t stack_size)
 Processor::Processor(int id, size_t stack_size, size_t shared_stack_num,
                      StackModel stack_model)
     : id_(id), stack_size_(stack_size), stack_model_(stack_model),
-      running_(false), worker_(), ready_size_(0),
-      ema_loop_ns_(0), run_queue_mutex_(), run_queue_(), steal_queue_(),
-      fiber_pool_(4096), next_stack_slot_(0), snapshot_pool_(),
-      steal_probe_cursor_(0), timer_queue_(), poller_(create_default_poller()),
-      shared_stacks_(stack_model == StackModel::kShared
-                         ? (shared_stack_num == 0 ? 1 : shared_stack_num)
-                         : 0,
-                     stack_size),
+      running_(false), worker_(), ready_size_(0), ema_loop_ns_(0),
+      run_queue_mutex_(), run_queue_(), steal_queue_(), fiber_pool_(4096),
+      steal_probe_cursor_(0), timer_queue_(),
+      io_(new IoWaitService(id, timer_queue_, create_default_poller(),
+                            resume_fiber)),
+      stacks_(new FiberStackManager(
+          id,
+          stack_model == StackModel::kShared
+              ? (shared_stack_num == 0 ? 1 : shared_stack_num)
+              : 0,
+          stack_size)),
       scheduler_context_(), current_fiber_() {}
 
 Processor::~Processor() {
@@ -205,127 +203,21 @@ bool Processor::wait_fd(int fd, uint32_t events, uint32_t milliseconds) {
                      id_, fd);
         return false;
     }
-
-    // 这里的 waiter 是一次性等待句柄：它同时绑定 fd、感兴趣事件、
-    // 当前协程以及可选的超时定时器。后续所有唤醒路径都只会竞争这
-    // 一个对象，避免 IO 和超时分别恢复同一协程。
-    ZCO_LOG_DEBUG("wait_fd start, sched_id={}, fiber_id={}, fd={}, "
-                  "events={}, timeout_ms={}",
-                  id_, current_fiber_->id(), fd, events, milliseconds);
-
-    std::shared_ptr<IoWaiter> waiter = std::make_shared<IoWaiter>();
-    waiter->fd = fd;
-    waiter->events = events & (EPOLLIN | EPOLLOUT);
-    waiter->fiber = current_fiber_;
-    waiter->timer = nullptr;
-    waiter->active.store(true, std::memory_order_release);
-    waiter->error.store(0, std::memory_order_release);
-
-    if (waiter->events == 0) {
-        errno = EINVAL;
-        return false;
-    }
-
-    prepare_wait_current();
-
-    if (!poller_ || !poller_->register_waiter(waiter)) {
-        ZCO_LOG_ERROR(
-            "epoll add/mod failed, sched_id={}, fd={}, events={}, errno={}",
-            id_, fd, events, errno);
-        // 注册失败时必须把协程状态恢复为 running，否则调用方会认为它
-        // 已经进入等待态，但实际上并没有挂到 epoll 上。
-        waiter->active.store(false, std::memory_order_release);
-        current_fiber_->mark_running();
-        return false;
-    }
-
-    if (milliseconds != kInfiniteTimeoutMs) {
-        // timeout 回调与 IO 回调通过 waiter->active 竞争，只有一个路径
-        // 能真正把协程重新投递回调度器。这样即使超时和可读/可写几乎同
-        // 时到达，也不会出现重复 resume。
-        waiter->timer = add_timer(milliseconds, [this, waiter]() {
-            if (!waiter->active.exchange(false, std::memory_order_acq_rel)) {
-                return;
-            }
-            if (poller_) {
-                poller_->unregister_waiter(waiter);
-            }
-            if (Fiber::ptr fiber = waiter->fiber.lock()) {
-                ZCO_LOG_DEBUG(
-                    "wait_fd timeout, sched_id={}, fd={}, fiber_id={}", id_,
-                    waiter->fd, fiber->id());
-                resume_fiber(fiber, true);
-            }
-        });
-    }
-
-    const bool ok = park_current();
-    const int waiter_error = waiter->error.load(std::memory_order_acquire);
-
-    // 协程恢复后无论是正常 IO、超时还是 fd 被取消，都要撤销本次 wait
-    // 句柄的活跃状态，并解除 epoll 里的兴趣注册，保证下次等待从干净状
-    // 态重新开始。
-    waiter->active.store(false, std::memory_order_release);
-    if (waiter->timer) {
-        waiter->timer->cancelled.store(true, std::memory_order_release);
-    }
-    if (poller_) {
-        poller_->unregister_waiter(waiter);
-    }
-
-    if (waiter_error != 0) {
-        errno = waiter_error;
-        return false;
-    }
-
-    if (!ok) {
-        ZCO_LOG_DEBUG(
-            "wait_fd wake failed or timeout, sched_id={}, fd={}, timeout_ms={}",
-            id_, fd, milliseconds);
-    }
-
-    return ok;
+    return io_->wait(current_fiber_, fd, events, milliseconds,
+                     [this]() { return park_current(); });
 }
 
-void Processor::cancel_fd_waiters(int fd, int error) {
-    if (!poller_ || fd < 0) {
-        return;
-    }
-
-    // fd 被外部关闭或整体取消时，先让 poller 收集该 fd 上的所有等待者，
-    // 再统一把错误码传播给每个协程。这样 IO 路径和超时路径就不会再独
-    // 立消费同一个等待句柄。
-    std::vector<std::shared_ptr<IoWaiter>> waiters =
-        poller_->cancel_fd(fd, error);
-    for (size_t i = 0; i < waiters.size(); ++i) {
-        const std::shared_ptr<IoWaiter> &waiter = waiters[i];
-        if (!waiter ||
-            !waiter->active.exchange(false, std::memory_order_acq_rel)) {
-            continue;
-        }
-
-        if (waiter->timer) {
-            waiter->timer->cancelled.store(true, std::memory_order_release);
-        }
-
-        if (Fiber::ptr fiber = waiter->fiber.lock()) {
-            ZCO_LOG_DEBUG("fd waiter cancelled, sched_id={}, fd={}, "
-                          "fiber_id={}, error={}",
-                          id_, fd, fiber->id(), error);
-            resume_fiber(fiber, false);
-        }
-    }
-}
+void Processor::cancel_fd_waiters(int fd, int error) { io_->cancel(fd, error); }
 
 void *Processor::shared_stack_data(size_t stack_slot) {
-    return shared_stacks_.data(stack_slot);
+    return stacks_->data(stack_slot);
 }
 
 size_t Processor::shared_stack_size(size_t stack_slot) const {
-    return shared_stacks_.size(stack_slot);
+    return stacks_->size(stack_slot);
 }
 
-size_t Processor::shared_stack_count() const { return shared_stacks_.count(); }
+size_t Processor::shared_stack_count() const { return stacks_->count(); }
 
 StackModel Processor::stack_model() const { return stack_model_; }
 
@@ -348,19 +240,19 @@ void Processor::enqueue_stolen_tasks(std::deque<Task> *tasks) {
 
 char *Processor::acquire_snapshot_buffer(size_t required_size, size_t *capacity,
                                          uint8_t *bucket_index) {
-    return snapshot_pool_.acquire(required_size, capacity, bucket_index);
+    return stacks_->acquire_snapshot(required_size, capacity, bucket_index);
 }
 
 void Processor::release_snapshot_buffer(char *buffer, uint8_t bucket_index,
                                         size_t capacity) {
-    snapshot_pool_.release(buffer, bucket_index, capacity);
+    stacks_->release_snapshot(buffer, bucket_index, capacity);
 }
 
 void Processor::run_loop() {
     set_current_processor(this);
     ZCO_LOG_INFO("processor loop start, sched_id={}", id_);
 
-    if (!poller_ || !poller_->start()) {
+    if (!io_->start()) {
         running_.store(false, std::memory_order_release);
     }
 
@@ -394,9 +286,7 @@ void Processor::run_loop() {
         update_load_metrics(loop_ns);
     }
 
-    if (poller_) {
-        poller_->stop();
-    }
+    io_->stop();
 
     set_current_processor(nullptr);
     ZCO_LOG_INFO("processor loop stop, sched_id={}", id_);
@@ -408,19 +298,9 @@ bool Processor::has_ready_tasks() const {
 }
 
 void Processor::poll_io_events() {
-    if (!poller_) {
-        return;
-    }
-
-    // 有就绪协程或待创建任务时只做非阻塞检查。
-    const int timeout_ms = (has_ready_tasks() || pending_task_count() > 0)
-                               ? 0
-                               : next_timeout_ms();
-    poller_->wait_events(
-        timeout_ms,
-        [this](const std::shared_ptr<IoWaiter> &waiter, uint32_t ready_events) {
-            handle_io_ready(waiter, ready_events);
-        });
+    const int timeout_ms =
+        (has_ready_tasks() || pending_task_count() > 0) ? 0 : next_timeout_ms();
+    io_->poll(timeout_ms);
 }
 
 void Processor::steal_tasks_when_idle() {
@@ -487,11 +367,7 @@ void Processor::update_load_metrics(uint64_t loop_ns) {
     }
 }
 
-void Processor::wake_loop() {
-    if (poller_) {
-        poller_->wake();
-    }
-}
+void Processor::wake_loop() { io_->wake(); }
 
 void Processor::drain_new_tasks() {
     constexpr size_t kTaskMaterializeBatchLimit = 256;
@@ -582,7 +458,7 @@ Fiber::ptr Processor::switch_to_fiber(Fiber::ptr fiber) {
         // 首次运行需要初始化 ucontext；后续恢复只做栈快照回填。
         current_fiber_->initialize_context();
     }
-    prepare_shared_stack_for(current_fiber_);
+    stacks_->prepare(current_fiber_);
 
     current_fiber_->mark_running();
     Context *fiber_context = current_fiber_->context();
@@ -597,17 +473,8 @@ Fiber::ptr Processor::switch_to_fiber(Fiber::ptr fiber) {
 
 Fiber::State Processor::finalize_after_switch(const Fiber::ptr &fiber) {
     const Fiber::State state = fiber->state();
-    if (state != Fiber::State::kDone) {
-        return state;
-    }
-
-    fiber->clear_saved_stack();
-    if (fiber->use_shared_stack()) {
-        const SharedStackOwner owner =
-            shared_stacks_.occupy_fiber(fiber->stack_slot());
-        if (owner.fiber == fiber.get() && owner.fiber_id == fiber->id()) {
-            shared_stacks_.set_occupy_fiber(fiber->stack_slot(), nullptr, 0);
-        }
+    if (state == Fiber::State::kDone) {
+        stacks_->release(fiber);
     }
     return state;
 }
@@ -635,137 +502,10 @@ int Processor::next_timeout_ms() const {
     return timer_queue_.next_timeout_ms();
 }
 
-void Processor::handle_io_ready(const std::shared_ptr<IoWaiter> &waiter,
-                                uint32_t ready_events) {
-    (void)ready_events;
-    if (!waiter) {
-        return;
-    }
-
-    if (!waiter->active.exchange(false, std::memory_order_acq_rel)) {
-        // 说明已被超时路径或其他路径消费，避免重复恢复。
-        return;
-    }
-
-    if (waiter->timer) {
-        waiter->timer->cancelled.store(true, std::memory_order_release);
-    }
-
-    if (Fiber::ptr fiber = waiter->fiber.lock()) {
-        ZCO_LOG_DEBUG("io ready resume fiber, sched_id={}, fd={}, "
-                      "fiber_id={}, ready_events={}",
-                      id_, waiter->fd, fiber->id(), ready_events);
-        resume_fiber(fiber, false);
-    }
-}
-
-void Processor::save_fiber_stack(const Fiber::ptr &fiber) {
-    save_fiber_stack(fiber.get());
-}
-
-void Processor::save_fiber_stack(Fiber *fiber) {
-    if (!fiber || !fiber->use_shared_stack()) {
-        return;
-    }
-
-    const size_t stack_slot = fiber->stack_slot();
-    const size_t stack_size = shared_stacks_.size(stack_slot);
-    void *stack_data = shared_stacks_.data(stack_slot);
-    if (stack_size == 0 || !stack_data) {
-        return;
-    }
-
-    const uintptr_t stack_bottom = reinterpret_cast<uintptr_t>(stack_data);
-    const uintptr_t stack_top = stack_bottom + stack_size;
-    const uintptr_t stack_sp =
-        reinterpret_cast<uintptr_t>(fiber->context()->get_stack_pointer());
-    if (stack_sp == 0) {
-        ZCO_LOG_WARN("shared stack save skipped, unsupported architecture");
-        return;
-    }
-
-    // 共享栈保存的是当前活跃栈帧区间，而不是整块栈内存。通过当前 SP 计
-    // 算已使用范围，再把这段内容快照到 Fiber 自己的保存区里。
-    if (stack_sp < stack_bottom || stack_sp > stack_top) {
-        ZCO_LOG_WARN("shared stack save failed, sp out of range, "
-                     "sched_id={}, fiber_id={}, sp={}",
-                     id_, fiber->id(), stack_sp);
-        return;
-    }
-
-    uintptr_t save_begin = stack_sp;
-    if (kStackRedZoneBytes != 0) {
-        const uintptr_t red_zone_begin =
-            stack_sp >= stack_bottom + kStackRedZoneBytes
-                ? stack_sp - kStackRedZoneBytes
-                : stack_bottom;
-        save_begin = red_zone_begin;
-    }
-
-    const size_t used = stack_top - save_begin;
-    fiber->save_stack_data(reinterpret_cast<const char *>(save_begin), used);
-    ZCO_LOG_DEBUG("shared stack saved, sched_id={}, fiber_id={}, used_bytes={}",
-                  id_, fiber->id(), used);
-}
-
-void Processor::restore_fiber_stack(const Fiber::ptr &fiber) {
-    if (!fiber->has_saved_stack()) {
-        return;
-    }
-
-    const size_t stack_slot = fiber->stack_slot();
-    const size_t stack_size = shared_stacks_.size(stack_slot);
-    void *stack_data = shared_stacks_.data(stack_slot);
-    if (stack_size == 0 || !stack_data) {
-        return;
-    }
-
-    const size_t used = fiber->saved_stack_size();
-    if (used > stack_size) {
-        ZCO_LOG_WARN("shared stack restore failed, snapshot too large, "
-                     "sched_id={}, fiber_id={}, used={}, stack={}",
-                     id_, fiber->id(), used, stack_size);
-        return;
-    }
-
-    // 恢复时把保存区直接拷回共享栈尾部，保持调用栈相对栈顶的布局不变，
-    // 这样 ucontext 恢复后协程就能继续从上次让出的精确位置运行。
-    char *dst = reinterpret_cast<char *>(stack_data) + (stack_size - used);
-    std::memcpy(dst, fiber->saved_stack_data(), used);
-    ZCO_LOG_DEBUG(
-        "shared stack restored, sched_id={}, fiber_id={}, used_bytes={}", id_,
-        fiber->id(), used);
-}
-
-void Processor::prepare_shared_stack_for(const Fiber::ptr &fiber) {
-    if (!fiber || !fiber->use_shared_stack()) {
-        return;
-    }
-
-    const size_t stack_slot = fiber->stack_slot();
-    // 共享栈模型下，同一时刻一个 stack_slot 只能被一个 Fiber 占用。
-    // 如果这里切换到另一个 Fiber，就要先把旧 Fiber 的现场保存下来，
-    // 再把新 Fiber 的快照恢复到该槽位。
-    const SharedStackOwner owner = shared_stacks_.occupy_fiber(stack_slot);
-    if (owner.fiber == fiber.get() && owner.fiber_id == fiber->id()) {
-        return;
-    }
-
-    if (owner.fiber && owner.fiber->id() == owner.fiber_id &&
-        owner.fiber->state() != Fiber::State::kDone) {
-        save_fiber_stack(owner.fiber);
-    }
-
-    shared_stacks_.set_occupy_fiber(stack_slot, fiber.get(), fiber->id());
-    restore_fiber_stack(fiber);
-}
-
 Fiber::ptr Processor::obtain_fiber(Task task) {
     size_t stack_slot = 0;
     if (stack_model_ == StackModel::kShared) {
-        const size_t stack_count = shared_stacks_.count();
-        stack_slot = next_stack_slot_.fetch_add(1, std::memory_order_relaxed) %
-                     stack_count;
+        stack_slot = stacks_->next_slot();
     }
 
     const int fiber_id = Runtime::instance().next_fiber_id();
