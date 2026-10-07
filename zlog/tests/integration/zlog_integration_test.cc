@@ -94,7 +94,7 @@ class ZlogIntegrationTest : public ::testing::Test {
 TEST_F(ZlogIntegrationTest, SyncLoggerEndToEnd) {
     std::string logFile = testDir + "/sync_e2e.log";
 
-    LocalLoggerBuilder builder;
+    LoggerBuilder builder;
     builder.build_logger_name("sync_test");
     builder.build_logger_type(LoggerType::LOGGER_SYNC);
     builder.build_logger_level(LogLevel::value::INFO);
@@ -120,7 +120,7 @@ TEST_F(ZlogIntegrationTest, SyncLoggerEndToEnd) {
 TEST_F(ZlogIntegrationTest, SyncLoggerLevelFilter) {
     std::string logFile = testDir + "/sync_filter.log";
 
-    LocalLoggerBuilder builder;
+    LoggerBuilder builder;
     builder.build_logger_name("filter_test");
     builder.build_logger_type(LoggerType::LOGGER_SYNC);
     builder.build_logger_level(LogLevel::value::WARNING);
@@ -146,7 +146,7 @@ TEST_F(ZlogIntegrationTest, SyncLoggerMultipleSinks) {
     std::string logFile1 = testDir + "/sync_multi1.log";
     std::string logFile2 = testDir + "/sync_multi2.log";
 
-    LocalLoggerBuilder builder;
+    LoggerBuilder builder;
     builder.build_logger_name("multi_sink");
     builder.build_logger_type(LoggerType::LOGGER_SYNC);
     builder.build_logger_level(LogLevel::value::DEBUG);
@@ -169,7 +169,7 @@ TEST_F(ZlogIntegrationTest, AsyncLoggerEndToEnd) {
     std::string logFile = testDir + "/async_e2e.log";
 
     {
-        LocalLoggerBuilder builder;
+        LoggerBuilder builder;
         builder.build_logger_name("async_test");
         builder.build_logger_type(LoggerType::LOGGER_ASYNC);
         builder.build_logger_level(LogLevel::value::DEBUG);
@@ -200,7 +200,7 @@ TEST_F(ZlogIntegrationTest, AsyncLoggerUnsafeMode) {
     std::string logFile = testDir + "/async_unsafe.log";
 
     {
-        LocalLoggerBuilder builder;
+        LoggerBuilder builder;
         builder.build_logger_name("async_unsafe");
         builder.build_logger_type(LoggerType::LOGGER_ASYNC);
         builder.build_enable_unsafe();
@@ -227,7 +227,7 @@ TEST_F(ZlogIntegrationTest, AsyncLoggerSafeMode) {
     std::string logFile = testDir + "/async_safe.log";
 
     {
-        LocalLoggerBuilder builder;
+        LoggerBuilder builder;
         builder.build_logger_name("async_safe");
         builder.build_logger_type(LoggerType::LOGGER_ASYNC);
         builder.build_logger_level(LogLevel::value::DEBUG);
@@ -255,7 +255,7 @@ TEST_F(ZlogIntegrationTest, AsyncLoggerSafeMode) {
 TEST_F(ZlogIntegrationTest, MultithreadedSyncLogger) {
     std::string logFile = testDir + "/mt_sync.log";
 
-    LocalLoggerBuilder builder;
+    LoggerBuilder builder;
     builder.build_logger_name("mt_sync");
     builder.build_logger_type(LoggerType::LOGGER_SYNC);
     builder.build_logger_level(LogLevel::value::DEBUG);
@@ -292,7 +292,7 @@ TEST_F(ZlogIntegrationTest, MultithreadedAsyncLogger) {
     std::string logFile = testDir + "/mt_async.log";
 
     {
-        LocalLoggerBuilder builder;
+        LoggerBuilder builder;
         builder.build_logger_name("mt_async");
         builder.build_logger_type(LoggerType::LOGGER_ASYNC);
         builder.build_logger_level(LogLevel::value::DEBUG);
@@ -326,17 +326,17 @@ TEST_F(ZlogIntegrationTest, MultithreadedAsyncLogger) {
     EXPECT_GT(countLines(content), 0);
 }
 
-TEST_F(ZlogIntegrationTest, GlobalLoggerBuilder) {
+TEST_F(ZlogIntegrationTest, LoggerBuilderGlobalRegistration) {
     std::string logFile = testDir + "/global.log";
 
-    GlobalLoggerBuilder builder;
+    LoggerBuilder builder;
     builder.build_logger_name("global_test");
     builder.build_logger_type(LoggerType::LOGGER_SYNC);
     builder.build_logger_level(LogLevel::value::DEBUG);
     builder.build_logger_formatter("%m%n");
     builder.build_logger_sink<FileSink>(logFile);
 
-    Logger::ptr logger = builder.build();
+    Logger::ptr logger = builder.build_global();
     ASSERT_NE(logger.get(), static_cast<Logger *>(NULL));
 
     EXPECT_TRUE(LoggerManager::get_instance().get_logger("global_test"));
@@ -364,12 +364,12 @@ TEST_F(ZlogIntegrationTest, RootLogger) {
 TEST_F(ZlogIntegrationTest, GetLoggerByName) {
     std::string logFile = testDir + "/named.log";
 
-    GlobalLoggerBuilder builder;
+    LoggerBuilder builder;
     builder.build_logger_name("named_logger");
     builder.build_logger_type(LoggerType::LOGGER_SYNC);
     builder.build_logger_formatter("%m%n");
     builder.build_logger_sink<FileSink>(logFile);
-    builder.build();
+    builder.build_global();
 
     Logger::ptr logger = zlog::get_logger("named_logger");
     ASSERT_NE(logger.get(), static_cast<Logger *>(NULL));
@@ -384,7 +384,7 @@ TEST_F(ZlogIntegrationTest, RollingFileIntegration) {
     std::string basename = testDir + "/rolling";
 
     {
-        LocalLoggerBuilder builder;
+        LoggerBuilder builder;
         builder.build_logger_name("rolling_test");
         builder.build_logger_type(LoggerType::LOGGER_SYNC);
         builder.build_logger_level(LogLevel::value::DEBUG);
@@ -416,7 +416,7 @@ TEST_F(ZlogIntegrationTest, RollingFileIntegration) {
 TEST_F(ZlogIntegrationTest, CompleteFormatIntegration) {
     std::string logFile = testDir + "/format.log";
 
-    LocalLoggerBuilder builder;
+    LoggerBuilder builder;
     builder.build_logger_name("format_test");
     builder.build_logger_type(LoggerType::LOGGER_SYNC);
     builder.build_logger_level(LogLevel::value::DEBUG);
@@ -438,7 +438,7 @@ TEST_F(ZlogIntegrationTest, CompleteFormatIntegration) {
 TEST_F(ZlogIntegrationTest, StressTestSync) {
     std::string logFile = testDir + "/stress_sync.log";
 
-    LocalLoggerBuilder builder;
+    LoggerBuilder builder;
     builder.build_logger_name("stress_sync");
     builder.build_logger_type(LoggerType::LOGGER_SYNC);
     builder.build_logger_level(LogLevel::value::DEBUG);
@@ -473,7 +473,7 @@ TEST_F(ZlogIntegrationTest, StressTestAsync) {
     std::string logFile = testDir + "/stress_async.log";
 
     {
-        LocalLoggerBuilder builder;
+        LoggerBuilder builder;
         builder.build_logger_name("stress_async");
         builder.build_logger_type(LoggerType::LOGGER_ASYNC);
         builder.build_logger_level(LogLevel::value::DEBUG);

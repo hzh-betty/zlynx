@@ -242,12 +242,12 @@ enum class LoggerType {
 };
 
 /**
- * @brief 日志器建造者基类
+ * @brief 日志器建造者
  * 使用建造者模式降低用户使用成本
  */
 class LoggerBuilder : public NonCopyable {
   public:
-    virtual ~LoggerBuilder() = default;
+    ~LoggerBuilder() = default;
 
     /**
      * @brief 构造函数
@@ -303,15 +303,13 @@ class LoggerBuilder : public NonCopyable {
         sinks_.push_back(psink);
     }
 
-    /**
-     * @brief 纯虚函数，由子类实现具体地构建逻辑
-     * @return 构建的日志器智能指针
-     */
-    virtual Logger::ptr build() = 0;
+    /** @brief 构建日志器，不注册到全局管理器。 */
+    Logger::ptr build();
+
+    /** @brief 构建并注册日志器；同名注册保留已有日志器。 */
+    Logger::ptr build_global();
 
   protected:
-    Logger::ptr build_local_logger();
-
     LoggerType logger_type_;              // 日志器类型
     const char *logger_name_ = nullptr;   // 日志器名称
     LogLevel::value limit_level_;         // 日志等级限制
@@ -319,20 +317,6 @@ class LoggerBuilder : public NonCopyable {
     std::vector<LogSink::ptr> sinks_;     // 日志落地器列表
     AsyncType looper_type_;               // 异步类型
     std::chrono::milliseconds milliseco_; // 最大等待时间
-};
-
-/**
- * @brief 局部日志器建造者
- * 创建局部作用域的日志器
- */
-class LocalLoggerBuilder final : public LoggerBuilder {
-  public:
-    /**
-     * @brief 构建局部日志器
-     * @return 日志器智能指针
-     */
-    LocalLoggerBuilder() = default;
-    Logger::ptr build() override;
 };
 
 /**
@@ -389,19 +373,6 @@ class LoggerManager {
     std::unordered_map<std::string, Logger::ptr> loggers_; // 日志器映射表
 };
 
-/**
- * @brief 全局日志器建造者
- * 创建全局作用域的日志器并自动注册到管理器
- */
-class GlobalLoggerBuilder final : public LoggerBuilder {
-  public:
-    /**
-     * @brief 构建全局日志器
-     * @return 日志器智能指针
-     */
-    GlobalLoggerBuilder() = default;
-    Logger::ptr build() override;
-};
 
 } // namespace zlog
 

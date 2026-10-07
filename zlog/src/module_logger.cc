@@ -13,7 +13,7 @@ void ModuleLogger::init(LogLevel::value level) {
         init_dependencies_(level);
     }
 
-    LocalLoggerBuilder builder;
+    LoggerBuilder builder;
     builder.build_logger_name(name_.c_str());
     builder.build_logger_level(level);
     builder.build_logger_type(LoggerType::LOGGER_ASYNC);

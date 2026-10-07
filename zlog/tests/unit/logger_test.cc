@@ -61,24 +61,24 @@ TEST_F(LoggerTest, LevelFilter) {
 }
 
 TEST_F(LoggerTest, LocalBuilderReturnsNullWhenNameMissing) {
-    LocalLoggerBuilder builder;
+    LoggerBuilder builder;
     Logger::ptr logger = builder.build();
     EXPECT_EQ(logger.get(), static_cast<Logger *>(NULL));
 }
 
 TEST_F(LoggerTest, GlobalBuilderReturnsNullWhenNameMissing) {
-    GlobalLoggerBuilder builder;
-    Logger::ptr logger = builder.build();
+    LoggerBuilder builder;
+    Logger::ptr logger = builder.build_global();
     EXPECT_EQ(logger.get(), static_cast<Logger *>(NULL));
 }
 
 TEST_F(LoggerTest, GlobalBuilderAsyncBranchWithDefaultFormatterAndSink) {
-    GlobalLoggerBuilder builder;
+    LoggerBuilder builder;
     builder.build_logger_name("root");
     builder.build_logger_type(LoggerType::LOGGER_ASYNC);
     builder.build_wait_time(std::chrono::milliseconds(10));
 
-    Logger::ptr logger = builder.build();
+    Logger::ptr logger = builder.build_global();
     ASSERT_NE(logger.get(), static_cast<Logger *>(NULL));
 
     logger->log_impl(LogLevel::value::INFO, __FILE__, __LINE__,
@@ -93,7 +93,7 @@ TEST_F(LoggerTest, LoggerManagerUpsertNullLoggerNoop) {
 }
 
 TEST_F(LoggerTest, LoggerManagerUpsertRootReplacesRootLogger) {
-    LocalLoggerBuilder builder;
+    LoggerBuilder builder;
     builder.build_logger_name("upsert_root_logger");
     builder.build_logger_type(LoggerType::LOGGER_SYNC);
     Logger::ptr logger = builder.build();
@@ -125,7 +125,7 @@ TEST_F(LoggerTest, LoggerManagerUpsertNonRootDoesNotReplaceRoot) {
     Logger::ptr old_root = LoggerManager::get_instance().root_logger();
     ASSERT_NE(old_root.get(), static_cast<Logger *>(NULL));
 
-    LocalLoggerBuilder builder;
+    LoggerBuilder builder;
     builder.build_logger_name("non_root_upsert");
     builder.build_logger_type(LoggerType::LOGGER_SYNC);
     Logger::ptr logger = builder.build();
@@ -144,21 +144,34 @@ TEST_F(LoggerTest, UninitializedLoggerThrowsWhenLogging) {
 }
 
 TEST_F(LoggerTest, GlobalBuilderRegistersWithoutReplacingExistingLogger) {
-    GlobalLoggerBuilder builder;
+    LoggerBuilder builder;
     builder.build_logger_name("global_duplicate_test");
-    const auto first = builder.build();
+    const auto first = builder.build_global();
     ASSERT_NE(first, nullptr);
     EXPECT_EQ(LoggerManager::get_instance().get_logger("global_duplicate_test"), first);
-    const auto second = builder.build();
+    const auto second = builder.build_global();
     EXPECT_NE(second, first);
     EXPECT_EQ(LoggerManager::get_instance().get_logger("global_duplicate_test"), first);
 }
 
 TEST_F(LoggerTest, LocalBuilderDoesNotRegisterLogger) {
-    LocalLoggerBuilder builder;
+    LoggerBuilder builder;
     builder.build_logger_name("local_unregistered_test");
     ASSERT_NE(builder.build(), nullptr);
     EXPECT_FALSE(LoggerManager::get_instance().get_logger("local_unregistered_test"));
+}
+
+TEST_F(LoggerTest, SameBuilderSupportsLocalConstructionThenGlobalRegistration) {
+    LoggerBuilder builder;
+    builder.build_logger_name("local_then_global_test");
+    const auto local = builder.build();
+    ASSERT_NE(local, nullptr);
+    EXPECT_FALSE(LoggerManager::get_instance().get_logger("local_then_global_test"));
+
+    const auto global = builder.build_global();
+    ASSERT_NE(global, nullptr);
+    EXPECT_NE(local, global);
+    EXPECT_EQ(LoggerManager::get_instance().get_logger("local_then_global_test"), global);
 }
 
 int main(int argc, char **argv) {

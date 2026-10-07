@@ -110,7 +110,7 @@ void LoggerBuilder::build_logger_formatter(const std::string &pattern) {
     formatter_ = std::make_shared<Formatter>(pattern);
 }
 
-Logger::ptr LoggerBuilder::build_local_logger() {
+Logger::ptr LoggerBuilder::build() {
     if (logger_name_ == nullptr) {
         return {};
     }
@@ -129,10 +129,8 @@ Logger::ptr LoggerBuilder::build_local_logger() {
                                         sinks_);
 }
 
-Logger::ptr LocalLoggerBuilder::build() { return build_local_logger(); }
-
 LoggerManager::LoggerManager() {
-    LocalLoggerBuilder builder;
+    LoggerBuilder builder;
     builder.build_logger_name("root");
     root_logger_ = builder.build();
     loggers_.insert({"root", root_logger_});
@@ -167,8 +165,8 @@ Logger::ptr LoggerManager::get_logger(const std::string &name) {
 
 Logger::ptr LoggerManager::root_logger() { return root_logger_; }
 
-Logger::ptr GlobalLoggerBuilder::build() {
-    Logger::ptr logger = build_local_logger();
+Logger::ptr LoggerBuilder::build_global() {
+    Logger::ptr logger = build();
     if (logger) {
         LoggerManager::get_instance().add_logger(logger);
     }

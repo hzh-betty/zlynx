@@ -26,7 +26,7 @@ TEST(ModuleLoggerTest, LazyInitializationCachesAndInitializesDependencies) {
 }
 
 TEST(ModuleLoggerTest, ReusesRegisteredLoggerWithoutInitializingDependencies) {
-    LocalLoggerBuilder builder;
+    LoggerBuilder builder;
     builder.build_logger_name("module_registered_test");
     const auto registered = builder.build();
     LoggerManager::get_instance().upsert_logger("module_registered_test", registered);
