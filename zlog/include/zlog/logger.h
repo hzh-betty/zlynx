@@ -299,7 +299,7 @@ class LoggerBuilder : public NonCopyable {
     template <typename SinkType, typename... Args>
     void build_logger_sink(Args &&...args) {
         const LogSink::ptr psink =
-            SinkFactory::create<SinkType>(std::forward<Args>(args)...);
+            std::make_shared<SinkType>(std::forward<Args>(args)...);
         sinks_.push_back(psink);
     }
 
@@ -310,6 +310,8 @@ class LoggerBuilder : public NonCopyable {
     virtual Logger::ptr build() = 0;
 
   protected:
+    Logger::ptr build_local_logger();
+
     LoggerType logger_type_;              // 日志器类型
     const char *logger_name_ = nullptr;   // 日志器名称
     LogLevel::value limit_level_;         // 日志等级限制
@@ -360,13 +362,6 @@ class LoggerManager {
      * @param logger 日志器实例
      */
     void upsert_logger(const std::string &name, Logger::ptr logger);
-
-    /**
-     * @brief 检查日志器是否存在
-     * @param name 日志器名称
-     * @return 存在返回true，否则返回false
-     */
-    bool has_logger(const std::string &name);
 
     /**
      * @brief 获取指定名称的日志器

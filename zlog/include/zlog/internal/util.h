@@ -66,19 +66,6 @@ class alignas(64) Spinlock : public NonCopyable {
 };
 
 /**
- * @brief 日期工具类
- * 提供时间相关的操作接口
- */
-class Date {
-  public:
-    /**
-     * @brief 获取当前系统时间
-     * @return 当前时间的时间戳
-     */
-    static time_t get_current_time();
-};
-
-/**
  * @brief 文件工具类
  * 提供文件和目录操作的接口
  */

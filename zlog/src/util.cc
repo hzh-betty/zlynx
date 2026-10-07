@@ -6,7 +6,6 @@
 
 #include "zlog/internal/util.h"
 
-#include <chrono>
 #include <thread>
 
 namespace zlog {
@@ -36,12 +35,6 @@ void Spinlock::lock_slow() noexcept {
             }
         }
     }
-}
-
-time_t Date::get_current_time() {
-    const auto now = std::chrono::system_clock::now();
-    const auto time = std::chrono::system_clock::to_time_t(now);
-    return time;
 }
 
 bool File::exists(const std::string &pathname) {

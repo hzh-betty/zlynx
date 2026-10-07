@@ -5,7 +5,10 @@
  */
 
 #include "zlog/logger.h"
+
+#include <ctime>
 #include "zlog/internal/util.h"
+
 
 namespace zlog {
 
@@ -20,7 +23,7 @@ void Logger::serialize(const LogLevel::value level, const char *file,
     thread_local LogMessage msg(LogLevel::value::DEBUG, "", 0, "", "");
 
     // 2. 直接赋值（快速）
-    msg.curtime_ = Date::get_current_time();
+    msg.curtime_ = std::time(nullptr);
     msg.level_ = level;
     msg.file_ = file;
     msg.line_ = line;
@@ -107,7 +110,7 @@ void LoggerBuilder::build_logger_formatter(const std::string &pattern) {
     formatter_ = std::make_shared<Formatter>(pattern);
 }
 
-Logger::ptr LocalLoggerBuilder::build() {
+Logger::ptr LoggerBuilder::build_local_logger() {
     if (logger_name_ == nullptr) {
         return {};
     }
@@ -126,17 +129,16 @@ Logger::ptr LocalLoggerBuilder::build() {
                                         sinks_);
 }
 
+Logger::ptr LocalLoggerBuilder::build() { return build_local_logger(); }
+
 LoggerManager::LoggerManager() {
-    const std::unique_ptr<zlog::LocalLoggerBuilder> builder(
-        new zlog::LocalLoggerBuilder());
-    builder->build_logger_name("root");
-    root_logger_ = builder->build();
+    LocalLoggerBuilder builder;
+    builder.build_logger_name("root");
+    root_logger_ = builder.build();
     loggers_.insert({"root", root_logger_});
 }
 
 void LoggerManager::add_logger(Logger::ptr &logger) {
-    if (has_logger(logger->get_name()))
-        return;
     std::unique_lock<std::mutex> lock(mutex_);
     loggers_.insert({logger->get_name(), logger});
 }
@@ -153,14 +155,6 @@ void LoggerManager::upsert_logger(const std::string &name, Logger::ptr logger) {
     }
 }
 
-bool LoggerManager::has_logger(const std::string &name) {
-    std::unique_lock<std::mutex> lock(mutex_);
-    const auto iter = loggers_.find(name);
-    if (iter == loggers_.end()) {
-        return false;
-    }
-    return true;
-}
 
 Logger::ptr LoggerManager::get_logger(const std::string &name) {
     std::unique_lock<std::mutex> lock(mutex_);
@@ -174,25 +168,10 @@ Logger::ptr LoggerManager::get_logger(const std::string &name) {
 Logger::ptr LoggerManager::root_logger() { return root_logger_; }
 
 Logger::ptr GlobalLoggerBuilder::build() {
-    if (logger_name_ == nullptr) {
-        return {};
+    Logger::ptr logger = build_local_logger();
+    if (logger) {
+        LoggerManager::get_instance().add_logger(logger);
     }
-    if (formatter_.get() == nullptr) {
-        formatter_ = std::make_shared<Formatter>();
-    }
-    if (sinks_.empty()) {
-        build_logger_sink<StdOutSink>();
-    }
-    Logger::ptr logger;
-    if (logger_type_ == LoggerType::LOGGER_ASYNC) {
-        logger = std::make_shared<AsyncLogger>(logger_name_, limit_level_,
-                                               formatter_, sinks_, looper_type_,
-                                               milliseco_);
-    } else {
-        logger = std::make_shared<SyncLogger>(logger_name_, limit_level_,
-                                              formatter_, sinks_);
-    }
-    LoggerManager::get_instance().add_logger(logger);
     return logger;
 }
 

@@ -24,6 +24,7 @@ set(ZLOG_SOURCES
     src/logger.cc
     src/looper.cc
     src/message.cc
+    src/module_logger.cc
     src/sink.cc
     src/util.cc
 )

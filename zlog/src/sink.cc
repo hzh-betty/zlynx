@@ -6,7 +6,10 @@
 
 #include "zlog/sink.h"
 
+#include <ctime>
+
 #include "zlog/internal/util.h"
+
 namespace zlog {
 
 void StdOutSink::log(const char *data, size_t len) {
@@ -53,7 +56,7 @@ void RollBySizeSink::log(const char *data, size_t len) {
 }
 
 std::string RollBySizeSink::create_new_file() {
-    time_t t = Date::get_current_time();
+    time_t t = std::time(nullptr);
     struct tm lt {};
     localtime_r(&t, &lt);
     // 先将时间格式化为字符串

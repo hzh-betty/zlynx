@@ -339,7 +339,7 @@ TEST_F(ZlogIntegrationTest, GlobalLoggerBuilder) {
     Logger::ptr logger = builder.build();
     ASSERT_NE(logger.get(), static_cast<Logger *>(NULL));
 
-    EXPECT_TRUE(LoggerManager::get_instance().has_logger("global_test"));
+    EXPECT_TRUE(LoggerManager::get_instance().get_logger("global_test"));
 
     Logger::ptr retrieved =
         LoggerManager::get_instance().get_logger("global_test");

@@ -143,6 +143,24 @@ TEST_F(LoggerTest, UninitializedLoggerThrowsWhenLogging) {
                  std::runtime_error);
 }
 
+TEST_F(LoggerTest, GlobalBuilderRegistersWithoutReplacingExistingLogger) {
+    GlobalLoggerBuilder builder;
+    builder.build_logger_name("global_duplicate_test");
+    const auto first = builder.build();
+    ASSERT_NE(first, nullptr);
+    EXPECT_EQ(LoggerManager::get_instance().get_logger("global_duplicate_test"), first);
+    const auto second = builder.build();
+    EXPECT_NE(second, first);
+    EXPECT_EQ(LoggerManager::get_instance().get_logger("global_duplicate_test"), first);
+}
+
+TEST_F(LoggerTest, LocalBuilderDoesNotRegisterLogger) {
+    LocalLoggerBuilder builder;
+    builder.build_logger_name("local_unregistered_test");
+    ASSERT_NE(builder.build(), nullptr);
+    EXPECT_FALSE(LoggerManager::get_instance().get_logger("local_unregistered_test"));
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
