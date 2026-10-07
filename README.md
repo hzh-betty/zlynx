@@ -27,6 +27,26 @@ zmalloc 可选全局 allocator override，也可显式使用 zmalloc/zfree
 - [znet](znet/README.md)：协程 TCP 网络库，参考 `muduo`
 - [zhttp](zhttp/README.md)：HTTP/WebSocket 框架，参考 `dragon`
 
+## 冗余接口清理后的升级说明
+
+本次清理包含公开接口和对象布局变更。更新安装包后，必须使用匹配的头文件和
+库重新编译上层组件，不要混用旧二进制。建议使用新的安装前缀，避免旧头文件残留。
+
+- 保留 `zmalloc::PageMap1` 和 `zlog::SinkFactory::create()`。
+- `go(Task)` 直接接受 lambda、函数指针和 Task；保留带参数、成员函数和
+  `Closure*` 投递接口，后者在任务执行后自动释放对象。
+- `stop_scheds()` 改为 `shutdown()`；`co_sleep_for()` 改为 `sleep_for()`；
+  `co_error()` 改为直接读写 `errno`。
+- 移除 `MutexGuard/mutex_guard`，引用加锁使用
+  `std::lock_guard<const zco::Mutex>`；可空指针场景需显式判空。
+- `LoggerManager::has_logger()` 改为对其 `get_logger()` 返回值判空。
+- 移除 HTTP 远端地址 resolver，使用 `HttpRequest::set_remote_addr()`；
+  栈模式统一使用 `zco::StackModel`，配置字符串不变，默认仍是独立栈。
+- HTTPS 重定向配置只接受 `ssl.force_http_to_https`，不再接受
+  `ssl.force_redirect`。底层的 accept4 回退仍保留，不提高最低运行环境要求。
+
+各组件仍可独立构建、安装，并通过已安装的底层组件满足依赖，C++14 基线不变。
+
 ## 设计参考
 
 `zlynx` 会借鉴成熟项目的思想，但并不是逐行复刻：
