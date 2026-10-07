@@ -12,7 +12,7 @@
 #include "zlog/zlog.h"
 
 int main() {
-    zlog::LocalLoggerBuilder builder;
+    zlog::LoggerBuilder builder;
     builder.build_logger_name("demo");
     builder.build_logger_type(zlog::LoggerType::LOGGER_SYNC);
     builder.build_logger_level(zlog::LogLevel::value::DEBUG);
@@ -32,14 +32,14 @@ int main() {
 #include "zlog/zlog.h"
 
 int main() {
-    zlog::GlobalLoggerBuilder builder;
+    zlog::LoggerBuilder builder;
     builder.build_logger_name("app");
     builder.build_logger_type(zlog::LoggerType::LOGGER_ASYNC);
     builder.build_logger_level(zlog::LogLevel::value::INFO);
     builder.build_logger_formatter("[%d{%H:%M:%S}][%c][%p] %m%n");
     builder.build_wait_time(std::chrono::milliseconds(50));
     builder.build_logger_sink<zlog::FileSink>("app.log");
-    builder.build();
+    builder.build_global();
 
     zlog::get_logger("app")->ZLOG_INFO("server started on port={}", 8080);
     return 0;
@@ -59,6 +59,11 @@ target_link_libraries(zlog_demo PRIVATE zlog::zlog)
 ```
 
 源码树内开发可以直接链接 `zlog` target。
+
+原来的 `LocalLoggerBuilder` / `GlobalLoggerBuilder` 已合并为 `LoggerBuilder`：
+局部构建使用 `build()`，构建并注册使用 `build_global()`；同名注册仍保留已有日志器。
+`SinkFactory::create<T>()` 改为 `std::make_shared<T>()`，单独的格式项类改由
+`Formatter` 的格式规则表达。公开类型和内部布局有变化，依赖方需要迁移并重新编译。
 
 ## 项目架构
 
@@ -91,9 +96,9 @@ zlog/
 - `SyncLogger`：调用线程内直接落地日志，适合简单场景或对退出前持久化要求高的路径。
 - `AsyncLogger`：将序列化后的日志写入 `AsyncLooper`，由后台线程批量落地。
 - `AsyncLooper`：生产者/消费者模型，维护生产缓冲区和消费缓冲区，支持 safe/unsafe 两种模式。
-- `Formatter`：解析 `%d`、`%t`、`%c`、`%f`、`%l`、`%p`、`%T`、`%m`、`%n` 等格式项。
+- `Formatter`：以格式项值保存规则，统一解析和执行 `%d`、`%t`、`%c`、`%f`、`%l`、`%p`、`%T`、`%m`、`%n` 等格式项。
 - `LogSink`：日志落地抽象，内置 `StdOutSink`、`FileSink`、`RollBySizeSink`。
-- `LoggerBuilder`：用 builder 方式组装 logger 类型、名称、等级、格式、sink 和异步参数。
+- `LoggerBuilder`：用 builder 方式组装 logger 类型、名称、等级、格式、sink 和异步参数；`build()` 仅构建，`build_global()` 构建并注册。
 - `LoggerManager`：全局 logger 注册表，提供 root logger 和命名 logger 查询。
 
 ## 依赖
@@ -193,9 +198,9 @@ ctest --test-dir build/debug -R '^zlog\.integration\.' --output-on-failure
 - Buffer 扩容、读写索引、交换和边界条件
 - 日志等级字符串转换和等级过滤
 - Formatter 格式项解析与输出
-- StdOut/File/RollBySize sink 和 SinkFactory
+- StdOut/File/RollBySize sink 的构造和输出
 - SyncLogger、AsyncLogger、空 sink、异常路径
-- LocalLoggerBuilder、GlobalLoggerBuilder、LoggerManager 注册/替换/查询
+- LoggerBuilder 局部构建、全局注册以及 LoggerManager 替换/查询
 - AsyncLooper safe/unsafe 模式、flush 阈值、stop 和析构
 - 多 sink、滚动文件、多线程同步/异步写入、端到端日志内容校验
 
