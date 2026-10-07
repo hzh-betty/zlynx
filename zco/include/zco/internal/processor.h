@@ -30,12 +30,6 @@ namespace zco {
 
 static constexpr size_t kSharedStackGroupSize =
     8; // 每个处理器的共享栈数量，实际使用时可根据需求调整
-static constexpr size_t kSnapshotBucketCount =
-    8; // 快照缓冲池桶数量，分桶管理不同大小的快照，减少内存碎片
-static constexpr uint8_t kDynamicSnapshotBucket =
-    0xff; // 动态快照桶标识，表示不固定大小的快照需要单独分配
-static constexpr size_t kSnapshotPoolPerBucketLimit =
-    256; // 每个桶的快照缓冲池最大容量，超过后不再缓存，避免过度占用内存
 
 /**
  * @brief 调度处理器。
@@ -225,13 +219,6 @@ class Processor : public NonCopyable {
      * @return 任务负载。
      */
     uint32_t queue_load() const;
-
-    /**
-     * @brief 获取累计运行时间（纳秒）。
-     * @param 无参数。
-     * @return 运行时间。
-     */
-    uint64_t cpu_time_ns() const;
 
     /**
      * @brief 获取混合负载分数。
@@ -428,7 +415,6 @@ class Processor : public NonCopyable {
 
     std::atomic<uint32_t>
         ready_size_; // 就绪队列长度，近似值仅供负载评估，不强求精确
-    std::atomic<uint64_t> cpu_time_ns_; // 累计运行时间，纳秒级，供负载评估使用
     std::atomic<uint64_t>
         ema_loop_ns_; // 调度循环平均耗时，纳秒级，供负载评估使用
 

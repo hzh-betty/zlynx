@@ -145,18 +145,4 @@ bool Mutex::try_lock() const {
     return true;
 }
 
-MutexGuard::MutexGuard(const Mutex &mutex) : mutex_(&mutex) { mutex_->lock(); }
-
-MutexGuard::MutexGuard(const Mutex *mutex) : mutex_(mutex) {
-    if (mutex_) {
-        mutex_->lock();
-    }
-}
-
-MutexGuard::~MutexGuard() {
-    if (mutex_) {
-        mutex_->unlock();
-    }
-}
-
 } // namespace zco

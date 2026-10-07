@@ -52,32 +52,6 @@ class Mutex : private NonCopyable {
     std::shared_ptr<Impl> impl_;
 };
 
-/**
- * @brief Mutex 的 RAII 守卫。
- */
-class MutexGuard : public NonCopyable {
-  public:
-    /**
-     * @brief 构造守卫并加锁。
-     * @param mutex 锁对象。
-     */
-    explicit MutexGuard(const Mutex &mutex);
-
-    /**
-     * @brief 构造守卫并加锁。
-     * @param mutex 锁对象指针。
-     */
-    explicit MutexGuard(const Mutex *mutex);
-
-    /**
-     * @brief 析构时自动解锁。
-     */
-    ~MutexGuard();
-
-  private:
-    const Mutex *mutex_;
-};
-
 } // namespace zco
 
 #endif // ZCO_MUTEX_H_

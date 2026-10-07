@@ -26,25 +26,6 @@
 namespace zco {
 
 /**
- * @brief 协程友好的 sleep 包装。
- * @param milliseconds 休眠时长。
- * @return 无返回值。
- */
-void co_sleep_for(uint32_t milliseconds);
-
-/**
- * @brief 获取当前线程错误码。
- * @return 当前 errno。
- */
-int co_error();
-
-/**
- * @brief 设置当前线程错误码。
- * @param error_code 目标错误码。
- */
-void co_error(int error_code);
-
-/**
  * @brief 显式同步 dup 后 fd 元数据。
  * @param from_fd 源 fd。
  * @param to_fd 新 fd。

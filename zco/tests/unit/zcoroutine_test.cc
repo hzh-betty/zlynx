@@ -23,14 +23,10 @@ TEST_F(ZcoroutineUnitTest, TypeAliasesAreUsable) {
                   "event alias should map to Event");
     static_assert(std::is_same<wait_group, WaitGroup>::value,
                   "wait_group alias should map to WaitGroup");
-    static_assert(std::is_same<pool, Pool>::value,
-                  "pool alias should map to Pool");
     static_assert(std::is_same<io_event, IoEvent>::value,
                   "io_event alias should map to IoEvent");
     static_assert(std::is_same<mutex, Mutex>::value,
                   "mutex alias should map to Mutex");
-    static_assert(std::is_same<mutex_guard, MutexGuard>::value,
-                  "mutex_guard alias should map to MutexGuard");
 
     SUCCEED();
 }

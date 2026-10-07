@@ -57,7 +57,7 @@ TEST_F(MutexUnitByHeaderTest, MixedThreadAndCoroutineContention) {
                     finish_task();
                     return;
                 }
-                co_sleep_for(1);
+                sleep_for(1);
             }
 
             timeout_or_error.store(true, std::memory_order_release);
@@ -110,15 +110,11 @@ TEST_F(MutexUnitByHeaderTest, UnlockWhenNotLockedIsIgnored) {
     mutex.unlock();
 }
 
-TEST_F(MutexUnitByHeaderTest, GuardWithNullPointerIsSafeNoop) {
-    MutexGuard guard(static_cast<const Mutex *>(nullptr));
-    SUCCEED();
-}
 
-TEST_F(MutexUnitByHeaderTest, GuardWithValidPointerLocksAndUnlocks) {
+TEST_F(MutexUnitByHeaderTest, StandardLockGuardLocksAndUnlocks) {
     Mutex mutex;
     {
-        MutexGuard guard(&mutex);
+        std::lock_guard<const Mutex> guard(mutex);
         EXPECT_FALSE(mutex.try_lock());
     }
     EXPECT_TRUE(mutex.try_lock());
@@ -138,7 +134,7 @@ TEST_F(MutexUnitByHeaderTest, CoroutineWaiterGetsLockBeforeThreadWaiter) {
 
     go([&]() {
         coroutine_started.done();
-        MutexGuard guard(mutex);
+        std::lock_guard<const Mutex> guard(mutex);
         {
             std::lock_guard<std::mutex> lock(order_mutex);
             order.push_back(1);
@@ -149,7 +145,7 @@ TEST_F(MutexUnitByHeaderTest, CoroutineWaiterGetsLockBeforeThreadWaiter) {
     coroutine_started.wait();
 
     std::thread thread_waiter([&]() {
-        MutexGuard guard(mutex);
+        std::lock_guard<const Mutex> guard(mutex);
         {
             std::lock_guard<std::mutex> lock(order_mutex);
             order.push_back(2);
@@ -200,14 +196,14 @@ TEST_F(MutexUnitByHeaderTest,
 
     go([&]() {
         coroutine_started.done();
-        MutexGuard guard(mutex);
+        std::lock_guard<const Mutex> guard(mutex);
         coroutine_done.store(true, std::memory_order_release);
         done.done();
     });
 
     coroutine_started.wait();
     std::thread waiter([&]() {
-        MutexGuard guard(mutex);
+        std::lock_guard<const Mutex> guard(mutex);
         thread_done.store(true, std::memory_order_release);
         done.done();
     });

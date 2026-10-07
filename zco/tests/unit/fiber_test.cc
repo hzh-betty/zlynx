@@ -42,8 +42,10 @@ TEST_F(FiberUnitTest, BasicStateTransitionsAndTimeoutFlags) {
     fiber->mark_waiting();
     EXPECT_TRUE(fiber->try_wake(true));
     EXPECT_TRUE(fiber->timed_out());
-    fiber->clear_timed_out();
+    fiber->mark_waiting();
+    EXPECT_EQ(fiber->state(), Fiber::State::kWaiting);
     EXPECT_FALSE(fiber->timed_out());
+    EXPECT_TRUE(fiber->try_wake(false));
 
     fiber->mark_done();
     EXPECT_EQ(fiber->state(), Fiber::State::kDone);
@@ -89,6 +91,8 @@ TEST_F(FiberUnitTest, ResetReinitializesFiberIdentityAndState) {
     fiber->save_stack_data(payload, sizeof(payload));
     fiber->mark_waiting();
     EXPECT_TRUE(fiber->has_saved_stack());
+    EXPECT_TRUE(fiber->try_wake(true));
+    EXPECT_TRUE(fiber->timed_out());
 
     fiber->reset(9, []() {}, 1);
 

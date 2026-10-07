@@ -342,11 +342,8 @@ ssize_t run_io_loop(const char *func_name, int fd, IoEventType event_type,
 
 } // namespace
 
-void co_sleep_for(uint32_t milliseconds) { sleep_for(milliseconds); }
 
-int co_error() { return errno; }
 
-void co_error(int error_code) { errno = error_code; }
 
 void sync_fd_metadata_on_dup(int from_fd, int to_fd) {
     sync_fd_metadata_on_dup_impl(from_fd, to_fd);
@@ -431,7 +428,7 @@ int co_dup3(int oldfd, int newfd, int flags) {
 
 int co_close(int fd, uint32_t delay_ms) {
     if (delay_ms > 0 && in_coroutine()) {
-        co_sleep_for(delay_ms);
+        sleep_for(delay_ms);
     }
 
     cancel_fd_waiters(fd, EBADF);

@@ -38,12 +38,6 @@ class StealQueue : public NonCopyable {
     size_t steal(std::deque<Task> *tasks, size_t max_steal, size_t min_reserve);
 
     /**
-     * @brief 清空所有任务
-     * @param tasks 任务队列
-     */
-    void drain_all(std::deque<Task> *tasks);
-
-    /**
      * @brief 清空部分任务
      * @param tasks 任务队列
      * @param max_count 最大清空数量

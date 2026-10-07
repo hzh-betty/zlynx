@@ -206,7 +206,7 @@ TEST_F(IoEventUnitTest, CoCloseCancelsPendingWaitWithEbadf) {
     });
 
     go([&]() {
-        co_sleep_for(10);
+        sleep_for(10);
         EXPECT_EQ(co_close(pair[1]), 0);
         pair[1] = -1;
         done.done();

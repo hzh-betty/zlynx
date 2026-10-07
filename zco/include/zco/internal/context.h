@@ -47,12 +47,6 @@ class Context {
     static int swap_context(Context *from_ctx, Context *to_ctx);
 
     /**
-     * @brief 获取上下文
-     * @return 上下文指针
-     */
-    int get_context();
-
-    /**
      * @brief 获取当前栈指针
      * @return 当前栈指针
      */

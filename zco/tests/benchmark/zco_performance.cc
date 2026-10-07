@@ -386,7 +386,7 @@ ScenarioResult run_timer_throughput(StackModel model,
             if ((i & 15) == 0) {
                 yield();
             }
-            co_sleep_for(0);
+            sleep_for(0);
             executed.fetch_add(1, std::memory_order_relaxed);
             done.done();
         });

@@ -51,13 +51,6 @@ class FiberHandleRegistry : public NonCopyable {
      */
     Fiber::ptr find_by_handle(uint64_t handle_id) const;
 
-    /**
-     * @brief 根据 Fiber 查找 handle_id
-     * @param fiber 待查找的 Fiber 对象
-     * @return 成功返回对应的 handle_id，失败返回 0
-     */
-    bool try_get_handle_id(const Fiber *fiber, uint64_t *handle_id) const;
-
   private:
     mutable std::mutex mutex_;
     std::unordered_map<uint64_t, Fiber::ptr> handle_map_;

@@ -28,13 +28,11 @@ TEST_F(FiberHandleRegistryUnitTest, RegisterLookupAndUnregisterFlow) {
     ASSERT_NE(found, nullptr);
     EXPECT_EQ(found.get(), fiber.get());
 
-    uint64_t handle_id = 0;
-    EXPECT_TRUE(registry.try_get_handle_id(fiber.get(), &handle_id));
-    EXPECT_EQ(handle_id, 101u);
+    EXPECT_EQ(fiber->external_handle_id(), 101u);
 
     registry.unregister_fiber(fiber.get());
     EXPECT_EQ(registry.find_by_handle(101), nullptr);
-    EXPECT_FALSE(registry.try_get_handle_id(fiber.get(), &handle_id));
+    EXPECT_EQ(fiber->external_handle_id(), 0u);
 }
 
 TEST_F(FiberHandleRegistryUnitTest, ExistingReverseMappingKeepsOriginalHandle) {
@@ -45,9 +43,7 @@ TEST_F(FiberHandleRegistryUnitTest, ExistingReverseMappingKeepsOriginalHandle) {
     registry.register_fiber(fiber, 1001);
     registry.register_fiber(fiber, 2002);
 
-    uint64_t handle_id = 0;
-    ASSERT_TRUE(registry.try_get_handle_id(fiber.get(), &handle_id));
-    EXPECT_EQ(handle_id, 1001u);
+    EXPECT_EQ(fiber->external_handle_id(), 1001u);
 
     EXPECT_NE(registry.find_by_handle(1001), nullptr);
     EXPECT_EQ(registry.find_by_handle(2002), nullptr);
@@ -72,20 +68,16 @@ TEST_F(FiberHandleRegistryUnitTest, InvalidInputsAndClearAreSafe) {
     EXPECT_EQ(registry.find_by_handle(321), nullptr);
 }
 
-TEST_F(FiberHandleRegistryUnitTest,
-       TryGetHandleIdRejectsNullOutputAndDoubleUnregisterIsSafe) {
+TEST_F(FiberHandleRegistryUnitTest, DoubleUnregisterIsSafe) {
     FiberHandleRegistry registry;
     Processor processor(0, 64 * 1024);
     Fiber::ptr fiber = test::MakeFiberForTest(&processor, 9, 0);
     ASSERT_NE(fiber, nullptr);
 
     ASSERT_EQ(registry.register_fiber(fiber, 777), 777u);
-    EXPECT_FALSE(registry.try_get_handle_id(fiber.get(), nullptr));
-
-    uint64_t handle_id = 0;
     EXPECT_EQ(registry.unregister_fiber(fiber.get()), 777u);
     EXPECT_EQ(registry.unregister_fiber(fiber.get()), 0u);
-    EXPECT_FALSE(registry.try_get_handle_id(fiber.get(), &handle_id));
+    EXPECT_EQ(fiber->external_handle_id(), 0u);
 }
 
 } // namespace

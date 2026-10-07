@@ -20,7 +20,7 @@ namespace zco {
 // 3) 不再提供线程 poll fallback。
 
 IoEvent::IoEvent(int fd, IoEventType event_type)
-    : fd_(fd), event_type_(event_type), added_(false) {}
+    : fd_(fd), event_type_(event_type) {}
 
 IoEvent::~IoEvent() = default;
 
@@ -54,8 +54,6 @@ bool IoEvent::wait(uint32_t milliseconds) {
 
     // IoEvent 只做事件语义映射，不直接管理 epoll 生命周期。
     // 具体等待/挂起行为由 runtime_manager::wait_fd 分发到协程路径。
-    // added_ 当前用于记录 wait 生命周期，可在后续扩展中用于调试或资源追踪。
-    added_ = true;
     const bool ok = wait_fd(fd_, epoll_events, milliseconds);
     // wait_fd 返回 false 但 errno 未设置时，若当前协程超时，则补充 ETIMEDOUT。
     if (!ok && errno == 0 && timeout()) {

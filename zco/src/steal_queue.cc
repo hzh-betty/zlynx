@@ -61,16 +61,6 @@ size_t StealQueue::steal(std::deque<Task> *tasks, size_t max_steal,
     return count;
 }
 
-void StealQueue::drain_all(std::deque<Task> *tasks) {
-    if (!tasks) {
-        return;
-    }
-
-    std::lock_guard<std::mutex> lock(mutex_);
-    tasks->swap(tasks_);
-    size_.store(tasks_.size(), std::memory_order_relaxed);
-}
-
 void StealQueue::drain_some(std::deque<Task> *tasks, size_t max_count) {
     if (!tasks || max_count == 0) {
         return;

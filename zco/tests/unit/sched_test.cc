@@ -47,6 +47,70 @@ class MemberInvoker {
     WaitGroup *done_;
 };
 
+class OwnedClosure final : public Closure {
+  public:
+    OwnedClosure(std::atomic<int> &ran, std::atomic<int> &destroyed,
+                 WaitGroup &done)
+        : ran_(ran), destroyed_(destroyed), done_(done) {}
+    void run() override { ran_.fetch_add(1, std::memory_order_relaxed); }
+    ~OwnedClosure() override {
+        destroyed_.fetch_add(1, std::memory_order_relaxed);
+        done_.done();
+    }
+
+  private:
+    std::atomic<int> &ran_;
+    std::atomic<int> &destroyed_;
+    WaitGroup &done_;
+};
+
+TEST_F(SchedUnitByHeaderTest, ClosureSubmissionTransfersOwnership) {
+    init(1);
+    WaitGroup done(2);
+    std::atomic<int> ran(0), destroyed(0);
+    go(new OwnedClosure(ran, destroyed, done));
+    main_sched()->go(new OwnedClosure(ran, destroyed, done));
+    done.wait();
+    EXPECT_EQ(ran.load(std::memory_order_relaxed), 2);
+    EXPECT_EQ(destroyed.load(std::memory_order_relaxed), 2);
+}
+
+TEST_F(SchedUnitByHeaderTest, SchedulerAcceptsBoundArguments) {
+    init(1);
+    WaitGroup done(2);
+    std::atomic<int> counter(0);
+    MemberInvoker invoker(&done);
+    auto *scheduler = main_sched();
+    scheduler->go([&done](std::atomic<int> *value) {
+        value->fetch_add(1, std::memory_order_relaxed);
+        done.done();
+    }, &counter);
+    scheduler->go(&MemberInvoker::add, &invoker, &counter);
+    done.wait();
+    EXPECT_EQ(counter.load(std::memory_order_relaxed), 2);
+}
+
+void no_argument_task() {}
+
+TEST_F(SchedUnitByHeaderTest, TaskConversionAcceptsFunctionsAndCapturingLambdas) {
+    init(1);
+    go(&no_argument_task);
+    main_sched()->go(&no_argument_task);
+    WaitGroup done(2);
+    std::atomic<int> ran(0);
+    Task task = [&] {
+        ran.fetch_add(1, std::memory_order_relaxed);
+        done.done();
+    };
+    go(task);
+    main_sched()->go([&] {
+        ran.fetch_add(1, std::memory_order_relaxed);
+        done.done();
+    });
+    done.wait();
+    EXPECT_EQ(ran.load(std::memory_order_relaxed), 2);
+}
+
 TEST_F(SchedUnitByHeaderTest, InitGoAndSchedulerHandlesWork) {
     init(3);
 
@@ -261,8 +325,8 @@ TEST_F(SchedUnitByHeaderTest,
 
 TEST_F(SchedUnitByHeaderTest, StopSchedsIsIdempotent) {
     init(1);
-    stop_scheds();
-    stop_scheds();
+    shutdown();
+    shutdown();
 
     init(1);
     EXPECT_GE(scheduler_count(), 1u);

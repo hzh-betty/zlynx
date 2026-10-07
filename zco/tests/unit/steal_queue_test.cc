@@ -84,7 +84,7 @@ TEST_F(StealQueueUnitTest, DrainAndAppendTransferTasksCorrectly) {
     PushNoopTasks(&source, 4);
 
     std::deque<Task> drained;
-    source.drain_all(&drained);
+    source.drain_some(&drained, 4);
     EXPECT_EQ(source.size(), 0u);
     EXPECT_EQ(drained.size(), 4u);
 

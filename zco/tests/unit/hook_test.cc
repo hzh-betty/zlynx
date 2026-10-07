@@ -131,11 +131,6 @@ TEST_F(HookUnitByHeaderTest, SocketApiHelpersExposeCoostStyleContracts) {
     ASSERT_GE(flags, 0);
     EXPECT_NE(flags & O_NONBLOCK, 0);
 
-    const int before = co_error();
-    co_error(EINTR);
-    EXPECT_EQ(co_error(), EINTR);
-    co_error(before);
-
     int reuse = 0;
     socklen_t reuse_len = sizeof(reuse);
     ASSERT_EQ(co_getsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, &reuse_len),

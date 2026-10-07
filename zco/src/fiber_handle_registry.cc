@@ -69,20 +69,4 @@ Fiber::ptr FiberHandleRegistry::find_by_handle(uint64_t handle_id) const {
     return it->second;
 }
 
-bool FiberHandleRegistry::try_get_handle_id(const Fiber *fiber,
-                                            uint64_t *handle_id) const {
-    if (!fiber || !handle_id) {
-        return false;
-    }
-
-    // 仅在句柄已经分配过时返回，避免把“尚未注册”的 fiber 误当成外部可恢复对象。
-    const uint64_t id = fiber->external_handle_id();
-    if (id == 0) {
-        return false;
-    }
-
-    *handle_id = id;
-    return true;
-}
-
 } // namespace zco

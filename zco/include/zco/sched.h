@@ -43,32 +43,6 @@ class Closure {
 
 namespace detail {
 
-/**
- * @brief 判断类型是否为任务。
- * @tparam F 待判断的类型。
- */
-template <typename F>
-struct is_task : std::is_same<typename std::decay<F>::type, Task> {};
-
-/**
- * @brief 判断类型是否为 Closure*。
- * @tparam F 待判断的类型。
- */
-template <typename F> struct is_closure_pointer {
-    using Decayed = typename std::decay<F>::type;
-    static constexpr bool value =
-        std::is_pointer<Decayed>::value &&
-        std::is_base_of<Closure,
-                        typename std::remove_pointer<Decayed>::type>::value;
-};
-
-// SFINAE 辅助类型，用于启用 go() 的泛型版本，仅当 F 既不是 Task 也不是 Closure*
-// 时生效。
-template <typename F>
-using enable_generic_go =
-    typename std::enable_if<!is_task<F>::value && !is_closure_pointer<F>::value,
-                            int>::type;
-
 // 统一调用可调用对象的接口，支持普通函数对象和指针类型（如成员函数指针）。
 template <
     typename F, typename P,
@@ -154,13 +128,6 @@ void go(Closure *cb);
 void go(Task task);
 
 /**
- * @brief 提交无参可调用对象到运行时。
- */
-template <typename F, detail::enable_generic_go<F> = 0> void go(F &&f) {
-    go(Task(std::forward<F>(f)));
-}
-
-/**
  * @brief 提交单参数可调用对象到运行时。
  */
 template <typename F, typename P> void go(F &&f, P &&p) {
@@ -203,13 +170,6 @@ class Scheduler {
      * @details 调度执行后会自动释放 cb。
      */
     void go(Closure *cb);
-
-    /**
-     * @brief 向当前句柄对应的调度器提交无参可调用对象。
-     */
-    template <typename F, detail::enable_generic_go<F> = 0> void go(F &&f) {
-        this->go(Task(std::forward<F>(f)));
-    }
 
     /**
      * @brief 向当前句柄对应的调度器提交单参数可调用对象。
@@ -265,13 +225,6 @@ Scheduler *main_sched();
  * @return 调度器句柄，若运行时不可用则返回 nullptr。
  */
 Scheduler *next_sched();
-
-/**
- * @brief 停止所有调度器。
- * @param 无参数。
- * @return 无返回值。
- */
-void stop_scheds();
 
 /**
  * @brief 当前协程主动让出执行权。

@@ -42,7 +42,7 @@ Processor::Processor(int id, size_t stack_size)
 Processor::Processor(int id, size_t stack_size, size_t shared_stack_num,
                      StackModel stack_model)
     : id_(id), stack_size_(stack_size), stack_model_(stack_model),
-      running_(false), worker_(), ready_size_(0), cpu_time_ns_(0),
+      running_(false), worker_(), ready_size_(0),
       ema_loop_ns_(0), run_queue_mutex_(), run_queue_(), steal_queue_(),
       fiber_pool_(4096), next_stack_slot_(0), snapshot_pool_(),
       steal_probe_cursor_(0), timer_queue_(), poller_(create_default_poller()),
@@ -334,10 +334,6 @@ uint32_t Processor::queue_load() const {
            static_cast<uint32_t>(steal_queue_.size());
 }
 
-uint64_t Processor::cpu_time_ns() const {
-    return cpu_time_ns_.load(std::memory_order_relaxed);
-}
-
 uint64_t Processor::load_score() const {
     const uint64_t queue_component =
         static_cast<uint64_t>(queue_load()) * 1000000ULL;
@@ -479,8 +475,6 @@ void Processor::steal_tasks_when_idle() {
 }
 
 void Processor::update_load_metrics(uint64_t loop_ns) {
-    cpu_time_ns_.fetch_add(loop_ns, std::memory_order_relaxed);
-
     uint64_t old_ema = ema_loop_ns_.load(std::memory_order_relaxed);
     while (true) {
         const uint64_t new_ema =

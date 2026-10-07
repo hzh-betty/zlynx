@@ -175,10 +175,6 @@ bool Fiber::timed_out() const {
     return timed_out_.load(std::memory_order_acquire);
 }
 
-void Fiber::clear_timed_out() {
-    timed_out_.store(false, std::memory_order_release);
-}
-
 void Fiber::run() {
     // 任务函数异常不能越过协程边界，否则会破坏调度循环稳定性。
     try {

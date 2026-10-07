@@ -49,7 +49,6 @@ class IoEvent {
   private:
     int fd_;
     IoEventType event_type_;
-    bool added_;
 };
 
 } // namespace zco

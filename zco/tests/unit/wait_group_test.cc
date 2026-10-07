@@ -24,12 +24,12 @@ TEST_F(WaitGroupUnitByHeaderTest, AddDoneAndWaitFlow) {
     group.add(2);
 
     go([&group]() {
-        co_sleep_for(1);
+        sleep_for(1);
         group.done();
     });
 
     go([&group]() {
-        co_sleep_for(1);
+        sleep_for(1);
         group.done();
     });
 

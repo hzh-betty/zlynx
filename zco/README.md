@@ -53,6 +53,10 @@ target_link_libraries(zco_demo PRIVATE zco::zco)
 
 源码树内开发可以直接链接 `zco` target。
 
+兼容性说明：通用 `Pool`、`PoolGuard<T>` 和 `zco::pool` 已移除。
+`IoEvent` 及部分内部对象的布局也有变化，升级时需要重新编译库及下游程序，
+不能混用新旧头文件和二进制。建议安装到新的前缀，避免旧安装遗留 `zco/pool.h`。
+
 ## 项目架构
 
 `zco` 位于 zlynx 运行时底座层：
@@ -178,7 +182,7 @@ ctest --test-dir build/debug -R '^zco\.integration\.' --output-on-failure
 - 协程创建、恢复、退出、句柄注册与清理
 - 独立栈和共享栈、快照缓冲池、fiber pool
 - work stealing queue、processor wait/timer
-- `Event`、`Mutex`、`WaitGroup`、`Channel<T>`、`Pool`
+- `Event`、`Mutex`、`WaitGroup`、`Channel<T>`
 - epoll poller、I/O event、timer queue
 - hook helper、hook 超时元数据、socket/hook 集成路径
 - runtime manager、日志、noncopyable 等基础组件

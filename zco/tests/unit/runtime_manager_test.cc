@@ -462,7 +462,7 @@ TEST_F(RuntimeManagerUnitTest, StaleHandleCannotWakeAnotherCoroutine) {
     });
     first_done.wait();
 
-    co_sleep_for(5);
+    sleep_for(5);
 
     Event gate(false, false);
     WaitGroup second_ready(1);
@@ -487,7 +487,7 @@ TEST_F(RuntimeManagerUnitTest, StaleHandleCannotWakeAnotherCoroutine) {
     ASSERT_NE(stale, current);
 
     resume(stale);
-    co_sleep_for(10);
+    sleep_for(10);
     EXPECT_FALSE(resumed.load(std::memory_order_acquire));
 
     gate.signal();

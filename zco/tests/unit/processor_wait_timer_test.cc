@@ -59,7 +59,7 @@ TEST_F(ProcessorWaitTimerUnitTest, WaitFdInCoroutineHandlesReadableAndTimeout) {
     });
 
     go([&done, fd = pair[0]]() {
-        co_sleep_for(10);
+        sleep_for(10);
         const char marker = 'x';
         ASSERT_EQ(::write(fd, &marker, 1), 1);
         done.done();
@@ -112,7 +112,7 @@ TEST_F(ProcessorWaitTimerUnitTest,
     });
 
     go([&done, fd = pair[0]]() {
-        co_sleep_for(10);
+        sleep_for(10);
         const char marker = 'q';
         ASSERT_EQ(::write(fd, &marker, 1), 1);
         done.done();

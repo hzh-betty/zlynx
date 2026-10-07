@@ -70,7 +70,6 @@ TEST_F(ProcessorUnitTest, QueueAndLoadMetricsAreQueryable) {
     Processor processor(3, 64 * 1024);
 
     EXPECT_EQ(processor.queue_load(), 0u);
-    EXPECT_GE(processor.cpu_time_ns(), 0u);
     EXPECT_GE(processor.load_score(), 0u);
 
     processor.enqueue_task([]() {});
@@ -137,7 +136,6 @@ TEST_F(ProcessorUnitTest, RunLoopExecutesEnqueuedTaskToCompletion) {
     }
 
     EXPECT_EQ(counter.load(std::memory_order_acquire), 1);
-    EXPECT_GE(processor.cpu_time_ns(), 0u);
 
     processor.stop();
     processor.join();

@@ -91,7 +91,7 @@ TEST_F(EventUnitTest, CoroutineAutoResetWakesSingleWaiter) {
 
     for (int i = 0; i < 40 && started.load(std::memory_order_relaxed) < 2;
          ++i) {
-        co_sleep_for(1);
+        sleep_for(1);
     }
 
     event.signal();
@@ -118,7 +118,7 @@ TEST_F(EventUnitTest, CoroutineManualResetNotifyAllWakesAll) {
     }
 
     go([&event, &done]() {
-        co_sleep_for(5);
+        sleep_for(5);
         event.notify_all();
         done.done();
     });
@@ -208,7 +208,7 @@ TEST_F(EventUnitTest, CoroutineAutoResetNotifyAllWakesCurrentWaitersOnly) {
         done.done();
     });
     go([&event, &done]() {
-        co_sleep_for(5);
+        sleep_for(5);
         event.notify_all();
         done.done();
     });

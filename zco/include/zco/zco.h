@@ -12,7 +12,6 @@
 #include "zco/hook.h"
 #include "zco/io_event.h"
 #include "zco/mutex.h"
-#include "zco/pool.h"
 #include "zco/sched.h"
 #include "zco/wait_group.h"
 #include "zco/zco_logger.h"
@@ -26,10 +25,8 @@ namespace zco {
 template <typename T> using channel = Channel<T>;
 using event = Event;
 using wait_group = WaitGroup;
-using pool = Pool;
 using io_event = IoEvent;
 using mutex = Mutex;
-using mutex_guard = MutexGuard;
 
 } // namespace zco
 #endif // ZCO_ZCO_H_

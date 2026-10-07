@@ -173,13 +173,6 @@ class Fiber : public std::enable_shared_from_this<Fiber>, public NonCopyable {
     bool timed_out() const;
 
     /**
-     * @brief 清理超时标记。
-     * @param 无参数。
-     * @return 无返回值。
-     */
-    void clear_timed_out();
-
-    /**
      * @brief 执行协程入口函数。
      * @param 无参数。
      * @return 无返回值。

@@ -25,8 +25,6 @@ int Context::swap_context(Context *from_ctx, Context *to_ctx) {
     return swapcontext(from_ctx->get(), to_ctx->get());
 }
 
-int Context::get_context() { return getcontext(&ctx_); }
-
 void *Context::get_stack_pointer() const {
 #if defined(__x86_64__)
     return reinterpret_cast<void *>(ctx_.uc_mcontext.gregs[REG_RSP]);

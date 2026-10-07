@@ -80,8 +80,6 @@ Scheduler *main_sched() { return Runtime::instance().main_scheduler(); }
 
 Scheduler *next_sched() { return Runtime::instance().next_scheduler(); }
 
-void stop_scheds() { Runtime::instance().shutdown(); }
-
 void yield() {
     // 线程上下文没有当前 fiber：直接让出 OS 线程时间片。
     Processor *processor = current_processor();

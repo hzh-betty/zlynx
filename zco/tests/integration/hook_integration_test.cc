@@ -779,7 +779,7 @@ TEST_F(HookIntegrationTest, TcpLoopbackShutdownBothModeMatrix) {
                 EXPECT_EQ(send_rc, 1);
             }
 
-            co_sleep_for(10);
+            sleep_for(10);
         }
         EXPECT_TRUE(saw_pipe_error);
 

@@ -38,7 +38,7 @@ TEST_F(LogUnitByHeaderTest, LoggerInitContractsRegisterInZlogManager) {
     init_logger(zlog::LogLevel::value::WARNING);
     EXPECT_EQ(get_logger_ptr(),
               zlog::LoggerManager::get_instance().get_logger(kLoggerName));
-    EXPECT_TRUE(zlog::LoggerManager::get_instance().has_logger(kLoggerName));
+    EXPECT_TRUE(zlog::LoggerManager::get_instance().get_logger(kLoggerName));
 
     ZCO_LOG_FATAL("log_unit fatal {}", 5);
 }

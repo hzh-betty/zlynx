@@ -52,14 +52,6 @@ class SharedStackBuffer : public NonCopyable {
 
     const char *data() const;
 
-    /**
-     * @brief 获取栈基址指针
-     * @return 栈基址指针
-     */
-    char *stack_bp();
-
-    const char *stack_bp() const;
-
     size_t size() const;
 
     /**
@@ -72,7 +64,6 @@ class SharedStackBuffer : public NonCopyable {
 
   private:
     char *stack_buffer_;
-    char *stack_bp_;
     size_t stack_size_;
     SharedStackOwner occupy_fiber_;
 };

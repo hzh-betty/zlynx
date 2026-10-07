@@ -43,7 +43,6 @@ set(ZCO_SOURCES
     src/event.cc
     src/mutex.cc
     src/wait_group.cc
-    src/pool.cc
     src/io_event.cc
     src/hook.cc
 )
