@@ -15,16 +15,17 @@
 
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
 
 #include "znet/address.h"
 #include "znet/tcp_connection.h"
 #include "znet/tcp_server.h"
 
 namespace zhttp {
+namespace detail {
+class HttpResponseWriter;
+class WebSocketUpgradeHandler;
+} // 命名空间 detail
 
 /**
  * @brief HTTP 服务器
@@ -154,11 +155,8 @@ class HttpServer {
     // Server 响应头默认值。
     std::string server_name_ = "zhttp/1.0";
 
-    mutable std::mutex async_stream_mutex_;
-    std::unordered_set<int> async_stream_fds_;
-
-    mutable std::mutex websocket_mutex_;
-    std::unordered_map<int, WebSocketSession::ptr> websocket_sessions_;
+    std::unique_ptr<detail::HttpResponseWriter> response_writer_;
+    std::unique_ptr<detail::WebSocketUpgradeHandler> websocket_upgrade_;
 };
 
 } // namespace zhttp

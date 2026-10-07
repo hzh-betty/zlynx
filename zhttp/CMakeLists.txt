@@ -56,6 +56,8 @@ set(ZHTTP_SOURCES
     src/mid/timeout_middleware.cc
     src/mid/security_middleware.cc
     src/mid/session_middleware.cc
+    src/http_response_writer.cc
+    src/websocket_upgrade_handler.cc
     src/http_server.cc
     src/websocket_frame.cc
     src/websocket.cc
