@@ -49,13 +49,6 @@ class alignas(CACHE_LINE_SIZE) SpinLock : public NonCopyable {
         lock_slow();
     }
 
-    /**
-     * @brief 尝试获取锁（非阻塞）
-     * @return true: 成功获取锁; false: 锁被占用
-     */
-    bool try_lock() noexcept {
-        return !locked_.exchange(true, std::memory_order_acquire);
-    }
 
     /** @brief 释放锁，并向后续持锁线程发布临界区写入。 */
     void unlock() noexcept { locked_.store(false, std::memory_order_release); }

@@ -21,25 +21,6 @@ void FreeList::push_range(void *start, void *end, size_t n) {
     size_ += n;
 }
 
-void FreeList::pop_range(void *&start, void *&end, size_t n) {
-    if (n == 0) {
-        start = nullptr;
-        end = nullptr;
-        return;
-    }
-    assert(n <= size_); // GCOVR_EXCL_LINE
-    start = free_list_;
-    end = start;
-    // 顺着单链走到第 n 个节点，拆出一段连续子链返回调用方。
-    for (size_t i = 0; i < n - 1; ++i) {
-        end = next_obj(end);
-    }
-    free_list_ = next_obj(end);
-    next_obj(end) = nullptr;
-    size_ -= n;
-    low_water_ = std::min(low_water_, size_);
-}
-
 size_t FreeList::pop_batch(void **batch, size_t n) {
     assert(batch); // GCOVR_EXCL_LINE
     if (n == 0) {

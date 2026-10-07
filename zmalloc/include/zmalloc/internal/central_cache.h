@@ -44,18 +44,7 @@ class CentralCache : public NonCopyable {
     }
 
     /**
-     * @brief 从中心缓存获取一批对象，并以单链表形式返回
-     * @param start 输出链表头
-     * @param end 输出链表尾
-     * @param n 期望对象数
-     * @param size 对象大小（字节）
-     * @return 实际取得的对象数
-     */
-    size_t fetch_range_obj(void *&start, void *&end, size_t n, size_t size);
-
-    /**
-     * @brief 与 fetch_range_obj 相同，但调用方已计算好 size class 索引
-     * @note 这是 ThreadCache 热路径的优化重载，避免重复的 size->index 映射。
+     * @brief 从已知大小类取得一批对象，以 start/end 返回对象链。
      */
     size_t fetch_range_obj(void *&start, void *&end, size_t n, size_t size,
                            size_t index);
@@ -88,19 +77,11 @@ class CentralCache : public NonCopyable {
                        std::unique_lock<SpinLock> &lock);
 
     /**
-     * @brief 将对象链表归还给对应的 Span
-     * @param start 链表起始
-     * @param size 对象大小
-     */
-    void release_list_to_spans(void *start, size_t size);
-
-    /**
      * @brief 将对象链归还到已知大小类的 Span
      * @param start 对象链表头
-     * @param size 对象大小（字节）
      * @param index 已计算出的大小类索引
      */
-    void release_list_to_spans(void *start, size_t size, size_t index);
+    void release_list_to_spans(void *start, size_t index);
 
   private:
     CentralCache() = default;

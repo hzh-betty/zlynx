@@ -56,8 +56,6 @@ class FreeList {
 
     /** @brief 将给定的 n 个对象链入表头，start/end 描述输入链段。 */
     void push_range(void *start, void *end, size_t n);
-    /** @brief 从表头移出 n 个对象，并通过 start/end 返回链段。 */
-    void pop_range(void *&start, void *&end, size_t n);
 
     /** @brief 最多移出 n 个对象到数组，返回实际移出数量。 */
     size_t pop_batch(void **batch, size_t n);

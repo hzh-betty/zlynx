@@ -84,12 +84,8 @@ TEST_F(TransferCacheTest, BoundedCapacityPreservesFifoAcrossPhysicalWrap) {
         ASSERT_EQ(cache.remove_range(output, 2), 2u);
         EXPECT_EQ(output[0], input[0]);
         EXPECT_EQ(output[1], input[1]);
-        size_t inserted = 0;
-        ASSERT_TRUE(cache.try_insert_range(input + 3, 2, inserted));
-        ASSERT_EQ(inserted, 2u);
-        size_t removed = 0;
-        ASSERT_TRUE(cache.try_remove_range(output, 3, removed));
-        ASSERT_EQ(removed, 3u);
+        ASSERT_EQ(cache.insert_range(input + 3, 2), 2u);
+        ASSERT_EQ(cache.remove_range(output, 3), 3u);
         EXPECT_EQ(output[0], input[2]);
         EXPECT_EQ(output[1], input[3]);
         EXPECT_EQ(output[2], input[4]);
@@ -412,129 +408,13 @@ TEST_F(TransferCacheTest, RemoveRangeWrapAroundCopiesBothSegments) {
     }
 }
 
-TEST_F(TransferCacheTest, TryInsertRangeLockContentionReturnsFalse) {
-    TransferCacheEntry cache;
-    void *objs[1] = {reinterpret_cast<void *>(0x11)};
-    size_t inserted = 0;
 
-    cache.mtx_.lock();
-    bool ok = cache.try_insert_range(objs, 1, inserted);
-    cache.mtx_.unlock();
 
-    EXPECT_FALSE(ok);
-    EXPECT_EQ(inserted, 0u);
-}
 
-TEST_F(TransferCacheTest, TryRemoveRangeLockContentionReturnsFalse) {
-    TransferCacheEntry cache;
-    void *objs[1] = {reinterpret_cast<void *>(0x22)};
-    ASSERT_EQ(cache.insert_range(objs, 1), 1u);
-    size_t removed = 0;
-    void *out[1] = {nullptr};
 
-    cache.mtx_.lock();
-    bool ok = cache.try_remove_range(out, 1, removed);
-    cache.mtx_.unlock();
 
-    EXPECT_FALSE(ok);
-    EXPECT_EQ(removed, 0u);
-}
 
-TEST_F(TransferCacheTest, TryInsertRangeZeroAndFullPaths) {
-    TransferCacheEntry cache;
-    void *objs[1] = {reinterpret_cast<void *>(0x33)};
-    size_t inserted = 123;
 
-    EXPECT_TRUE(cache.try_insert_range(objs, 0, inserted));
-    EXPECT_EQ(inserted, 0u);
-
-    cache.count_.store(TransferCacheEntry::kMaxCacheSlots,
-                       std::memory_order_relaxed);
-    inserted = 123;
-    EXPECT_TRUE(cache.try_insert_range(objs, 1, inserted));
-    EXPECT_EQ(inserted, 0u);
-}
-
-TEST_F(TransferCacheTest, TryRemoveRangeZeroAndEmptyPaths) {
-    TransferCacheEntry cache;
-    void *out[2] = {nullptr, nullptr};
-    size_t removed = 321;
-
-    EXPECT_TRUE(cache.try_remove_range(out, 0, removed));
-    EXPECT_EQ(removed, 0u);
-
-    removed = 321;
-    EXPECT_TRUE(cache.try_remove_range(out, 2, removed));
-    EXPECT_EQ(removed, 0u);
-}
-
-TEST_F(TransferCacheTest, TryInsertAndTryRemoveSuccessPath) {
-    TransferCacheEntry cache;
-    void *objs[3];
-    FillUniquePtrs(objs, 3, 0x6000u);
-    size_t inserted = 0;
-    ASSERT_TRUE(cache.try_insert_range(objs, 3, inserted));
-    ASSERT_EQ(inserted, 3u);
-
-    void *out[3] = {nullptr, nullptr, nullptr};
-    size_t removed = 0;
-    ASSERT_TRUE(cache.try_remove_range(out, 3, removed));
-    ASSERT_EQ(removed, 3u);
-    for (size_t i = 0; i < 3; ++i) {
-        EXPECT_EQ(out[i], objs[i]);
-    }
-}
-
-TEST_F(TransferCacheTest, TryInsertRangeWrapAroundCopiesBothSegments) {
-    TransferCacheEntry cache;
-    cache.head_ = TransferCacheEntry::kMaxCacheSlots - 1;
-    cache.tail_ = 0;
-    cache.count_.store(0, std::memory_order_relaxed);
-
-    void *objs[3];
-    FillUniquePtrs(objs, 3, 0x6500u);
-    size_t inserted = 0;
-    ASSERT_TRUE(cache.try_insert_range(objs, 3, inserted));
-    ASSERT_EQ(inserted, 3u);
-    EXPECT_EQ(cache.slots_[TransferCacheEntry::kMaxCacheSlots - 1], objs[0]);
-    EXPECT_EQ(cache.slots_[0], objs[1]);
-    EXPECT_EQ(cache.slots_[1], objs[2]);
-}
-
-TEST_F(TransferCacheTest, TryRemoveRangeWrapAroundCopiesBothSegments) {
-    TransferCacheEntry cache;
-    cache.head_ = 1;
-    cache.tail_ = TransferCacheEntry::kMaxCacheSlots - 1;
-    cache.count_.store(3, std::memory_order_relaxed);
-
-    void *objs[3];
-    FillUniquePtrs(objs, 3, 0x6800u);
-    cache.slots_[TransferCacheEntry::kMaxCacheSlots - 1] = objs[0];
-    cache.slots_[0] = objs[1];
-    cache.slots_[1] = objs[2];
-
-    void *out[3] = {nullptr, nullptr, nullptr};
-    size_t removed = 0;
-    ASSERT_TRUE(cache.try_remove_range(out, 3, removed));
-    ASSERT_EQ(removed, 3u);
-    for (size_t i = 0; i < 3; ++i) {
-        EXPECT_EQ(out[i], objs[i]);
-    }
-}
-
-TEST_F(TransferCacheTest, ManagerTryInsertAndTryRemove) {
-    TransferCache &manager = TransferCache::get_instance();
-    void *objs[4];
-    FillUniquePtrs(objs, 4, 0x7000u);
-    size_t inserted = 0;
-    ASSERT_TRUE(manager.try_insert_range(9, objs, 4, inserted));
-    ASSERT_EQ(inserted, 4u);
-
-    void *out[4] = {nullptr, nullptr, nullptr, nullptr};
-    size_t removed = 0;
-    ASSERT_TRUE(manager.try_remove_range(9, out, 4, removed));
-    ASSERT_EQ(removed, 4u);
-}
 
 TEST_P(TransferCacheEntryExactParamTest, InsertRemoveExactCount) {
     const size_t n = GetParam();

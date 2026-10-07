@@ -33,12 +33,6 @@ bool span_freelist_contains(Span *span, void *target) {
 } // namespace
 
 size_t CentralCache::fetch_range_obj(void *&start, void *&end, size_t n,
-                                     size_t size) {
-    const size_t index = SizeClass::index_fast(size);
-    return fetch_range_obj(start, end, n, size, index);
-}
-
-size_t CentralCache::fetch_range_obj(void *&start, void *&end, size_t n,
                                      size_t size, size_t index) {
     // 第一步：规范化请求并锁定对应大小类；不同大小类互不阻塞。
     start = end = nullptr;
@@ -116,14 +110,7 @@ Span *CentralCache::get_one_span(CentralFreeList &free_list, size_t size,
     return span;
 }
 
-void CentralCache::release_list_to_spans(void *start, size_t size) {
-    const size_t index = SizeClass::index_fast(size);
-    release_list_to_spans(start, size, index);
-}
-
-void CentralCache::release_list_to_spans(void *start, size_t size,
-                                         size_t index) {
-    (void)size;
+void CentralCache::release_list_to_spans(void *start, size_t index) {
     CentralFreeList &free_list = free_lists_[index];
     if (start == nullptr) {
         return;

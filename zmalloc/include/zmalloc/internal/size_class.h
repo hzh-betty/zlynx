@@ -77,13 +77,6 @@ class SizeClass {
         return static_cast<size_t>(lookup(bytes).index);
     }
 
-    /** @brief 一次查表同时取得对齐尺寸和大小类索引。 */
-    static inline void classify(size_t bytes, size_t &align_size,
-                                size_t &index) {
-        const SizeClassLookup &e = lookup(bytes);
-        align_size = static_cast<size_t>(e.align_size);
-        index = static_cast<size_t>(e.index);
-    }
 };
 
 inline const SizeClassLookup &SizeClass::lookup(size_t bytes) {

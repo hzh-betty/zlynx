@@ -50,33 +50,33 @@ static void FetchAndRelease(zmalloc::CentralCache &cc, size_t batch_n,
                             size_t size) {
     void *start = nullptr;
     void *end = nullptr;
-    const size_t got = cc.fetch_range_obj(start, end, batch_n, size);
+    const size_t got = cc.fetch_range_obj(start, end, batch_n, size, zmalloc::SizeClass::index_fast(size));
     ASSERT_GE(got, 1u);
     ASSERT_LE(got, batch_n);
     ASSERT_NE(start, nullptr);
     ASSERT_NE(end, nullptr);
     ASSERT_EQ(CountChain(start), got);
     ASSERT_EQ(zmalloc::next_obj(end), nullptr);
-    cc.release_list_to_spans(start, size);
+    cc.release_list_to_spans(start, zmalloc::SizeClass::index_fast(size));
 }
 
 static void FetchTwiceConcatAndRelease(zmalloc::CentralCache &cc, size_t n1,
                                        size_t n2, size_t size) {
     void *s1 = nullptr;
     void *e1 = nullptr;
-    const size_t g1 = cc.fetch_range_obj(s1, e1, n1, size);
+    const size_t g1 = cc.fetch_range_obj(s1, e1, n1, size, zmalloc::SizeClass::index_fast(size));
     ASSERT_GE(g1, 1u);
     ASSERT_EQ(zmalloc::next_obj(e1), nullptr);
 
     void *s2 = nullptr;
     void *e2 = nullptr;
-    const size_t g2 = cc.fetch_range_obj(s2, e2, n2, size);
+    const size_t g2 = cc.fetch_range_obj(s2, e2, n2, size, zmalloc::SizeClass::index_fast(size));
     ASSERT_GE(g2, 1u);
     ASSERT_EQ(zmalloc::next_obj(e2), nullptr);
 
     // 拼接链表：s1 -> ... -> e1 -> s2 -> ... -> e2
     zmalloc::next_obj(e1) = s2;
-    cc.release_list_to_spans(s1, size);
+    cc.release_list_to_spans(s1, zmalloc::SizeClass::index_fast(size));
 }
 
 static void ReverseChain(void *&start, void *&end) {
@@ -106,42 +106,42 @@ class CentralCacheFetchReleaseParamTest
 TEST_F(CentralCacheTest, FetchReturnsAtLeastOne) {
     void *start = nullptr;
     void *end = nullptr;
-    const size_t got = cc.fetch_range_obj(start, end, 1, 64);
+    const size_t got = cc.fetch_range_obj(start, end, 1, 64, zmalloc::SizeClass::index_fast(64));
     ASSERT_GE(got, 1u);
     ASSERT_NE(start, nullptr);
     ASSERT_NE(end, nullptr);
     zmalloc::next_obj(end) = nullptr;
-    cc.release_list_to_spans(start, 64);
+    cc.release_list_to_spans(start, zmalloc::SizeClass::index_fast(64));
 }
 
 TEST_F(CentralCacheTest, FetchRespectsUpperBoundN) {
     void *start = nullptr;
     void *end = nullptr;
-    const size_t got = cc.fetch_range_obj(start, end, 8, 64);
+    const size_t got = cc.fetch_range_obj(start, end, 8, 64, zmalloc::SizeClass::index_fast(64));
     ASSERT_GE(got, 1u);
     ASSERT_LE(got, 8u);
     zmalloc::next_obj(end) = nullptr;
-    cc.release_list_to_spans(start, 64);
+    cc.release_list_to_spans(start, zmalloc::SizeClass::index_fast(64));
 }
 
 TEST_F(CentralCacheTest, FetchProducesValidChain) {
     void *start = nullptr;
     void *end = nullptr;
-    const size_t got = cc.fetch_range_obj(start, end, 16, 64);
+    const size_t got = cc.fetch_range_obj(start, end, 16, 64, zmalloc::SizeClass::index_fast(64));
     ASSERT_EQ(CountChain(start), got);
     ASSERT_EQ(zmalloc::next_obj(end), nullptr);
-    cc.release_list_to_spans(start, 64);
+    cc.release_list_to_spans(start, zmalloc::SizeClass::index_fast(64));
 }
 
 TEST_F(CentralCacheTest, SpanObjSizeMatchesRequest) {
     void *start = nullptr;
     void *end = nullptr;
-    const size_t got = cc.fetch_range_obj(start, end, 4, 128);
+    const size_t got = cc.fetch_range_obj(start, end, 4, 128, zmalloc::SizeClass::index_fast(128));
     ASSERT_GE(got, 1u);
     zmalloc::Span *span = pc.map_object_to_span(start);
     ASSERT_NE(span, nullptr);
     EXPECT_EQ(span->obj_size, zmalloc::SizeClass::round_up_fast(128));
-    cc.release_list_to_spans(start, 128);
+    cc.release_list_to_spans(start, zmalloc::SizeClass::index_fast(128));
 }
 
 TEST_F(CentralCacheTest, SpanSplitDoesNotCreatePartialTailObject) {
@@ -150,7 +150,7 @@ TEST_F(CentralCacheTest, SpanSplitDoesNotCreatePartialTailObject) {
 
     void *start = nullptr;
     void *end = nullptr;
-    const size_t got = cc.fetch_range_obj(start, end, 128, request_size);
+    const size_t got = cc.fetch_range_obj(start, end, 128, request_size, zmalloc::SizeClass::index_fast(request_size));
     ASSERT_GE(got, 1u);
 
     zmalloc::Span *span = pc.map_object_to_span(start);
@@ -168,7 +168,7 @@ TEST_F(CentralCacheTest, SpanSplitDoesNotCreatePartialTailObject) {
         cur = zmalloc::next_obj(cur);
     }
 
-    cc.release_list_to_spans(start, request_size);
+    cc.release_list_to_spans(start, zmalloc::SizeClass::index_fast(request_size));
 }
 
 TEST_F(CentralCacheTest, EmptyNonEmptyListsInitiallySmall) {
@@ -185,7 +185,7 @@ TEST_F(CentralCacheTest, DrainSpanMovesToEmptyList) {
 
     void *start = nullptr;
     void *end = nullptr;
-    cc.fetch_range_obj(start, end, 1, size);
+    cc.fetch_range_obj(start, end, 1, size, zmalloc::SizeClass::index_fast(size));
     zmalloc::Span *span = pc.map_object_to_span(start);
     ASSERT_NE(span, nullptr);
 
@@ -196,7 +196,7 @@ TEST_F(CentralCacheTest, DrainSpanMovesToEmptyList) {
 
     void *all_start = nullptr;
     void *all_end = nullptr;
-    const size_t got = cc.fetch_range_obj(all_start, all_end, remaining, size);
+    const size_t got = cc.fetch_range_obj(all_start, all_end, remaining, size, zmalloc::SizeClass::index_fast(size));
     ASSERT_EQ(got, remaining);
     ASSERT_EQ(span->free_list, nullptr);
 
@@ -205,22 +205,22 @@ TEST_F(CentralCacheTest, DrainSpanMovesToEmptyList) {
     EXPECT_FALSE(ContainsSpan(cc.free_lists_[index].nonempty, span));
 
     // 归还一个对象（第一次 fetch 的对象）：empty -> nonempty
-    cc.release_list_to_spans(start, size);
+    cc.release_list_to_spans(start, zmalloc::SizeClass::index_fast(size));
 
     EXPECT_TRUE(ContainsSpan(cc.free_lists_[index].nonempty, span));
 
     // 归还剩余对象，清理状态
-    cc.release_list_to_spans(all_start, size);
+    cc.release_list_to_spans(all_start, zmalloc::SizeClass::index_fast(size));
 }
 
 TEST_F(CentralCacheTest, ReleaseBatchingDoesNotLoseObjects) {
     const size_t size = 64;
     void *start = nullptr;
     void *end = nullptr;
-    const size_t got = cc.fetch_range_obj(start, end, 64, size);
+    const size_t got = cc.fetch_range_obj(start, end, 64, size, zmalloc::SizeClass::index_fast(size));
     ASSERT_GE(got, 1u);
     ASSERT_EQ(CountChain(start), got);
-    cc.release_list_to_spans(start, size);
+    cc.release_list_to_spans(start, zmalloc::SizeClass::index_fast(size));
     SUCCEED();
 }
 
@@ -229,8 +229,8 @@ TEST_F(CentralCacheTest, MultipleSizeClassesIndependent) {
     void *e1 = nullptr;
     void *s2 = nullptr;
     void *e2 = nullptr;
-    cc.fetch_range_obj(s1, e1, 8, 64);
-    cc.fetch_range_obj(s2, e2, 8, 128);
+    cc.fetch_range_obj(s1, e1, 8, 64, zmalloc::SizeClass::index_fast(64));
+    cc.fetch_range_obj(s2, e2, 8, 128, zmalloc::SizeClass::index_fast(128));
     ASSERT_NE(s1, nullptr);
     ASSERT_NE(s2, nullptr);
     zmalloc::Span *a = pc.map_object_to_span(s1);
@@ -238,25 +238,25 @@ TEST_F(CentralCacheTest, MultipleSizeClassesIndependent) {
     ASSERT_NE(a, nullptr);
     ASSERT_NE(b, nullptr);
     EXPECT_NE(a->obj_size, b->obj_size);
-    cc.release_list_to_spans(s1, 64);
-    cc.release_list_to_spans(s2, 128);
+    cc.release_list_to_spans(s1, zmalloc::SizeClass::index_fast(64));
+    cc.release_list_to_spans(s2, zmalloc::SizeClass::index_fast(128));
 }
 
 TEST_F(CentralCacheTest, FetchAfterReleaseStillWorks) {
     void *s = nullptr;
     void *e = nullptr;
-    cc.fetch_range_obj(s, e, 16, 64);
-    cc.release_list_to_spans(s, 64);
+    cc.fetch_range_obj(s, e, 16, 64, zmalloc::SizeClass::index_fast(64));
+    cc.release_list_to_spans(s, zmalloc::SizeClass::index_fast(64));
 
     void *s2 = nullptr;
     void *e2 = nullptr;
-    const size_t got2 = cc.fetch_range_obj(s2, e2, 16, 64);
+    const size_t got2 = cc.fetch_range_obj(s2, e2, 16, 64, zmalloc::SizeClass::index_fast(64));
     ASSERT_GE(got2, 1u);
-    cc.release_list_to_spans(s2, 64);
+    cc.release_list_to_spans(s2, zmalloc::SizeClass::index_fast(64));
 }
 
 TEST_F(CentralCacheTest, ReleaseNullIsNoop) {
-    cc.release_list_to_spans(nullptr, 64);
+    cc.release_list_to_spans(nullptr, zmalloc::SizeClass::index_fast(64));
     SUCCEED();
 }
 
@@ -267,7 +267,7 @@ TEST_F(CentralCacheTest, FetchDifferentThreadsDoesNotCrash) {
     std::thread t([&] {
         void *s = nullptr;
         void *e = nullptr;
-        const size_t got = cc.fetch_range_obj(s, e, 32, 64);
+        const size_t got = cc.fetch_range_obj(s, e, 32, 64, zmalloc::SizeClass::index_fast(64));
         ptrs.reserve(got);
         void *cur = s;
         while (cur) {
@@ -283,7 +283,7 @@ TEST_F(CentralCacheTest, FetchDifferentThreadsDoesNotCrash) {
     }
     if (!ptrs.empty()) {
         zmalloc::next_obj(ptrs.back()) = nullptr;
-        cc.release_list_to_spans(ptrs.front(), 64);
+        cc.release_list_to_spans(ptrs.front(), zmalloc::SizeClass::index_fast(64));
     }
     SUCCEED();
 }
@@ -294,7 +294,7 @@ TEST_F(CentralCacheTest, NonEmptyListHeadHasFreeObjectsWhenPresent) {
 
     void *s = nullptr;
     void *e = nullptr;
-    cc.fetch_range_obj(s, e, 1, size);
+    cc.fetch_range_obj(s, e, 1, size, zmalloc::SizeClass::index_fast(size));
 
     // 若 nonempty 非空，则其 head 必须有 free_list。
     zmalloc::Span *front = cc.free_lists_[index].nonempty.begin();
@@ -302,7 +302,7 @@ TEST_F(CentralCacheTest, NonEmptyListHeadHasFreeObjectsWhenPresent) {
         EXPECT_NE(front->free_list, nullptr);
     }
 
-    cc.release_list_to_spans(s, size);
+    cc.release_list_to_spans(s, zmalloc::SizeClass::index_fast(size));
 }
 
 TEST_F(CentralCacheTest, EmptyListSpansHaveNoFreeObjectsWhenPresent) {
@@ -312,12 +312,12 @@ TEST_F(CentralCacheTest, EmptyListSpansHaveNoFreeObjectsWhenPresent) {
     // 尝试制造一个 empty span（与 DrainSpanMovesToEmptyList 类似，但更弱断言）
     void *s = nullptr;
     void *e = nullptr;
-    cc.fetch_range_obj(s, e, 1, size);
+    cc.fetch_range_obj(s, e, 1, size, zmalloc::SizeClass::index_fast(size));
     zmalloc::Span *span = pc.map_object_to_span(s);
     const size_t capacity = (span->n << zmalloc::PAGE_SHIFT) / span->obj_size;
     void *all_s = nullptr;
     void *all_e = nullptr;
-    cc.fetch_range_obj(all_s, all_e, capacity, size);
+    cc.fetch_range_obj(all_s, all_e, capacity, size, zmalloc::SizeClass::index_fast(size));
 
     // empty 链表里出现的 span，其 free_list 应为空。
     for (zmalloc::Span *it = cc.free_lists_[index].empty.begin();
@@ -325,7 +325,7 @@ TEST_F(CentralCacheTest, EmptyListSpansHaveNoFreeObjectsWhenPresent) {
         EXPECT_EQ(it->free_list, nullptr);
     }
 
-    cc.release_list_to_spans(all_s, size);
+    cc.release_list_to_spans(all_s, zmalloc::SizeClass::index_fast(size));
 }
 
 TEST_P(CentralCacheFetchReleaseParamTest, FetchAndReleaseSizeBatchPair) {
@@ -365,25 +365,25 @@ TEST_F(CentralCacheTest, FetchTwiceConcatDifferentBatchThenRelease) {
 TEST_F(CentralCacheTest, ReleaseReversedChainDoesNotCrash) {
     void *s = nullptr;
     void *e = nullptr;
-    const size_t got = cc.fetch_range_obj(s, e, 32, 64);
+    const size_t got = cc.fetch_range_obj(s, e, 32, 64, zmalloc::SizeClass::index_fast(64));
     ASSERT_GE(got, 1u);
     ASSERT_EQ(zmalloc::next_obj(e), nullptr);
     void *rev_end = nullptr;
     ReverseChain(s, rev_end);
     // 反转后仍应是合法单链表
     ASSERT_EQ(CountChain(s), got);
-    cc.release_list_to_spans(s, 64);
+    cc.release_list_to_spans(s, zmalloc::SizeClass::index_fast(64));
 }
 
 TEST_F(CentralCacheTest, ReleaseInterleavedFetchChainsDoesNotCrash) {
     void *s1 = nullptr;
     void *e1 = nullptr;
-    const size_t g1 = cc.fetch_range_obj(s1, e1, 8, 64);
+    const size_t g1 = cc.fetch_range_obj(s1, e1, 8, 64, zmalloc::SizeClass::index_fast(64));
     ASSERT_GE(g1, 1u);
 
     void *s2 = nullptr;
     void *e2 = nullptr;
-    const size_t g2 = cc.fetch_range_obj(s2, e2, 8, 64);
+    const size_t g2 = cc.fetch_range_obj(s2, e2, 8, 64, zmalloc::SizeClass::index_fast(64));
     ASSERT_GE(g2, 1u);
 
     // 交错拼接：从 s1 和 s2 交替取节点构成新链表
@@ -411,18 +411,18 @@ TEST_F(CentralCacheTest, ReleaseInterleavedFetchChainsDoesNotCrash) {
     }
 
     ASSERT_EQ(CountChain(head), g1 + g2);
-    cc.release_list_to_spans(head, 64);
+    cc.release_list_to_spans(head, zmalloc::SizeClass::index_fast(64));
 }
 
 TEST_F(CentralCacheTest, DifferentSizeClassesInterleavedDoesNotCrash) {
     void *a1 = nullptr;
     void *a2 = nullptr;
-    cc.fetch_range_obj(a1, a2, 16, 64);
+    cc.fetch_range_obj(a1, a2, 16, 64, zmalloc::SizeClass::index_fast(64));
     void *b1 = nullptr;
     void *b2 = nullptr;
-    cc.fetch_range_obj(b1, b2, 16, 128);
-    cc.release_list_to_spans(a1, 64);
-    cc.release_list_to_spans(b1, 128);
+    cc.fetch_range_obj(b1, b2, 16, 128, zmalloc::SizeClass::index_fast(128));
+    cc.release_list_to_spans(a1, zmalloc::SizeClass::index_fast(64));
+    cc.release_list_to_spans(b1, zmalloc::SizeClass::index_fast(128));
 }
 
 TEST_F(CentralCacheTest, FetchCombinesAvailableObjectsFromDifferentSpans) {
@@ -433,22 +433,22 @@ TEST_F(CentralCacheTest, FetchCombinesAvailableObjectsFromDifferentSpans) {
     void *tails[2];
     void *rest[2];
     for (size_t i = 0; i < 2; ++i) {
-        ASSERT_EQ(cc.fetch_range_obj(heads[i], tails[i], capacity, size),
+        ASSERT_EQ(cc.fetch_range_obj(heads[i], tails[i], capacity, size, zmalloc::SizeClass::index_fast(size)),
                   capacity);
         rest[i] = zmalloc::next_obj(heads[i]);
     }
     ASSERT_NE(pc.map_object_to_span(heads[0]), pc.map_object_to_span(heads[1]));
     for (void *head : heads) {
         zmalloc::next_obj(head) = nullptr;
-        cc.release_list_to_spans(head, size);
+        cc.release_list_to_spans(head, zmalloc::SizeClass::index_fast(size));
     }
     void *start = nullptr;
     void *end = nullptr;
-    ASSERT_EQ(cc.fetch_range_obj(start, end, 2, size), 2u);
+    ASSERT_EQ(cc.fetch_range_obj(start, end, 2, size, zmalloc::SizeClass::index_fast(size)), 2u);
     EXPECT_NE(pc.map_object_to_span(start), pc.map_object_to_span(end));
-    cc.release_list_to_spans(start, size);
+    cc.release_list_to_spans(start, zmalloc::SizeClass::index_fast(size));
     for (void *head : rest) {
-        cc.release_list_to_spans(head, size);
+        cc.release_list_to_spans(head, zmalloc::SizeClass::index_fast(size));
     }
 }
 
@@ -462,7 +462,7 @@ TEST_F(CentralCacheTest, ConcurrentRefillAndLargeReleasePreserveUniqueObjects) {
             while (objects[t].size() < count) {
                 void *head = nullptr;
                 void *tail = nullptr;
-                cc.fetch_range_obj(head, tail, count - objects[t].size(), 4096);
+                cc.fetch_range_obj(head, tail, count - objects[t].size(), 4096, zmalloc::SizeClass::index_fast(4096));
                 for (void *p = head; p != nullptr; p = zmalloc::next_obj(p)) {
                     objects[t].push_back(p);
                 }
@@ -483,7 +483,7 @@ TEST_F(CentralCacheTest, ConcurrentRefillAndLargeReleasePreserveUniqueObjects) {
                 zmalloc::next_obj(objects[t][i - 1]) = objects[t][i];
             }
             zmalloc::next_obj(objects[t].back()) = nullptr;
-            cc.release_list_to_spans(objects[t].front(), 4096);
+            cc.release_list_to_spans(objects[t].front(), zmalloc::SizeClass::index_fast(4096));
         });
     }
     for (auto &worker : workers)

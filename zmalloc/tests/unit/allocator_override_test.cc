@@ -253,6 +253,43 @@ TEST_F(AllocatorOverrideTest, ReallocHandlesForeignLibcAllocation) {
 }
 #endif
 
+#if defined(__cpp_aligned_new)
+TEST_F(AllocatorOverrideTest, StandardAlignedNewDeleteVariants) {
+    const auto alignment = std::align_val_t(128);
+    void *single = ::operator new(48, alignment);
+    ASSERT_NE(single, nullptr);
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(single) % 128, 0u);
+    ::operator delete(single, size_t(48), alignment);
+
+    void *array = ::operator new[](256, alignment);
+    ASSERT_NE(array, nullptr);
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(array) % 128, 0u);
+    ::operator delete[](array, alignment);
+
+    void *nothrow = ::operator new(64, alignment, std::nothrow);
+    ASSERT_NE(nothrow, nullptr);
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(nothrow) % 128, 0u);
+    ::operator delete(nothrow, alignment, std::nothrow);
+
+    const auto small_alignment = std::align_val_t(alignof(std::max_align_t));
+    void *small = ::operator new(24, small_alignment);
+    ASSERT_NE(small, nullptr);
+    ::operator delete(small, small_alignment);
+}
+
+TEST_F(AllocatorOverrideTest, OverAlignedObjectsAndArraysUseStandardDelete) {
+    struct alignas(128) Value { int number = 42; };
+    auto *value = new Value;
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(value) % 128, 0u);
+    EXPECT_EQ(value->number, 42);
+    delete value;
+    auto *values = new Value[3];
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(values) % 128, 0u);
+    EXPECT_EQ(values[2].number, 42);
+    delete[] values;
+}
+#endif
+
 } // namespace
 } // namespace zmalloc
 

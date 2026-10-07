@@ -18,12 +18,10 @@ namespace zmalloc {
 #define ZM_LIKELY(x) (__builtin_expect(!!(x), 1))
 #define ZM_UNLIKELY(x) (__builtin_expect(!!(x), 0))
 #define ZM_ALWAYS_INLINE __attribute__((always_inline)) inline
-#define ZM_NOINLINE __attribute__((noinline))
 #else
 #define ZM_LIKELY(x) (x)
 #define ZM_UNLIKELY(x) (x)
 #define ZM_ALWAYS_INLINE inline
-#define ZM_NOINLINE
 #endif
 
 // 小对象阈值；不超过该值的请求由 ThreadCache/CentralCache 管理。

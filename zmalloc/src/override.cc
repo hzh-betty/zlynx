@@ -453,16 +453,6 @@ void *aligned_allocate_for_new_nothrow(size_t size, size_t alignment) noexcept {
     }
 }
 
-void aligned_delete(void *ptr, size_t alignment) noexcept {
-    if (ptr == nullptr) {
-        return;
-    }
-    if (alignment <= alignof(std::max_align_t)) {
-        deallocate_bytes(ptr);
-        return;
-    }
-    deallocate_bytes(ptr);
-}
 #endif
 
 } // namespace
@@ -607,37 +597,29 @@ void *operator new[](size_t size, std::align_val_t alignment,
         size, static_cast<size_t>(alignment));
 }
 
-void operator delete(void *ptr, std::align_val_t alignment) noexcept {
-    zmalloc::internal::aligned_delete(ptr, static_cast<size_t>(alignment));
+void operator delete(void *ptr, std::align_val_t) noexcept {
+    zmalloc::internal::deallocate_bytes(ptr);
 }
 
-void operator delete[](void *ptr, std::align_val_t alignment) noexcept {
-    zmalloc::internal::aligned_delete(ptr, static_cast<size_t>(alignment));
+void operator delete[](void *ptr, std::align_val_t) noexcept {
+    zmalloc::internal::deallocate_bytes(ptr);
 }
 
-void operator delete(void *ptr, std::align_val_t alignment, size_t) noexcept {
-    zmalloc::internal::aligned_delete(ptr, static_cast<size_t>(alignment));
+void operator delete(void *ptr, size_t, std::align_val_t) noexcept {
+    zmalloc::internal::deallocate_bytes(ptr);
 }
 
-void operator delete[](void *ptr, std::align_val_t alignment, size_t) noexcept {
-    zmalloc::internal::aligned_delete(ptr, static_cast<size_t>(alignment));
+void operator delete[](void *ptr, size_t, std::align_val_t) noexcept {
+    zmalloc::internal::deallocate_bytes(ptr);
 }
 
-void operator delete(void *ptr, size_t, std::align_val_t alignment) noexcept {
-    zmalloc::internal::aligned_delete(ptr, static_cast<size_t>(alignment));
-}
-
-void operator delete[](void *ptr, size_t, std::align_val_t alignment) noexcept {
-    zmalloc::internal::aligned_delete(ptr, static_cast<size_t>(alignment));
-}
-
-void operator delete(void *ptr, std::align_val_t alignment,
+void operator delete(void *ptr, std::align_val_t,
                      const std::nothrow_t &) noexcept {
-    zmalloc::internal::aligned_delete(ptr, static_cast<size_t>(alignment));
+    zmalloc::internal::deallocate_bytes(ptr);
 }
 
-void operator delete[](void *ptr, std::align_val_t alignment,
+void operator delete[](void *ptr, std::align_val_t,
                        const std::nothrow_t &) noexcept {
-    zmalloc::internal::aligned_delete(ptr, static_cast<size_t>(alignment));
+    zmalloc::internal::deallocate_bytes(ptr);
 }
 #endif

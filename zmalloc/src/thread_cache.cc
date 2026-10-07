@@ -92,8 +92,7 @@ void *ThreadCache::fetch_from_central_cache(const SizeClassLookup &e) {
 
 void ThreadCache::release_direct(void *ptr, const SizeClassLookup &e) {
     next_obj(ptr) = nullptr;
-    CentralCache::get_instance().release_list_to_spans(ptr, e.align_size,
-                                                       e.index);
+    CentralCache::get_instance().release_list_to_spans(ptr, e.index);
 }
 
 void ThreadCache::release_batch(size_t index, size_t count, bool use_transfer) {
@@ -120,7 +119,7 @@ void ThreadCache::release_batch(size_t index, size_t count, bool use_transfer) {
             }
             next_obj(objects[n - 1]) = nullptr;
             CentralCache::get_instance().release_list_to_spans(
-                objects[inserted], size, index);
+                objects[inserted], index);
         }
         count -= n;
     }

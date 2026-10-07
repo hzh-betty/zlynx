@@ -31,7 +31,7 @@ void DrainTransfer(size_t size) {
         }
         zmalloc::next_obj(objects[count - 1]) = nullptr;
         zmalloc::CentralCache::get_instance().release_list_to_spans(
-            objects[0], e.align_size, e.index);
+            objects[0], e.index);
     }
 }
 
