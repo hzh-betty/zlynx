@@ -1,349 +1,338 @@
 # zhttp
 
-`zhttp` 是 zlynx 的 HTTP/WebSocket 服务模块，构建在 `znet` TCP 网络层和
-`zlog` 日志模块之上，面向需要在 C++14 中快速嵌入 HTTP API、静态文件服务、
-中间件链和 WebSocket 通道的开发者。
+`zhttp` 是 zlynx 的 C++14 HTTP/HTTPS 与 WebSocket 服务模块，基于 `znet` 的
+协程 TCP 服务和 `zlog` 日志模块。它提供路由、中间件、请求体解析、静态文件服务
+以及同步响应写出。
 
 ## 快速开始
 
-最小服务只需要包含统一头文件 `zhttp/zhttp.h`，使用 `HttpServerBuilder`
-配置监听地址、线程数和路由，然后调用 `run()` 进入阻塞运行。
+包含统一头文件 `zhttp/zhttp.h`，通过 `HttpServerBuilder` 注册路由：
 
 ```cpp
 #include "zhttp/zhttp.h"
 
 int main() {
     zhttp::HttpServerBuilder builder;
-
     builder.listen("0.0.0.0", 8080)
         .threads(4)
-        .server_name("demo-zhttp")
-        .get("/health",
-             [](const zhttp::HttpRequest::ptr &, zhttp::HttpResponse &resp) {
-                 resp.status(zhttp::HttpStatus::OK).json(R"({"ok":true})");
-             })
-        .get("/users/:id",
-             [](const zhttp::HttpRequest::ptr &req, zhttp::HttpResponse &resp) {
-                 resp.text("user=" + req->path_param("id"));
-             })
-        .websocket(
-            "/ws",
-            zhttp::WebSocketCallbacks{
-                {},
-                [](const zhttp::WebSocketConnection::ptr &conn,
-                   std::string &&message, zhttp::WebSocketMessageType type) {
-                    if (type == zhttp::WebSocketMessageType::kText) {
-                        conn->send_text(message);
-                    }
-                },
-                {},
-                {}});
-
+        .server_name("demo")
+        .get("/health", [](zhttp::HttpContext &context) {
+            context.response().json(R"({"ok":true})");
+        })
+        .get("/users/:id", [](zhttp::HttpContext &context) {
+            context.response().text("user=" + context.path_param("id"));
+        })
+        .post("/echo", [](zhttp::HttpContext &context) {
+            const auto *json = context.json();
+            if (!json) {
+                context.response().status(zhttp::HttpStatus::BAD_REQUEST)
+                    .text("Expected application/json");
+                return;
+            }
+            context.response().json(json->dump());
+        });
     builder.run();
-    return 0;
 }
 ```
 
-如果在源码树内开发，可以直接链接 `zhttp` target；安装后消费则使用
-`zhttp::zhttp`。
+`run()` 构建并启动服务，阻塞至收到 SIGINT 或 SIGTERM。`build()` 只构造和初始化
+服务器，不启动监听；需要自行管理生命周期时，调用返回对象的 `start()` / `stop()`。
+Builder 默认注册请求体解析中间件，按 Content-Type 解析 JSON、URL 编码表单和
+multipart。直接构造 `HttpServer` 时，可自行注册 `RequestBodyMiddleware`，也可通过
+Context 的访问接口惰性解析正文。
 
-```cmake
-cmake_minimum_required(VERSION 3.18)
-project(zhttp_demo LANGUAGES CXX)
-
-find_package(zhttp CONFIG REQUIRED)
-
-add_executable(zhttp_demo main.cc)
-target_link_libraries(zhttp_demo PRIVATE zhttp::zhttp)
+```bash
+curl http://127.0.0.1:8080/health
+curl http://127.0.0.1:8080/users/42
+curl -H 'Content-Type: application/json' \
+  -d '{"message":"hello"}' http://127.0.0.1:8080/echo
 ```
 
-## 请求接收限制
+## 构建与接入
 
-`HttpServer` 默认限制请求行 8 KiB、头部与 trailer 合计 64 KiB / 100 项、
-正文 8 MiB、chunk-size 行 1 KiB；行长度包含 CRLF。chunked 正文按累计解码
-长度检查，超限时在继续接收正文前拒绝请求，分别返回 414、431 或 413。
+构建需要 CMake 3.18+、C++14 编译器、POSIX/Linux 接口，以及以下依赖：
 
-可在 `start()` 前通过 `set_request_limits(HttpParser::Limits)` 调整大小限制。
-`set_request_timeout(milliseconds)` 设置从首批请求数据到请求收齐的总时限，
-默认 30 秒，0 禁用。后续分片不会刷新时限，超时直接关闭连接；完成请求后清除
-截止时间，Keep-Alive 的空闲策略仍由 `set_keepalive_timeout()` 控制。
+| 依赖 | 用途 |
+|---|---|
+| `znet`、`zlog`、Threads | 网络运行时与日志 |
+| OpenSSL | TLS 与 WebSocket 握手 |
+| fmt | 日志格式化 |
+| ZLIB、Brotli encoder (`brotlienc`) | gzip / br 压缩 |
+| nlohmann_json | JSON 请求体解析 |
+| 提供 `<toml.hpp>` 的 TOML 库 | 配置文件解析 |
 
-动态压缩和静态文件共用 `Accept-Encoding` 协商规则：遵守 q 权重、`q=0`
-排除项与 `*` 通配符，同权重优先 br，再 gzip。未显式声明的 identity 作为
-最后回退；客户端禁止 identity 且没有可用编码时返回 406。非法 q 值按不可接受
-处理，重复编码取最低权重。缓存命中不会改变编码优先级。
-
-## 项目架构
-
-`zhttp` 位于 zlynx 依赖链的最上层：
-
-```text
-zhttp
-  -> znet   TCP server、连接、Buffer、TLS context
-  -> zlog   日志输出与日志级别
-  -> 第三方库: OpenSSL、fmt、ZLIB、Brotli、nlohmann_json、toml.hpp
-```
-
-核心目录：
-
-```text
-zhttp/
-  include/zhttp/              公共头文件与统一入口 zhttp.h
-  include/zhttp/internal/     HTTP parser、radix tree、range/http 工具
-  include/zhttp/mid/          内置中间件
-  src/                        模块实现
-  src/mid/                    内置中间件实现
-  tests/unit/                 单元测试
-  tests/integration/          HTTP/WebSocket 端到端测试
-  tests/benchmark/            wrk/perf/valgrind 性能入口
-```
-
-主要组件：
-
-- `HttpServerBuilder`：链式收集监听地址、线程数、HTTPS、超时、路由、中间件、
-  日志和守护进程配置，最终 `build()` 或 `run()`。
-- `HttpServer`：复用 `znet::TcpServer` 管理连接，在消息回调中完成 HTTP 解析、
-  路由分发、响应序列化、chunked 流式响应和 WebSocket 升级。
-- `Router`：提供静态路由哈希查找、动态路由 radix tree、正则路由前缀分桶；
-  支持全局中间件、路由中间件和前缀组中间件。
-- `HttpRequest` / `HttpResponse`：封装请求字段、路径/查询/Cookie 参数、JSON、
-  form、multipart、响应头、Cookie、重定向、文本/HTML/JSON、同步和异步流式响应。
-- `WebSocketSession` / `WebSocketConnection`：处理握手、子协议协商、帧解析、
-  text/binary/ping/pong/close 发送和生命周期回调。
-- `mid::*Middleware`：内置横切能力，包括鉴权、角色授权、CORS、压缩、错误处理、
-  限流、请求体限制、安全响应头、Session、静态文件和超时。
-- `ServerConfig`：支持从 TOML 加载运行配置，并验证端口、线程、HTTPS 重定向和
-  homepage 等配置组合。
-
-## 依赖
-
-基础构建依赖：
-
-- CMake 3.18+
-- C++14 编译器，仓库 preset 默认使用 `clang++`
-- Ninja，使用 preset 时需要
-- POSIX/Linux 网络与进程接口
-- `znet`、`zlog`
-- OpenSSL
-- fmt
-- ZLIB
-- Brotli encoder library，CMake 查找名为 `brotlienc`
-- nlohmann_json
-- 提供 `<toml.hpp>` 的 TOML 头文件实现
-
-测试和分析额外依赖：
-
-- GTest / GMock
-- Threads
-- Brotli decoder library，测试查找名为 `brotlidec`
-- `gcovr`，生成覆盖率报告
-- `wrk`，运行 HTTP benchmark
-- `perf`、`valgrind`、`cg_annotate`，可选性能分析工具
-
-## 编译
-
-推荐使用仓库根目录的 CMake presets。
+仓库预设使用 Clang 和 Ninja，并要求 CMake 支持 `CMakePresets.json` 的版本 6。
+在仓库根目录构建：
 
 ```bash
 cmake --preset debug
-cmake --build --preset debug
+cmake --build --preset debug -j 4
 ```
 
-发布构建：
-
-```bash
-cmake --preset release
-cmake --build --preset release
-```
-
-只需要性能测试二进制时：
-
-```bash
-cmake --preset perf
-cmake --build --preset perf --target zhttp_benchmark
-```
-
-也可以手动配置：
+不使用预设时：
 
 ```bash
 cmake -S . -B build/debug -G Ninja \
   -DCMAKE_CXX_COMPILER=clang++ \
   -DCMAKE_BUILD_TYPE=Debug \
   -DBUILD_TESTING=ON
-cmake --build build/debug -j
+cmake --build build/debug -j 4
 ```
 
-安装：
+源码树内的应用链接 `zhttp` 或其别名 `zhttp::zhttp`。安装后通过 CMake 包接入：
 
 ```bash
-cmake --build --preset release --target install
+cmake --preset release
+cmake --build --preset release -j 4
+cmake --install build/release --prefix "$PWD/install"
 ```
 
-安装后会导出 `zhttp::zhttp`，包配置文件位于标准
-`<prefix>/lib/cmake/zhttp` 路径下。`zhttp` 的 public headers 会向消费者传播
-`znet`、`zlog` 和 `nlohmann_json` 用法需求。
+应用的 `CMakeLists.txt`：
 
-## 测试
+```cmake
+cmake_minimum_required(VERSION 3.18)
+project(zhttp_demo LANGUAGES CXX)
 
-启用 `BUILD_TESTING=ON` 后，`zhttp/tests/CMakeLists.txt` 会注册单元测试和集成测试。
-benchmark 目标不会进入 CTest。
-
-运行全部 zhttp 测试：
-
-```bash
-cmake --build --preset debug --target zhttp_test
+find_package(zhttp CONFIG REQUIRED)
+add_executable(zhttp_demo main.cc)
+target_link_libraries(zhttp_demo PRIVATE zhttp::zhttp)
 ```
 
-只跑单元测试：
+配置应用时将安装前缀传给 `CMAKE_PREFIX_PATH`。模块安装在
+`<prefix>/include/zhttp`，包配置位于 `<prefix>/<libdir>/cmake/zhttp`；公共依赖的
+头文件和编译要求由导出目标传播。使用自定义安装目录运行共享库应用时，将
+`<prefix>/<libdir>` 加入动态链接器搜索路径，例如通过 `LD_LIBRARY_PATH` 设置。
 
-```bash
-cmake --build --preset debug --target zhttp_test_unit
+## 请求与响应
+
+业务处理器接收 `HttpContext &`。Context 持有当前响应、只读请求，以及路径参数、
+Cookie、会话和正文解析缓存。
+
+| 接口 | 行为 |
+|---|---|
+| `context.request()` | 读取方法、版本、URI、头部、trailer 和正文 |
+| `context.path_param(key, fallback)` | 读取路由捕获的路径参数 |
+| `context.query_param(key, fallback)` | 读取首个同名查询参数，解码百分号编码和 `+` |
+| `context.request().query_values(key)` | 按顺序读取全部同名查询参数 |
+| `context.header(key, fallback)` | 忽略字段名大小写，读取首个同名头部 |
+| `context.request().headers().get_all(key)` | 读取全部同名头部，保留重复项 |
+| `context.cookie(key, fallback)` | 惰性解析 Cookie 并读取值 |
+| `context.json()` | 获取 JSON 缓存，类型不符或解析失败时为 `nullptr` |
+| `context.form_param(key, fallback)` | 读取 URL 编码表单，重复键取最后值 |
+| `context.multipart()` | 获取 multipart 解析结果，失败时为 `nullptr` |
+| `context.session()` | 获取会话中间件绑定的会话，没有会话时为 `nullptr` |
+
+`MultipartFormData::fields()` 保存普通字段，`files()` 保存上传文件。上传文件的
+内容保存在内存中，通过 `UploadedFile::save_to()` 写入指定路径。
+
+`HttpResponse` 支持链式设置状态、头部和正文。`json()` 接收已经序列化的 JSON
+字符串；`html()` 和 `text()` 设置对应的 UTF-8 内容类型。`redirect(url, code)`
+构造普通重定向，默认状态为 302。Cookie 通过 `set_cookie()` / `delete_cookie()`
+操作，多个 Set-Cookie 值独立保留。
+
+`HttpBody` 是不可复制、可移动的正文数据源，支持内存、文件和同步流。文件正文
+在创建时打开文件并持有描述符，可指定字节偏移和长度：
+
+```cpp
+#include "zhttp/zhttp.h"
+
+void download(zhttp::HttpContext &context) {
+    context.response().content_type("application/octet-stream")
+        .body(zhttp::HttpBody::file("report.bin"));
+}
 ```
 
-只跑集成测试：
+响应写出器统一处理 Content-Length、Transfer-Encoding、HEAD 和无正文状态码。
+发送头部前响应会被提交，此后修改响应的操作会抛出 `std::logic_error`。
 
-```bash
-cmake --build --preset debug --target zhttp_test_integration
+### 同步流与完成通知
+
+同步流回调填充框架提供的缓冲区，返回实际字节数，返回 0 表示结束：
+
+```cpp
+#include "zhttp/zhttp.h"
+#include <cstring>
+
+void stream_hello(zhttp::HttpContext &context) {
+    context.response().content_type("text/plain")
+        .stream([sent = false](char *buffer, std::size_t capacity) mutable
+                    -> std::size_t {
+            if (sent || capacity < 5)
+                return 0;
+            std::memcpy(buffer, "hello", 5);
+            sent = true;
+            return 5;
+        }, 5);
+}
 ```
 
-也可以直接用 CTest 过滤：
+第二个参数是总字节数，省略时长度未知。HTTP/1.1 对未知长度使用 chunked；
+HTTP/1.0 通过关闭连接界定正文结束。回调在当前连接处理过程中同步执行，每批
+数据排空后再拉取下一批。回调抛出异常、产出超过缓冲区容量、与声明长度不符或
+发送失败时，写出失败并关闭连接。
 
-```bash
-ctest --test-dir build/debug -R '^zhttp\.' --output-on-failure
-ctest --test-dir build/debug -R '^zhttp\.unit\.' --output-on-failure
-ctest --test-dir build/debug -R '^zhttp\.integration\.' --output-on-failure
+`context.on_complete(callback)` 按注册顺序通知请求终态：`Completed`、`Failed`、
+`Cancelled` 或 `Upgraded`。完成回调最多执行一次，单个回调的异常不会阻止其他
+回调。Context 及其借用引用只在本次请求处理期间有效；流回调不能保留缓冲区、
+跨线程写出，或无限等待外部生产者。
+
+## 路由与中间件
+
+Builder 提供 `get()`、`post()`、`put()`、`del()` 和 `websocket()`。通过
+`server->router().add_route(method, path, handler)` 可注册其他 HTTP 方法；
+`add_regex_route()` 支持正则路径和捕获组参数名。
+
+路径支持静态字符串、`:name` 参数和 `*name` 通配符。普通路由按静态路径、动态
+路径、正则路由的顺序匹配；配置首页后，GET/HEAD 的 `/` 和 `/home` 会先处理
+首页跳转。处理器既可以是函数或 lambda，也可以是派生自 `RouteHandler` 的共享对象。
+
+中间件使用 `zhttp::mid` 命名空间，也可通过 `zhttp::Middleware` 引用基类：
+
+```cpp
+#include "zhttp/zhttp.h"
+
+class ServiceHeader : public zhttp::Middleware {
+  public:
+    void after(zhttp::HttpContext &context) override {
+        context.response().header("X-Service", "demo");
+    }
+};
+
+std::shared_ptr<zhttp::HttpServer> make_server() {
+    zhttp::HttpServerBuilder builder;
+    builder.get("/api/ping", [](zhttp::HttpContext &context) {
+        context.response().text("pong");
+    });
+    auto server = builder.build();
+    server->use(std::make_shared<ServiceHeader>());             // 全局
+    server->use("/api/ping", std::make_shared<ServiceHeader>()); // 精确请求路径
+    server->use_group("/api", std::make_shared<ServiceHeader>()); // 前缀子路径
+    return server;
+}
 ```
 
-当前测试覆盖的主要行为：
+路径组匹配前缀下的子路径，`/api` 组匹配 `/api/ping`，不匹配 `/api` 或 `/apiv1`。
+组中间件仅在路由命中时加入处理链。选择顺序为全局、从外到内的路径组、精确路径。
 
-- HTTP request/response/common/parser/utils
-- 路由静态匹配、动态参数、正则前缀分桶、路由组中间件
-- HTTP server 上下文、keep-alive、split packet、chunked request/response
-- HTTPS round trip 和 HTTP -> HTTPS 重定向
-- WebSocket 握手、子协议协商、帧解析、echo、ping/pong/close
-- JSON、form-urlencoded、multipart/form-data
-- 静态文件、ETag、If-Modified-Since、Range、预压缩资源、内存缓存
-- CORS、鉴权、角色授权、压缩、错误处理、限流、请求体限制、安全头、Session、超时
-- TOML 配置、守护进程、日志
+`before()` 按顺序执行。返回 false 会跳过后续中间件和业务处理器；正常返回过
+`before()` 的中间件仍逆序执行 `after()`，包括返回 false 的中间件。抛出异常的
+`before()` 不执行自身 `after()`；某个 `after()` 失败不影响其余中间件收尾。
+可通过 Builder 的 `not_found()` / `exception_handler()` 或 Server 对应接口设置
+404 与异常响应，默认异常响应为 500。
 
-## 覆盖率
+路由、处理链和服务器参数应在 `start()` 前配置。`start()` 会冻结配置，即使启动
+监听失败也不能继续修改。共享的路由处理器和中间件可能被多个请求并发调用。
 
-仓库提供统一脚本 `coverage/run_coverage.sh`。脚本会配置覆盖率构建、运行测试，并
-按模块输出 summary、branch 报告和 HTML 明细。
+### 内置中间件
 
-```bash
-coverage/run_coverage.sh
+| 中间件 | 用途 |
+|---|---|
+| `RequestBodyMiddleware` | JSON、URL 编码表单、multipart 解析及失败响应 |
+| `AuthenticationMiddleware` | Session 或 Bearer Token 认证 |
+| `RoleAuthorizationMiddleware` | 按所需角色授权 |
+| `SessionMiddleware` | 从 Cookie 恢复会话，保存修改并更新 Cookie |
+| `CorsMiddleware` | 跨域响应头与 OPTIONS 预检 |
+| `CompressionMiddleware` | gzip / br 动态响应压缩 |
+| `StaticFileMiddleware` | 静态资源、目录索引、条件请求、单范围与预压缩文件 |
+| `RateLimiterMiddleware` | 令牌桶、固定窗口或滑动窗口限流 |
+| `TimeoutMiddleware` | 业务返回后检查耗时并按配置改写响应，不抢占业务执行 |
+| `ErrorMiddleware` | 统一格式化 4xx / 5xx 响应 |
+| `SecurityMiddleware` | 补充缺失的安全响应头，HSTS 默认关闭 |
+
+各中间件通过 `Options` 配置，详见 [middleware](middleware/) 的头文件。
+`SessionManager` 使用带滑动过期的进程内存存储，按操作次数清理过期项；会话数据
+不跨进程持久化，返回的请求级 `Session` 不支持跨线程共享读写。
+
+静态文件支持 ETag、Last-Modified、GET/HEAD 单个 bytes Range、小文件内存缓存
+以及 `.br` / `.gz` 预压缩资源。动态压缩与静态文件共用 Accept-Encoding 协商规则：
+按 q 权重选择，同权重优先 br 再 gzip；未显式声明的 identity 作为最后回退。
+客户端禁止 identity 且无可用编码时返回 406。
+
+## HTTPS 与 WebSocket
+
+HTTPS 在当前监听地址上启用 TLS：
+
+```cpp
+#include "zhttp/zhttp.h"
+
+int main() {
+    zhttp::HttpServerBuilder builder;
+    builder.listen("0.0.0.0", 8443)
+        .enable_https("server.crt", "server.key")
+        .get("/health", [](zhttp::HttpContext &context) {
+            context.response().text("ok");
+        });
+    builder.run();
+}
 ```
 
-只生成报告、不重新跑测试：
+启用 HTTPS 需要 PEM 证书和私钥。框架不创建 HTTP → HTTPS 强制重定向监听器。
 
-```bash
-coverage/run_coverage.sh --no-test
+WebSocket 路由接收完整文本或二进制消息，以下示例回显消息：
+
+```cpp
+#include "zhttp/zhttp.h"
+
+int main() {
+    zhttp::WebSocketCallbacks callbacks;
+    callbacks.on_message = [](const zhttp::WebSocketConnection::ptr &connection,
+                              std::string &&message,
+                              zhttp::WebSocketMessageType type) {
+        if (type == zhttp::WebSocketMessageType::kText)
+            connection->send_text(message);
+        else
+            connection->send_binary(message);
+    };
+    zhttp::WebSocketOptions options;
+    options.max_message_size = 16 * 1024 * 1024;
+    options.close_timeout_ms = 5000;
+
+    zhttp::HttpServerBuilder builder;
+    builder.listen("0.0.0.0", 8080).websocket("/ws", callbacks, options);
+    builder.run();
+}
 ```
 
-指定目录：
+`on_open` 在 101 握手写出并切换协议后触发；`on_message` 接收已组装并校验的完整
+消息；`on_error` 通知错误，`on_close` 最多通知一次关闭事件。服务器按
+`WebSocketOptions::subprotocols` 的顺序选择客户端也支持的子协议。
 
-```bash
-coverage/run_coverage.sh \
-  --build-dir build-cov-all \
-  --report-dir coverage/reports
-```
+发送、ping/pong 和主动关闭应在连接回调内执行。数据发送接口单次载荷上限为
+1 MiB；ping/pong 载荷最多 125 字节。发送成功表示用户态输出缓冲区已排空，
+不表示对端已收到。主动关闭进入 Closing 状态并等待对端关闭帧，默认超时 5 秒。
+消息大小和关闭超时配置为 0 时使用默认值。
 
-`coverage/zhttp-summary.txt` 中记录的当前 zhttp 覆盖率：
+## 限制与超时
 
-| 指标 | 覆盖率 |
+HTTP 解析器默认使用以下 `RequestLimits`：
+
+| 限制 | 默认值 |
 |---|---:|
-| Lines | 94.8% (4026 / 4245) |
-| Functions | 98.3% (409 / 416) |
-| Branches | 85.1% (3721 / 4372) |
-| Decisions | 84.3% (1242 / 1473) |
+| 请求行（含 CRLF） | 8 KiB |
+| 头部与 trailer 累计字节数（含 CRLF） | 64 KiB |
+| 头部与 trailer 累计字段数 | 100 |
+| 解码后的累计正文 | 8 MiB |
+| chunk 长度行（含 CRLF） | 1 KiB |
 
-覆盖率报告只统计 `zhttp/src`，不把 benchmark 和第三方依赖纳入统计。
+在 `start()` 前调用 `set_request_limits()` 调整。请求行、头部和正文超限分别返回
+414、431、413；chunk 长度行超限返回 400。解析器拒绝非法请求目标、冲突的
+Content-Length，以及同时携带 Content-Length 和 Transfer-Encoding 的请求。
+不支持 CONNECT 隧道和 Expect 请求，分别返回 501 和 417。
 
-## 性能
+网络读取、写出和 Keep-Alive 空闲超时分别由 `set_recv_timeout()`、
+`set_write_timeout()`、`set_keepalive_timeout()` 设置，单位毫秒，0 关闭。
+`set_request_timeout()` 另设从请求首字节到接收完成的总期限，默认 30 秒，0 关闭；
+后续半包不会刷新期限，超时直接关闭连接。`TimeoutMiddleware` 检查的是业务处理
+耗时，与请求接收期限独立。
 
-`zhttp_benchmark` 会 fork 一个本地 HTTP server，再用 `wrk` 对
-`http://127.0.0.1:<port>/<path>` 施压。它支持比较协程独立栈和共享栈两种模式，
-并输出 `Requests/sec`、`Latency` 和 `Transfer/sec` 摘要。
-
-构建 benchmark：
-
-```bash
-cmake --preset perf
-cmake --build --preset perf --target zhttp_benchmark
-```
-
-直接运行：
-
-```bash
-build/perf/zhttp/tests/zhttp_benchmark \
-  --mode all \
-  --threads 4 \
-  --wrk-threads 4 \
-  --wrk-connections 256 \
-  --wrk-duration 10s \
-  --path /
-```
-
-脚本入口：
-
-```bash
-zhttp/tests/benchmark/zhttp_wrk_perf.sh baseline
-zhttp/tests/benchmark/zhttp_wrk_perf.sh perf
-zhttp/tests/benchmark/zhttp_wrk_perf.sh valgrind
-```
-
-常用环境变量：
-
-```bash
-BUILD_DIR=build/perf
-RESULT_ROOT=zhttp/tests/benchmark/perf_results
-ZHTTP_SERVER_THREADS=4
-ZHTTP_WRK_THREADS=4
-ZHTTP_WRK_CONNECTIONS=256
-ZHTTP_WRK_DURATION=10s
-ZHTTP_BENCH_MODE=all        # independent | shared | all
-ZHTTP_BENCH_PATH=/
-```
-
-性能测试建议使用 `RelWithDebInfo`，保留优化和调试符号；preset `perf` 会额外保留
-frame pointer，便于 `perf`、火焰图和 cachegrind 还原调用栈。吞吐和延迟结果与
-CPU、内核、OpenSSL/ZLIB/Brotli 版本、wrk 参数、线程绑定和系统限制有关，应在同一
-机器、同一构建参数下比较。
-
-## 支持功能
-
-- HTTP/1.x 请求解析和响应序列化
-- GET、POST、PUT、DELETE 路由注册
-- 静态路由、`:param` 动态路由、`*catch-all` 路由和正则路由
-- 全局、路由级和前缀组中间件
-- 自定义 404 和异常处理
-- JSON、HTML、文本、重定向响应
-- Cookie 和 Set-Cookie，支持常用 Cookie 属性
-- 查询参数、路径参数、Cookie、JSON body、form-urlencoded body
-- multipart/form-data 表单和文件上传解析
-- chunked request body、显式 chunked response、同步流和异步推送流
-- Keep-Alive、读/写/空闲超时
-- HTTPS 和 HTTP 到 HTTPS 308 重定向
-- WebSocket 升级、子协议协商、文本/二进制消息、ping/pong/close
-- 静态文件服务，支持路径清理、隐式 index、ETag、If-Modified-Since、Range、
-  预压缩 br/gzip 选择和小文件内存缓存
-- gzip/br 响应压缩
-- CORS、安全响应头、请求体大小限制、错误中间件
-- Token bucket、fixed window、sliding window 限流
-- Session 注入和 Cookie 写回
-- TOML 配置加载
-- 前台/守护进程运行
-- 可切换协程栈模式：`INDEPENDENT` 和 `SHARED`
-
-## TOML 配置示例
+## TOML 配置
 
 ```toml
 [server]
 host = "0.0.0.0"
 port = 8080
 name = "zhttp/1.0"
-homepage = "/dashboard"
+homepage = ""             # 可选的首页跳转目标
 daemon = false
 
 [threads]
@@ -354,8 +343,6 @@ stack_mode = "independent" # independent | shared
 enabled = false
 cert_file = "server.crt"
 key_file = "server.key"
-force_http_to_https = false
-redirect_http_port = 80
 
 [logging]
 level = "info"
@@ -366,15 +353,76 @@ write = 30000
 keepalive = 60000
 ```
 
-代码中加载：
+通过 `builder.from_config("server.toml")` 加载，再注册路由并调用 `run()`。
+后续 Builder 调用覆盖同名配置。缺省字段使用 `ServerConfig` 的默认值，配置在
+`build()` 时校验；证书初始化也在构建阶段执行。`daemon = true` 时通过守护进程
+运行，服务对象在 fork 后创建。
 
-```cpp
-zhttp::HttpServerBuilder builder;
-builder.from_config("server.toml")
-       .get("/ping", [](const zhttp::HttpRequest::ptr &,
-                        zhttp::HttpResponse &resp) {
-           resp.text("pong");
-       })
-       .run();
+## 目录与接口
+
+头文件与实现相邻，按职责分目录：
+
+```text
+zhttp/
+  http_*.h/.cc       请求、响应、Context、头部、正文和服务器
+  uri.h/.cc         请求目标与查询参数
+  server_config.*   TOML 配置与校验
+  router/           路由匹配与业务处理器
+  middleware/       两阶段钩子和内置中间件
+  content/          请求体解析缓存与 multipart
+  parser/           HTTP、chunked、WebSocket 帧解析
+  pipeline/         中间件选择、业务执行与异常处理
+  writer/           响应边界、文件与同步流写出
+  protocol/         连接上的 HTTP/WebSocket 协议处理
+  websocket/        握手、消息组装与发送接口
+  runtime/          服务构建、信号与守护进程
+  internal/         基数树、Range、路径与文件工具
+  tests/            unit、integration、benchmark
 ```
 
+`HttpRequest` / `HttpResponse` 描述协议值，`HttpContext` 承载本次业务处理；
+Router 只匹配处理器，Pipeline 执行处理链，Writer 决定响应边界并发送。
+连接调度者在 HTTP 回调返回后交接 WebSocket 协议，并继续处理缓冲区内已有的帧。
+
+安装包只导出 `CMakeLists.txt` 的 `PUBLIC_HEADERS` 列表；Parser、Pipeline、Writer、
+协议处理器和内部工具不作为安装后的公共接口。头文件采用宏保护，API 使用
+JavaDoc 风格的 `/** ... */` 文档注释，核心实现用行注释说明状态转换与资源约束。
+
+## 测试、覆盖率与性能
+
+测试需要 GTest/GMock 和 Brotli decoder (`brotlidec`)。先构建测试二进制，再运行：
+
+```bash
+cmake --preset debug
+cmake --build --preset debug -j 4
+ctest --test-dir build/debug -R '^zhttp\.' --output-on-failure
+```
+
+分类过滤使用 `'^zhttp\.unit\.'` 或 `'^zhttp\.integration\.'`。
+也可调用 `zhttp_test`、`zhttp_test_unit`、`zhttp_test_integration` 构建目标；这些目标
+运行已构建的测试，不负责生成测试二进制。测试覆盖协议模型与解析、路由和中间件、
+HTTP/TLS 往返、Keep-Alive、分块与同步流、WebSocket 握手/消息/关闭、配置及进程运行。
+
+覆盖率通过仓库统一脚本生成，需要 `gcovr`：
+
+```bash
+coverage/run_coverage.sh
+coverage/run_coverage.sh --no-test
+```
+
+默认报告在 `coverage/reports/`，zhttp 统计范围为模块内源码与头文件，排除 `tests/`。
+`--no-test` 复用已有覆盖率数据并重建报告。历史 summary 不代表当前代码的覆盖率。
+
+性能入口需要 `wrk`，benchmark 不注册到 CTest：
+
+```bash
+cmake --preset perf
+cmake --build --preset perf --target zhttp_benchmark -j 4
+build/perf/zhttp/tests/zhttp_benchmark \
+  --mode all --threads 4 --wrk-threads 4 \
+  --wrk-connections 256 --wrk-duration 10s --path /
+```
+
+`--mode` 支持 `independent`、`shared`、`all`。benchmark fork 本地 HTTP 服务，
+输出 wrk 的吞吐、延迟和传输速率。可在同一 benchmark 参数下使用 `perf` 或 `valgrind` 采样；cachegrind 的文本报告
+使用 `cg_annotate`。同一机器、构建参数和负载下的吞吐与延迟结果才适合比较。
