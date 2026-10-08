@@ -101,18 +101,6 @@ class HttpServerBuilder {
                                     const std::string &key_file);
 
     /**
-     * @brief 启用 HTTP -> HTTPS 强制重定向
-     * @param enable 是否启用
-     * @param http_port 重定向 HTTP 监听端口（默认 80）
-     * @return 当前 Builder 引用
-     * @details
-     * 该选项仅在启用 HTTPS 时生效。启用后会额外创建一个 HTTP 监听器，
-     * 将所有请求以 308 状态码跳转到对应的 HTTPS 地址。
-     */
-    HttpServerBuilder &force_https_redirect(bool enable = true,
-                                            uint16_t http_port = 80);
-
-    /**
      * @brief 添加全局中间件
      * @param middleware 中间件对象
      * @return 当前 Builder 引用
@@ -244,10 +232,11 @@ class HttpServerBuilder {
     HttpServerBuilder &server_name(const std::string &name);
 
     /**
-     * @brief 构建并启动服务器
+     * @brief 构建服务器，完成初始化但不启动监听
      * @return 构建完成的服务器对象
      * @details
-     * 该函数只负责完成对象构建和必要初始化，是否进入阻塞事件循环取决于调用方。
+     * 调用 start() 启动监听，或通过 run() 构建并阻塞运行。
+     * @throws std::runtime_error 配置无效、地址解析或 TLS 初始化失败。
      */
     std::shared_ptr<HttpServer> build();
 
@@ -259,7 +248,7 @@ class HttpServerBuilder {
 
     /**
      * @brief 获取当前配置
-     * @return 当前已累积的配置快照
+     * @return 当前配置的只读引用，其生命周期与 Builder 相同
      */
     const ServerConfig &config() const { return config_; }
 
@@ -277,8 +266,6 @@ class HttpServerBuilder {
     // 可选的自定义异常处理器。
     ExceptionHandler exception_handler_;
 
-    // 可选的 HTTP -> HTTPS 重定向服务器。
-    std::shared_ptr<HttpServer> redirect_server_;
 };
 
 } // namespace zhttp

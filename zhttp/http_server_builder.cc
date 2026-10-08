@@ -74,13 +74,6 @@ HttpServerBuilder::enable_https(const std::string &cert_file,
     return *this;
 }
 
-HttpServerBuilder &HttpServerBuilder::force_https_redirect(bool enable,
-                                                           uint16_t http_port) {
-    config_.force_http_to_https = enable;
-    config_.redirect_http_port = http_port;
-    return *this;
-}
-
 HttpServerBuilder &HttpServerBuilder::use(mid::Middleware::ptr middleware) {
     if (middleware) {
         middlewares_.push_back(std::move(middleware));
@@ -192,8 +185,6 @@ HttpServerBuilder &HttpServerBuilder::server_name(const std::string &name) {
 }
 
 std::shared_ptr<HttpServer> HttpServerBuilder::build() {
-    redirect_server_.reset();
-
     // 验证配置
     if (!config_.validate()) {
         throw std::runtime_error("Invalid server configuration");
@@ -233,16 +224,11 @@ std::shared_ptr<HttpServer> HttpServerBuilder::build() {
         server->set_exception_handler(exception_handler_);
     }
 
-    redirect_server_ = detail::create_https_redirect_server(config_);
-
     return server;
 }
 
 void HttpServerBuilder::run() {
-    detail::run_servers(config_, [this]() {
-        auto server = build();
-        return detail::ServerPair(server, redirect_server_);
-    });
+    detail::run_server(config_, [this]() { return build(); });
 }
 
 } // namespace zhttp

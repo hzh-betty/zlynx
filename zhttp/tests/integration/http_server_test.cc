@@ -161,60 +161,6 @@ uint16_t find_free_port() {
     return port;
 }
 
-std::pair<uint16_t, uint16_t> find_two_distinct_free_ports() {
-    const int fd1 = ::socket(AF_INET, SOCK_STREAM, 0);
-    const int fd2 = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (fd1 < 0 || fd2 < 0) {
-        if (fd1 >= 0) {
-            ::close(fd1);
-        }
-        if (fd2 >= 0) {
-            ::close(fd2);
-        }
-        return {0, 0};
-    }
-
-    sockaddr_in addr1{};
-    addr1.sin_family = AF_INET;
-    addr1.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    addr1.sin_port = 0;
-    if (::bind(fd1, reinterpret_cast<sockaddr *>(&addr1), sizeof(addr1)) != 0) {
-        ::close(fd1);
-        ::close(fd2);
-        return {0, 0};
-    }
-
-    sockaddr_in addr2{};
-    addr2.sin_family = AF_INET;
-    addr2.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    addr2.sin_port = 0;
-    if (::bind(fd2, reinterpret_cast<sockaddr *>(&addr2), sizeof(addr2)) != 0) {
-        ::close(fd1);
-        ::close(fd2);
-        return {0, 0};
-    }
-
-    socklen_t len1 = sizeof(addr1);
-    socklen_t len2 = sizeof(addr2);
-    if (::getsockname(fd1, reinterpret_cast<sockaddr *>(&addr1), &len1) != 0 ||
-        ::getsockname(fd2, reinterpret_cast<sockaddr *>(&addr2), &len2) != 0) {
-        ::close(fd1);
-        ::close(fd2);
-        return {0, 0};
-    }
-
-    const uint16_t first = ntohs(addr1.sin_port);
-    const uint16_t second = ntohs(addr2.sin_port);
-
-    ::close(fd1);
-    ::close(fd2);
-
-    if (first == 0 || second == 0 || first == second) {
-        return {0, 0};
-    }
-    return {first, second};
-}
-
 int connect_with_retry(uint16_t port, int retry_count, int retry_delay_ms) {
     for (int attempt = 0; attempt < retry_count; ++attempt) {
         const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
@@ -720,24 +666,15 @@ TEST(HttpServerIntegrationTest, HttpsRoundTripWithRealTlsHandshake) {
     EXPECT_NE(response.find("secure-ok"), std::string::npos) << response;
 }
 
-TEST(HttpServerIntegrationTest, ForceHttpsRedirectBuildsExpectedLocation) {
-    const auto ports = find_two_distinct_free_ports();
-    const uint16_t https_port = ports.first;
-    const uint16_t redirect_port = ports.second;
-    ASSERT_NE(https_port, 0);
-    ASSERT_NE(redirect_port, 0);
-
-    ScopedTlsPemFiles pem_files;
-    ASSERT_FALSE(pem_files.cert_path().empty());
-    ASSERT_FALSE(pem_files.key_path().empty());
+TEST(HttpServerIntegrationTest, RunServesHttpAndStopsOnSignal) {
+    const uint16_t port = find_free_port();
+    ASSERT_NE(port, 0);
 
     HttpServerBuilder builder;
-    builder.listen("127.0.0.1", https_port)
+    builder.listen("127.0.0.1", port)
         .threads(1)
         .log_level("error")
         .daemon(false)
-        .enable_https(pem_files.cert_path(), pem_files.key_path())
-        .force_https_redirect(true, redirect_port)
         .get("/secure", [](HttpContext &context) {
             auto &resp = context.response();
             resp.status(HttpStatus::OK).text("secure");
@@ -754,72 +691,33 @@ TEST(HttpServerIntegrationTest, ForceHttpsRedirectBuildsExpectedLocation) {
         stopped.store(true, std::memory_order_release);
     });
 
-    const int fd1 = connect_with_retry(redirect_port, 40, 25);
-    ASSERT_GE(fd1, 0);
-    const std::string req1 = "GET /secure?x=1 HTTP/1.1\r\n"
-                             "Host: example.com:8080\r\n"
-                             "Connection: close\r\n\r\n";
-    ASSERT_TRUE(send_all(fd1, req1));
-    const std::string resp1 = recv_until_close(fd1, 1000);
-    ::close(fd1);
-    EXPECT_NE(resp1.find("308"), std::string::npos) << resp1;
-    EXPECT_NE(resp1.find("Location: https://example.com:" +
-                         std::to_string(https_port) + "/secure?x=1"),
-              std::string::npos)
-        << resp1;
-
-    const int fd2 = connect_with_retry(redirect_port, 40, 25);
-    ASSERT_GE(fd2, 0);
-    const std::string req2 = "GET /v6 HTTP/1.1\r\n"
-                             "Host: [::1]:8080\r\n"
-                             "Connection: close\r\n\r\n";
-    ASSERT_TRUE(send_all(fd2, req2));
-    const std::string resp2 = recv_until_close(fd2, 1000);
-    ::close(fd2);
-    EXPECT_NE(resp2.find("Location: https://[::1]:" +
-                         std::to_string(https_port) + "/v6"),
-              std::string::npos)
-        << resp2;
+    const int fd = connect_with_retry(port, 40, 25);
+    // 即使连接失败，也先停止并 join，避免析构仍可 join 的线程。
+    std::string response;
+    bool sent = false;
+    if (fd >= 0) {
+        sent = send_all(fd, "GET /secure HTTP/1.1\r\n"
+                            "Host: localhost\r\n"
+                            "Connection: close\r\n\r\n");
+        response = recv_until_close(fd, 1000);
+        ::close(fd);
+    }
 
     ::raise(SIGINT);
     server_thread.join();
     EXPECT_TRUE(stopped.load(std::memory_order_acquire));
     EXPECT_TRUE(run_error.empty()) << run_error;
-}
-
-TEST(HttpServerIntegrationTest, RunFailsWhenRedirectPortAlreadyInUse) {
-    const auto ports = find_two_distinct_free_ports();
-    const uint16_t https_port = ports.first;
-    const uint16_t redirect_port = ports.second;
-    ASSERT_NE(https_port, 0);
-    ASSERT_NE(redirect_port, 0);
-
-    const int occupied_fd = bind_and_listen_port(redirect_port);
-    ASSERT_GE(occupied_fd, 0);
-
-    ScopedTlsPemFiles pem_files;
-    ASSERT_FALSE(pem_files.cert_path().empty());
-    ASSERT_FALSE(pem_files.key_path().empty());
-
-    HttpServerBuilder builder;
-    builder.listen("127.0.0.1", https_port)
-        .threads(1)
-        .daemon(false)
-        .log_level("error")
-        .enable_https(pem_files.cert_path(), pem_files.key_path())
-        .force_https_redirect(true, redirect_port);
-
-    EXPECT_THROW(builder.run(), std::runtime_error);
-    ::close(occupied_fd);
+    ASSERT_GE(fd, 0);
+    EXPECT_TRUE(sent);
+    EXPECT_NE(response.find("200 OK"), std::string::npos) << response;
+    EXPECT_NE(response.find("secure"), std::string::npos) << response;
+    EXPECT_EQ(response.find("Location:"), std::string::npos) << response;
 }
 
 TEST(HttpServerIntegrationTest,
-     RunFailsWhenHttpsPortInUseAfterRedirectServerStarted) {
-    const auto ports = find_two_distinct_free_ports();
-    const uint16_t https_port = ports.first;
-    const uint16_t redirect_port = ports.second;
+     RunFailsWhenHttpsPortAlreadyInUse) {
+    const uint16_t https_port = find_free_port();
     ASSERT_NE(https_port, 0);
-    ASSERT_NE(redirect_port, 0);
 
     const int occupied_https_fd = bind_and_listen_port(https_port);
     ASSERT_GE(occupied_https_fd, 0);
@@ -833,8 +731,7 @@ TEST(HttpServerIntegrationTest,
         .threads(1)
         .daemon(false)
         .log_level("error")
-        .enable_https(pem_files.cert_path(), pem_files.key_path())
-        .force_https_redirect(true, redirect_port);
+        .enable_https(pem_files.cert_path(), pem_files.key_path());
 
     EXPECT_THROW(builder.run(), std::runtime_error);
     ::close(occupied_https_fd);

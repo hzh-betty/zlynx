@@ -11,36 +11,21 @@
 
 namespace zhttp {
 namespace detail {
-void run_servers(const ServerConfig &config, const ServerFactory &factory) {
-    auto run_server = [&config, &factory](int /*argc*/,
-                                          char ** /*argv*/) -> int {
+void run_server(const ServerConfig &config, const ServerFactory &factory) {
+    auto serve = [&config, &factory](int /*argc*/, char ** /*argv*/) -> int {
         try {
-            const ServerPair servers = factory();
-            auto server = servers.first;
-            auto redirect_server = servers.second;
+            // 在 daemon 回调中创建服务，保证守护模式下资源在 fork 后初始化。
+            auto server = factory();
             ZHTTP_LOG_INFO("Server starting on {}:{}", config.host,
                            config.port);
-
-            if (redirect_server) {
-                ZHTTP_LOG_INFO(
-                    "Redirect server starting on {}:{} (http -> https)",
-                    config.host, config.redirect_http_port);
-                if (!redirect_server->start()) {
-                    ZHTTP_LOG_ERROR("Redirect server failed to start on {}:{}",
-                                    config.host, config.redirect_http_port);
-                    return -1;
-                }
-            }
 
             if (!server->start()) {
                 ZHTTP_LOG_ERROR("Server failed to start on {}:{}", config.host,
                                 config.port);
-                if (redirect_server) {
-                    redirect_server->stop();
-                }
                 return -1;
             }
 
+            // 信号处理只设置停止标志，实际关闭连接由正常执行路径完成。
             while (!Daemon::should_stop()) {
                 std::this_thread::sleep_for(std::chrono::seconds(1));
             }
@@ -48,11 +33,6 @@ void run_servers(const ServerConfig &config, const ServerFactory &factory) {
             ZHTTP_LOG_INFO("Server stopping on {}:{}", config.host,
                            config.port);
             server->stop();
-            if (redirect_server) {
-                ZHTTP_LOG_INFO("Redirect server stopping on {}:{}", config.host,
-                               config.redirect_http_port);
-                redirect_server->stop();
-            }
             return 0;
         } catch (const std::exception &ex) {
             ZHTTP_LOG_ERROR("Server run failed: {}", ex.what());
@@ -64,7 +44,7 @@ void run_servers(const ServerConfig &config, const ServerFactory &factory) {
     };
 
     int rc =
-        Daemon::start_daemon(0, nullptr, std::move(run_server), config.daemon);
+        Daemon::start_daemon(0, nullptr, std::move(serve), config.daemon);
     if (rc != 0) {
         throw std::runtime_error("Server exited with code " +
                                  std::to_string(rc));

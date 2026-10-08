@@ -169,7 +169,7 @@ TEST(ServerConfigTest, BuilderSupportsExceptionHandlerChaining) {
     EXPECT_EQ(&ref, &builder);
 }
 
-TEST(ServerConfigTest, LoadsHttpsRedirectOptionsFromTomlFile) {
+TEST(ServerConfigTest, LoadsHttpsOptionsFromTomlFile) {
     TempTomlFile config_file(R"(
 [server]
 host = "127.0.0.1"
@@ -182,19 +182,17 @@ count = 1
 enabled = true
 cert_file = "/tmp/server.crt"
 key_file = "/tmp/server.key"
-force_http_to_https = true
-redirect_http_port = 18080
 )");
 
     const zhttp::ServerConfig config =
         zhttp::ServerConfig::from_toml(config_file.path());
 
     EXPECT_TRUE(config.enable_https);
-    EXPECT_TRUE(config.force_http_to_https);
-    EXPECT_EQ(config.redirect_http_port, 18080);
+    EXPECT_EQ(config.cert_file, "/tmp/server.crt");
+    EXPECT_EQ(config.key_file, "/tmp/server.key");
 }
 
-TEST(ServerConfigTest, SupportsHttpsRedirectAndSharedStackMode) {
+TEST(ServerConfigTest, SupportsHttpsAndSharedStackMode) {
     TempTomlFile config_file(R"(
 [server]
 port = 19443
@@ -210,8 +208,6 @@ stack_mode = "SHARED"
 enabled = true
 cert_file = "/tmp/cert.pem"
 key_file = "/tmp/key.pem"
-force_http_to_https = true
-redirect_http_port = 19080
 )");
 
     const zhttp::ServerConfig config =
@@ -224,8 +220,6 @@ redirect_http_port = 19080
     EXPECT_EQ(config.num_threads, 3U);
     EXPECT_EQ(config.stack_mode, zco::StackModel::kShared);
     EXPECT_TRUE(config.enable_https);
-    EXPECT_TRUE(config.force_http_to_https);
-    EXPECT_EQ(config.redirect_http_port, 19080);
 }
 
 TEST(ServerConfigTest, UsesDefaultsWhenSectionsAreMissing) {
@@ -250,8 +244,8 @@ port = 70000
                  std::runtime_error);
 
     TempTomlFile negative_port_file(R"(
-[ssl]
-redirect_http_port = -1
+[server]
+port = -1
 )");
     EXPECT_THROW(
         (void)zhttp::ServerConfig::from_toml(negative_port_file.path()),
@@ -266,15 +260,6 @@ count = -1
         std::runtime_error);
 }
 
-TEST(ServerConfigTest, RejectsHttpsRedirectWhenHttpsIsDisabled) {
-    zhttp::ServerConfig config;
-    config.enable_https = false;
-    config.force_http_to_https = true;
-    config.redirect_http_port = 8080;
-
-    EXPECT_FALSE(config.validate());
-}
-
 TEST(ServerConfigTest, ValidateRejectsHttpsMissingCertificateOrKey) {
     zhttp::ServerConfig missing_cert;
     missing_cert.enable_https = true;
@@ -287,46 +272,22 @@ TEST(ServerConfigTest, ValidateRejectsHttpsMissingCertificateOrKey) {
     EXPECT_FALSE(missing_key.validate());
 }
 
-TEST(ServerConfigTest, ValidateRejectsRedirectPortLoopAndHomepageLoop) {
-    zhttp::ServerConfig same_port;
-    same_port.enable_https = true;
-    same_port.cert_file = "/tmp/c.pem";
-    same_port.key_file = "/tmp/k.pem";
-    same_port.force_http_to_https = true;
-    same_port.redirect_http_port = same_port.port;
-    EXPECT_FALSE(same_port.validate());
-
-    zhttp::ServerConfig zero_redirect = same_port;
-    zero_redirect.redirect_http_port = 0;
-    EXPECT_FALSE(zero_redirect.validate());
-
-    zhttp::ServerConfig bad_homepage = same_port;
-    bad_homepage.force_http_to_https = false;
+TEST(ServerConfigTest, ValidateRejectsHomepageLoop) {
+    zhttp::ServerConfig bad_homepage;
     bad_homepage.homepage = "/home";
     EXPECT_FALSE(bad_homepage.validate());
 }
 
-TEST(ServerConfigTest, ValidateAcceptsWellFormedHttpsAndRedirectConfig) {
+TEST(ServerConfigTest, ValidateAcceptsWellFormedHttpsConfig) {
     zhttp::ServerConfig config;
     config.port = 19443;
     config.num_threads = 2;
     config.enable_https = true;
     config.cert_file = "/tmp/server.crt";
     config.key_file = "/tmp/server.key";
-    config.force_http_to_https = true;
-    config.redirect_http_port = 18080;
     config.homepage = "/welcome";
 
     EXPECT_TRUE(config.validate());
-}
-
-TEST(ServerConfigTest, BuilderSupportsHttpsRedirectChaining) {
-    zhttp::HttpServerBuilder builder;
-
-    builder.force_https_redirect(true, 18080);
-
-    EXPECT_TRUE(builder.config().force_http_to_https);
-    EXPECT_EQ(builder.config().redirect_http_port, 18080);
 }
 
 TEST(ServerConfigTest, LoadsLogLevelFromTomlFile) {
