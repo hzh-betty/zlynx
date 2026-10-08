@@ -4,7 +4,6 @@
  * @author hzh-betty
  */
 
-#include "zco/zco_logger.h"
 #include "znet/address.h"
 #include "znet/buffer.h"
 #include "znet/tcp_connection.h"
@@ -566,8 +565,10 @@ int run_server_process(const BenchConfig &cfg, const int ready_fd) {
 
     auto address = std::make_shared<znet::IPv4Address>(
         "127.0.0.1", static_cast<uint16_t>(cfg.port));
-    auto server = std::make_shared<znet::TcpServer>(address, 4096);
-    server->set_thread_count(cfg.server_threads);
+    zco::RuntimeOptions runtime_options;
+    runtime_options.worker_count = cfg.server_threads;
+    zco::Runtime runtime(runtime_options);
+    auto server = std::make_shared<znet::TcpServer>(runtime, address, 4096);
     server->set_read_timeout(100);
     server->set_write_timeout(1000);
 

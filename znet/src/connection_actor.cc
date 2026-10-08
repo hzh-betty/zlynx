@@ -1,22 +1,18 @@
 #include "znet/internal/connection_actor.h"
 
-#include "zco/sched.h"
+#include "zco/coroutine.h"
 #include <errno.h>
 #include <utility>
 
 namespace znet {
 namespace detail {
-ConnectionActor::ConnectionActor(zco::Scheduler *scheduler, Handler handler,
+ConnectionActor::ConnectionActor(zco::Executor scheduler, Handler handler,
                                  KeepAlive keep_alive)
     : handler_(std::move(handler)), keep_alive_(std::move(keep_alive)),
       scheduler_(scheduler) {
-    if (!scheduler_) {
-        scheduler_ = zco::next_sched();
-        if (!scheduler_)
-            scheduler_ = zco::main_sched();
-    }
-    if (scheduler_)
-        sched_id_ = scheduler_->id();
+    if (!scheduler_.valid())
+        throw std::invalid_argument("ConnectionActor requires a live executor");
+    sched_id_ = static_cast<int>(scheduler_.index());
 }
 
 ssize_t ConnectionActor::dispatch(const EventPtr &event) {
@@ -27,6 +23,7 @@ ssize_t ConnectionActor::dispatch(const EventPtr &event) {
 
     // actor 尚未运行时，需要决定谁来启动 drain。
     bool should_launch_worker = false;
+    uint64_t generation = 0;
 
     // 当前就在目标协程调度器上时，可直接 inline 处理，
     // 避免“再派发一个协程”带来的额外调度开销。
@@ -38,15 +35,18 @@ ssize_t ConnectionActor::dispatch(const EventPtr &event) {
     bool reentrant = false;
     {
         std::unique_lock<std::mutex> lock(mutex_);
-        if (running_ && coroutine_ != nullptr &&
-            coroutine_ == zco::current_coroutine()) {
+        if (running_ && bool(coroutine_) &&
+            coroutine_ == zco::current_task_id()) {
             reentrant = true;
         } else {
             mailbox_.push_back(event);
             if (!running_) {
                 running_ = true;
+                generation = ++generation_;
                 if (zco::in_coroutine() &&
-                    (sched_id_ < 0 || zco::sched_id() == sched_id_)) {
+                    (zco::current_executor().same_runtime(scheduler_) &&
+                     static_cast<int>(zco::current_executor().index()) ==
+                         sched_id_)) {
                     run_inline = true;
                 } else {
                     should_launch_worker = true;
@@ -67,15 +67,30 @@ ssize_t ConnectionActor::dispatch(const EventPtr &event) {
         drain();
     } else if (should_launch_worker) {
         std::shared_ptr<void> owner = keep_alive_();
-        if (scheduler_) {
-            scheduler_->go([this, owner]() { drain(); });
-        } else {
-            zco::go([this, owner]() { drain(); });
+        auto lifetime = std::shared_ptr<void>(
+            owner.get(),
+            [this, owner, generation](void *) { cancel_pending(generation); });
+        auto submitted = scheduler_.spawn([this, lifetime]() { drain(); });
+        if (!submitted) {
+            std::unique_lock<std::mutex> lock(mutex_);
+            running_ = false;
+            for (auto &pending : mailbox_) {
+                pending->error = submitted.error().value();
+                pending->result = -1;
+                pending->completion.signal();
+            }
+            mailbox_.clear();
         }
     }
 
-    event->completion.wait();
+    auto completed = event->completion.wait();
+    if (!completed) {
+        errno = completed.error().value();
+        return -1;
+    }
 
+    if (event->exception)
+        std::rethrow_exception(event->exception);
     if (event->error != 0) {
         errno = event->error;
     }
@@ -87,7 +102,8 @@ bool ConnectionActor::try_begin_inline() {
         return false;
     }
 
-    if (sched_id_ >= 0 && zco::sched_id() != sched_id_) {
+    if (!zco::current_executor().same_runtime(scheduler_) ||
+        static_cast<int>(zco::current_executor().index()) != sched_id_) {
         return false;
     }
 
@@ -97,7 +113,7 @@ bool ConnectionActor::try_begin_inline() {
     }
 
     running_ = true;
-    coroutine_ = zco::current_coroutine();
+    coroutine_ = zco::current_task_id();
     return true;
 }
 
@@ -106,7 +122,7 @@ void ConnectionActor::finish_inline() { drain(); }
 void ConnectionActor::drain() {
     {
         std::unique_lock<std::mutex> lock(mutex_);
-        coroutine_ = zco::current_coroutine();
+        coroutine_ = zco::current_task_id();
     }
 
     while (true) {
@@ -116,16 +132,36 @@ void ConnectionActor::drain() {
             if (mailbox_.empty()) {
                 // 邮箱耗尽后释放 running_，下一个事件可重新拉起 worker。
                 running_ = false;
-                coroutine_ = nullptr;
+                coroutine_ = {};
                 return;
             }
             event = mailbox_.front();
             mailbox_.pop_front();
         }
 
-        handler_(event);
+        try {
+            handler_(event);
+        } catch (...) {
+            event->exception = std::current_exception();
+            event->result = -1;
+            event->error = EIO;
+        }
         event->completion.signal();
     }
+}
+
+void ConnectionActor::cancel_pending(uint64_t generation) {
+    std::unique_lock<std::mutex> lock(mutex_);
+    if (!running_ || generation != generation_)
+        return;
+    running_ = false;
+    coroutine_ = {};
+    for (auto &event : mailbox_) {
+        event->result = -1;
+        event->error = ECANCELED;
+        event->completion.signal();
+    }
+    mailbox_.clear();
 }
 
 } // 命名空间 detail

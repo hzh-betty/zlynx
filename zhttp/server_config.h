@@ -12,7 +12,7 @@
 #include <cstdint>
 #include <string>
 
-#include "zco/sched.h"
+#include "zco/coroutine.h"
 
 namespace zhttp {
 

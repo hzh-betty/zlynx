@@ -21,9 +21,7 @@
 #include "znet/internal/noncopyable.h"
 #include "znet/socket.h"
 
-namespace zco {
-class Scheduler;
-}
+#include "zco/runtime.h"
 
 namespace znet {
 namespace detail {
@@ -60,8 +58,7 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>,
         kDisconnecting = 3,
     };
 
-    explicit TcpConnection(Socket::ptr socket,
-                           zco::Scheduler *actor_scheduler = nullptr);
+    explicit TcpConnection(Socket::ptr socket, zco::Executor actor_scheduler);
 
     ~TcpConnection();
 
@@ -126,7 +123,7 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>,
     bool enable_tls_server(const std::shared_ptr<TlsContext> &tls_context,
                            uint32_t handshake_timeout_ms);
 
-    bool wait_tls_io(bool wait_for_write, uint32_t timeout_ms);
+    bool wait_tls_io(bool wait_for_write, zco::Deadline deadline);
 
     using EventType = detail::ConnectionEventType;
     using Event = detail::ConnectionEvent;

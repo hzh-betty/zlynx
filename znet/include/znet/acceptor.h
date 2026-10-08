@@ -10,7 +10,9 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <mutex>
 
+#include "zco/runtime.h"
 #include "znet/address.h"
 #include "znet/internal/noncopyable.h"
 #include "znet/socket.h"
@@ -39,7 +41,8 @@ class Acceptor : public std::enable_shared_from_this<Acceptor>,
      * @param listen_address 监听地址（IP + port）。
      * @param backlog 内核监听队列长度。
      */
-    explicit Acceptor(Address::ptr listen_address, int backlog = SOMAXCONN);
+    explicit Acceptor(zco::Executor executor, Address::ptr listen_address,
+                      int backlog = SOMAXCONN);
     ~Acceptor();
 
     /**
@@ -74,7 +77,10 @@ class Acceptor : public std::enable_shared_from_this<Acceptor>,
     /**
      * @brief 获取监听 socket。
      */
-    Socket::ptr listen_socket() const { return listen_socket_; }
+    Socket::ptr listen_socket() const {
+        std::lock_guard<std::mutex> lock(listen_mutex_);
+        return listen_socket_;
+    }
 
   private:
     /**
@@ -88,8 +94,11 @@ class Acceptor : public std::enable_shared_from_this<Acceptor>,
     void accept_loop();
 
   private:
+    zco::Executor executor_;
+    zco::TaskHandle task_;
     Address::ptr listen_address_;
     int backlog_; // 监听队列长度
+    mutable std::mutex listen_mutex_;
     Socket::ptr listen_socket_;
     AcceptCallback accept_callback_;
     std::atomic<bool> running_{false};

@@ -5,16 +5,15 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <exception>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <sys/types.h>
 
-#include "zco/event.h"
+#include "zco/coroutine.h"
+#include "zco/sync/event.h"
 
-namespace zco {
-class Scheduler;
-}
 namespace znet {
 namespace detail {
 
@@ -35,6 +34,7 @@ struct ConnectionEvent {
     std::string payload;
     ssize_t result = 0;
     int error = 0;
+    std::exception_ptr exception;
     zco::Event completion;
 };
 
@@ -45,7 +45,7 @@ class ConnectionActor {
     using Handler = std::function<void(const EventPtr &)>;
     using KeepAlive = std::function<std::shared_ptr<void>()>;
 
-    ConnectionActor(zco::Scheduler *scheduler, Handler handler,
+    ConnectionActor(zco::Executor scheduler, Handler handler,
                     KeepAlive keep_alive);
     ssize_t dispatch(const EventPtr &event);
     bool try_begin_inline();
@@ -54,13 +54,15 @@ class ConnectionActor {
 
   private:
     void drain();
+    void cancel_pending(uint64_t generation);
     Handler handler_;
     KeepAlive keep_alive_;
     std::mutex mutex_;
     std::deque<EventPtr> mailbox_;
     bool running_ = false;
-    void *coroutine_ = nullptr;
-    zco::Scheduler *scheduler_;
+    uint64_t generation_ = 0;
+    zco::TaskId coroutine_{};
+    zco::Executor scheduler_;
     int sched_id_ = -1;
 };
 

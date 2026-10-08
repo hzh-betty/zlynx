@@ -15,7 +15,7 @@
 #include "znet/address.h"
 #include "znet/internal/noncopyable.h"
 
-#include "zco/hook.h"
+#include "zco/io/operations.h"
 
 namespace znet {
 
@@ -52,7 +52,9 @@ class Socket : public NonCopyable {
     /**
      * @brief 获取 socket fd
      */
-    int fd() const { return sockfd_; }
+    const zco::io::Descriptor &descriptor() const { return descriptor_; }
+
+    int fd() const { return descriptor_.native_handle(); }
 
     /**
      * @brief 获取地址族
@@ -67,7 +69,7 @@ class Socket : public NonCopyable {
     /**
      * @brief socket 是否有效
      */
-    bool is_valid() const { return sockfd_ != -1; }
+    bool is_valid() const { return fd() != -1; }
 
     /**
      * @brief 创建 TCP Socket (IPv4)
@@ -104,8 +106,8 @@ class Socket : public NonCopyable {
 
     /**
      * @brief 接受连接
-     * @param timeout_ms 接收超时（毫秒），0 表示无限等待
-     * @note 必须在协程 go 上下文中调用
+     * @param timeout_ms 接收超时（毫秒），0 使用内核默认超时（未设置时无限等待）
+     * @note 必须在 Runtime 的协程任务内调用
      * @return 新连接的 Socket，失败返回 nullptr
      */
     Socket::ptr accept(uint64_t timeout_ms = 0);
@@ -113,8 +115,8 @@ class Socket : public NonCopyable {
     /**
      * @brief 连接到远端地址
      * @param addr 远端地址
-     * @param timeout_ms 超时时间（毫秒），0 表示无限等待
-     * @note 必须在协程 go 上下文中调用
+     * @param timeout_ms 超时时间（毫秒），0 使用内核默认超时（未设置时无限等待）
+     * @note 必须在 Runtime 的协程任务内调用
      * @return 成功返回 true
      */
     bool connect(const Address::ptr addr, uint64_t timeout_ms = 0);
@@ -141,9 +143,9 @@ class Socket : public NonCopyable {
      * @param buffer 数据缓冲区
      * @param length 数据长度
      * @param flags 发送标志
-     * @param timeout_ms 本次发送超时（毫秒），0 表示无限等待
-     * @note 必须在协程 go 上下文中调用
-     * @return 发送的字节数，-1 表示错误
+     * @param timeout_ms 本次发送超时（毫秒），0 使用内核默认超时（未设置时无限等待）
+     * @note 必须在 Runtime 的协程任务内调用
+     * @return 实际发送字节数，可有部分进度；无进展错误返回 -1
      */
     ssize_t send(const void *buffer, size_t length, int flags = 0,
                  uint64_t timeout_ms = 0);
@@ -153,8 +155,8 @@ class Socket : public NonCopyable {
      * @param buffer 接收缓冲区
      * @param length 缓冲区长度
      * @param flags 接收标志
-     * @param timeout_ms 本次接收超时（毫秒），0 表示无限等待
-     * @note 必须在协程 go 上下文中调用
+     * @param timeout_ms 本次接收超时（毫秒），0 使用内核默认超时（未设置时无限等待）
+     * @note 必须在 Runtime 的协程任务内调用
      * @return 接收的字节数，-1 表示错误，0 表示连接关闭
      */
     ssize_t recv(void *buffer, size_t length, int flags = 0,
@@ -162,18 +164,19 @@ class Socket : public NonCopyable {
 
     /**
      * @brief 发送数据到指定地址 (UDP)
-     * @param timeout_ms 本次发送超时（毫秒），0 表示无限等待
-     * @note 必须在协程 go 上下文中调用
+     * @param timeout_ms 本次发送超时（毫秒），0 使用内核默认超时（未设置时无限等待）
+     * @note 必须在 Runtime 的协程任务内调用
      */
     ssize_t send_to(const void *buffer, size_t length, const Address::ptr to,
                     int flags = 0, uint64_t timeout_ms = 0);
 
     /**
      * @brief 从指定地址接收数据 (UDP)
-     * @param timeout_ms 本次接收超时（毫秒），0 表示无限等待
-     * @note 必须在协程 go 上下文中调用
+     * @param from 可选来源地址输出
+     * @param timeout_ms 本次接收超时（毫秒），0 使用内核默认超时（未设置时无限等待）
+     * @note 必须在 Runtime 的协程任务内调用
      */
-    ssize_t recv_from(void *buffer, size_t length, Address::ptr from,
+    ssize_t recv_from(void *buffer, size_t length, Address::ptr *from,
                       int flags = 0, uint64_t timeout_ms = 0);
 
     /**
@@ -184,8 +187,8 @@ class Socket : public NonCopyable {
      */
     template <typename T>
     bool set_option(int level, int option, const T &value) {
-        return zco::co_setsockopt(sockfd_, level, option, &value,
-                                  static_cast<socklen_t>(sizeof(T))) == 0;
+        return ::setsockopt(fd(), level, option, &value,
+                            static_cast<socklen_t>(sizeof(T))) == 0;
     }
 
     /**
@@ -193,7 +196,7 @@ class Socket : public NonCopyable {
      */
     template <typename T> bool get_option(int level, int option, T *value) {
         socklen_t len = sizeof(T);
-        return zco::co_getsockopt(sockfd_, level, option, value, &len) == 0;
+        return ::getsockopt(fd(), level, option, value, &len) == 0;
     }
 
     /**
@@ -258,7 +261,7 @@ class Socket : public NonCopyable {
     bool new_sock();
 
   private:
-    int sockfd_;   // socket 文件描述符
+    zco::io::Descriptor descriptor_;
     int family_;   // 地址族
     int type_;     // socket 类型
     int protocol_; // 协议

@@ -41,7 +41,8 @@ class TcpServer : public std::enable_shared_from_this<TcpServer>,
     using ptr = std::shared_ptr<TcpServer>;
     using ConnectionMap = std::unordered_map<int, TcpConnection::ptr>;
 
-    explicit TcpServer(Address::ptr listen_address, int backlog = SOMAXCONN);
+    explicit TcpServer(zco::Runtime &runtime, Address::ptr listen_address,
+                       int backlog = SOMAXCONN);
     ~TcpServer() = default;
 
     bool start();
@@ -49,7 +50,6 @@ class TcpServer : public std::enable_shared_from_this<TcpServer>,
 
     bool is_running() const { return running_.load(std::memory_order_acquire); }
 
-    void set_thread_count(int thread_count) { thread_count_ = thread_count; }
 
     void set_on_message(MessageCallback callback) {
         on_message_callback_ = std::move(callback);
@@ -128,7 +128,8 @@ class TcpServer : public std::enable_shared_from_this<TcpServer>,
     uint32_t write_timeout_ms_;
     uint64_t keepalive_timeout_ms_;
 
-    int thread_count_;
+    zco::Runtime &runtime_;
+    std::atomic<size_t> next_worker_{0};
 
     mutable std::mutex connections_mutex_;
     ConnectionMap connections_;

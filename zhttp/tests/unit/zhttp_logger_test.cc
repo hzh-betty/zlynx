@@ -1,6 +1,5 @@
 #include "zhttp/zhttp_logger.h"
 
-#include "zco/zco_logger.h"
 #include "znet/znet_logger.h"
 
 #include <gtest/gtest.h>
@@ -45,13 +44,9 @@ TEST(ZhttpLoggerTest, InitLoggerRefreshesCachedLogger) {
 TEST(ZhttpLoggerTest, InitLoggerAlsoInitializesDependencies) {
     zhttp::init_logger(zlog::LogLevel::value::WARNING);
 
-    zlog::Logger::ptr co_logger = zco::get_logger_ptr();
     zlog::Logger::ptr net_logger = znet::get_logger_ptr();
-    ASSERT_NE(co_logger, nullptr);
     ASSERT_NE(net_logger, nullptr);
-    EXPECT_EQ(co_logger->get_name(), "zco_logger");
     EXPECT_EQ(net_logger->get_name(), "znet_logger");
-    EXPECT_NE(dynamic_cast<zlog::AsyncLogger *>(co_logger.get()), nullptr);
     EXPECT_NE(dynamic_cast<zlog::AsyncLogger *>(net_logger.get()), nullptr);
 }
 

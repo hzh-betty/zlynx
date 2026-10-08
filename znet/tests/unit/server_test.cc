@@ -11,22 +11,21 @@
 
 #include "znet/znet_logger.h"
 
-#include "zco/sched.h"
+#include "zco/coroutine.h"
 
 namespace znet {
 namespace {
 
 class TcpServerLifecycleUnitTest : public ::testing::Test {
   public:
-    void TearDown() override { zco::shutdown(); }
+    void TearDown() override {}
 };
 
 TEST_F(TcpServerLifecycleUnitTest, StartStopTransitionsState) {
-    zco::init(2);
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     auto server = std::make_shared<TcpServer>(
-        std::make_shared<IPv4Address>("127.0.0.1", 0), 16);
+        runtime, std::make_shared<IPv4Address>("127.0.0.1", 0), 16);
     ASSERT_NE(server, nullptr);
-    server->set_thread_count(1);
 
     EXPECT_FALSE(server->is_running());
     EXPECT_TRUE(server->start());
@@ -37,9 +36,9 @@ TEST_F(TcpServerLifecycleUnitTest, StartStopTransitionsState) {
 }
 
 TEST_F(TcpServerLifecycleUnitTest, FailedStartRollsBackRunningState) {
-    auto server = std::make_shared<TcpServer>(Address::ptr{}, 16);
+    zco::Runtime runtime(zco::RuntimeOptions{2});
+    auto server = std::make_shared<TcpServer>(runtime, Address::ptr{}, 16);
     ASSERT_NE(server, nullptr);
-    server->set_thread_count(1);
 
     EXPECT_FALSE(server->start());
     EXPECT_FALSE(server->is_running());
@@ -49,11 +48,10 @@ TEST_F(TcpServerLifecycleUnitTest, FailedStartRollsBackRunningState) {
 }
 
 TEST_F(TcpServerLifecycleUnitTest, RepeatedStartStopIsIdempotent) {
-    zco::init(1);
+    zco::Runtime runtime(zco::RuntimeOptions{1});
     auto server = std::make_shared<TcpServer>(
-        std::make_shared<IPv4Address>("127.0.0.1", 0), 16);
+        runtime, std::make_shared<IPv4Address>("127.0.0.1", 0), 16);
     ASSERT_NE(server, nullptr);
-    server->set_thread_count(1);
 
     EXPECT_TRUE(server->start());
     EXPECT_TRUE(server->start());
@@ -62,6 +60,23 @@ TEST_F(TcpServerLifecycleUnitTest, RepeatedStartStopIsIdempotent) {
     server->stop();
     server->stop();
     EXPECT_FALSE(server->is_running());
+}
+
+TEST_F(TcpServerLifecycleUnitTest, StoppingOneServerDoesNotStopSharedRuntime) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
+    auto first = std::make_shared<TcpServer>(
+        runtime, std::make_shared<IPv4Address>("127.0.0.1", 0));
+    auto second = std::make_shared<TcpServer>(
+        runtime, std::make_shared<IPv4Address>("127.0.0.1", 0));
+    ASSERT_TRUE(first->start());
+    ASSERT_TRUE(second->start());
+    first->stop();
+    EXPECT_TRUE(second->is_running());
+    EXPECT_TRUE(runtime.executor(0).valid());
+    auto task = runtime.spawn([] {});
+    ASSERT_TRUE(task);
+    EXPECT_TRUE(task.value().join());
+    second->stop();
 }
 
 } // namespace

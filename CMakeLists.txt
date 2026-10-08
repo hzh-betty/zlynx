@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.18)
 
 project(zlynx
-    VERSION 1.0.0
+    VERSION 2.0.0
     DESCRIPTION "Coroutine-based high-performance network component libraries"
     LANGUAGES CXX
 )

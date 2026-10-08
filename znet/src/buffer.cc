@@ -11,7 +11,7 @@
 #include <cerrno>
 #include <cstring>
 
-#include "zco/hook.h"
+#include "zco/io/operations.h"
 
 #include "znet/socket.h"
 
@@ -127,10 +127,21 @@ ssize_t Buffer::read_from_socket(const std::shared_ptr<Socket> &socket,
     }
 
     ensure_writable_bytes(max_read_bytes);
-    const uint32_t effective_timeout_ms =
-        timeout_ms == 0 ? zco::kInfiniteTimeoutMs : timeout_ms;
-    const ssize_t n = zco::co_read(socket->fd(), begin_write(), max_read_bytes,
-                                   effective_timeout_ms);
+    auto deadline = timeout_ms
+                        ? zco::Result<zco::Deadline>(zco::Deadline::after(
+                              std::chrono::milliseconds(timeout_ms)))
+                        : zco::io::socket_deadline(socket->descriptor(), true);
+    if (!deadline) {
+        errno = deadline.error().value();
+        if (saved_errno)
+            *saved_errno = errno;
+        return -1;
+    }
+    auto result = zco::io::read_some(socket->descriptor(), begin_write(),
+                                     max_read_bytes, deadline.value());
+    if (result.error)
+        errno = result.error.value();
+    const ssize_t n = result.error ? -1 : static_cast<ssize_t>(result.bytes);
     if (n < 0) {
         if (saved_errno) {
             *saved_errno = errno;

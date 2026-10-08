@@ -22,15 +22,15 @@
 
 #include "znet/znet_logger.h"
 
-#include "zco/sched.h"
-#include "zco/wait_group.h"
+#include "zco/coroutine.h"
+#include "zco/sync/wait_group.h"
 
 namespace znet {
 namespace {
 
 class AcceptorUnitTest : public ::testing::Test {
   protected:
-    void TearDown() override { zco::shutdown(); }
+    void TearDown() override {}
 };
 
 int connect_loopback(uint16_t port) {
@@ -56,7 +56,9 @@ int connect_loopback(uint16_t port) {
 }
 
 TEST_F(AcceptorUnitTest, StartFailsWhenListenAddressIsNull) {
-    auto acceptor = std::make_shared<Acceptor>(Address::ptr{}, 8);
+    zco::Runtime runtime(zco::RuntimeOptions{2});
+    auto acceptor =
+        std::make_shared<Acceptor>(runtime.executor(0), Address::ptr{}, 8);
     ASSERT_NE(acceptor, nullptr);
 
     EXPECT_FALSE(acceptor->start());
@@ -64,15 +66,18 @@ TEST_F(AcceptorUnitTest, StartFailsWhenListenAddressIsNull) {
 }
 
 TEST_F(AcceptorUnitTest, StartOnStackInstanceFailsBadWeakPtr) {
-    Acceptor acceptor(std::make_shared<IPv4Address>("127.0.0.1", 0), 8);
+    zco::Runtime runtime(zco::RuntimeOptions{2});
+    Acceptor acceptor(runtime.executor(0),
+                      std::make_shared<IPv4Address>("127.0.0.1", 0), 8);
     EXPECT_FALSE(acceptor.start());
     EXPECT_FALSE(acceptor.is_running());
 }
 
 TEST_F(AcceptorUnitTest, StartFailsWhenBindOrListenFails) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     // AF_UNIX 地址走 TCP 创建路径会导致 bind/listen 失败，覆盖失败回滚分支。
-    auto acceptor =
-        std::make_shared<Acceptor>(std::make_shared<UnixAddress>(""), 8);
+    auto acceptor = std::make_shared<Acceptor>(
+        runtime.executor(0), std::make_shared<UnixAddress>(""), 8);
     ASSERT_NE(acceptor, nullptr);
 
     EXPECT_FALSE(acceptor->start());
@@ -80,10 +85,10 @@ TEST_F(AcceptorUnitTest, StartFailsWhenBindOrListenFails) {
 }
 
 TEST_F(AcceptorUnitTest, StartStopAreIdempotent) {
-    zco::init(1);
+    zco::Runtime runtime(zco::RuntimeOptions{1});
 
     auto acceptor = std::make_shared<Acceptor>(
-        std::make_shared<IPv4Address>("127.0.0.1", 0), 8);
+        runtime.executor(0), std::make_shared<IPv4Address>("127.0.0.1", 0), 8);
     ASSERT_NE(acceptor, nullptr);
     ASSERT_TRUE(acceptor->start());
     ASSERT_TRUE(acceptor->start());
@@ -96,10 +101,10 @@ TEST_F(AcceptorUnitTest, StartStopAreIdempotent) {
 }
 
 TEST_F(AcceptorUnitTest, AcceptCallbackReceivesClientSocket) {
-    zco::init(2);
+    zco::Runtime runtime(zco::RuntimeOptions{2});
 
     auto acceptor = std::make_shared<Acceptor>(
-        std::make_shared<IPv4Address>("127.0.0.1", 0), 8);
+        runtime.executor(0), std::make_shared<IPv4Address>("127.0.0.1", 0), 8);
     ASSERT_NE(acceptor, nullptr);
 
     std::atomic<int> accepted_count{0};
@@ -132,10 +137,10 @@ TEST_F(AcceptorUnitTest, AcceptCallbackReceivesClientSocket) {
 }
 
 TEST_F(AcceptorUnitTest, NullCallbackPathDoesNotBlockStop) {
-    zco::init(1);
+    zco::Runtime runtime(zco::RuntimeOptions{1});
 
     auto acceptor = std::make_shared<Acceptor>(
-        std::make_shared<IPv4Address>("127.0.0.1", 0), 8);
+        runtime.executor(0), std::make_shared<IPv4Address>("127.0.0.1", 0), 8);
     ASSERT_NE(acceptor, nullptr);
     ASSERT_TRUE(acceptor->start());
 
@@ -153,8 +158,9 @@ TEST_F(AcceptorUnitTest, NullCallbackPathDoesNotBlockStop) {
 }
 
 TEST_F(AcceptorUnitTest, AcceptLoopExitsWhenListenSocketBecomesNull) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     auto acceptor = std::make_shared<Acceptor>(
-        std::make_shared<IPv4Address>("127.0.0.1", 0), 8);
+        runtime.executor(0), std::make_shared<IPv4Address>("127.0.0.1", 0), 8);
     ASSERT_NE(acceptor, nullptr);
 
     acceptor->running_.store(true, std::memory_order_release);
@@ -163,8 +169,9 @@ TEST_F(AcceptorUnitTest, AcceptLoopExitsWhenListenSocketBecomesNull) {
 }
 
 TEST_F(AcceptorUnitTest, AcceptLoopHandlesGeneralAcceptErrorAndBackoff) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     auto acceptor = std::make_shared<Acceptor>(
-        std::make_shared<IPv4Address>("127.0.0.1", 0), 8);
+        runtime.executor(0), std::make_shared<IPv4Address>("127.0.0.1", 0), 8);
     ASSERT_NE(acceptor, nullptr);
 
     acceptor->listen_socket_ = Socket::create_tcp();
@@ -178,10 +185,10 @@ TEST_F(AcceptorUnitTest, AcceptLoopHandlesGeneralAcceptErrorAndBackoff) {
 }
 
 TEST_F(AcceptorUnitTest, AcceptLoopBreaksOnEbafdAfterAcceptFailure) {
-    zco::init(1);
+    zco::Runtime runtime(zco::RuntimeOptions{1});
 
     auto acceptor = std::make_shared<Acceptor>(
-        std::make_shared<IPv4Address>("127.0.0.1", 0), 8);
+        runtime.executor(0), std::make_shared<IPv4Address>("127.0.0.1", 0), 8);
     ASSERT_NE(acceptor, nullptr);
     acceptor->listen_socket_ = Socket::create_tcp();
     ASSERT_NE(acceptor->listen_socket_, nullptr);
@@ -189,7 +196,7 @@ TEST_F(AcceptorUnitTest, AcceptLoopBreaksOnEbafdAfterAcceptFailure) {
     acceptor->running_.store(true, std::memory_order_release);
 
     zco::WaitGroup done(1);
-    zco::go([&]() {
+    runtime.spawn([&]() {
         errno = EBADF;
         acceptor->accept_loop();
         done.done();

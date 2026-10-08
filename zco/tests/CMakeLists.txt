@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.18)
 
-find_package(GTest REQUIRED)
+if(BUILD_TESTING)
+    find_package(GTest REQUIRED)
+endif()
 find_package(Threads REQUIRED)
 
 set(zco_test_runtime zco)
@@ -11,8 +13,8 @@ endif()
 
 function(add_zco_gtest target_name src_file labels timeout_seconds)
     add_executable(${target_name} ${src_file})
-    target_link_libraries(${target_name} PRIVATE ${zco_test_runtime} GTest::gtest Threads::Threads zlynx_coverage_options)
-    target_include_directories(${target_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(${target_name} PRIVATE ${zco_test_runtime} GTest::gtest_main Threads::Threads zlynx_coverage_options)
+    target_include_directories(${target_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../src)
     add_test(NAME zco.${labels}.${target_name} COMMAND ${target_name})
     set_tests_properties(zco.${labels}.${target_name} PROPERTIES LABELS "${labels};total" TIMEOUT ${timeout_seconds})
 endfunction()
@@ -33,13 +35,10 @@ if(BUILD_TESTING)
         add_zco_gtest(${test_name} ${test_src} integration 45)
     endforeach()
 
-    if(TARGET hook_integration_test)
-        # hook_integration_test 依赖运行时和 socket 资源，串行执行可降低并发压力。
-        set_tests_properties(zco.integration.hook_integration_test PROPERTIES
-            RUN_SERIAL TRUE
-            RESOURCE_LOCK zco_runtime
-        )
-    endif()
+    target_link_libraries(runtime_lifecycle_test PRIVATE ${CMAKE_DL_LIBS})
+    target_link_options(runtime_lifecycle_test PRIVATE -Wl,--wrap=epoll_create1)
+    target_link_options(task_scheduling_test PRIVATE -Wl,--wrap=swapcontext -Wl,--wrap=getcontext -Wl,--wrap=_Znwm)
+
 endif()
 
 if(ZLYNX_BUILD_PERF_TESTS)
@@ -47,7 +46,8 @@ if(ZLYNX_BUILD_PERF_TESTS)
     foreach(perf_src ${ZCO_PERF_SOURCES})
         get_filename_component(perf_name ${perf_src} NAME_WE)
         zlynx_add_perf_target(${perf_name} ${perf_src} ${zco_test_runtime})
-        target_include_directories(${perf_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+        target_compile_definitions(${perf_name} PRIVATE ZCO_BENCHMARK_METRICS)
+        target_include_directories(${perf_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../src)
     endforeach()
 endif()
 

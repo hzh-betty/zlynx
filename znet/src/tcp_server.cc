@@ -11,7 +11,7 @@
 #include <string>
 #include <utility>
 
-#include "zco/sched.h"
+#include "zco/coroutine.h"
 
 #include "znet/socket.h"
 #include "znet/znet_logger.h"
@@ -33,13 +33,15 @@ bool is_peer_disconnect_errno(int err) {
 
 } // namespace
 
-TcpServer::TcpServer(Address::ptr listen_address, int backlog)
-    : acceptor_(std::make_shared<Acceptor>(std::move(listen_address), backlog)),
+TcpServer::TcpServer(zco::Runtime &runtime, Address::ptr listen_address,
+                     int backlog)
+    : acceptor_(std::make_shared<Acceptor>(runtime.executor(0),
+                                           std::move(listen_address), backlog)),
       on_message_callback_(), on_connection_callback_(), on_close_callback_(),
       on_write_complete_callback_(), tls_context_(),
       tls_handshake_timeout_ms_(10000), on_high_water_mark_callback_(),
       high_water_mark_(64 * 1024 * 1024), read_timeout_ms_(100),
-      write_timeout_ms_(0), keepalive_timeout_ms_(0), thread_count_(0),
+      write_timeout_ms_(0), keepalive_timeout_ms_(0), runtime_(runtime),
       connections_mutex_(), connections_(), running_(false) {}
 
 bool TcpServer::enable_tls(const std::string &cert_file,
@@ -99,12 +101,6 @@ bool TcpServer::do_start() {
         return false;
     }
 
-    // zco runtime 作为协程执行底座，在 accept 之前初始化。
-    zco::init(thread_count_);
-    ZNET_LOG_INFO(
-        "TcpServer::do_start initialized zco runtime: thread_count={}",
-        thread_count_);
-
     acceptor_->set_accept_callback(
         [this](Socket::ptr client) { handle_connection(std::move(client)); });
 
@@ -152,11 +148,12 @@ void TcpServer::handle_connection(Socket::ptr client) {
         return;
     }
 
-    zco::Scheduler *scheduler = zco::next_sched();
+    auto scheduler =
+        runtime_.executor(next_worker_.fetch_add(1) % runtime_.worker_count());
 
     ZNET_LOG_DEBUG(
         "TcpServer::handle_connection dispatch: client_fd={}, sched_id={}",
-        client->fd(), scheduler ? scheduler->id() : -1);
+        client->fd(), static_cast<int>(scheduler.index()));
 
     std::shared_ptr<TcpServer> self = shared_from_this();
     // 每个连接由一个协程串行处理，避免同一连接多协程并发读写。
@@ -243,7 +240,8 @@ void TcpServer::handle_connection(Socket::ptr client) {
                 continue;
             }
 
-            if (is_peer_disconnect_errno(read_err) || read_err == EBADF) {
+            if (is_peer_disconnect_errno(read_err) || read_err == EBADF ||
+                read_err == ECANCELED) {
                 ZNET_LOG_INFO(
                     "TcpServer::handle_connection disconnected by peer/error: "
                     "fd={}, errno={}",
@@ -267,13 +265,10 @@ void TcpServer::handle_connection(Socket::ptr client) {
                       connection->fd());
     };
 
-    if (!scheduler) {
-        // 无调度器时退化为当前线程直接执行，保证功能可用。
-        run_connection();
-        return;
-    }
-
-    scheduler->go(std::move(run_connection));
+    auto submitted = scheduler.spawn(std::move(run_connection));
+    if (!submitted)
+        ZNET_LOG_WARN("Connection submission rejected: {}",
+                      submitted.error().message());
 }
 
 void TcpServer::register_connection(const TcpConnection::ptr &connection) {

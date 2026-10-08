@@ -6,15 +6,13 @@
 
 #include "znet/znet_logger.h"
 
-#include "zco/zco_logger.h"
-
 #include "zlog/module_logger.h"
 
 namespace znet {
 
 namespace {
 
-zlog::ModuleLogger module_logger("znet_logger", zco::init_logger);
+zlog::ModuleLogger module_logger("znet_logger");
 
 } // namespace
 

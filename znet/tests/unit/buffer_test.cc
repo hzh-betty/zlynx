@@ -17,8 +17,8 @@
 
 #include "znet/znet_logger.h"
 
-#include "zco/sched.h"
-#include "zco/wait_group.h"
+#include "zco/coroutine.h"
+#include "zco/sync/wait_group.h"
 
 namespace znet {
 namespace {
@@ -27,6 +27,7 @@ namespace {
 class BufferUnitTest : public ::testing::Test {};
 
 TEST_F(BufferUnitTest, AppendAndRetrieveWorks) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     Buffer buffer;
     buffer.append("hello", 5);
     EXPECT_EQ(buffer.readable_bytes(), 5U);
@@ -37,6 +38,7 @@ TEST_F(BufferUnitTest, AppendAndRetrieveWorks) {
 }
 
 TEST_F(BufferUnitTest, AppendStringAndPeek) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     Buffer buffer;
     buffer.append(std::string("abc"));
     ASSERT_EQ(buffer.readable_bytes(), 3U);
@@ -44,6 +46,7 @@ TEST_F(BufferUnitTest, AppendStringAndPeek) {
 }
 
 TEST_F(BufferUnitTest, ReusesPrependSpaceWithoutCorruptingReadableData) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     Buffer buffer(8);
     buffer.append("12345678", 8);
     EXPECT_EQ(buffer.retrieve_as_string(5), "12345");
@@ -55,6 +58,7 @@ TEST_F(BufferUnitTest, ReusesPrependSpaceWithoutCorruptingReadableData) {
 }
 
 TEST_F(BufferUnitTest, FindCrLfReturnsExpectedPointer) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     Buffer with_crlf;
     with_crlf.append("abc\r\ndef", 8);
     const char *found = with_crlf.find_crlf();
@@ -67,6 +71,7 @@ TEST_F(BufferUnitTest, FindCrLfReturnsExpectedPointer) {
 }
 
 TEST_F(BufferUnitTest, RetrieveHandlesOutOfRangeLength) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     Buffer buffer;
     buffer.append("xyz", 3);
     buffer.retrieve(10);
@@ -75,6 +80,7 @@ TEST_F(BufferUnitTest, RetrieveHandlesOutOfRangeLength) {
 }
 
 TEST_F(BufferUnitTest, AppendNullOrEmptyInputIsNoop) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     Buffer buffer;
     buffer.append(static_cast<const void *>(nullptr), 5);
     buffer.append(static_cast<const char *>(nullptr), 5);
@@ -83,12 +89,14 @@ TEST_F(BufferUnitTest, AppendNullOrEmptyInputIsNoop) {
 }
 
 TEST_F(BufferUnitTest, RetrieveAsStringOnEmptyBufferReturnsEmptyString) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     Buffer buffer;
     EXPECT_EQ(buffer.retrieve_as_string(8), "");
     EXPECT_EQ(buffer.retrieve_all_as_string(), "");
 }
 
 TEST_F(BufferUnitTest, ReadFromSocketValidatesArguments) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     Buffer buffer;
     int saved_errno = 0;
 
@@ -112,6 +120,7 @@ TEST_F(BufferUnitTest, ReadFromSocketValidatesArguments) {
 }
 
 TEST_F(BufferUnitTest, WriteToSocketHandlesInvalidAndEmptyCases) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     Buffer buffer;
     int saved_errno = 0;
 
@@ -132,6 +141,7 @@ TEST_F(BufferUnitTest, WriteToSocketHandlesInvalidAndEmptyCases) {
 }
 
 TEST_F(BufferUnitTest, ReadFromSocketInvalidPathAllowsNullSavedErrno) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     Buffer buffer;
     errno = 0;
     EXPECT_EQ(buffer.read_from_socket(nullptr, 8, 10, nullptr), -1);
@@ -139,6 +149,7 @@ TEST_F(BufferUnitTest, ReadFromSocketInvalidPathAllowsNullSavedErrno) {
 }
 
 TEST_F(BufferUnitTest, WriteToSocketInvalidPathAllowsNullSavedErrno) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     Buffer buffer;
     errno = 0;
     EXPECT_EQ(buffer.write_to_socket(nullptr, 10, nullptr), -1);
@@ -146,6 +157,7 @@ TEST_F(BufferUnitTest, WriteToSocketInvalidPathAllowsNullSavedErrno) {
 }
 
 TEST_F(BufferUnitTest, ReadAndWriteDetectClosedSocketObjectAsBadFd) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     Buffer buffer;
     int saved_errno = 0;
 
@@ -170,7 +182,7 @@ TEST_F(BufferUnitTest, ReadAndWriteDetectClosedSocketObjectAsBadFd) {
 }
 
 TEST_F(BufferUnitTest, ReadTimeoutStoresSavedErrnoWhenReadFails) {
-    zco::init(1);
+    zco::Runtime runtime(zco::RuntimeOptions{1});
 
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
@@ -181,7 +193,7 @@ TEST_F(BufferUnitTest, ReadTimeoutStoresSavedErrnoWhenReadFails) {
     zco::WaitGroup done(1);
     std::atomic<int> captured_errno{0};
     std::atomic<int> saved_errno{0};
-    zco::go([&]() {
+    runtime.spawn([&]() {
         int local_saved_errno = 0;
         errno = 0;
         EXPECT_EQ(input.read_from_socket(reader, 4, 10, &local_saved_errno),
@@ -199,11 +211,12 @@ TEST_F(BufferUnitTest, ReadTimeoutStoresSavedErrnoWhenReadFails) {
 
     reader->close();
     ::close(pair[1]);
-    zco::shutdown();
+    runtime.request_stop();
+    runtime.join();
 }
 
 TEST_F(BufferUnitTest, ReadAndWriteSocketPathWorksInCoroutineContext) {
-    zco::init(1);
+    zco::Runtime runtime(zco::RuntimeOptions{1});
 
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
@@ -215,7 +228,7 @@ TEST_F(BufferUnitTest, ReadAndWriteSocketPathWorksInCoroutineContext) {
     output.append("hello", 5);
 
     zco::WaitGroup done(1);
-    zco::go([&]() {
+    runtime.spawn([&]() {
         int saved_errno = 0;
         EXPECT_EQ(::send(pair[1], "hello", 5, 0), 5);
         EXPECT_EQ(input.read_from_socket(reader, 5, 200, &saved_errno), 5);
@@ -230,11 +243,12 @@ TEST_F(BufferUnitTest, ReadAndWriteSocketPathWorksInCoroutineContext) {
     EXPECT_EQ(input.retrieve_all_as_string(), "hello");
     reader->close();
     ::close(pair[1]);
-    zco::shutdown();
+    runtime.request_stop();
+    runtime.join();
 }
 
 TEST_F(BufferUnitTest, ReadFromSocketPreGrowsWritableSpace) {
-    zco::init(1);
+    zco::Runtime runtime(zco::RuntimeOptions{1});
 
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
@@ -246,7 +260,7 @@ TEST_F(BufferUnitTest, ReadFromSocketPreGrowsWritableSpace) {
     EXPECT_EQ(input.retrieve_as_string(4), "abcd");
 
     zco::WaitGroup done(1);
-    zco::go([&]() {
+    runtime.spawn([&]() {
         int saved_errno = 0;
         EXPECT_EQ(::send(pair[1], "xy", 2, 0), 2);
         EXPECT_EQ(input.read_from_socket(reader, 64 * 1024, 200,
@@ -261,18 +275,19 @@ TEST_F(BufferUnitTest, ReadFromSocketPreGrowsWritableSpace) {
 
     reader->close();
     ::close(pair[1]);
-    zco::shutdown();
+    runtime.request_stop();
+    runtime.join();
 }
 
 TEST_F(BufferUnitTest, DirectReadPreservesPrefixHonorsLimitAndHandlesEof) {
-    zco::init(1);
+    zco::Runtime runtime(zco::RuntimeOptions{1});
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
     auto reader = std::make_shared<Socket>(pair[0]);
     Buffer input(2);
     input.append("old", 3);
     zco::WaitGroup done(1);
-    zco::go([&]() {
+    runtime.spawn([&]() {
         int saved_errno = 0;
         EXPECT_EQ(::send(pair[1], "abcdef", 6, 0), 6);
         EXPECT_EQ(input.read_from_socket(reader, 2, 0, &saved_errno), 2);
@@ -287,7 +302,8 @@ TEST_F(BufferUnitTest, DirectReadPreservesPrefixHonorsLimitAndHandlesEof) {
     done.wait();
     reader->close();
     ::close(pair[1]);
-    zco::shutdown();
+    runtime.request_stop();
+    runtime.join();
 }
 
 } // namespace

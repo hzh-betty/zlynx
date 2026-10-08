@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.18)
 
-project(zhttp VERSION 1.0.0 LANGUAGES CXX)
+project(zhttp VERSION 2.0.0 LANGUAGES CXX)
 
 # zhttp 是最上层 HTTP/WebSocket 模块。
 # 根工程构建时依赖本地 znet/zlog target；独立构建时通过 find_package 获取。

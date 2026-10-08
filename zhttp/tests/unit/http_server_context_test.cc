@@ -9,12 +9,12 @@
 using namespace zhttp;
 namespace {
 struct SocketPair {
-    SocketPair() {
+    SocketPair() : runtime(zco::RuntimeOptions{1}) {
         int fds[2];
         if (::socketpair(AF_UNIX, SOCK_STREAM, 0, fds) != 0)
             throw std::runtime_error("socketpair");
         connection = std::make_shared<znet::TcpConnection>(
-            std::make_shared<znet::Socket>(fds[0]));
+            std::make_shared<znet::Socket>(fds[0]), runtime.executor(0));
         peer = fds[1];
     }
     ~SocketPair() {
@@ -29,13 +29,16 @@ struct SocketPair {
             bytes.append(data, n);
         return bytes;
     }
+
+    zco::Runtime runtime;
     znet::TcpConnection::ptr connection;
     int peer;
 };
 class ServerAccess : public HttpServer {
   public:
     ServerAccess()
-        : HttpServer(std::make_shared<znet::IPv4Address>("127.0.0.1", 0)) {}
+        : HttpServer(std::make_shared<znet::IPv4Address>("127.0.0.1", 0),
+                     zco::RuntimeOptions{1}) {}
     using HttpServer::tcp_server;
 };
 TEST(HttpServerContextTest, TimeoutSettersClampAndInvalidTlsIsRejected) {

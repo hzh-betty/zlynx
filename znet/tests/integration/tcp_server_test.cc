@@ -1,3 +1,4 @@
+#include "zco/coroutine.h"
 /**
  * @file tcp_server_test.cc
  * @brief 集成测试。
@@ -32,7 +33,9 @@ namespace {
 
 class AlwaysFailTlsContext : public TlsContext {
   public:
+    mutable std::atomic<bool> attempted{false};
     std::unique_ptr<TlsChannel> create_server_channel(int) const override {
+        attempted = true;
         errno = EIO;
         return nullptr;
     }
@@ -53,12 +56,13 @@ std::pair<std::string, std::string> create_temp_cert_pair() {
 
 class TcpServerUnitTest : public ::testing::Test {
   protected:
-    void TearDown() override { zco::shutdown(); }
+    void TearDown() override {}
 };
 
 TEST_F(TcpServerUnitTest, EnableTlsRejectsInvalidCertificatePaths) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     auto listen_addr = std::make_shared<IPv4Address>("127.0.0.1", 0);
-    auto server = std::make_shared<TcpServer>(listen_addr, 16);
+    auto server = std::make_shared<TcpServer>(runtime, listen_addr, 16);
     ASSERT_NE(server, nullptr);
 
     EXPECT_FALSE(server->enable_tls("/tmp/not-exist-cert.pem",
@@ -66,10 +70,10 @@ TEST_F(TcpServerUnitTest, EnableTlsRejectsInvalidCertificatePaths) {
 }
 
 TEST_F(TcpServerUnitTest, AcceptsConnectionAndConsumesBufferMessages) {
-    zco::init(3);
+    zco::Runtime runtime(zco::RuntimeOptions{3});
 
     auto listen_addr = std::make_shared<IPv4Address>("127.0.0.1", 0);
-    auto server = std::make_shared<TcpServer>(listen_addr, 16);
+    auto server = std::make_shared<TcpServer>(runtime, listen_addr, 16);
     ASSERT_NE(server, nullptr);
 
     std::atomic<int> message_events{0};
@@ -124,10 +128,10 @@ TEST_F(TcpServerUnitTest, AcceptsConnectionAndConsumesBufferMessages) {
 }
 
 TEST_F(TcpServerUnitTest, OnMessageCallbackUsesConnectionAndBuffer) {
-    zco::init(3);
+    zco::Runtime runtime(zco::RuntimeOptions{3});
 
     auto listen_addr = std::make_shared<IPv4Address>("127.0.0.1", 0);
-    auto server = std::make_shared<TcpServer>(listen_addr, 16);
+    auto server = std::make_shared<TcpServer>(runtime, listen_addr, 16);
     ASSERT_NE(server, nullptr);
 
     std::atomic<int> callback_count{0};
@@ -179,10 +183,10 @@ TEST_F(TcpServerUnitTest, OnMessageCallbackUsesConnectionAndBuffer) {
 }
 
 TEST_F(TcpServerUnitTest, ConnectAndCloseCallbacksAreIndependent) {
-    zco::init(2);
+    zco::Runtime runtime(zco::RuntimeOptions{2});
 
     auto listen_addr = std::make_shared<IPv4Address>("127.0.0.1", 0);
-    auto server = std::make_shared<TcpServer>(listen_addr, 16);
+    auto server = std::make_shared<TcpServer>(runtime, listen_addr, 16);
     ASSERT_NE(server, nullptr);
 
     std::atomic<int> connect_count{0};
@@ -228,10 +232,10 @@ TEST_F(TcpServerUnitTest, ConnectAndCloseCallbacksAreIndependent) {
 }
 
 TEST_F(TcpServerUnitTest, SnakeCaseMessageCallbackReceivesBuffer) {
-    zco::init(2);
+    zco::Runtime runtime(zco::RuntimeOptions{2});
 
     auto listen_addr = std::make_shared<IPv4Address>("127.0.0.1", 0);
-    auto server = std::make_shared<TcpServer>(listen_addr, 16);
+    auto server = std::make_shared<TcpServer>(runtime, listen_addr, 16);
     ASSERT_NE(server, nullptr);
 
     std::atomic<int> connection_events{0};
@@ -280,10 +284,10 @@ TEST_F(TcpServerUnitTest, SnakeCaseMessageCallbackReceivesBuffer) {
 }
 
 TEST_F(TcpServerUnitTest, KeepsConnectionOpenUntilPeerCloses) {
-    zco::init(2);
+    zco::Runtime runtime(zco::RuntimeOptions{2});
 
     auto listen_addr = std::make_shared<IPv4Address>("127.0.0.1", 0);
-    auto server = std::make_shared<TcpServer>(listen_addr, 16);
+    auto server = std::make_shared<TcpServer>(runtime, listen_addr, 16);
     ASSERT_NE(server, nullptr);
 
     std::atomic<int> total_bytes{0};
@@ -341,10 +345,10 @@ TEST_F(TcpServerUnitTest, KeepsConnectionOpenUntilPeerCloses) {
 }
 
 TEST_F(TcpServerUnitTest, StopReturnsPromptlyWhenConnectionIsIdle) {
-    zco::init(2);
+    zco::Runtime runtime(zco::RuntimeOptions{2});
 
     auto listen_addr = std::make_shared<IPv4Address>("127.0.0.1", 0);
-    auto server = std::make_shared<TcpServer>(listen_addr, 16);
+    auto server = std::make_shared<TcpServer>(runtime, listen_addr, 16);
     ASSERT_NE(server, nullptr);
 
     std::atomic<int> connect_count{0};
@@ -410,10 +414,10 @@ TEST_F(TcpServerUnitTest, StopReturnsPromptlyWhenConnectionIsIdle) {
 }
 
 TEST_F(TcpServerUnitTest, WriteTimeoutIsAppliedToAcceptedConnection) {
-    zco::init(2);
+    zco::Runtime runtime(zco::RuntimeOptions{2});
 
     auto listen_addr = std::make_shared<IPv4Address>("127.0.0.1", 0);
-    auto server = std::make_shared<TcpServer>(listen_addr, 16);
+    auto server = std::make_shared<TcpServer>(runtime, listen_addr, 16);
     ASSERT_NE(server, nullptr);
 
     server->set_write_timeout(321);
@@ -456,7 +460,8 @@ TEST_F(TcpServerUnitTest, WriteTimeoutIsAppliedToAcceptedConnection) {
 }
 
 TEST_F(TcpServerUnitTest, DoStartFailsWhenAcceptorIsNull) {
-    auto server = std::make_shared<TcpServer>(Address::ptr{}, 16);
+    zco::Runtime runtime(zco::RuntimeOptions{2});
+    auto server = std::make_shared<TcpServer>(runtime, Address::ptr{}, 16);
     ASSERT_NE(server, nullptr);
 
     server->acceptor_.reset();
@@ -464,18 +469,19 @@ TEST_F(TcpServerUnitTest, DoStartFailsWhenAcceptorIsNull) {
 }
 
 TEST_F(TcpServerUnitTest, RegisterAndRemoveConnectionHandleNullAndErase) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
 
     auto server = std::make_shared<TcpServer>(
-        std::make_shared<IPv4Address>("127.0.0.1", 0), 16);
+        runtime, std::make_shared<IPv4Address>("127.0.0.1", 0), 16);
     ASSERT_NE(server, nullptr);
 
     server->register_connection(nullptr);
     EXPECT_TRUE(server->connections_.empty());
 
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     ASSERT_NE(conn, nullptr);
     const int fd = conn->fd();
     server->register_connection(conn);
@@ -489,12 +495,15 @@ TEST_F(TcpServerUnitTest, RegisterAndRemoveConnectionHandleNullAndErase) {
 }
 
 TEST_F(TcpServerUnitTest, RemovalUsesOriginalKeyAndChecksConnectionIdentity) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     int first[2], second[2];
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, first), 0);
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, second), 0);
-    auto server = std::make_shared<TcpServer>(Address::ptr{}, 16);
-    auto old_conn = std::make_shared<TcpConnection>(std::make_shared<Socket>(first[0]));
-    auto new_conn = std::make_shared<TcpConnection>(std::make_shared<Socket>(second[0]));
+    auto server = std::make_shared<TcpServer>(runtime, Address::ptr{}, 16);
+    auto old_conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(first[0]), runtime.executor(0));
+    auto new_conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(second[0]), runtime.executor(0));
     const int key = old_conn->fd();
     server->register_connection(old_conn);
     old_conn->close();
@@ -514,10 +523,10 @@ TEST_F(TcpServerUnitTest, RemovalUsesOriginalKeyAndChecksConnectionIdentity) {
 }
 
 TEST_F(TcpServerUnitTest, ActiveCloseRemovesRegisteredConnection) {
-    zco::init(1);
+    zco::Runtime runtime(zco::RuntimeOptions{1});
     int pair[2];
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-    auto server = std::make_shared<TcpServer>(Address::ptr{}, 16);
+    auto server = std::make_shared<TcpServer>(runtime, Address::ptr{}, 16);
     std::atomic<bool> closed(false);
     server->set_on_connection([](const TcpConnection::ptr &conn) { conn->close(); });
     server->set_on_close([&](const TcpConnection::ptr &) { closed.store(true); });
@@ -533,13 +542,15 @@ TEST_F(TcpServerUnitTest, ActiveCloseRemovesRegisteredConnection) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     EXPECT_TRUE(empty);
-    zco::shutdown();
+    runtime.request_stop();
+    runtime.join();
     ::close(pair[1]);
 }
 
 TEST_F(TcpServerUnitTest, HandleConnectionIgnoresNullClient) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     auto server = std::make_shared<TcpServer>(
-        std::make_shared<IPv4Address>("127.0.0.1", 0), 16);
+        runtime, std::make_shared<IPv4Address>("127.0.0.1", 0), 16);
     ASSERT_NE(server, nullptr);
 
     server->handle_connection(nullptr);
@@ -547,15 +558,16 @@ TEST_F(TcpServerUnitTest, HandleConnectionIgnoresNullClient) {
 }
 
 TEST_F(TcpServerUnitTest, DoStopClearsTrackedConnections) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
 
     auto server = std::make_shared<TcpServer>(
-        std::make_shared<IPv4Address>("127.0.0.1", 0), 16);
+        runtime, std::make_shared<IPv4Address>("127.0.0.1", 0), 16);
     ASSERT_NE(server, nullptr);
 
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     ASSERT_NE(conn, nullptr);
     server->connections_[conn->fd()] = conn;
 
@@ -566,15 +578,16 @@ TEST_F(TcpServerUnitTest, DoStopClearsTrackedConnections) {
 }
 
 TEST_F(TcpServerUnitTest, DoStopHandlesNullAcceptorAndNullConnectionEntry) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
 
     auto server = std::make_shared<TcpServer>(
-        std::make_shared<IPv4Address>("127.0.0.1", 0), 16);
+        runtime, std::make_shared<IPv4Address>("127.0.0.1", 0), 16);
     ASSERT_NE(server, nullptr);
 
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     ASSERT_NE(conn, nullptr);
 
     server->connections_[-1] = nullptr;
@@ -587,28 +600,35 @@ TEST_F(TcpServerUnitTest, DoStopHandlesNullAcceptorAndNullConnectionEntry) {
     ::close(pair[1]);
 }
 
-TEST_F(TcpServerUnitTest, HandleConnectionDirectPathCoversTlsHandshakeFailure) {
+TEST_F(TcpServerUnitTest, HandleConnectionReportsTlsHandshakeFailure) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
 
     auto server = std::make_shared<TcpServer>(
-        std::make_shared<IPv4Address>("127.0.0.1", 0), 16);
+        runtime, std::make_shared<IPv4Address>("127.0.0.1", 0), 16);
     ASSERT_NE(server, nullptr);
     server->running_.store(true, std::memory_order_release);
-    server->tls_context_ = std::make_shared<AlwaysFailTlsContext>();
+    auto context = std::make_shared<AlwaysFailTlsContext>();
+    server->tls_context_ = context;
     server->tls_handshake_timeout_ms_ = 5;
 
     server->handle_connection(std::make_shared<Socket>(pair[0]));
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (!context->attempted && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    EXPECT_TRUE(context->attempted);
+    runtime.request_stop(); runtime.join();
     EXPECT_TRUE(server->connections_.empty());
 
     ::close(pair[1]);
 }
 
 TEST_F(TcpServerUnitTest, WriteCompleteAndHighWaterCallbacksAreApplied) {
-    zco::init(2);
+    zco::Runtime runtime(zco::RuntimeOptions{2});
 
     auto server = std::make_shared<TcpServer>(
-        std::make_shared<IPv4Address>("127.0.0.1", 0), 16);
+        runtime, std::make_shared<IPv4Address>("127.0.0.1", 0), 16);
     ASSERT_NE(server, nullptr);
 
     std::atomic<int> conn_count{0};
@@ -653,13 +673,14 @@ TEST_F(TcpServerUnitTest, WriteCompleteAndHighWaterCallbacksAreApplied) {
 }
 
 TEST_F(TcpServerUnitTest, EnableTlsSuccessPathSetsTlsState) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     if (std::system("openssl version >/dev/null 2>&1") != 0) {
         GTEST_SKIP() << "openssl command is required";
     }
 
     auto cert_pair = create_temp_cert_pair();
     auto server = std::make_shared<TcpServer>(
-        std::make_shared<IPv4Address>("127.0.0.1", 0), 16);
+        runtime, std::make_shared<IPv4Address>("127.0.0.1", 0), 16);
     ASSERT_NE(server, nullptr);
 
     EXPECT_TRUE(server->enable_tls(cert_pair.first, cert_pair.second, 321));
@@ -669,11 +690,12 @@ TEST_F(TcpServerUnitTest, EnableTlsSuccessPathSetsTlsState) {
 
 TEST_F(TcpServerUnitTest,
        HandleConnectionRunsInlineWhenSchedulerIsUnavailable) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
 
     auto server = std::make_shared<TcpServer>(
-        std::make_shared<IPv4Address>("127.0.0.1", 0), 16);
+        runtime, std::make_shared<IPv4Address>("127.0.0.1", 0), 16);
     ASSERT_NE(server, nullptr);
 
     std::atomic<int> close_count{0};
@@ -693,10 +715,10 @@ TEST_F(TcpServerUnitTest,
 }
 
 TEST_F(TcpServerUnitTest, DataIsConsumedEvenWithoutMessageCallback) {
-    zco::init(2);
+    zco::Runtime runtime(zco::RuntimeOptions{2});
 
     auto listen_addr = std::make_shared<IPv4Address>("127.0.0.1", 0);
-    auto server = std::make_shared<TcpServer>(listen_addr, 16);
+    auto server = std::make_shared<TcpServer>(runtime, listen_addr, 16);
     ASSERT_NE(server, nullptr);
 
     std::atomic<int> close_count{0};

@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <future>
 #include <cstring>
 #include <string>
 #include <thread>
@@ -24,8 +25,8 @@
 
 #include "znet/znet_logger.h"
 
-#include "zco/sched.h"
-#include "zco/wait_group.h"
+#include "zco/coroutine.h"
+#include "zco/sync/wait_group.h"
 #include "znet/tls_context.h"
 
 namespace znet {
@@ -37,7 +38,7 @@ bool is_timeout_errno(int err) {
 
 class TcpConnectionUnitTest : public ::testing::Test {
   protected:
-    void TearDown() override { zco::shutdown(); }
+    void TearDown() override {}
 };
 
 class FakeTlsChannel : public TlsChannel {
@@ -121,11 +122,13 @@ class FakeTlsContext : public TlsContext {
 };
 
 TEST_F(TcpConnectionUnitTest, CloseAndShutdownReleaseSocketAfterEof) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     for (bool use_shutdown : {false, true}) {
         int pair[2];
         ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
         auto socket = std::make_shared<Socket>(pair[0]);
-        auto conn = std::make_shared<TcpConnection>(socket);
+        auto conn =
+            std::make_shared<TcpConnection>(socket, runtime.executor(0));
         ASSERT_EQ(::shutdown(pair[1], SHUT_WR), 0);
         ASSERT_EQ(conn->read(16, 100), 0);
         EXPECT_EQ(conn->state(), TcpConnection::State::kDisconnected);
@@ -143,9 +146,11 @@ TEST_F(TcpConnectionUnitTest, CloseAndShutdownReleaseSocketAfterEof) {
 }
 
 TEST_F(TcpConnectionUnitTest, CloseReleasesTlsChannelAfterEof) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     int pair[2];
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-    auto conn = std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     auto ctx = std::make_shared<FakeTlsContext>();
     ASSERT_TRUE(conn->enable_tls_server(ctx, 100));
     EXPECT_EQ(conn->read(16, 100), 0);
@@ -156,13 +161,13 @@ TEST_F(TcpConnectionUnitTest, CloseReleasesTlsChannelAfterEof) {
 }
 
 TEST_F(TcpConnectionUnitTest, ReadIntoInputBufferAndFlushOutputBuffer) {
-    zco::init(2);
+    zco::Runtime runtime(zco::RuntimeOptions{2});
 
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
 
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     ASSERT_NE(conn, nullptr);
 
     ASSERT_EQ(::send(pair[1], "ping", 4, 0), 4);
@@ -180,11 +185,12 @@ TEST_F(TcpConnectionUnitTest, ReadIntoInputBufferAndFlushOutputBuffer) {
 
 TEST_F(TcpConnectionUnitTest,
        StateMachineTransitionsFromConnectedToDisconnected) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
 
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     EXPECT_EQ(conn->state(), TcpConnection::State::kConnected);
 
     conn->close();
@@ -194,13 +200,13 @@ TEST_F(TcpConnectionUnitTest,
 }
 
 TEST_F(TcpConnectionUnitTest, ConcurrentSendIsSerializedByActorMailbox) {
-    zco::init(1);
+    zco::Runtime runtime(zco::RuntimeOptions{1});
 
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
 
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
 
     const int rounds = 128;
     const std::string payload_a = "AAAA";
@@ -252,36 +258,34 @@ TEST_F(TcpConnectionUnitTest, ConcurrentSendIsSerializedByActorMailbox) {
 }
 
 TEST_F(TcpConnectionUnitTest,
-       SendSucceedsWhenActorSchedulerIsNullInThreadContext) {
-    zco::init(1);
+       SendFailsWhenActorExecutorHasExpiredInThreadContext) {
+    zco::Runtime runtime(zco::RuntimeOptions{1});
 
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
 
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     ASSERT_NE(conn, nullptr);
 
-    // 模拟调度器句柄不可用，验证线程上下文仍可通过 go 投递并完成发送。
-    conn->actor_->scheduler_ = nullptr;
+    // 失效端点必须拒绝提交，不再回退到全局运行时。
+    conn->actor_->scheduler_ = {};
     conn->actor_->sched_id_ = -1;
 
-    ASSERT_EQ(conn->send("X", 1), 1);
-
-    char out[2] = {0};
-    ASSERT_EQ(::recv(pair[1], out, 1, 0), 1);
-    EXPECT_EQ(out[0], 'X');
+    EXPECT_EQ(conn->send("X", 1), -1);
+    EXPECT_EQ(errno, ECANCELED);
 
     conn->close();
     ::close(pair[1]);
 }
 
 TEST_F(TcpConnectionUnitTest, WriteCompleteCallbackIsTriggeredAfterFlush) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
 
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     ASSERT_NE(conn, nullptr);
 
     std::atomic<int> write_complete_count{0};
@@ -304,11 +308,12 @@ TEST_F(TcpConnectionUnitTest, WriteCompleteCallbackIsTriggeredAfterFlush) {
 
 TEST_F(TcpConnectionUnitTest,
        HighWaterMarkCallbackIsTriggeredOnThresholdCross) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
 
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     ASSERT_NE(conn, nullptr);
 
     std::atomic<int> high_water_count{0};
@@ -335,11 +340,12 @@ TEST_F(TcpConnectionUnitTest,
 }
 
 TEST_F(TcpConnectionUnitTest, ShutdownClosesConnectionIdempotently) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
 
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     ASSERT_NE(conn, nullptr);
 
     ASSERT_EQ(conn->send("bye", 3), 3);
@@ -354,13 +360,13 @@ TEST_F(TcpConnectionUnitTest, ShutdownClosesConnectionIdempotently) {
 }
 
 TEST_F(TcpConnectionUnitTest, ReadTimeoutIsReportedAsEtimedout) {
-    zco::init(1);
+    zco::Runtime runtime(zco::RuntimeOptions{1});
 
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
 
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     ASSERT_NE(conn, nullptr);
 
     const auto started = std::chrono::steady_clock::now();
@@ -380,11 +386,12 @@ TEST_F(TcpConnectionUnitTest, ReadTimeoutIsReportedAsEtimedout) {
 }
 
 TEST_F(TcpConnectionUnitTest, ConnectionWriteTimeoutCanBeConfigured) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
 
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     ASSERT_NE(conn, nullptr);
 
     conn->set_write_timeout(123);
@@ -395,17 +402,17 @@ TEST_F(TcpConnectionUnitTest, ConnectionWriteTimeoutCanBeConfigured) {
 }
 
 TEST_F(TcpConnectionUnitTest, SendSucceedsInsideCoroutineContext) {
-    zco::init(1);
+    zco::Runtime runtime(zco::RuntimeOptions{1});
 
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
 
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     ASSERT_NE(conn, nullptr);
 
     zco::WaitGroup done(1);
-    zco::go([&]() {
+    runtime.spawn([&]() {
         EXPECT_EQ(conn->send("fast", 4), 4);
         done.done();
     });
@@ -421,10 +428,11 @@ TEST_F(TcpConnectionUnitTest, SendSucceedsInsideCoroutineContext) {
 }
 
 TEST_F(TcpConnectionUnitTest, SendRejectsNullDataAndAcceptsZeroLength) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     ASSERT_NE(conn, nullptr);
 
     errno = 0;
@@ -437,10 +445,11 @@ TEST_F(TcpConnectionUnitTest, SendRejectsNullDataAndAcceptsZeroLength) {
 }
 
 TEST_F(TcpConnectionUnitTest, ReadAndFlushRejectDisconnectedState) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     ASSERT_NE(conn, nullptr);
 
     conn->set_state(TcpConnection::State::kDisconnected);
@@ -457,10 +466,11 @@ TEST_F(TcpConnectionUnitTest, ReadAndFlushRejectDisconnectedState) {
 }
 
 TEST_F(TcpConnectionUnitTest, ReadRejectsZeroReadBytes) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     ASSERT_NE(conn, nullptr);
 
     errno = 0;
@@ -472,10 +482,11 @@ TEST_F(TcpConnectionUnitTest, ReadRejectsZeroReadBytes) {
 }
 
 TEST_F(TcpConnectionUnitTest, EnableTlsServerRejectsInvalidArguments) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     ASSERT_NE(conn, nullptr);
 
     errno = 0;
@@ -487,10 +498,11 @@ TEST_F(TcpConnectionUnitTest, EnableTlsServerRejectsInvalidArguments) {
 }
 
 TEST_F(TcpConnectionUnitTest, EnableTlsServerCreateChannelFailureIsReported) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     ASSERT_NE(conn, nullptr);
 
     auto ctx = std::make_shared<FakeTlsContext>();
@@ -504,10 +516,11 @@ TEST_F(TcpConnectionUnitTest, EnableTlsServerCreateChannelFailureIsReported) {
 }
 
 TEST_F(TcpConnectionUnitTest, EnableTlsServerHandshakeFailureIsReported) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     ASSERT_NE(conn, nullptr);
 
     auto ctx = std::make_shared<FakeTlsContext>();
@@ -522,10 +535,11 @@ TEST_F(TcpConnectionUnitTest, EnableTlsServerHandshakeFailureIsReported) {
 }
 
 TEST_F(TcpConnectionUnitTest, EnableTlsServerReadAndWritePathsUseTlsChannel) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     ASSERT_NE(conn, nullptr);
 
     auto ctx = std::make_shared<FakeTlsContext>();
@@ -551,10 +565,11 @@ TEST_F(TcpConnectionUnitTest, EnableTlsServerReadAndWritePathsUseTlsChannel) {
 }
 
 TEST_F(TcpConnectionUnitTest, TlsReadAppendsDirectlyAndDoesNotCommitFailedReads) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     auto ctx = std::make_shared<FakeTlsContext>();
     ctx->read_result = 3;
     ctx->payload = "abc";
@@ -584,10 +599,11 @@ TEST_F(TcpConnectionUnitTest, TlsReadAppendsDirectlyAndDoesNotCommitFailedReads)
 }
 
 TEST_F(TcpConnectionUnitTest, EnableTlsServerReturnsTrueWhenAlreadyEnabled) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     ASSERT_NE(conn, nullptr);
 
     auto ctx = std::make_shared<FakeTlsContext>();
@@ -600,10 +616,11 @@ TEST_F(TcpConnectionUnitTest, EnableTlsServerReturnsTrueWhenAlreadyEnabled) {
 }
 
 TEST_F(TcpConnectionUnitTest, FlushOutputTlsFailurePropagatesError) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     ASSERT_NE(conn, nullptr);
 
     auto fake = std::unique_ptr<FakeTlsChannel>(new FakeTlsChannel());
@@ -621,10 +638,11 @@ TEST_F(TcpConnectionUnitTest, FlushOutputTlsFailurePropagatesError) {
 
 TEST_F(TcpConnectionUnitTest,
        CloseAndShutdownRemainIdempotentWhenDisconnected) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     ASSERT_NE(conn, nullptr);
 
     conn->close();
@@ -638,7 +656,9 @@ TEST_F(TcpConnectionUnitTest,
 
 TEST_F(TcpConnectionUnitTest,
        ConstructorHandlesNullSocketAndDispatchNullEvent) {
-    auto conn = std::make_shared<TcpConnection>(Socket::ptr{});
+    zco::Runtime runtime(zco::RuntimeOptions{2});
+    auto conn =
+        std::make_shared<TcpConnection>(Socket::ptr{}, runtime.executor(0));
     ASSERT_NE(conn, nullptr);
     EXPECT_EQ(conn->fd(), -1);
     EXPECT_EQ(conn->state(), TcpConnection::State::kDisconnected);
@@ -649,16 +669,16 @@ TEST_F(TcpConnectionUnitTest,
 }
 
 TEST_F(TcpConnectionUnitTest, ReentrantDispatchPathWorksInsideInlineActor) {
-    zco::init(1);
+    zco::Runtime runtime(zco::RuntimeOptions{1});
 
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     ASSERT_NE(conn, nullptr);
 
     zco::WaitGroup done(1);
-    zco::go([&]() {
+    runtime.spawn([&]() {
         ASSERT_TRUE(conn->try_begin_inline_actor());
         auto event = std::make_shared<TcpConnection::Event>(
             TcpConnection::EventType::kClose);
@@ -674,12 +694,12 @@ TEST_F(TcpConnectionUnitTest, ReentrantDispatchPathWorksInsideInlineActor) {
 
 TEST_F(TcpConnectionUnitTest,
        SameThreadDifferentCoroutineDoesNotBypassActorMailbox) {
-    zco::init(1);
+    zco::Runtime runtime(zco::RuntimeOptions{1});
 
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     ASSERT_NE(conn, nullptr);
 
     zco::WaitGroup read_entered(1);
@@ -687,15 +707,15 @@ TEST_F(TcpConnectionUnitTest,
     zco::WaitGroup done(2);
     std::atomic<bool> send_done(false);
 
-    zco::go([&]() {
+    runtime.spawn([&]() {
         read_entered.done();
         EXPECT_EQ(conn->read(4, 1000), 4);
         done.done();
     });
 
-    zco::go([&]() {
+    runtime.spawn([&]() {
         read_entered.wait();
-        zco::sleep_for(20);
+        zco::sleep_for(std::chrono::milliseconds(20));
         send_entered.done();
         EXPECT_EQ(conn->send("z", 1, 1000), 1);
         send_done.store(true, std::memory_order_release);
@@ -729,10 +749,11 @@ TEST_F(TcpConnectionUnitTest,
 }
 
 TEST_F(TcpConnectionUnitTest, SendInternalReturnsErrorOutsideCoroutineContext) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     ASSERT_NE(conn, nullptr);
 
     errno = 0;
@@ -744,10 +765,11 @@ TEST_F(TcpConnectionUnitTest, SendInternalReturnsErrorOutsideCoroutineContext) {
 }
 
 TEST_F(TcpConnectionUnitTest, SendInternalValidatesStateAndLength) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     ASSERT_NE(conn, nullptr);
 
     conn->set_state(TcpConnection::State::kDisconnected);
@@ -764,19 +786,19 @@ TEST_F(TcpConnectionUnitTest, SendInternalValidatesStateAndLength) {
 
 TEST_F(TcpConnectionUnitTest,
        SendInternalClosesDisconnectingConnectionAfterFlush) {
-    zco::init(1);
+    zco::Runtime runtime(zco::RuntimeOptions{1});
 
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     ASSERT_NE(conn, nullptr);
 
     conn->set_state(TcpConnection::State::kDisconnecting);
     conn->output_buffer().append("a", 1);
 
     zco::WaitGroup done(1);
-    zco::go([&]() {
+    runtime.spawn([&]() {
         EXPECT_EQ(conn->send_internal("b", 1, 200), 1);
         done.done();
     });
@@ -792,17 +814,17 @@ TEST_F(TcpConnectionUnitTest,
 
 TEST_F(TcpConnectionUnitTest,
        SendInternalFastPathClosesDisconnectingConnection) {
-    zco::init(1);
+    zco::Runtime runtime(zco::RuntimeOptions{1});
 
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     ASSERT_NE(conn, nullptr);
     conn->set_state(TcpConnection::State::kDisconnecting);
 
     zco::WaitGroup done(1);
-    zco::go([&]() {
+    runtime.spawn([&]() {
         EXPECT_EQ(conn->send_internal("q", 1, 200), 1);
         done.done();
     });
@@ -813,10 +835,11 @@ TEST_F(TcpConnectionUnitTest,
 }
 
 TEST_F(TcpConnectionUnitTest, TlsReadReturnsZeroAndFlushHandlesZeroWrite) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     ASSERT_NE(conn, nullptr);
 
     auto ctx = std::make_shared<FakeTlsContext>();
@@ -837,12 +860,12 @@ TEST_F(TcpConnectionUnitTest, TlsReadReturnsZeroAndFlushHandlesZeroWrite) {
 }
 
 TEST_F(TcpConnectionUnitTest, DispatchUsesInlineAndSchedulerWorkerPaths) {
-    zco::init(1);
+    zco::Runtime runtime(zco::RuntimeOptions{1});
 
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     ASSERT_NE(conn, nullptr);
 
     errno = 0;
@@ -850,8 +873,9 @@ TEST_F(TcpConnectionUnitTest, DispatchUsesInlineAndSchedulerWorkerPaths) {
     EXPECT_EQ(errno, EINVAL);
 
     zco::WaitGroup done(1);
-    zco::go([&]() {
-        conn->actor_->sched_id_ = zco::sched_id();
+    runtime.spawn([&]() {
+        conn->actor_->sched_id_ =
+            static_cast<int>(zco::current_executor().index());
         auto event = std::make_shared<TcpConnection::Event>(
             TcpConnection::EventType::kRead);
         event->max_read_bytes = 0;
@@ -869,20 +893,22 @@ TEST_F(TcpConnectionUnitTest, DispatchUsesInlineAndSchedulerWorkerPaths) {
 
 TEST_F(TcpConnectionUnitTest,
        TryBeginInlineActorHandlesSchedMismatchAndBusyActor) {
-    zco::init(1);
+    zco::Runtime runtime(zco::RuntimeOptions{1});
 
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     ASSERT_NE(conn, nullptr);
 
     zco::WaitGroup done(1);
-    zco::go([&]() {
-        conn->actor_->sched_id_ = zco::sched_id() + 100;
+    runtime.spawn([&]() {
+        conn->actor_->sched_id_ =
+            static_cast<int>(zco::current_executor().index()) + 100;
         EXPECT_FALSE(conn->try_begin_inline_actor());
 
-        conn->actor_->sched_id_ = zco::sched_id();
+        conn->actor_->sched_id_ =
+            static_cast<int>(zco::current_executor().index());
         conn->actor_->running_ = true;
         EXPECT_FALSE(conn->try_begin_inline_actor());
         conn->actor_->running_ = false;
@@ -895,12 +921,12 @@ TEST_F(TcpConnectionUnitTest,
 }
 
 TEST_F(TcpConnectionUnitTest, ReadWriteTlsInternalValidationAndIoWaitPaths) {
-    zco::init(1);
+    zco::Runtime runtime(zco::RuntimeOptions{1});
 
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     ASSERT_NE(conn, nullptr);
 
     errno = 0;
@@ -918,11 +944,15 @@ TEST_F(TcpConnectionUnitTest, ReadWriteTlsInternalValidationAndIoWaitPaths) {
     zco::WaitGroup done(1);
     std::atomic<bool> write_ready{false};
     std::atomic<bool> read_wait_returned{false};
-    zco::go([&]() {
-        write_ready.store(conn->wait_tls_io(true, 20),
-                          std::memory_order_release);
-        read_wait_returned.store(conn->wait_tls_io(false, 20),
-                                 std::memory_order_release);
+    runtime.spawn([&]() {
+        write_ready.store(
+            conn->wait_tls_io(
+                true, zco::Deadline::after(std::chrono::milliseconds(20))),
+            std::memory_order_release);
+        read_wait_returned.store(
+            conn->wait_tls_io(
+                false, zco::Deadline::after(std::chrono::milliseconds(20))),
+            std::memory_order_release);
         done.done();
     });
     done.wait();
@@ -935,16 +965,16 @@ TEST_F(TcpConnectionUnitTest, ReadWriteTlsInternalValidationAndIoWaitPaths) {
 }
 
 TEST_F(TcpConnectionUnitTest, InlineActorPathsInFlushShutdownAndClose) {
-    zco::init(1);
+    zco::Runtime runtime(zco::RuntimeOptions{1});
 
     int pair[2] = {-1, -1};
     ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-    auto conn =
-        std::make_shared<TcpConnection>(std::make_shared<Socket>(pair[0]));
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
     ASSERT_NE(conn, nullptr);
 
     zco::WaitGroup done(1);
-    zco::go([&]() {
+    runtime.spawn([&]() {
         conn->set_write_timeout(200);
         conn->output_buffer().append("xy", 2);
         EXPECT_EQ(conn->flush_output(), 2);
@@ -955,6 +985,56 @@ TEST_F(TcpConnectionUnitTest, InlineActorPathsInFlushShutdownAndClose) {
     done.wait();
 
     EXPECT_EQ(conn->state(), TcpConnection::State::kDisconnected);
+    ::close(pair[1]);
+}
+
+TEST_F(TcpConnectionUnitTest, CloseReleasesAnInfiniteActorRead) {
+    zco::Runtime runtime(zco::RuntimeOptions{1});
+    int pair[2];
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+    auto connection = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
+    std::promise<void> entered;
+    auto handler = connection->actor_->handler_;
+    connection->actor_->handler_ = [&, handler](
+        const detail::ConnectionActor::EventPtr &event) {
+        if (event->type == detail::ConnectionEventType::kRead)
+            entered.set_value();
+        handler(event);
+    };
+    std::thread reader([&] { EXPECT_LE(connection->read(16, 0), 0); });
+    entered.get_future().wait();
+    // This worker can execute the barrier only after the read has parked.
+    auto barrier = runtime.executor(0).spawn([] {});
+    ASSERT_TRUE(barrier);
+    EXPECT_TRUE(barrier.value().join(
+        zco::Deadline::after(std::chrono::seconds(2))));
+    connection->close();
+    reader.join();
+    EXPECT_EQ(connection->fd(), -1);
+    ::close(pair[1]);
+}
+
+TEST_F(TcpConnectionUnitTest, TlsRetriesKeepTheOriginalDeadline) {
+    class RetryingChannel : public FakeTlsChannel {
+      public:
+        ssize_t read(void *, size_t, uint32_t timeout_ms,
+                     const WaitCallback &wait) override {
+            if (!wait(true, timeout_ms))
+                return -1;
+            zco::sleep_for(std::chrono::milliseconds(2 * timeout_ms)).value();
+            return wait(true, timeout_ms) ? 1 : -1;
+        }
+    };
+    zco::Runtime runtime(zco::RuntimeOptions{1});
+    int pair[2];
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+    auto conn = std::make_shared<TcpConnection>(
+        std::make_shared<Socket>(pair[0]), runtime.executor(0));
+    conn->tls_channel_.reset(new RetryingChannel());
+    EXPECT_EQ(conn->read(16, 10), -1);
+    EXPECT_EQ(errno, ETIMEDOUT);
+    conn->close();
     ::close(pair[1]);
 }
 

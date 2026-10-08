@@ -57,10 +57,13 @@ struct HttpServer::Runtime {
     std::string name = "zhttp/1.0";
     bool frozen = false;
 };
-HttpServer::HttpServer(znet::Address::ptr address, int backlog)
+
+HttpServer::HttpServer(znet::Address::ptr address, zco::RuntimeOptions options,
+                       int backlog)
     : runtime_(std::make_shared<Runtime>()),
-      tcp_server_(
-          std::make_shared<znet::TcpServer>(std::move(address), backlog)) {
+      io_runtime_(new zco::Runtime(options)),
+      tcp_server_(std::make_shared<znet::TcpServer>(
+          *io_runtime_, std::move(address), backlog)) {
     auto runtime = runtime_;
     tcp_server_->set_on_connection(
         [runtime](const znet::TcpConnection::ptr &conn) {
@@ -123,11 +126,6 @@ void HttpServer::set_name(const std::string &name) {
     runtime_->name = name;
 }
 const std::string &HttpServer::name() const { return runtime_->name; }
-void HttpServer::set_thread_count(size_t count) {
-    check_mutable();
-    tcp_server_->set_thread_count(static_cast<int>(
-        std::min(count, static_cast<size_t>(std::numeric_limits<int>::max()))));
-}
 void HttpServer::set_recv_timeout(uint64_t value) {
     check_mutable();
     tcp_server_->set_read_timeout(clamp_timeout(value));

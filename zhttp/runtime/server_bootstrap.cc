@@ -1,6 +1,6 @@
 #include "zhttp/runtime/server_runtime.h"
 
-#include "zco/sched.h"
+#include "zco/coroutine.h"
 #include "zhttp/http_server.h"
 #include "zhttp/server_config.h"
 #include "zhttp/zhttp_logger.h"
@@ -43,7 +43,6 @@ static void configure_unified_logging(const ServerConfig &config) {
 
 void configure_server_runtime(const ServerConfig &config) {
     configure_unified_logging(config);
-    zco::co_stack_model(config.stack_mode);
     ZHTTP_LOG_INFO("Creating server with {} threads, stack_mode={}",
                    config.num_threads, stack_mode_to_string(config.stack_mode));
 }
@@ -56,13 +55,15 @@ std::shared_ptr<HttpServer> create_http_server(const ServerConfig &config) {
     }
 
     // 创建服务器。HTTPS 与 HTTP 统一在 HttpServer 内部处理，避免双分支实现。
-    auto server = std::make_shared<HttpServer>(addrs[0]);
+    zco::RuntimeOptions options;
+    options.worker_count = config.num_threads;
+    options.stack_model = config.stack_mode;
+    auto server = std::make_shared<HttpServer>(addrs[0], options);
     if (config.enable_https &&
         !server->set_ssl_certificate(config.cert_file, config.key_file)) {
         throw std::runtime_error("Failed to initialize SSL certificate");
     }
 
-    server->set_thread_count(config.num_threads);
     server->set_name(config.server_name);
     server->set_recv_timeout(config.read_timeout);
     server->set_write_timeout(config.write_timeout);

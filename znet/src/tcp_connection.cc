@@ -14,8 +14,8 @@
 #include <limits>
 #include <utility>
 
-#include "zco/io_event.h"
-#include "zco/sched.h"
+#include "zco/coroutine.h"
+#include "zco/io/operations.h"
 
 #include "znet/tls_context.h"
 #include "znet/znet_logger.h"
@@ -40,8 +40,7 @@ const char *state_to_string(TcpConnection::State state) {
 
 } // namespace
 
-TcpConnection::TcpConnection(Socket::ptr socket,
-                             zco::Scheduler *actor_scheduler)
+TcpConnection::TcpConnection(Socket::ptr socket, zco::Executor actor_scheduler)
     : socket_(std::move(socket)), input_buffer_(), output_buffer_(),
       state_(static_cast<uint8_t>(State::kConnecting)),
       write_complete_callback_(), high_water_mark_callback_(),
@@ -227,10 +226,15 @@ bool TcpConnection::enable_tls_server(
         return false;
     }
 
-    if (!channel->handshake(handshake_timeout_ms,
-                            [this](bool wait_for_write, uint32_t timeout_ms) {
-                                return wait_tls_io(wait_for_write, timeout_ms);
-                            })) {
+    auto deadline = handshake_timeout_ms
+                        ? zco::Deadline::after(
+                              std::chrono::milliseconds(handshake_timeout_ms))
+                        : zco::Deadline{};
+    if (!channel->handshake(
+            handshake_timeout_ms,
+            [this, deadline](bool wait_for_write, uint32_t) {
+                return wait_tls_io(wait_for_write, deadline);
+            })) {
         ZNET_LOG_WARN("TcpConnection::enable_tls_server handshake failed: "
                       "fd={}, errno={}",
                       fd(), errno);
@@ -243,19 +247,14 @@ bool TcpConnection::enable_tls_server(
     return true;
 }
 
-bool TcpConnection::wait_tls_io(bool wait_for_write, uint32_t timeout_ms) {
-    // 把 TLS 层“等可读/可写”请求桥接到 zco IoEvent。
-    zco::IoEvent io_event(fd(), wait_for_write ? zco::IoEventType::kWrite
-                                               : zco::IoEventType::kRead);
-    const uint32_t wait_timeout_ms =
-        timeout_ms == 0 ? zco::kInfiniteTimeoutMs : timeout_ms;
-    if (!io_event.wait(wait_timeout_ms)) {
-        if (errno == 0 && zco::timeout()) {
-            errno = ETIMEDOUT;
-        }
-        return false;
-    }
-    return true;
+bool TcpConnection::wait_tls_io(bool wait_for_write, zco::Deadline deadline) {
+    auto result = zco::io::wait_ready(socket_->descriptor(),
+                                      wait_for_write ? zco::io::Interest::write
+                                                     : zco::io::Interest::read,
+                                      deadline);
+    if (!result)
+        errno = result.error().value();
+    return static_cast<bool>(result);
 }
 
 ssize_t TcpConnection::read_tls_internal(size_t max_read_bytes,
@@ -270,10 +269,13 @@ ssize_t TcpConnection::read_tls_internal(size_t max_read_bytes,
     // Actor 串行执行读取；等待 TLS IO 时不再处理其他邮箱事件。
     input_buffer_.ensure_writable_bytes(max_chunk);
 
+    auto deadline =
+        timeout_ms ? zco::Deadline::after(std::chrono::milliseconds(timeout_ms))
+                   : zco::Deadline{};
     const ssize_t n = tls_channel_->read(
         input_buffer_.begin_write(), max_chunk, timeout_ms,
-        [this](bool wait_for_write, uint32_t wait_timeout_ms) {
-            return wait_tls_io(wait_for_write, wait_timeout_ms);
+        [this, deadline](bool wait_for_write, uint32_t) {
+            return wait_tls_io(wait_for_write, deadline);
         });
 
     if (n > 0) {
@@ -372,10 +374,13 @@ ssize_t TcpConnection::write_tls_internal(const char *data, size_t length,
         return -1;
     }
 
+    auto deadline =
+        timeout_ms ? zco::Deadline::after(std::chrono::milliseconds(timeout_ms))
+                   : zco::Deadline{};
     return tls_channel_->write(
         data, length, timeout_ms,
-        [this](bool wait_for_write, uint32_t wait_timeout_ms) {
-            return wait_tls_io(wait_for_write, wait_timeout_ms);
+        [this, deadline](bool wait_for_write, uint32_t) {
+            return wait_tls_io(wait_for_write, deadline);
         });
 }
 
@@ -384,9 +389,10 @@ void TcpConnection::shutdown_tls_internal() {
         return;
     }
 
+    auto deadline = zco::Deadline::after(std::chrono::milliseconds(1000));
     tls_channel_->shutdown(
-        1000, [this](bool wait_for_write, uint32_t wait_timeout_ms) {
-            return wait_tls_io(wait_for_write, wait_timeout_ms);
+        1000, [this, deadline](bool wait_for_write, uint32_t) {
+            return wait_tls_io(wait_for_write, deadline);
         });
 }
 
@@ -567,6 +573,12 @@ void TcpConnection::shutdown() {
 }
 
 void TcpConnection::close() {
+    // Wake an actor's infinite read/write before queuing its close command.
+    // Keep the native fd owned until the actor has left the active operation.
+    if (socket_) {
+        auto borrowed = socket_->descriptor().borrow();
+        if (borrowed.fd() >= 0) (void)::shutdown(borrowed.fd(), SHUT_RDWR);
+    }
     if (try_begin_inline_actor()) {
         close_internal();
         const int saved_errno = errno;

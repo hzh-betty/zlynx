@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 BUILD_DIR="${BUILD_DIR:-${ROOT_DIR}/build-zco-perf-nooverride}"
-BIN="${BIN:-${BUILD_DIR}/zco/tests/stack_model_performance}"
+BIN="${BIN:-${BUILD_DIR}/zco/tests/zco_performance}"
 MODE="${1:-baseline}"
 OUT_ROOT="${ROOT_DIR}/zco/tests/benchmark/perf_results"
 STAMP="$(date +%Y%m%d_%H%M%S)"
@@ -13,8 +13,8 @@ mkdir -p "${OUT_DIR}"
 
 if [[ ! -x "${BIN}" ]]; then
   echo "[error] test binary not found: ${BIN}"
-  echo "[hint] configure first: cmake -S . -B build-zco-perf-nooverride -DCMAKE_BUILD_TYPE=RelWithDebInfo -DZCO_BUILD_TESTS=ON -DZLYNX_USE_ZMALLOC_OVERRIDE=OFF"
-  echo "[hint] build first: cmake --build build-zco-perf-nooverride --target stack_model_performance"
+  echo "[hint] configure first: cmake -S . -B build-zco-perf-nooverride -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_TESTING=OFF -DZLYNX_BUILD_PERF_TESTS=ON -DZLYNX_USE_ZMALLOC_OVERRIDE=OFF"
+  echo "[hint] build first: cmake --build build-zco-perf-nooverride --target zco_performance"
   exit 1
 fi
 
@@ -129,13 +129,13 @@ summarize() {
     echo "scale_pct=${ZCO_PERF_SCALE_PCT:-100}"
     echo
     if [[ -f "${OUT_DIR}/baseline.log" ]]; then
-      grep "^\[zco-perf\] scenario=" "${OUT_DIR}/baseline.log" || true
+      grep -E "^(stack=|submit |yield |channel |timer|io |rss_kib |max_rss_kib=)" "${OUT_DIR}/baseline.log" || true
     fi
     if [[ -f "${OUT_DIR}/perf_run.log" ]]; then
-      grep "^\[zco-perf\] scenario=" "${OUT_DIR}/perf_run.log" || true
+      grep -E "^(stack=|submit |yield |channel |timer|io |rss_kib |max_rss_kib=)" "${OUT_DIR}/perf_run.log" || true
     fi
     if [[ -f "${OUT_DIR}/valgrind_run.log" ]]; then
-      grep "^\[zco-perf\] scenario=" "${OUT_DIR}/valgrind_run.log" || true
+      grep -E "^(stack=|submit |yield |channel |timer|io |rss_kib |max_rss_kib=)" "${OUT_DIR}/valgrind_run.log" || true
     fi
   } > "${summary}"
 

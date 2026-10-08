@@ -6,8 +6,6 @@
 
 #include "znet/znet_logger.h"
 
-#include "zco/zco_logger.h"
-
 #include <gtest/gtest.h>
 
 namespace znet {
@@ -48,15 +46,6 @@ TEST_F(ZnetLoggerUnitTest, InitLoggerRefreshesCachedLogger) {
     EXPECT_EQ(second,
               zlog::LoggerManager::get_instance().get_logger("znet_logger"));
     EXPECT_FALSE(should_log(zlog::LogLevel::value::FATAL));
-}
-
-TEST_F(ZnetLoggerUnitTest, InitLoggerAlsoInitializesZcoLogger) {
-    init_logger(zlog::LogLevel::value::ERROR);
-
-    zlog::Logger::ptr co_logger = zco::get_logger_ptr();
-    ASSERT_NE(co_logger, nullptr);
-    EXPECT_EQ(co_logger->get_name(), "zco_logger");
-    EXPECT_NE(dynamic_cast<zlog::AsyncLogger *>(co_logger.get()), nullptr);
 }
 
 } // namespace

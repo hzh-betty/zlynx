@@ -12,7 +12,7 @@
 
 #include "znet/znet_logger.h"
 
-#include "zco/sched.h"
+#include "zco/coroutine.h"
 
 namespace znet {
 
@@ -23,10 +23,19 @@ constexpr uint32_t kAcceptErrorBackoffMs = 50;
 } // namespace
 
 // 仅保存监听参数，真正的 socket 初始化在 start() 中完成。
-Acceptor::Acceptor(Address::ptr listen_address, int backlog)
-    : listen_address_(std::move(listen_address)), backlog_(backlog) {}
+Acceptor::Acceptor(zco::Executor executor, Address::ptr listen_address,
+                   int backlog)
+    : executor_(std::move(executor)),
+      listen_address_(std::move(listen_address)), backlog_(backlog) {}
 
-Acceptor::~Acceptor() { stop(); }
+Acceptor::~Acceptor() {
+    // The last task capture may be released before its completion is published.
+    // Destruction revokes the descriptor without waiting on that same task.
+    running_.store(false);
+    auto listening = listen_socket();
+    if (listening)
+        (void)listening->close();
+}
 
 // 启动监听并拉起接收协程。
 bool Acceptor::start() {
@@ -71,7 +80,14 @@ bool Acceptor::start() {
     try {
         // 协程中持有 self，确保 accept_loop 生命周期内对象不被提前释放。
         auto self = shared_from_this();
-        zco::go([self]() { self->accept_loop(); });
+        auto submitted = executor_.spawn([self]() { self->accept_loop(); });
+        if (!submitted) {
+            errno = submitted.error().value();
+            listen_socket_->close();
+            running_.store(false);
+            return false;
+        }
+        task_ = std::move(submitted).value();
     } catch (const std::bad_weak_ptr &) {
         ZNET_LOG_ERROR("Acceptor::start must be called on shared_ptr instance");
         listen_socket_->close();
@@ -92,25 +108,29 @@ void Acceptor::stop() {
         return;
     }
 
-    if (listen_socket_) {
-        ZNET_LOG_INFO("Acceptor::stop closing listen socket: fd={}",
-                      listen_socket_->fd());
-        (void)listen_socket_->close();
-        listen_socket_.reset();
+    Socket::ptr listening;
+    {
+        std::lock_guard<std::mutex> lock(listen_mutex_);
+        listening.swap(listen_socket_);
     }
+    if (listening)
+        (void)listening->close();
+    if (task_ && zco::current_task_id() != task_.id())
+        (void)task_.join();
 }
 
 // 主接入循环：处理可重试错误并将成功接入的连接交给上层。
 void Acceptor::accept_loop() {
     ZNET_LOG_INFO("Acceptor::accept_loop started");
     while (running_.load()) {
-        if (!listen_socket_) {
+        auto listening = listen_socket();
+        if (!listening) {
             ZNET_LOG_WARN(
                 "Acceptor::accept_loop exits because listen socket is null");
             break;
         }
 
-        Socket::ptr client = listen_socket_->accept();
+        Socket::ptr client = listening->accept();
         if (!client) {
             if (!running_.load()) {
                 ZNET_LOG_DEBUG(
@@ -124,7 +144,7 @@ void Acceptor::accept_loop() {
             }
 
             // 监听 fd 已关闭，通常是 stop() 导致，直接退出循环。
-            if (errno == EBADF) {
+            if (errno == EBADF || errno == ECANCELED) {
                 ZNET_LOG_DEBUG(
                     "Acceptor::accept_loop exits because listen fd is closed");
                 break;
@@ -133,7 +153,9 @@ void Acceptor::accept_loop() {
             ZNET_LOG_WARN("Acceptor::accept_loop accept failed: errno={}",
                           errno);
             // 非可重试错误走短暂退避，避免异常场景下 busy loop 与日志风暴。
-            zco::sleep_for(kAcceptErrorBackoffMs);
+            if (!zco::sleep_for(
+                    std::chrono::milliseconds(kAcceptErrorBackoffMs)))
+                break;
             continue;
         }
 

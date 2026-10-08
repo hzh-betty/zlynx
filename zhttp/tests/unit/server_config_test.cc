@@ -1,5 +1,5 @@
 #include "../test_support.h"
-#include "zco/zco_logger.h"
+
 #include "zhttp/http_server_builder.h"
 #include "zhttp/server_config.h"
 #include "zhttp/zhttp_logger.h"
@@ -328,19 +328,15 @@ level = "warning"
     auto server = builder.build();
     ASSERT_TRUE(server);
 
-    auto zco_logger = zco::get_logger_ptr();
     auto net_logger = znet::get_logger_ptr();
     auto http_logger = zhttp::get_logger_ptr();
 
-    ASSERT_NE(zco_logger, nullptr);
     ASSERT_NE(net_logger, nullptr);
     ASSERT_NE(http_logger, nullptr);
 
-    EXPECT_EQ(zco_logger->get_name(), "zco_logger");
     EXPECT_EQ(net_logger->get_name(), "znet_logger");
     EXPECT_EQ(http_logger->get_name(), "zhttp_logger");
 
-    EXPECT_NE(dynamic_cast<zlog::AsyncLogger *>(zco_logger.get()), nullptr);
     EXPECT_NE(dynamic_cast<zlog::AsyncLogger *>(net_logger.get()), nullptr);
     EXPECT_NE(dynamic_cast<zlog::AsyncLogger *>(http_logger.get()), nullptr);
 }

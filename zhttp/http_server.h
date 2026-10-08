@@ -1,5 +1,6 @@
 #ifndef ZHTTP_HTTP_SERVER_H_
 #define ZHTTP_HTTP_SERVER_H_
+#include "zco/runtime.h"
 
 #include "zhttp/middleware/middleware.h"
 #include "zhttp/request_limits.h"
@@ -30,7 +31,8 @@ class HttpServer {
      * @param address 监听地址。
      * @param backlog 待接受连接队列长度，默认 SOMAXCONN。
      */
-    explicit HttpServer(znet::Address::ptr address, int backlog = SOMAXCONN);
+    explicit HttpServer(znet::Address::ptr address, zco::RuntimeOptions options,
+                        int backlog = SOMAXCONN);
     /** 停止服务器并释放运行资源。 */
     virtual ~HttpServer();
     /** 返回路由器，须在 start() 前完成注册。 */
@@ -49,8 +51,6 @@ class HttpServer {
     void set_name(const std::string &name);
     /** 返回服务器名称引用。 */
     const std::string &name() const;
-    /** 设置 IO 线程数量，超过 int 最大值时截断。 */
-    void set_thread_count(size_t count);
     /** 设置网络读取超时，单位毫秒，0 表示关闭。 */
     void set_recv_timeout(uint64_t timeout);
     /** 设置网络写出超时，单位毫秒，0 表示关闭。 */
@@ -94,6 +94,7 @@ class HttpServer {
     void check_mutable() const;
     struct Runtime;
     std::shared_ptr<Runtime> runtime_;
+    std::unique_ptr<zco::Runtime> io_runtime_;
     std::shared_ptr<znet::TcpServer> tcp_server_;
 };
 } // namespace zhttp
