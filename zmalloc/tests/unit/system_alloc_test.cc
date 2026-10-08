@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <cerrno>
 #include <limits>
 #include <new>
 #include <vector>
@@ -72,6 +73,24 @@ TEST_F(SystemAllocTest, TrimmedMappingsRemainDisjointAndWritable) {
 
 TEST_F(SystemAllocTest, ZeroPagesThrowsBadAlloc) {
     EXPECT_THROW(system_alloc(0), std::bad_alloc);
+}
+
+TEST_F(SystemAllocTest, NothrowEntryReportsFailureAndRemainsUsable) {
+    errno = 0;
+    EXPECT_EQ(system_alloc_nothrow(0), nullptr);
+    EXPECT_EQ(errno, ENOMEM);
+    EXPECT_EQ(system_alloc_nothrow(std::numeric_limits<size_t>::max()), nullptr);
+    const size_t pages =
+        (std::numeric_limits<size_t>::max() - PAGE_SIZE) / PAGE_SIZE;
+    EXPECT_EQ(system_alloc_nothrow(pages), nullptr);
+
+    auto *ptr = static_cast<unsigned char *>(system_alloc_nothrow(1));
+    ASSERT_NE(ptr, nullptr);
+    ptr[0] = 0x5a;
+    ptr[PAGE_SIZE - 1] = 0xa5;
+    EXPECT_EQ(ptr[0], 0x5a);
+    EXPECT_EQ(ptr[PAGE_SIZE - 1], 0xa5);
+    system_free(ptr, 1);
 }
 
 } // namespace

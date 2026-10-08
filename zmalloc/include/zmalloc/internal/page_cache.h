@@ -74,6 +74,13 @@ class PageCache : public NonCopyable {
         return static_cast<Span *>(id_span_map_.get(id));
     }
 
+    /** @brief 登记大对齐块的附加页；调用者须持有 page_mtx_。 */
+    void map_span_page(Span *span, void *address) {
+        const PageId id = reinterpret_cast<PageId>(address) >> PAGE_SHIFT;
+        assert(id >= span->page_id && id - span->page_id < span->n);
+        id_span_map_.set(id, span);
+    }
+
     /**
      * @brief 释放 Span 到 PageCache，并尝试合并相邻 Span
      * @param span 要释放的 Span

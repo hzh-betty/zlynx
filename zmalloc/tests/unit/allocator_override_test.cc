@@ -1,10 +1,14 @@
 #include "zmalloc/internal/page_cache.h"
+#include "zmalloc/zmalloc.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <cerrno>
 #include <cstring>
 #include <new>
+#include <limits>
+#include <malloc.h>
 #include <thread>
 #include <pthread.h>
 
@@ -212,7 +216,123 @@ TEST_F(AllocatorOverrideTest, PosixMemalignRejectsInvalidAlignment) {
     void *ptr = reinterpret_cast<void *>(0x1);
 
     EXPECT_EQ(::posix_memalign(&ptr, 24, 96), EINVAL);
-    EXPECT_EQ(ptr, nullptr);
+    EXPECT_EQ(ptr, reinterpret_cast<void *>(0x1));
+}
+
+TEST_F(AllocatorOverrideTest, ZeroSizeAllocationsRemainFreeable) {
+    void *pointers[] = {std::malloc(0), std::calloc(0, 16),
+                        std::realloc(nullptr, 0), ::pvalloc(0)};
+    for (void *ptr : pointers) {
+        ASSERT_NE(ptr, nullptr);
+        std::free(ptr);
+    }
+}
+
+TEST_F(AllocatorOverrideTest, OverflowReturnsEnomemAndPreservesReallocInput) {
+    volatile size_t huge = std::numeric_limits<size_t>::max();
+    errno = 0;
+    EXPECT_EQ(std::malloc(huge), nullptr);
+    EXPECT_EQ(errno, ENOMEM);
+    errno = 0;
+    EXPECT_EQ(std::calloc(huge, 2), nullptr);
+    EXPECT_EQ(errno, ENOMEM);
+    errno = 0;
+    EXPECT_EQ(::memalign(64, huge), nullptr);
+    EXPECT_EQ(errno, ENOMEM);
+    errno = 0;
+    EXPECT_EQ(::pvalloc(huge), nullptr);
+    EXPECT_EQ(errno, ENOMEM);
+
+    auto *ptr = static_cast<unsigned char *>(std::malloc(32));
+    ASSERT_NE(ptr, nullptr);
+    std::memset(ptr, 0x5a, 32);
+    EXPECT_EQ(std::realloc(ptr, huge), nullptr);
+    for (size_t i = 0; i < 32; ++i) {
+        EXPECT_EQ(ptr[i], 0x5a);
+    }
+    std::free(ptr);
+}
+
+#if __SIZEOF_POINTER__ == 8
+TEST_F(AllocatorOverrideTest, MmapFailureDoesNotTerminateOrLeavePageLockHeld) {
+    volatile size_t huge = size_t(1) << 62;
+    errno = 0;
+    EXPECT_EQ(std::malloc(huge), nullptr);
+    EXPECT_EQ(errno, ENOMEM);
+    EXPECT_THROW((void)::operator new(huge), std::bad_alloc);
+    EXPECT_EQ(::operator new(huge, std::nothrow), nullptr);
+    EXPECT_THROW(zmalloc(huge), std::bad_alloc);
+
+#if defined(__cpp_aligned_new)
+    const auto alignment = std::align_val_t(65536);
+    EXPECT_THROW((void)::operator new(huge, alignment), std::bad_alloc);
+    EXPECT_EQ(::operator new(huge, alignment, std::nothrow), nullptr);
+#endif
+
+    void *ptr = std::malloc(MAX_BYTES + 1);
+    ASSERT_NE(ptr, nullptr);
+    std::free(ptr);
+}
+#endif
+
+TEST_F(AllocatorOverrideTest, PosixMemalignFailurePreservesPointerAndErrno) {
+    void *ptr = reinterpret_cast<void *>(0x1234);
+    volatile size_t huge = std::numeric_limits<size_t>::max();
+    errno = EBUSY;
+    EXPECT_EQ(::posix_memalign(&ptr, 64, huge), ENOMEM);
+    EXPECT_EQ(ptr, reinterpret_cast<void *>(0x1234));
+    EXPECT_EQ(errno, EBUSY);
+}
+
+TEST_F(AllocatorOverrideTest, FreePreservesErrno) {
+    void *ptr = std::malloc(2 * 1024 * 1024);
+    ASSERT_NE(ptr, nullptr);
+    errno = EBUSY;
+    std::free(ptr);
+    EXPECT_EQ(errno, EBUSY);
+    std::free(nullptr);
+    EXPECT_EQ(errno, EBUSY);
+}
+
+TEST_F(AllocatorOverrideTest, UsableSizeSupportsManagedAndAlignedAllocations) {
+    EXPECT_EQ(::malloc_usable_size(nullptr), 0u);
+    for (size_t size : {size_t(1), size_t(63), size_t(2 * 1024 * 1024)}) {
+        void *ptr = std::malloc(size);
+        ASSERT_NE(ptr, nullptr);
+        EXPECT_GE(::malloc_usable_size(ptr), size);
+        std::free(ptr);
+    }
+    void *ptr = nullptr;
+    ASSERT_EQ(::posix_memalign(&ptr, 128, 96), 0);
+    EXPECT_GE(::malloc_usable_size(ptr), 96u);
+    std::free(ptr);
+}
+
+TEST_F(AllocatorOverrideTest, LargeAlignmentSupportsFreeReallocAndMappingCleanup) {
+    constexpr size_t size = 2 * 1024 * 1024;
+    constexpr size_t alignment = 65536;
+    for (size_t i = 0; i < 8; ++i) {
+        void *ptr = nullptr;
+        ASSERT_EQ(::posix_memalign(&ptr, alignment, size), 0);
+        ASSERT_NE(ptr, nullptr);
+        EXPECT_EQ(reinterpret_cast<uintptr_t>(ptr) % alignment, 0u);
+        EXPECT_GE(::malloc_usable_size(ptr), size);
+        void *header_page = static_cast<char *>(ptr) - 1;
+        auto &pc = PageCache::get_instance();
+        ASSERT_NE(pc.try_map_object_to_span(header_page), nullptr);
+        std::memset(ptr, 0x5a, size);
+        if (i % 2 == 0) {
+            void *next = std::realloc(ptr, size + 1024);
+            ASSERT_NE(next, nullptr);
+            const auto *bytes = static_cast<const unsigned char *>(next);
+            EXPECT_EQ(bytes[0], 0x5a);
+            EXPECT_EQ(bytes[size - 1], 0x5a);
+            std::free(next);
+        } else {
+            std::free(ptr);
+        }
+        EXPECT_EQ(pc.try_map_object_to_span(header_page), nullptr);
+    }
 }
 
 TEST_F(AllocatorOverrideTest, VallocReturnsPageAlignedPointer) {
@@ -228,6 +348,13 @@ TEST_F(AllocatorOverrideTest, VallocReturnsPageAlignedPointer) {
 }
 
 #if defined(__GLIBC__)
+TEST_F(AllocatorOverrideTest, UsableSizeSupportsForeignLibcAllocation) {
+    void *ptr = __libc_malloc(96);
+    ASSERT_NE(ptr, nullptr);
+    EXPECT_GE(::malloc_usable_size(ptr), 96u);
+    std::free(ptr);
+}
+
 TEST_F(AllocatorOverrideTest, FreeHandlesForeignLibcAllocation) {
     void *ptr = __libc_malloc(96);
     ASSERT_NE(ptr, nullptr);

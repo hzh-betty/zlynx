@@ -8,11 +8,24 @@
 #define ZMALLOC_INTERNAL_COMMON_H_
 
 #include <atomic>
+#include <cstddef>
 #include <thread>
 
 #include "zmalloc_config.h"
 
 namespace zmalloc {
+
+namespace internal {
+
+extern thread_local size_t tls_allocator_call_depth;
+
+class AllocatorCallGuard {
+  public:
+    AllocatorCallGuard() noexcept { ++tls_allocator_call_depth; }
+    ~AllocatorCallGuard() { --tls_allocator_call_depth; }
+};
+
+} // namespace internal
 
 class NonCopyable {
   public:

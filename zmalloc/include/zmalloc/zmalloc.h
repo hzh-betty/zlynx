@@ -15,6 +15,8 @@
 #include "zmalloc/internal/thread_cache.h"
 #include "zmalloc/internal/zmalloc_config.h"
 
+#include <limits>
+
 namespace zmalloc {
 
 /**
@@ -34,13 +36,15 @@ ZM_ALWAYS_INLINE void *zmalloc(size_t size) {
     }
 
     // 第三步：大对象按页向 PageCache 申请，记录原始请求大小供释放时分流。
-    size_t k_page = (size + PAGE_SIZE - 1) >> PAGE_SHIFT;
+    if (size > static_cast<size_t>(std::numeric_limits<ptrdiff_t>::max())) {
+        throw std::bad_alloc();
+    }
+    size_t k_page = ((size - 1) >> PAGE_SHIFT) + 1;
     PageCache &pc = PageCache::get_instance();
-    pc.page_mtx().lock();
+    std::lock_guard<std::mutex> lock(pc.page_mtx());
     Span *span = pc.new_span(k_page);
     span->is_use = true;
     span->obj_size = size;
-    pc.page_mtx().unlock();
     return reinterpret_cast<void *>(span->page_id << PAGE_SHIFT);
 }
 
@@ -65,9 +69,8 @@ ZM_ALWAYS_INLINE void zfree(void *ptr) {
     }
 
     // 第三步：大对象整段归还 PageCache；超大 Span 会进一步归还系统。
-    pc.page_mtx().lock();
+    std::lock_guard<std::mutex> lock(pc.page_mtx());
     pc.release_span_to_page_cache(span);
-    pc.page_mtx().unlock();
 }
 
 } // namespace zmalloc

@@ -31,6 +31,28 @@ if(BUILD_TESTING)
 
     zlynx_add_gtest(zmalloc_allocator_override_test unit/allocator_override_test.cc zmalloc unit zmalloc_override)
 
+    set(ZMALLOC_OVERRIDE_TEST_TARGETS
+        zmalloc_override_whitebox_test
+        zmalloc_allocator_override_test
+    )
+    if(BUILD_SHARED_LIBS)
+        # 实际共享对象验证 ELF 替换及 TLS，复用公开接口测试。
+        add_library(zmalloc_override_shared_test SHARED ../src/override.cc)
+        target_link_libraries(zmalloc_override_shared_test PUBLIC zmalloc PRIVATE ${CMAKE_DL_LIBS})
+        zlynx_apply_common_options(zmalloc_override_shared_test)
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+            target_compile_options(zmalloc_override_shared_test PRIVATE -ftls-model=initial-exec)
+        endif()
+        zlynx_add_gtest(zmalloc_allocator_override_shared_test unit/allocator_override_test.cc zmalloc unit zmalloc_override_shared_test)
+        list(APPEND ZMALLOC_OVERRIDE_TEST_TARGETS zmalloc_allocator_override_shared_test)
+    endif()
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        foreach(test_target ${ZMALLOC_OVERRIDE_TEST_TARGETS})
+            # 必须实际调用替换入口，不能由编译器折叠边界分配请求。
+            target_compile_options(${test_target} PRIVATE -fno-builtin)
+        endforeach()
+    endif()
+
     set(ZMALLOC_INTEGRATION_TESTS
         concurrent_alloc_test
     )

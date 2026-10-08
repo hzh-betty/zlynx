@@ -15,6 +15,10 @@
 #include "zmalloc/internal/transfer_cache.h"
 
 namespace zmalloc {
+namespace internal {
+thread_local size_t tls_allocator_call_depth = 0;
+} // namespace internal
+
 constexpr size_t ThreadCache::kCacheBudget;
 namespace {
 // 缓存本体不注册析构；退出钩子关闭后，晚于它执行的 TLS 析构仍可访问本体。

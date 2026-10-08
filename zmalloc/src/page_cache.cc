@@ -22,6 +22,8 @@ void clear_span_mapping(PageMap &id_span_map, Span *span) {
 } // namespace
 
 Span *PageCache::new_span(size_t k) {
+    // 异常运行库分配异常对象时也可能调用 malloc，不能重入已持有的页锁。
+    internal::AllocatorCallGuard guard;
     assert(k > 0);
 
     // 第一步：超过桶管理上限的大请求直接向系统申请，不参与切分与合并。
@@ -31,20 +33,31 @@ Span *PageCache::new_span(size_t k) {
     // - 大于 (NPAGES-1) 的大 span：直接走系统申请与系统释放，避免进入桶管理。
     if (k > NPAGES - 1) {
         void *ptr = system_alloc(k);
-        Span *span = span_pool_.allocate();
-        span->page_id = reinterpret_cast<PageId>(ptr) >> PAGE_SHIFT;
-        span->n = k;
-        span->is_use = true;
+        Span *span = nullptr;
+        try {
+            span = span_pool_.allocate();
+            span->page_id = reinterpret_cast<PageId>(ptr) >> PAGE_SHIFT;
+            span->n = k;
+            span->is_use = true;
 
-        // 关键点：大对象只需要“起始页”映射即可。
-        // 原因：对大对象，zfree
-        // 传回的就是分配时返回的起始地址，不需要中间页映射。
-        id_span_map_.set(span->page_id, span);
-        return span;
+            // 普通大对象只登记起始页；override 可为对齐块补登记附加页。
+            id_span_map_.set(span->page_id, span);
+            return span;
+        } catch (...) {
+            if (span != nullptr) {
+                span_pool_.deallocate(span);
+            }
+            system_free(ptr, k);
+            throw;
+        }
     }
 
     // 第二步：优先从精确桶（k 页桶）直接取，避免切分。
     if (!span_lists_[k].empty()) {
+        Span *span = span_lists_[k].begin();
+        if (!id_span_map_.ensure(span->page_id, span->n)) {
+            throw std::bad_alloc();
+        }
         Span *k_span = span_lists_[k].pop_front();
 
         // 该 Span 被分配出去，标记为在用。
@@ -66,8 +79,12 @@ Span *PageCache::new_span(size_t k) {
     // 切分规则：从大 span 的“头部”切出 k 页，剩余部分回挂到对应桶。
     for (size_t i = k + 1; i < NPAGES; ++i) {
         if (!span_lists_[i].empty()) {
-            Span *n_span = span_lists_[i].pop_front();
+            Span *n_span = span_lists_[i].begin();
+            if (!id_span_map_.ensure(n_span->page_id, n_span->n)) {
+                throw std::bad_alloc();
+            }
             Span *k_span = span_pool_.allocate();
+            span_lists_[i].pop_front();
 
             // 在 n_span 头部切 k 页
             k_span->page_id = n_span->page_id;
@@ -107,7 +124,20 @@ Span *PageCache::new_span(size_t k) {
     // 向系统申请 (NPAGES-1) 页作为“补货”，挂入最大桶。
     // 然后递归再走一次 new_span(k)（此时一定能在向上搜索中命中）。
     Span *big_span = span_pool_.allocate();
-    void *ptr = system_alloc(NPAGES - 1);
+    void *ptr = nullptr;
+    try {
+        ptr = system_alloc(NPAGES - 1);
+        const PageId id = reinterpret_cast<PageId>(ptr) >> PAGE_SHIFT;
+        if (!id_span_map_.ensure(id, NPAGES - 1)) {
+            throw std::bad_alloc();
+        }
+    } catch (...) {
+        if (ptr != nullptr) {
+            system_free(ptr, NPAGES - 1);
+        }
+        span_pool_.deallocate(big_span);
+        throw;
+    }
     big_span->page_id = reinterpret_cast<PageId>(ptr) >> PAGE_SHIFT;
     big_span->n = NPAGES - 1;
     big_span->is_use = false;
@@ -116,6 +146,9 @@ Span *PageCache::new_span(size_t k) {
     big_span->free_list = nullptr;
     big_span->next = nullptr;
     big_span->prev = nullptr;
+
+    id_span_map_.set(big_span->page_id, big_span);
+    id_span_map_.set(big_span->page_id + big_span->n - 1, big_span);
 
     span_lists_[big_span->n].push_front(big_span);
 

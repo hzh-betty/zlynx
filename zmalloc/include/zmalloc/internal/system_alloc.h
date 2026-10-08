@@ -21,6 +21,9 @@ namespace zmalloc {
  */
 void *system_alloc(size_t kpage);
 
+/** @brief 不抛异常的系统分配入口，供递归分配和 bootstrap 使用。 */
+void *system_alloc_nothrow(size_t kpage) noexcept;
+
 /**
  * @brief 将 system_alloc 返回的连续内存归还给系统
  * @param ptr

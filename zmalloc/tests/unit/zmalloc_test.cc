@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 
 #include <cstring>
+#include <limits>
 #include <set>
 #include <vector>
 
@@ -460,6 +461,16 @@ TEST_F(ZmallocTest, MultiPageAlloc) {
 
 TEST_P(ZmallocAllocTouchParamTest, AllocTouchFreeBySize) {
     AllocTouchFree(GetParam());
+}
+
+TEST_F(ZmallocTest, OversizedRequestThrowsWithoutCorruptingPageCache) {
+    EXPECT_THROW(zmalloc(std::numeric_limits<size_t>::max()), std::bad_alloc);
+#if __SIZEOF_POINTER__ == 8
+    EXPECT_THROW(zmalloc(size_t(1) << 62), std::bad_alloc);
+#endif
+    void *ptr = zmalloc(MAX_BYTES + 1);
+    ASSERT_NE(ptr, nullptr);
+    zfree(ptr);
 }
 
 INSTANTIATE_TEST_SUITE_P(Sizes, ZmallocAllocTouchParamTest,

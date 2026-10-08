@@ -18,6 +18,10 @@
 #include <limits>
 #include <new>
 
+#if defined(__GLIBC__)
+#include <dlfcn.h>
+#endif
+
 namespace zmalloc {
 namespace internal {
 
@@ -66,18 +70,15 @@ std::atomic<bool> &allocator_ready() {
 // 递归保护：malloc/new 可能在初始化或日志路径里再次触发分配。
 // call_depth>0 时强制走 bootstrap，避免 re-enter 主分配器导致死锁。
 thread_local bool tls_initializing_allocator = false;
-thread_local size_t tls_allocator_call_depth = 0;
-
-class AllocatorCallGuard {
-  public:
-    AllocatorCallGuard() noexcept { ++tls_allocator_call_depth; }
-    ~AllocatorCallGuard() { --tls_allocator_call_depth; }
-};
 
 size_t bootstrap_mapping_pages(size_t size) {
     // bootstrap 元信息和用户区放在同一块映射里，便于一次 system_free 回收。
-    const size_t total = sizeof(BootstrapAlloc) + size;
-    return (total + PAGE_SIZE - 1) >> PAGE_SHIFT;
+    size_t total = 0;
+    if (__builtin_add_overflow(sizeof(BootstrapAlloc), size, &total) ||
+        __builtin_add_overflow(total, PAGE_SIZE - 1, &total)) {
+        return 0;
+    }
+    return total >> PAGE_SHIFT;
 }
 
 void *bootstrap_allocate(size_t size) noexcept {
@@ -85,12 +86,17 @@ void *bootstrap_allocate(size_t size) noexcept {
         return nullptr;
     }
 
-    BootstrapAlloc *alloc = static_cast<BootstrapAlloc *>(
-        system_alloc(bootstrap_mapping_pages(size)));
+    const size_t pages = bootstrap_mapping_pages(size);
+    BootstrapAlloc *alloc =
+        static_cast<BootstrapAlloc *>(system_alloc_nothrow(pages));
+    if (alloc == nullptr) {
+        errno = ENOMEM;
+        return nullptr;
+    }
     // user_ptr 紧跟在元信息之后，避免额外地址映射结构。
     alloc->user_ptr = alloc + 1;
     alloc->user_size = size;
-    alloc->mapping_pages = bootstrap_mapping_pages(size);
+    alloc->mapping_pages = pages;
 
     SpinLock &lock = bootstrap_lock();
     lock.lock();
@@ -202,7 +208,7 @@ void *bootstrap_reallocate(void *ptr, size_t size) noexcept {
     return next;
 }
 
-void ensure_allocator_ready() noexcept {
+void ensure_allocator_ready() {
     if (allocator_ready().load(std::memory_order_acquire) ||
         tls_initializing_allocator) {
         return;
@@ -210,9 +216,14 @@ void ensure_allocator_ready() noexcept {
 
     tls_initializing_allocator = true;
     // 热身一次主路径，确保后续重入判断可依赖 ready 标记。
-    void *warm = zmalloc(8);
-    zfree(warm);
-    allocator_ready().store(true, std::memory_order_release);
+    try {
+        void *warm = zmalloc(8);
+        zfree(warm);
+        allocator_ready().store(true, std::memory_order_release);
+    } catch (...) {
+        tls_initializing_allocator = false;
+        throw;
+    }
     tls_initializing_allocator = false;
 }
 
@@ -256,8 +267,6 @@ Span *managed_span(void *ptr) {
     return span;
 }
 
-size_t managed_size(void *ptr) { return managed_span(ptr)->obj_size; }
-
 bool unwrap_aligned_pointer(void *ptr, void **raw_out,
                             size_t *size_out) noexcept {
     if (ptr == nullptr) {
@@ -270,9 +279,10 @@ bool unwrap_aligned_pointer(void *ptr, void **raw_out,
     }
 
     void *header_addr = reinterpret_cast<void *>(addr - sizeof(AlignedHeader));
-    if (PageCache::get_instance().try_map_object_to_span(header_addr) ==
-            nullptr &&
-        !bootstrap_contains_address(header_addr)) {
+    if (!bootstrap_contains_address(header_addr) &&
+        (!allocator_ready().load(std::memory_order_acquire) ||
+         PageCache::get_instance().try_map_object_to_span(header_addr) ==
+             nullptr)) {
         return false;
     }
 
@@ -282,7 +292,9 @@ bool unwrap_aligned_pointer(void *ptr, void **raw_out,
     }
 
     void *raw = header->raw;
-    if (!is_bootstrap_pointer(raw) && managed_span(raw) == nullptr) {
+    if (!is_bootstrap_pointer(raw) &&
+        (!allocator_ready().load(std::memory_order_acquire) ||
+         managed_span(raw) == nullptr)) {
         // header 看起来合法，但 raw 不受管时拒绝解包，防止误解引用外部内存。
         return false;
     }
@@ -297,40 +309,48 @@ bool unwrap_aligned_pointer(void *ptr, void **raw_out,
 }
 
 void *allocate_bytes(size_t size) noexcept {
-    if (size == 0) {
+    if (size > static_cast<size_t>(std::numeric_limits<ptrdiff_t>::max())) {
+        errno = ENOMEM;
         return nullptr;
     }
+    const size_t actual = size == 0 ? 1 : size;
 
-    if (!allocator_ready().load(std::memory_order_acquire)) {
-        ensure_allocator_ready();
+    try {
+        if (should_use_bootstrap_allocator()) {
+            if (tls_initializing_allocator || tls_allocator_call_depth != 0) {
+                return bootstrap_allocate(actual);
+            }
+            ensure_allocator_ready();
+        }
+
+        // guard 生命周期覆盖 zmalloc 调用，防止调用栈内部再次分配时重入主路径。
+        AllocatorCallGuard guard;
+        return zmalloc(actual);
+    } catch (const std::bad_alloc &) {
+        errno = ENOMEM;
+        return nullptr;
     }
-
-    if (should_use_bootstrap_allocator()) {
-        return bootstrap_allocate(size);
-    }
-
-    // guard 生命周期覆盖 zmalloc 调用，防止调用栈内部再次分配时重入主路径。
-    AllocatorCallGuard guard;
-    return zmalloc(size);
 }
 
 void *aligned_allocate_bytes(size_t size, size_t alignment) noexcept {
+    if (!is_power_of_two(alignment)) {
+        errno = EINVAL;
+        return nullptr;
+    }
     if (alignment <= alignof(std::max_align_t)) {
         return allocate_bytes(size == 0 ? 1 : size);
     }
 
-    if (!is_power_of_two(alignment)) {
-        return nullptr;
-    }
-
     const size_t actual = size == 0 ? 1 : size;
     const size_t header_size = sizeof(AlignedHeader);
-    if (alignment > std::numeric_limits<size_t>::max() - actual - header_size) {
-        // 防溢出保护：后续 actual+alignment+header_size 需要可表示。
+    size_t total = 0;
+    if (__builtin_add_overflow(actual, alignment - 1, &total) ||
+        __builtin_add_overflow(total, header_size, &total)) {
+        errno = ENOMEM;
         return nullptr;
     }
 
-    void *raw = allocate_bytes(actual + alignment + header_size);
+    void *raw = allocate_bytes(total);
     if (raw == nullptr) {
         return nullptr;
     }
@@ -343,6 +363,24 @@ void *aligned_allocate_bytes(size_t size, size_t alignment) noexcept {
     header->magic = kAlignedAllocMagic;
     header->raw = raw;
     header->user_size = actual;
+
+    if (allocator_ready().load(std::memory_order_acquire)) {
+        PageCache &pc = PageCache::get_instance();
+        Span *span = pc.try_map_object_to_span(raw);
+        if (span != nullptr && span->n > NPAGES - 1) {
+            AllocatorCallGuard guard;
+            try {
+                std::lock_guard<std::mutex> lock(pc.page_mtx());
+                // 普通大块仍只登记起始页；对齐块额外登记回溯头和用户页。
+                pc.map_span_page(span, header);
+                pc.map_span_page(span, reinterpret_cast<void *>(aligned));
+            } catch (const std::bad_alloc &) {
+                zfree(raw);
+                errno = ENOMEM;
+                return nullptr;
+            }
+        }
+    }
     return reinterpret_cast<void *>(aligned);
 }
 
@@ -350,12 +388,15 @@ void deallocate_bytes(void *ptr) noexcept {
     if (ptr == nullptr) {
         return;
     }
+    const bool ready = allocator_ready().load(std::memory_order_acquire);
     if (is_bootstrap_pointer(ptr)) {
         bootstrap_free(ptr);
         return;
     }
 
-    if (managed_span(ptr) != nullptr) {
+    if ((ready || (!tls_initializing_allocator &&
+                   tls_allocator_call_depth == 0)) &&
+        managed_span(ptr) != nullptr) {
         AllocatorCallGuard guard;
         zfree(ptr);
         return;
@@ -384,14 +425,23 @@ void *reallocate_bytes(void *ptr, size_t size) noexcept {
         deallocate_bytes(ptr);
         return nullptr;
     }
+    if (size > static_cast<size_t>(std::numeric_limits<ptrdiff_t>::max())) {
+        errno = ENOMEM;
+        return nullptr;
+    }
 
     if (is_bootstrap_pointer(ptr)) {
         return bootstrap_reallocate(ptr, size);
     }
 
-    if (managed_span(ptr) != nullptr) {
-        // zmalloc 内部统一采用“新分配 + 拷贝 + 释放旧块”实现 realloc 语义。
-        const size_t old_size = managed_size(ptr);
+    Span *span = nullptr;
+    if (allocator_ready().load(std::memory_order_acquire) ||
+        (!tls_initializing_allocator && tls_allocator_call_depth == 0)) {
+        span = managed_span(ptr);
+    }
+    if (span != nullptr) {
+        // 分配新块、拷贝并释放旧块。
+        const size_t old_size = span->obj_size;
         void *next = allocate_bytes(size);
         if (next == nullptr) {
             return nullptr;
@@ -405,8 +455,7 @@ void *reallocate_bytes(void *ptr, size_t size) noexcept {
     void *aligned_raw = nullptr;
     size_t aligned_size = 0;
     if (unwrap_aligned_pointer(ptr, &aligned_raw, &aligned_size)) {
-        // 继续返回“可默认对齐释放”的地址；header 会在 aligned_allocate_bytes
-        // 中重建。
+        // realloc 返回满足默认对齐的地址，不保留原始扩展对齐。
         void *next = aligned_allocate_bytes(size, alignof(std::max_align_t));
         if (next == nullptr) {
             return nullptr;
@@ -419,6 +468,35 @@ void *reallocate_bytes(void *ptr, size_t size) noexcept {
     return __libc_realloc(ptr, size);
 #else
     return nullptr;
+#endif
+}
+
+size_t usable_size(void *ptr) noexcept {
+    if (ptr == nullptr) {
+        return 0;
+    }
+    if (allocator_ready().load(std::memory_order_acquire)) {
+        if (Span *span = managed_span(ptr)) {
+            return span->obj_size;
+        }
+    }
+    const size_t boot_size = bootstrap_size(ptr);
+    if (boot_size != 0) {
+        return boot_size;
+    }
+    size_t aligned_size = 0;
+    if (unwrap_aligned_pointer(ptr, nullptr, &aligned_size)) {
+        return aligned_size;
+    }
+#if defined(__GLIBC__)
+    // 仅外部 glibc 块需要动态查找；查找期间的递归分配由 bootstrap 处理。
+    AllocatorCallGuard guard;
+    using UsableSize = size_t (*)(void *);
+    static UsableSize libc_usable_size =
+        reinterpret_cast<UsableSize>(dlsym(RTLD_NEXT, "malloc_usable_size"));
+    return libc_usable_size == nullptr ? 0 : libc_usable_size(ptr);
+#else
+    return 0;
 #endif
 }
 
@@ -464,7 +542,13 @@ extern "C" void *malloc(size_t size) noexcept {
 }
 
 extern "C" void free(void *ptr) noexcept {
+    const int saved_errno = errno;
     zmalloc::internal::deallocate_bytes(ptr);
+    errno = saved_errno;
+}
+
+extern "C" size_t malloc_usable_size(void *ptr) noexcept {
+    return zmalloc::internal::usable_size(ptr);
 }
 
 extern "C" void *realloc(void *ptr, size_t size) noexcept {
@@ -474,6 +558,7 @@ extern "C" void *realloc(void *ptr, size_t size) noexcept {
 extern "C" void *calloc(size_t nmemb, size_t size) noexcept {
     size_t total = 0;
     if (__builtin_mul_overflow(nmemb, size, &total)) {
+        errno = ENOMEM;
         return nullptr;
     }
 
@@ -493,6 +578,7 @@ extern "C" void *memalign(size_t alignment, size_t size) noexcept {
 extern "C" void *aligned_alloc(size_t alignment, size_t size) noexcept {
     if (alignment == 0 || !zmalloc::internal::is_power_of_two(alignment) ||
         (size % alignment) != 0) {
+        errno = EINVAL;
         return nullptr;
     }
     return zmalloc::internal::aligned_allocate_bytes(size, alignment);
@@ -500,18 +586,14 @@ extern "C" void *aligned_alloc(size_t alignment, size_t size) noexcept {
 
 extern "C" int posix_memalign(void **memptr, size_t alignment,
                               size_t size) noexcept {
-    // glibc 头文件把 memptr 标成 nonnull；转成整数后再判零，保留防御性检查，
-    // 同时避免编译器把这里视为恒假比较。
-    if (reinterpret_cast<std::uintptr_t>(memptr) == 0) {
-        return EINVAL;
-    }
-    *memptr = nullptr;
     if (alignment < sizeof(void *) ||
         !zmalloc::internal::is_power_of_two(alignment)) {
         return EINVAL;
     }
 
+    const int saved_errno = errno;
     void *ptr = zmalloc::internal::aligned_allocate_bytes(size, alignment);
+    errno = saved_errno;
     if (ptr == nullptr) {
         return ENOMEM;
     }
@@ -526,10 +608,14 @@ extern "C" void *valloc(size_t size) noexcept {
 extern "C" void *pvalloc(size_t size) noexcept {
     size_t rounded = 0;
     if (__builtin_add_overflow(size, zmalloc::PAGE_SIZE - 1, &rounded)) {
+        errno = ENOMEM;
         return nullptr;
     }
     // pvalloc 语义：按页向上取整后再返回页对齐地址。
     rounded &= ~(zmalloc::PAGE_SIZE - 1);
+    if (rounded == 0) {
+        rounded = zmalloc::PAGE_SIZE;
+    }
     return zmalloc::internal::aligned_allocate_bytes(rounded,
                                                      zmalloc::PAGE_SIZE);
 }

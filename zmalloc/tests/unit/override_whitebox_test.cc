@@ -60,6 +60,66 @@ TEST_F(OverrideWhiteboxTest, BootstrapNullAndUnknownPointerPaths) {
     EXPECT_EQ(bootstrap_size(&stack_value), 0u);
 }
 
+TEST_F(OverrideWhiteboxTest, BootstrapRejectsOverflowWithoutThrowing) {
+    const size_t huge = std::numeric_limits<size_t>::max();
+    EXPECT_EQ(bootstrap_mapping_pages(huge), 0u);
+    EXPECT_EQ(bootstrap_mapping_pages(huge - 16), 0u);
+    errno = 0;
+    EXPECT_EQ(bootstrap_allocate(huge - 16), nullptr);
+    EXPECT_EQ(errno, ENOMEM);
+
+    auto *ptr = static_cast<unsigned char *>(bootstrap_allocate(32));
+    ASSERT_NE(ptr, nullptr);
+    std::memset(ptr, 0x5a, 32);
+    EXPECT_EQ(bootstrap_reallocate(ptr, huge), nullptr);
+    EXPECT_EQ(bootstrap_size(ptr), 32u);
+    EXPECT_EQ(ptr[0], 0x5a);
+    EXPECT_EQ(usable_size(ptr), 32u);
+    bootstrap_free(ptr);
+}
+
+TEST_F(OverrideWhiteboxTest, BootstrapAlignedPointerSurvivesReadyTransition) {
+    allocator_ready().store(false, std::memory_order_release);
+    tls_initializing_allocator = true;
+    void *ptr = aligned_allocate_bytes(96, 65536);
+    tls_initializing_allocator = false;
+    allocator_ready().store(true, std::memory_order_release);
+    ASSERT_NE(ptr, nullptr);
+    EXPECT_EQ(usable_size(ptr), 96u);
+    void *raw = nullptr;
+    ASSERT_TRUE(unwrap_aligned_pointer(ptr, &raw, nullptr));
+    EXPECT_TRUE(is_bootstrap_pointer(raw));
+    deallocate_bytes(ptr);
+    EXPECT_FALSE(is_bootstrap_pointer(raw));
+}
+
+TEST_F(OverrideWhiteboxTest, BootstrapAlignedReallocateWhileInitializing) {
+    allocator_ready().store(false, std::memory_order_release);
+    tls_initializing_allocator = true;
+    auto *ptr = static_cast<unsigned char *>(aligned_allocate_bytes(32, 65536));
+    unsigned char *next = nullptr;
+    if (ptr != nullptr) {
+        std::memset(ptr, 0x5a, 32);
+        next = static_cast<unsigned char *>(reallocate_bytes(ptr, 96));
+    }
+    tls_initializing_allocator = false;
+    allocator_ready().store(true, std::memory_order_release);
+
+    ASSERT_NE(ptr, nullptr);
+    ASSERT_NE(next, nullptr);
+    EXPECT_TRUE(is_bootstrap_pointer(next));
+    EXPECT_EQ(usable_size(next), 96u);
+    for (size_t i = 0; i < 32; ++i) {
+        EXPECT_EQ(next[i], 0x5a);
+    }
+    errno = 0;
+    EXPECT_EQ(reallocate_bytes(next, std::numeric_limits<size_t>::max()),
+              nullptr);
+    EXPECT_EQ(errno, ENOMEM);
+    EXPECT_EQ(next[0], 0x5a);
+    deallocate_bytes(next);
+}
+
 TEST_F(OverrideWhiteboxTest, BootstrapContainsAddressTraversesList) {
     void *p1 = bootstrap_allocate(32);
     void *p2 = bootstrap_allocate(32);
@@ -76,12 +136,16 @@ TEST_F(OverrideWhiteboxTest, BootstrapContainsAddressTraversesList) {
 }
 
 TEST_F(OverrideWhiteboxTest, AllocateBytesAndAlignedValidation) {
-    EXPECT_EQ(allocate_bytes(0), nullptr);
+    void *zero = allocate_bytes(0);
+    ASSERT_NE(zero, nullptr);
+    deallocate_bytes(zero);
 
     EXPECT_EQ(aligned_allocate_bytes(64, 24), nullptr); // 非 2 的幂
 
     const size_t huge_size = std::numeric_limits<size_t>::max() - 64;
     EXPECT_EQ(aligned_allocate_bytes(huge_size, 64), nullptr); // 防溢出分支
+    EXPECT_EQ(aligned_allocate_bytes(std::numeric_limits<size_t>::max(), 64),
+              nullptr);
 
     void *small_align = aligned_allocate_bytes(0, alignof(std::max_align_t));
     ASSERT_NE(small_align, nullptr);
@@ -99,12 +163,12 @@ TEST_F(OverrideWhiteboxTest, AllocateBytesBootstrapPathWhenInitializing) {
     deallocate_bytes(p);
 }
 
-TEST_F(OverrideWhiteboxTest, ManagedSpanAndManagedSizeChecks) {
+TEST_F(OverrideWhiteboxTest, ManagedSpanChecks) {
     void *p = zmalloc(64);
     ASSERT_NE(p, nullptr);
     Span *span = managed_span(p);
     ASSERT_NE(span, nullptr);
-    EXPECT_GE(managed_size(p), 64u);
+    EXPECT_GE(span->obj_size, 64u);
 
     void *inside = static_cast<void *>(static_cast<char *>(p) + 1);
     EXPECT_EQ(managed_span(inside), nullptr);
@@ -253,15 +317,11 @@ TEST_F(OverrideWhiteboxTest, WrapperFunctionsCfreeMemalignPvallocAndDeleteVarian
 
     void *pm = reinterpret_cast<void *>(0x1);
     EXPECT_EQ(posix_memalign(&pm, 4, 32), EINVAL);
-    EXPECT_EQ(pm, nullptr);
-    volatile std::uintptr_t null_addr = 0;
-    void **null_memptr =
-        reinterpret_cast<void **>(static_cast<std::uintptr_t>(null_addr));
-    EXPECT_EQ(posix_memalign(null_memptr, 16, 32), EINVAL);
+    EXPECT_EQ(pm, reinterpret_cast<void *>(0x1));
 
     EXPECT_EQ(pvalloc(std::numeric_limits<size_t>::max()), nullptr);
 
-    void *d1 = operator new(24);
+    void *d1 = operator new[](24);
     ASSERT_NE(d1, nullptr);
     operator delete[](d1, static_cast<size_t>(24));
 
@@ -269,7 +329,7 @@ TEST_F(OverrideWhiteboxTest, WrapperFunctionsCfreeMemalignPvallocAndDeleteVarian
     ASSERT_NE(d2, nullptr);
     operator delete(d2, std::nothrow);
 
-    void *d3 = operator new(56);
+    void *d3 = operator new[](56);
     ASSERT_NE(d3, nullptr);
     operator delete[](d3, std::nothrow);
 }

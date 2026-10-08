@@ -50,11 +50,18 @@ set_target_properties(zmalloc PROPERTIES
 add_library(zmalloc_override STATIC src/override.cc)
 add_library(zmalloc::override ALIAS zmalloc_override)
 target_link_libraries(zmalloc_override PUBLIC zmalloc)
+target_link_libraries(zmalloc_override PRIVATE ${CMAKE_DL_LIBS})
 zlynx_apply_common_options(zmalloc_override)
 set_target_properties(zmalloc_override PROPERTIES
     POSITION_INDEPENDENT_CODE ON
     EXPORT_NAME override
 )
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    # malloc 及其依赖不能通过动态 TLS 访问再次触发分配。
+    target_compile_options(zmalloc PRIVATE -ftls-model=initial-exec)
+    target_compile_options(zmalloc_override PRIVATE -ftls-model=initial-exec)
+endif()
 
 # benchmark/perf 源码位于 tests/benchmark，所以 perf 构建也需要进入 tests。
 if(BUILD_TESTING OR ZLYNX_BUILD_PERF_TESTS)
