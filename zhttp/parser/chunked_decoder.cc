@@ -14,6 +14,7 @@ ParseResult ChunkedDecoder::parse(znet::Buffer &buffer, HttpRequest &request) {
             return ParseResult::ERROR;
         if (state_ == State::Complete)
             return ParseResult::COMPLETE;
+        // chunk 数据可跨多个读事件到达；remaining_ 保存尚缺字节数。
         if (state_ == State::Data) {
             auto count = std::min(remaining_, buffer.readable_bytes());
             if (count)
@@ -71,8 +72,10 @@ ParseResult ChunkedDecoder::parse(znet::Buffer &buffer, HttpRequest &request) {
                 return fail(HttpStatus::PAYLOAD_TOO_LARGE,
                             "Request body too large");
             remaining_ = size;
+            // 零长度 chunk 只结束数据部分，仍须读取 trailer 和最终空行。
             state_ = size ? State::Data : State::Trailers;
         } else {
+            // trailer 与请求头共享字节数和字段数预算，不能借末尾字段绕过上限。
             header_bytes_ += bytes;
             if (line.empty()) {
                 request.set_body(std::move(body_));
@@ -86,6 +89,7 @@ ParseResult ChunkedDecoder::parse(znet::Buffer &buffer, HttpRequest &request) {
             if (colon == std::string::npos)
                 return fail(HttpStatus::BAD_REQUEST, "Invalid chunk trailer");
             auto name = line.substr(0, colon), value = line.substr(colon + 1);
+            // trailer 不能改变已经确定的正文边界、目标主机或连接语义。
             if (!HttpHeaders::valid(name, value) ||
                 HttpHeaders::equal_name(name, "Content-Length") ||
                 HttpHeaders::equal_name(name, "Transfer-Encoding") ||

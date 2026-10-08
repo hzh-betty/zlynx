@@ -1,4 +1,6 @@
-#pragma once
+#ifndef ZHTTP_TESTS_TEST_SUPPORT_H_
+#define ZHTTP_TESTS_TEST_SUPPORT_H_
+
 #include "zhttp/http_context.h"
 #include "zhttp/http_server.h"
 #include "zhttp/parser/http_request_parser.h"
@@ -178,3 +180,5 @@ inline bool build_websocket_handshake_response(
     return true;
 }
 } // namespace zhttp
+
+#endif // ZHTTP_TESTS_TEST_SUPPORT_H_

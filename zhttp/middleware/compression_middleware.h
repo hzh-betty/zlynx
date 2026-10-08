@@ -1,6 +1,7 @@
 /**
- * @file compression_middleware.h
- * @brief compression_middleware 定义。
+ * compression_middleware.h
+ * compression_middleware 定义。
+ *
  * @author hzh-betty
  */
 
@@ -17,8 +18,8 @@ namespace zhttp {
 namespace mid {
 
 /**
- * @brief 响应压缩中间件（动态压缩）
- * @details
+ * 响应压缩中间件（动态压缩）
+ *
  * 该中间件在响应阶段根据客户端 `Accept-Encoding` 对响应体进行动态压缩。
  * - 按客户端 q 权重选择编码，同权重时优先 `br`，其次 `gzip`；
  * - 仅在响应可压缩且收益合理时执行压缩；
@@ -27,7 +28,7 @@ namespace mid {
 class CompressionMiddleware : public Middleware {
   public:
     /**
-     * @brief 压缩中间件配置项
+     * 压缩中间件配置项
      */
     struct Options {
         Options()
@@ -57,17 +58,18 @@ class CompressionMiddleware : public Middleware {
         std::vector<std::string> compressible_content_types;
     };
 
+    /** 设置编码、阈值及压缩等级。 */
     explicit CompressionMiddleware(Options options = Options());
 
     /**
-     * @brief 后置处理：执行响应压缩
+     * 后置处理：执行响应压缩
      */
     void after(HttpContext &context) override;
 
   private:
     /**
-     * @brief 判断是否可以压缩响应
-     * @details
+     * 判断是否可以压缩响应
+     *
      * 该函数会综合检查：
      * - 请求方法是否允许压缩（例如 HEAD 不压缩）；
      * - 响应状态码是否满足策略（默认仅压缩 2xx）；
@@ -78,8 +80,8 @@ class CompressionMiddleware : public Middleware {
     bool can_compress(HttpContext &request, const HttpResponse &response) const;
 
     /**
-     * @brief 判断响应内容类型是否可压缩
-     * @details
+     * 判断响应内容类型是否可压缩
+     *
      * 支持两种规则：
      * - 以 '/' 结尾的前缀规则（如 text/）；
      * - 精确类型规则（如 application/json）。
@@ -87,7 +89,8 @@ class CompressionMiddleware : public Middleware {
     bool is_compressible_content_type(const HttpResponse &response) const;
 
     /**
-     * @brief 使用 gzip 压缩数据
+     * 使用 gzip 压缩数据
+     *
      * @param input 待压缩的输入数据
      * @param output 压缩后的输出数据
      * @return true 表示压缩成功；false 表示失败
@@ -96,7 +99,8 @@ class CompressionMiddleware : public Middleware {
                             std::string &output) const;
 
     /**
-     * @brief 使用 brotli 压缩数据
+     * 使用 brotli 压缩数据
+     *
      * @param input 待压缩的输入数据
      * @param output 压缩后的输出数据
      * @return true 表示压缩成功；false 表示失败

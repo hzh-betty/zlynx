@@ -1,6 +1,7 @@
 /**
- * @file error_middleware.cc
- * @brief error_middleware 实现。
+ * error_middleware.cc
+ * error_middleware 实现。
+ *
  * @author hzh-betty
  */
 

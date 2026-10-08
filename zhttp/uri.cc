@@ -25,6 +25,7 @@ bool Uri::valid_encoding(const std::string &value) {
 Uri::Uri(std::string target) : raw_(std::move(target)) {
     if (raw_.empty() || !valid_encoding(raw_))
         throw std::invalid_argument("Invalid request target");
+    // 仅拆分请求目标，不解码路径；查询键值在访问时单独做百分号与 + 解码。
     auto q = raw_.find('?');
     path_ = raw_.substr(0, q);
     if (q != std::string::npos)
@@ -41,6 +42,7 @@ Uri::Uri(std::string target) : raw_(std::move(target)) {
         if (scheme == 0 || authority_start == path_.size() ||
             slash == authority_start)
             throw std::invalid_argument("Invalid absolute request target");
+        // 绝对形式请求目标只保留路由使用的路径，原始目标仍存放在 raw_。
         path_ = slash == std::string::npos ? "/" : path_.substr(slash);
     } else {
         form_ = Form::Authority;

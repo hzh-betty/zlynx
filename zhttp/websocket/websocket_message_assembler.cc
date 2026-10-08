@@ -89,6 +89,7 @@ bool WebSocketMessageAssembler::assemble(
         return true;
     }
 
+    // 控制帧可以插入分片消息之间，直接产出事件，不清除尚未完成的消息。
     frame.payload = std::move(payload);
     messages.push_back(std::move(frame));
     return true;

@@ -1,6 +1,7 @@
 /**
- * @file radix_tree.cc
- * @brief radix_tree 实现。
+ * radix_tree.cc
+ * radix_tree 实现。
+ *
  * @author hzh-betty
  */
 

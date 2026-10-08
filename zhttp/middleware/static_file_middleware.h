@@ -1,6 +1,7 @@
 /**
- * @file static_file_middleware.h
- * @brief static_file_middleware 定义。
+ * static_file_middleware.h
+ * static_file_middleware 定义。
+ *
  * @author hzh-betty
  */
 
@@ -17,8 +18,8 @@
 namespace zhttp {
 namespace mid {
 /**
- * @brief 静态文件分发中间件
- * @details
+ * 静态文件分发中间件
+ *
  * 该中间件用于在路由前快速处理静态资源请求，支持：
  * - URL 前缀映射与目录索引；
  * - 预压缩文件优先分发（.br / .gz）；
@@ -35,7 +36,7 @@ class StaticFileMiddleware : public Middleware {
     using Clock = std::chrono::steady_clock;
 
     /**
-     * @brief 静态文件中间件配置项
+     * 静态文件中间件配置项
      */
     struct Options {
         Options()
@@ -60,26 +61,22 @@ class StaticFileMiddleware : public Middleware {
     };
 
     /**
-     * @brief 使用默认配置构造静态文件中间件
+     * 使用默认配置构造静态文件中间件
      */
     StaticFileMiddleware();
 
     /**
-     * @brief 使用自定义配置构造静态文件中间件
+     * 使用自定义配置构造静态文件中间件
+     *
      * @param options 中间件配置
      */
     explicit StaticFileMiddleware(Options options);
 
     /**
-     * @brief 请求前置处理
+     * 请求前置处理
      * 未命中静态文件时返回 true，命中时构造文件响应并返回 false
      */
     bool before(HttpContext &context) override;
-
-    /**
-     * @brief 请求后置处理
-     * @details 当前实现无需额外收尾逻辑。
-     */
 
   private:
     struct CacheEntry {
@@ -94,7 +91,8 @@ class StaticFileMiddleware : public Middleware {
     };
 
     /**
-     * @brief 判断请求路径是否应由当前中间件接管
+     * 判断请求路径是否应由当前中间件接管
+     *
      * @param path 请求路径（不含 query）
      * @return true 表示命中 `uri_prefix`，应走静态文件处理逻辑
      */

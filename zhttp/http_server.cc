@@ -5,12 +5,14 @@
 #include <limits>
 namespace zhttp {
 namespace {
+// 每个 TCP 连接独占协议状态；configuration 延长共享配置的寿命。
 struct ConnectionState {
     std::unique_ptr<ProtocolHandler> current, pending;
     std::weak_ptr<znet::TcpConnection> connection;
     std::shared_ptr<void> configuration;
     bool driving = false, closed = false;
     void drive(znet::Buffer &buffer) {
+        // 发送或关闭回调可能重入，保护正在执行的协议对象不被递归驱动。
         if (driving || closed)
             return;
         auto conn = connection.lock();
@@ -19,6 +21,8 @@ struct ConnectionState {
         driving = true;
         try {
             current->on_data(conn, buffer);
+            // 先等 HTTP 回调返回，再交接协议，避免升级过程中销毁正在执行的 this。
+            // 握手之后可能已有 WebSocket 帧留在同一缓冲区，切换后立即继续消费。
             if (pending && conn->connected()) {
                 current = std::move(pending);
                 if (current->on_open() && buffer.readable_bytes())
@@ -63,6 +67,7 @@ HttpServer::HttpServer(znet::Address::ptr address, int backlog)
             auto state = std::make_shared<ConnectionState>();
             state->configuration = runtime;
             state->connection = conn;
+            // 切换回调只借用连接状态，避免 state 与 current 形成共享所有权环。
             std::weak_ptr<ConnectionState> weak = state;
             state->current.reset(new HttpProtocolHandler(
                 runtime->router, runtime->pipeline, runtime->limits,
@@ -149,6 +154,7 @@ bool HttpServer::set_ssl_certificate(const std::string &cert,
     return tcp_server_->enable_tls(cert, key);
 }
 bool HttpServer::start() {
+    // 启动前冻结共享配置，使各连接仅并发读取路由和中间件注册表。
     runtime_->frozen = true;
     runtime_->router.freeze();
     runtime_->pipeline.freeze();

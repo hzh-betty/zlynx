@@ -1,6 +1,7 @@
 /**
- * @file zhttp_logger.cc
- * @brief zhttp_logger 实现。
+ * zhttp_logger.cc
+ * zhttp_logger 实现。
+ *
  * @author hzh-betty
  */
 

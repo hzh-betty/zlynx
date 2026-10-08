@@ -1,6 +1,7 @@
 /**
- * @file server_config.cc
- * @brief server_config 实现。
+ * server_config.cc
+ * server_config 实现。
+ *
  * @author hzh-betty
  */
 
@@ -15,6 +16,7 @@ namespace zhttp {
 
 namespace {
 
+// 先按有符号数检查范围，再转为端口类型，防止负数和超大值截断。
 uint16_t parse_port(const toml::value &table, const char *key) {
     const auto value = toml::find<int64_t>(table, key);
     if (value < 0 || value > 65535) {
@@ -132,6 +134,7 @@ void reject_unsupported_sections(const toml::value &data) {
 }
 
 ServerConfig parse_server_config(const toml::value &data) {
+    // 缺省字段沿用结构体默认值，仅覆盖配置文件中显式给出的选项。
     ServerConfig config;
     parse_server_section(data, config);
     parse_threads_section(data, config);

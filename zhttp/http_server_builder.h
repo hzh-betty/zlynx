@@ -1,6 +1,7 @@
 /**
- * @file http_server_builder.h
- * @brief http_server_builder 定义。
+ * http_server_builder.h
+ * http_server_builder 定义。
+ *
  * @author hzh-betty
  */
 
@@ -19,46 +20,52 @@
 namespace zhttp {
 
 /**
- * @brief HTTP 服务器建造者
- * @details
+ * HTTP 服务器建造者
+ *
  * Builder 负责把“配置项、中间件、路由、日志等级”等离散信息收集起来，
  * 最终一次性构造出可运行的 HttpServer。这样可以避免调用方手工拼装对象时
  * 到处分散配置，也更适合从配置文件启动服务。
  */
 class HttpServerBuilder {
   public:
+    /** 使用默认 ServerConfig 构造 Builder。 */
     HttpServerBuilder();
 
     /**
-     * @brief 从 TOML 配置文件加载
+     * 从 TOML 配置文件加载
+     *
      * @param config_path TOML 配置文件路径
      * @return 当前 Builder 引用，便于继续链式配置
      */
     HttpServerBuilder &from_config(const std::string &config_path);
 
     /**
-     * @brief 设置读取超时
+     * 设置读取超时
+     *
      * @param timeout_ms 读取超时时间，单位毫秒；0 表示关闭
      * @return 当前 Builder 引用
      */
     HttpServerBuilder &read_timeout(uint64_t timeout_ms);
 
     /**
-     * @brief 设置写出超时
+     * 设置写出超时
+     *
      * @param timeout_ms 写出超时时间，单位毫秒；0 表示关闭
      * @return 当前 Builder 引用
      */
     HttpServerBuilder &write_timeout(uint64_t timeout_ms);
 
     /**
-     * @brief 设置 Keep-Alive 空闲超时
+     * 设置 Keep-Alive 空闲超时
+     *
      * @param timeout_ms 空闲超时时间，单位毫秒；0 表示关闭
      * @return 当前 Builder 引用
      */
     HttpServerBuilder &keepalive_timeout(uint64_t timeout_ms);
 
     /**
-     * @brief 设置监听地址
+     * 设置监听地址
+     *
      * @param host 监听地址，例如 0.0.0.0
      * @param port 监听端口
      * @return 当前 Builder 引用
@@ -66,33 +73,38 @@ class HttpServerBuilder {
     HttpServerBuilder &listen(const std::string &host, uint16_t port);
 
     /**
-     * @brief 设置线程数
+     * 设置线程数
+     *
      * @param num_threads IO/工作线程数量
      * @return 当前 Builder 引用
      */
     HttpServerBuilder &threads(size_t num_threads);
 
     /**
-     * @brief 设置协程栈模式
+     * 设置协程栈模式
+     *
      * @param mode 栈模式 (INDEPENDENT 或 SHARED)
      * @return 当前 Builder 引用
      */
     HttpServerBuilder &stack_mode(zco::StackModel mode);
 
     /**
-     * @brief 使用共享栈模式
+     * 使用共享栈模式
+     *
      * @return 当前 Builder 引用
      */
     HttpServerBuilder &use_shared_stack();
 
     /**
-     * @brief 使用独立栈模式（默认）
+     * 使用独立栈模式（默认）
+     *
      * @return 当前 Builder 引用
      */
     HttpServerBuilder &use_independent_stack();
 
     /**
-     * @brief 启用HTTPS
+     * 启用HTTPS
+     *
      * @param cert_file 证书文件路径
      * @param key_file 私钥文件路径
      * @return 当前 Builder 引用
@@ -101,14 +113,16 @@ class HttpServerBuilder {
                                     const std::string &key_file);
 
     /**
-     * @brief 添加全局中间件
+     * 添加全局中间件
+     *
      * @param middleware 中间件对象
      * @return 当前 Builder 引用
      */
     HttpServerBuilder &use(mid::Middleware::ptr middleware);
 
     /**
-     * @brief 注册GET路由（回调方式）
+     * 注册GET路由（回调方式）
+     *
      * @param path 路由路径
      * @param callback 处理回调
      * @return 当前 Builder 引用
@@ -116,7 +130,8 @@ class HttpServerBuilder {
     HttpServerBuilder &get(const std::string &path, RouterCallback callback);
 
     /**
-     * @brief 注册GET路由（处理器方式）
+     * 注册GET路由（处理器方式）
+     *
      * @param path 路由路径
      * @param handler 处理器对象
      * @return 当前 Builder 引用
@@ -124,7 +139,8 @@ class HttpServerBuilder {
     HttpServerBuilder &get(const std::string &path, RouteHandler::ptr handler);
 
     /**
-     * @brief 注册POST路由（回调方式）
+     * 注册POST路由（回调方式）
+     *
      * @param path 路由路径
      * @param callback 处理回调
      * @return 当前 Builder 引用
@@ -132,7 +148,8 @@ class HttpServerBuilder {
     HttpServerBuilder &post(const std::string &path, RouterCallback callback);
 
     /**
-     * @brief 注册POST路由（处理器方式）
+     * 注册POST路由（处理器方式）
+     *
      * @param path 路由路径
      * @param handler 处理器对象
      * @return 当前 Builder 引用
@@ -140,7 +157,8 @@ class HttpServerBuilder {
     HttpServerBuilder &post(const std::string &path, RouteHandler::ptr handler);
 
     /**
-     * @brief 注册PUT路由（回调方式）
+     * 注册PUT路由（回调方式）
+     *
      * @param path 路由路径
      * @param callback 处理回调
      * @return 当前 Builder 引用
@@ -148,7 +166,8 @@ class HttpServerBuilder {
     HttpServerBuilder &put(const std::string &path, RouterCallback callback);
 
     /**
-     * @brief 注册PUT路由（处理器方式）
+     * 注册PUT路由（处理器方式）
+     *
      * @param path 路由路径
      * @param handler 处理器对象
      * @return 当前 Builder 引用
@@ -156,7 +175,8 @@ class HttpServerBuilder {
     HttpServerBuilder &put(const std::string &path, RouteHandler::ptr handler);
 
     /**
-     * @brief 注册DELETE路由（回调方式）
+     * 注册DELETE路由（回调方式）
+     *
      * @param path 路由路径
      * @param callback 处理回调
      * @return 当前 Builder 引用
@@ -164,7 +184,8 @@ class HttpServerBuilder {
     HttpServerBuilder &del(const std::string &path, RouterCallback callback);
 
     /**
-     * @brief 注册DELETE路由（处理器方式）
+     * 注册DELETE路由（处理器方式）
+     *
      * @param path 路由路径
      * @param handler 处理器对象
      * @return 当前 Builder 引用
@@ -172,7 +193,8 @@ class HttpServerBuilder {
     HttpServerBuilder &del(const std::string &path, RouteHandler::ptr handler);
 
     /**
-     * @brief 注册 WebSocket 路由
+     * 注册 WebSocket 路由
+     *
      * @param path 路由路径
      * @param callbacks WebSocket 生命周期回调
      * @param options WebSocket 协议参数
@@ -183,71 +205,81 @@ class HttpServerBuilder {
               const WebSocketOptions &options = WebSocketOptions());
 
     /**
-     * @brief 设置404处理器（回调方式）
+     * 设置404处理器（回调方式）
+     *
      * @param callback 404 回调
      * @return 当前 Builder 引用
      */
     HttpServerBuilder &not_found(RouterCallback callback);
 
     /**
-     * @brief 设置404处理器（处理器方式）
+     * 设置404处理器（处理器方式）
+     *
      * @param handler 404 处理器对象
      * @return 当前 Builder 引用
      */
     HttpServerBuilder &not_found(RouteHandler::ptr handler);
 
     /**
-     * @brief 设置异常处理回调
+     * 设置异常处理回调
+     *
      * @param handler 异常处理回调
      * @return 当前 Builder 引用
      */
     HttpServerBuilder &exception_handler(ExceptionHandler handler);
 
     /**
-     * @brief 设置日志级别
+     * 设置日志级别
+     *
      * @param level 日志级别字符串，例如 info、debug
      * @return 当前 Builder 引用
      */
     HttpServerBuilder &log_level(const std::string &level);
 
     /**
-     * @brief 启用守护进程模式
+     * 启用守护进程模式
+     *
      * @param enable 是否启用
      * @return 当前 Builder 引用
      */
     HttpServerBuilder &daemon(bool enable = true);
 
     /**
-     * @brief 设置首页跳转目标
+     * 设置首页跳转目标
+     *
      * @param path 首页目标路径或绝对 URL
      * @return 当前 Builder 引用
      */
     HttpServerBuilder &homepage(const std::string &path);
 
     /**
-     * @brief 设置服务器名称
+     * 设置服务器名称
+     *
      * @param name Server 响应头里显示的名称
      * @return 当前 Builder 引用
      */
     HttpServerBuilder &server_name(const std::string &name);
 
     /**
-     * @brief 构建服务器，完成初始化但不启动监听
-     * @return 构建完成的服务器对象
-     * @details
+     * 构建服务器，完成初始化但不启动监听
+     *
      * 调用 start() 启动监听，或通过 run() 构建并阻塞运行。
+     *
+     * @return 构建完成的服务器对象
      * @throws std::runtime_error 配置无效、地址解析或 TLS 初始化失败。
      */
     std::shared_ptr<HttpServer> build();
 
     /**
-     * @brief 构建并运行服务器（阻塞）
-     * @details 适合 main 函数里直接调用的场景。
+     * 构建并运行服务器（阻塞）
+     *
+     * 适合 main 函数里直接调用的场景。
      */
     void run();
 
     /**
-     * @brief 获取当前配置
+     * 获取当前配置
+     *
      * @return 当前配置的只读引用，其生命周期与 Builder 相同
      */
     const ServerConfig &config() const { return config_; }

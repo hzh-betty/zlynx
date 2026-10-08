@@ -98,6 +98,7 @@ void HttpContext::upgrade_to_websocket(WebSocketCallbacks callbacks,
     response_.enable_chunked(false).body("").status(
         HttpStatus::SWITCHING_PROTOCOLS);
     response_.set_keep_alive(true);
+    // 这里只保存升级意图；真实握手和底层协议对象由网络层接管。
     upgrade_.reset(new WebSocketUpgrade{std::move(callbacks), options});
 }
 void HttpContext::reset_result() {
@@ -115,12 +116,14 @@ void HttpContext::on_complete(std::function<void(CompletionResult)> callback) {
 void HttpContext::complete(CompletionResult result) {
     if (completed_)
         return;
+    // 先标记完成并移出回调列表，重复或重入完成通知都不会再次执行回调。
     completed_ = true;
     auto callbacks = std::move(completion_callbacks_);
     completion_callbacks_.clear();
     for (auto &callback : callbacks) {
         try {
             callback(result);
+        // 单个收尾回调失败不能阻止后续清理，也不能从析构路径传播异常。
         } catch (...) {
         }
     }

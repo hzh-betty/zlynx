@@ -1,6 +1,7 @@
 /**
- * @file rate_limiter_middleware.cc
- * @brief rate_limiter_middleware 实现。
+ * rate_limiter_middleware.cc
+ * rate_limiter_middleware 实现。
+ *
  * @author hzh-betty
  */
 

@@ -1,6 +1,7 @@
 /**
- * @file security_middleware.h
- * @brief security_middleware 定义。
+ * security_middleware.h
+ * security_middleware 定义。
+ *
  * @author hzh-betty
  */
 
@@ -14,13 +15,14 @@
 namespace zhttp {
 namespace mid {
 /**
- * @brief 安全响应头中间件
- * @details
+ * 安全响应头中间件
+ *
  * 在响应阶段统一补充常见 Web 安全响应头，降低点击劫持、MIME 混淆、
  * 不安全引用来源等风险。默认策略尽量保守且通用。
  */
 class SecurityMiddleware : public Middleware {
   public:
+    /** 安全响应头开关和字段值；HSTS 默认关闭。 */
     struct Options {
         Options()
             : set_x_frame_options(true), x_frame_options("DENY"),
@@ -62,8 +64,10 @@ class SecurityMiddleware : public Middleware {
         std::string hsts;
     };
 
+    /** 设置安全响应头策略。 */
     explicit SecurityMiddleware(Options options = Options());
 
+    /** 补充缺失的安全响应头，保留业务代码已设置的字段。 */
     void after(HttpContext &context) override;
 
   private:

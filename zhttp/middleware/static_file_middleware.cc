@@ -1,6 +1,7 @@
 /**
- * @file static_file_middleware.cc
- * @brief static_file_middleware 实现。
+ * static_file_middleware.cc
+ * static_file_middleware 实现。
+ *
  * @author hzh-betty
  */
 

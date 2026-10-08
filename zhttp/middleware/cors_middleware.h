@@ -1,6 +1,7 @@
 /**
- * @file cors_middleware.h
- * @brief cors_middleware 定义。
+ * cors_middleware.h
+ * cors_middleware 定义。
+ *
  * @author hzh-betty
  */
 
@@ -15,8 +16,8 @@
 namespace zhttp {
 namespace mid {
 /**
- * @brief CORS 中间件
- * @details
+ * CORS 中间件
+ *
  * 该中间件用于统一处理跨域响应头，覆盖两类请求：
  * 1) 预检请求（OPTIONS + Origin + Access-Control-Request-Method）；
  * 2) 普通跨域请求（携带 Origin）。
@@ -29,7 +30,7 @@ namespace mid {
 class CorsMiddleware : public Middleware {
   public:
     /**
-     * @brief CORS 配置项
+     * CORS 配置项
      */
     struct Options {
         Options()
@@ -63,39 +64,42 @@ class CorsMiddleware : public Middleware {
         bool add_vary_origin;
     };
 
+    /** 设置跨域来源、方法与预检策略。 */
     explicit CorsMiddleware(Options options = Options());
 
     /**
-     * @brief 前置处理：识别并可短路预检请求
+     * 前置处理：识别并可短路预检请求
      * 预检可提前构造响应并返回 false；其余请求返回 true
      */
     bool before(HttpContext &context) override;
 
     /**
-     * @brief 后置处理：为普通响应补齐 CORS 头
+     * 后置处理：为普通响应补齐 CORS 头
      */
     void after(HttpContext &context) override;
 
   private:
     /**
-     * @brief 判断是否为预检请求
+     * 判断是否为预检请求
      */
     bool is_preflight_request(HttpContext &request) const;
 
     /**
-     * @brief 判断 Origin 是否在允许列表中
+     * 判断 Origin 是否在允许列表中
      */
     bool is_origin_allowed(const std::string &origin) const;
 
     /**
-     * @brief 解析预检请求的 Access-Control-Allow-Origin 值
-     * @details 请求里带 Origin 时优先回显；请求里无 Origin 时回退为 "*"。
+     * 解析预检请求的 Access-Control-Allow-Origin 值
+     *
+     * 请求里带 Origin 时优先回显；请求里无 Origin 时回退为 "*"。
      */
     std::string resolve_allow_origin(const std::string &origin) const;
 
     /**
-     * @brief 应用普通 CORS 头（适用于预检和非预检请求）
-     * @details 包括 Access-Control-Allow-Origin / Allow-Credentials /
+     * 应用普通 CORS 头（适用于预检和非预检请求）
+     *
+     * 包括 Access-Control-Allow-Origin / Allow-Credentials /
      * Expose-Headers 等通用头。
      *
      * 说明：

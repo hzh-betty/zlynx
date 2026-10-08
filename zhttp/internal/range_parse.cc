@@ -1,6 +1,7 @@
 /**
- * @file range_parse.cc
- * @brief range_parse 实现。
+ * range_parse.cc
+ * range_parse 实现。
+ *
  * @author hzh-betty
  */
 

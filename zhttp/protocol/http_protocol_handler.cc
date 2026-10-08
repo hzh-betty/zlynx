@@ -44,6 +44,7 @@ void HttpProtocolHandler::on_data(
             if (buffer.readable_bytes() == 0)
                 return;
             receiving_ = true;
+            // 从本次请求首字节起设定整体读取期限，半包到达时不延长期限。
             conn->set_read_deadline(timeout_);
         }
         const auto result = parser_.parse(&buffer);
@@ -90,6 +91,7 @@ void HttpProtocolHandler::on_data(
                 .text("Internal Server Error");
         }
         std::unique_ptr<ProtocolHandler> candidate;
+        // 业务层仅提出升级意图；握手校验成功才创建候选协议处理器。
         if (context.upgrade()) {
             auto intent = context.take_upgrade();
             std::string selected, error;
@@ -126,6 +128,7 @@ void HttpProtocolHandler::on_data(
                              ? CompletionResult::Failed
                          : candidate ? CompletionResult::Upgraded
                                      : CompletionResult::Completed);
+        // 响应一旦部分写出，不能再改成错误页；直接关闭以免残留字节被当作下一响应。
         if (written == WriteResult::Failed) {
             conn->close();
             return;
@@ -134,10 +137,12 @@ void HttpProtocolHandler::on_data(
             conn->shutdown();
             return;
         }
+        // 只有 101 握手完整写出后才交接协议；连接调度者在本回调返回后执行切换。
         if (candidate) {
             switch_protocol_(std::move(candidate));
             return;
         }
+        // 当前响应完成且保持连接时复位解析器，继续处理缓冲区中后续请求。
         parser_.reset();
     }
 }

@@ -1,6 +1,7 @@
 /**
- * @file daemon.cc
- * @brief daemon 实现。
+ * daemon.cc
+ * daemon 实现。
+ *
  * @author hzh-betty
  */
 

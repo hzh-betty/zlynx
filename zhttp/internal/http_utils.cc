@@ -1,6 +1,7 @@
 /**
- * @file http_utils.cc
- * @brief http_utils 实现。
+ * http_utils.cc
+ * http_utils 实现。
+ *
  * @author hzh-betty
  */
 

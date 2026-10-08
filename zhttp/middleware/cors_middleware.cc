@@ -1,6 +1,7 @@
 /**
- * @file cors_middleware.cc
- * @brief cors_middleware 实现。
+ * cors_middleware.cc
+ * cors_middleware 实现。
+ *
  * @author hzh-betty
  */
 

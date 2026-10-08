@@ -1,6 +1,7 @@
 /**
- * @file session.cc
- * @brief session 实现。
+ * session.cc
+ * session 实现。
+ *
  * @author hzh-betty
  */
 

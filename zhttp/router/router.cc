@@ -1,6 +1,7 @@
 /**
- * @file router.cc
- * @brief router 实现。
+ * router.cc
+ * router 实现。
+ *
  * @author hzh-betty
  */
 

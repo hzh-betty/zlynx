@@ -1,6 +1,7 @@
 /**
- * @file radix_tree.h
- * @brief radix_tree 定义。
+ * radix_tree.h
+ * radix_tree 定义。
+ *
  * @author hzh-betty
  */
 
@@ -20,7 +21,7 @@
 namespace zhttp {
 
 /**
- * @brief 基数树节点类型
+ * 基数树节点类型
  * 优先级: STATIC > PARAM > CATCH_ALL
  */
 enum class NodeType : uint8_t {
@@ -34,7 +35,7 @@ class RadixNode;
 using RadixNodePtr = std::shared_ptr<RadixNode>;
 
 /**
- * @brief 正则路由条目（挂载在节点上）
+ * 正则路由条目（挂载在节点上）
  */
 struct NodeRegexRoute {
     std::regex regex;                     // 编译后的正则
@@ -44,7 +45,7 @@ struct NodeRegexRoute {
 };
 
 /**
- * @brief 基数树节点
+ * 基数树节点
  * 统一处理动态路由和正则路由
  */
 class RadixNode {
@@ -82,7 +83,7 @@ class RadixNode {
     bool has_regex() const { return !regex_routes_.empty(); }
 
     /**
-     * @brief 添加子节点（保持优先级排序）
+     * 添加子节点（保持优先级排序）
      */
     void add_child(RadixNodePtr child) {
         auto it =
@@ -95,7 +96,7 @@ class RadixNode {
     }
 
     /**
-     * @brief 查找静态子节点（精确匹配）
+     * 查找静态子节点（精确匹配）
      */
     RadixNodePtr find_static_child(const std::string &segment) const {
         for (const auto &child : children_) {
@@ -107,7 +108,7 @@ class RadixNode {
     }
 
     /**
-     * @brief 查找参数子节点
+     * 查找参数子节点
      */
     RadixNodePtr find_param_child() const {
         for (const auto &child : children_) {
@@ -119,7 +120,7 @@ class RadixNode {
     }
 
     /**
-     * @brief 查找通配符子节点
+     * 查找通配符子节点
      */
     RadixNodePtr find_catch_all_child() const {
         for (const auto &child : children_) {
@@ -132,7 +133,7 @@ class RadixNode {
 };
 
 /**
- * @brief 路由匹配上下文
+ * 路由匹配上下文
  */
 struct RouteMatchContext {
     bool found = false;
@@ -144,7 +145,7 @@ struct RouteMatchContext {
 };
 
 /**
- * @brief 基数树路由器
+ * 基数树路由器
  * 统一处理动态路由和正则路由
  */
 class RadixTree {
@@ -152,47 +153,47 @@ class RadixTree {
     RadixTree() : root_(std::make_shared<RadixNode>()) {}
 
     /**
-     * @brief 插入动态路由
+     * 插入动态路由
      */
     void insert(HttpMethod method, const std::string &path,
                 RouterCallback handler);
 
     /**
-     * @brief 插入正则路由（按前缀分桶）
+     * 插入正则路由（按前缀分桶）
      */
     void insert_regex(HttpMethod method, const std::string &pattern,
                       const std::vector<std::string> &param_names,
                       RouterCallback handler);
 
     /**
-     * @brief 统一查找（动态路由优先，然后正则路由）
+     * 统一查找（动态路由优先，然后正则路由）
      */
     RouteMatchContext find(const std::string &path, HttpMethod method) const;
 
   private:
     /**
-     * @brief 分割路径为片段
+     * 分割路径为片段
      */
     std::vector<std::string> split_path(const std::string &path) const;
 
     /**
-     * @brief 解析路径片段类型
+     * 解析路径片段类型
      */
     std::pair<NodeType, std::string>
     parse_segment(const std::string &seg) const;
 
     /**
-     * @brief 提取正则表达式的静态前缀
+     * 提取正则表达式的静态前缀
      */
     std::string extract_static_prefix(const std::string &pattern) const;
 
     /**
-     * @brief 根据前缀路径找到或创建节点
+     * 根据前缀路径找到或创建节点
      */
     RadixNodePtr find_or_create_prefix_node(const std::string &prefix);
 
     /**
-     * @brief 收集前缀路径上的所有节点（用于正则匹配）
+     * 收集前缀路径上的所有节点（用于正则匹配）
      */
     void collect_prefix_nodes(const RadixNodePtr &node,
                               const std::vector<std::string> &segments,
@@ -200,14 +201,14 @@ class RadixTree {
                               std::vector<RadixNodePtr> &nodes) const;
 
     /**
-     * @brief 递归匹配动态路由
+     * 递归匹配动态路由
      */
     bool match_dynamic(const RadixNodePtr &node,
                        const std::vector<std::string> &segments, size_t index,
                        RouteMatchContext &ctx, HttpMethod method) const;
 
     /**
-     * @brief 在路径节点上匹配正则路由
+     * 在路径节点上匹配正则路由
      */
     bool match_regex_on_path(const std::string &full_path, HttpMethod method,
                              const std::vector<RadixNodePtr> &path_nodes,

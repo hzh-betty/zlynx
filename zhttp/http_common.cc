@@ -1,6 +1,7 @@
 /**
- * @file http_common.cc
- * @brief http_common 实现。
+ * http_common.cc
+ * http_common 实现。
+ *
  * @author hzh-betty
  */
 

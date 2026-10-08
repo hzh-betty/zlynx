@@ -49,6 +49,7 @@ bool HttpRequestParser::parse_line(const std::string &line) {
 bool HttpRequestParser::finish_headers() {
     const auto lengths = request_->headers().get_all("Content-Length");
     const auto encodings = request_->headers().get_all("Transfer-Encoding");
+    // 正文边界必须唯一，拒绝 Content-Length 与 Transfer-Encoding 同时存在。
     if (!encodings.empty() && !lengths.empty()) {
         fail(HttpStatus::BAD_REQUEST, "Content-Length with Transfer-Encoding");
         return false;
@@ -64,6 +65,7 @@ bool HttpRequestParser::finish_headers() {
         state_ = ParseState::BODY;
         return true;
     }
+    // 重复或逗号合并的 Content-Length 必须完全一致；逐位累积时先检查正文上限。
     bool first = true;
     for (const auto &field : lengths)
         for (std::string text : split_string(field, ',')) {
@@ -117,6 +119,7 @@ ParseResult HttpRequestParser::parse(znet::Buffer *buffer) {
                     state_ = ParseState::COMPLETE;
                 return result;
             }
+            // 只消费当前正文尚缺的字节，将流水线中的下一个请求留在输入缓冲区。
             const auto count = std::min(content_length_ - body_.size(),
                                         buffer->readable_bytes());
             if (count)
@@ -141,6 +144,7 @@ ParseResult HttpRequestParser::parse(znet::Buffer *buffer) {
             bytes > limits_.max_header_bytes - header_bytes_)
             return fail(HttpStatus::REQUEST_HEADER_FIELDS_TOO_LARGE,
                         "Request headers too large");
+        // 半行不消费，保留在 Buffer；字节限制已在上方检查，避免无限等待换行。
         if (!crlf)
             return ParseResult::NEED_MORE;
         std::string line(buffer->peek(), crlf);
@@ -155,6 +159,7 @@ ParseResult HttpRequestParser::parse(znet::Buffer *buffer) {
         if (line.empty()) {
             if (!finish_headers())
                 return ParseResult::ERROR;
+            // 先报告头部就绪，调用方可在读正文前拒绝不支持的 Expect 等协议选项。
             return ParseResult::HEADERS_READY;
         }
         if (++header_count_ > limits_.max_header_count)

@@ -1,6 +1,7 @@
 /**
- * @file zhttp_logger.h
- * @brief zhttp_logger 定义。
+ * zhttp_logger.h
+ * zhttp_logger 定义。
+ *
  * @author hzh-betty
  */
 
@@ -12,17 +13,25 @@
 namespace zhttp {
 
 /**
- * @brief 初始化 zhttp 专属日志器
+ * 初始化 zhttp 专属日志器
+ *
  * @param level 日志等级；初始化 zhttp 时会同步初始化 znet 和 zco。
  */
 void init_logger(zlog::LogLevel::value level = zlog::LogLevel::value::INFO);
 
 /**
- * @brief 获取 zhttp 日志器
+ * 获取 zhttp 日志器
+ *
  * @return 日志器智能指针，若初始化失败可能返回空。
  */
 zlog::Logger::ptr get_logger_ptr();
 
+/**
+ * 检查当前日志器是否启用指定等级，供日志宏在格式化参数前判断。
+ *
+ * @param level 待输出的日志等级。
+ * @return 日志器允许该等级时返回 true。
+ */
 bool should_log(zlog::LogLevel::value level);
 
 } // namespace zhttp

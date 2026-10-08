@@ -125,6 +125,7 @@ bool WebSocketConnection::write_frame(WebSocketOpcode opcode,
         conn->close();
         return false;
     }
+    // 回复对端关闭帧后排空并关闭；主动关闭则等待对端响应，受读取期限约束。
     if (opcode == WebSocketOpcode::kClose) {
         if (peer_close)
             conn->shutdown();

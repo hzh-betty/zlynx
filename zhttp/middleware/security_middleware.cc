@@ -1,6 +1,7 @@
 /**
- * @file security_middleware.cc
- * @brief security_middleware 实现。
+ * security_middleware.cc
+ * security_middleware 实现。
+ *
  * @author hzh-betty
  */
 

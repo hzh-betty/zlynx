@@ -1,6 +1,7 @@
 /**
- * @file timeout_middleware.cc
- * @brief timeout_middleware 实现。
+ * timeout_middleware.cc
+ * timeout_middleware 实现。
+ *
  * @author hzh-betty
  */
 

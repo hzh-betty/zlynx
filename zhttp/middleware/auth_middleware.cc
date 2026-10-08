@@ -1,6 +1,7 @@
 /**
- * @file auth_middleware.cc
- * @brief auth_middleware 实现。
+ * auth_middleware.cc
+ * auth_middleware 实现。
+ *
  * @author hzh-betty
  */
 

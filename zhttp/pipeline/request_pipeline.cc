@@ -169,6 +169,7 @@ bool RequestPipeline::execute(HttpContext &context, Router &router) {
     if (it != route_middlewares_.end())
         for (const auto &mw : it->second)
             middlewares.push_back(mw);
+    // 异常路径先清除原响应和升级意图；自定义处理器若再次失败则回退到普通 500。
     auto error = [&](std::exception_ptr exception) {
         context.reset_result();
         try {
@@ -191,6 +192,7 @@ bool RequestPipeline::execute(HttpContext &context, Router &router) {
     const auto status = context.response().status_line().status_code;
     if (context.upgrade() && status >= 200)
         context.take_upgrade();
+    // 升级结果必须是空正文的 101；无升级意图的 1xx 不能成为最终响应。
     if ((context.upgrade() &&
          (status != 101 ||
           context.response().body_source().kind() == HttpBody::Kind::Stream ||

@@ -1,6 +1,7 @@
 /**
- * @file session_middleware.cc
- * @brief session_middleware 实现。
+ * session_middleware.cc
+ * session_middleware 实现。
+ *
  * @author hzh-betty
  */
 

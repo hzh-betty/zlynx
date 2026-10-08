@@ -23,6 +23,7 @@ bool HttpHeaders::valid(const std::string &name, const std::string &value) {
               std::string("!#$%&'*+-.^_`|~").find(c) != std::string::npos))
             return false;
     }
+    // 禁止 CR/LF 和其他控制字符，避免一个字段值扩展成额外协议行。
     for (unsigned char c : value)
         if ((c < 32 && c != '\t') || c == 127)
             return false;
@@ -36,6 +37,7 @@ void HttpHeaders::append(const std::string &name, const std::string &value) {
 void HttpHeaders::set(const std::string &name, const std::string &value) {
     if (!valid(name, value))
         throw std::invalid_argument("Invalid HTTP field");
+    // 校验通过后再删除旧字段，非法输入不会丢失原字段。
     erase(name);
     append(name, value);
 }

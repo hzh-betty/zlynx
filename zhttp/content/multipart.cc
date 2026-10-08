@@ -1,6 +1,7 @@
 /**
- * @file multipart.cc
- * @brief multipart 实现。
+ * multipart.cc
+ * multipart 实现。
+ *
  * @author hzh-betty
  */
 

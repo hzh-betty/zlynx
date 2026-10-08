@@ -48,12 +48,14 @@ ResponsePlan HttpResponseWriter::plan(const HttpRequestLine &request,
         throw std::invalid_argument("Informational response cannot be final");
     ResponsePlan p;
     const auto &body = response.body_source();
+    // HEAD 仍可携带实体长度，但不发送正文；无正文状态码同样跳过正文。
     p.send_body = request.method != HttpMethod::HEAD &&
                   is_body_allowed(response.status_code());
     p.length = body.length_known() ? body.length() : HttpBody::UnknownLength;
     p.chunked =
         p.send_body && response.version() == HttpVersion::HTTP_1_1 &&
         (response.is_chunked_enabled() || p.length == HttpBody::UnknownLength);
+    // HTTP/1.0 无法对未知长度使用 chunked，必须以关闭连接界定正文末尾。
     p.close =
         !response.is_keep_alive() ||
         (p.send_body && !p.chunked && p.length == HttpBody::UnknownLength);
@@ -70,6 +72,7 @@ std::string HttpResponseWriter::headers(const HttpRequestLine &request,
     std::string out = std::string(version_to_string(response.version())) + " " +
                       std::to_string(code) + " " +
                       status_to_string(response.status_code()) + "\r\n";
+    // 正文边界和连接头由写出计划统一生成，忽略业务层设置的同名字段。
     for (const auto &h : response.headers()) {
         if (HttpHeaders::equal_name(h.first, "Content-Length") ||
             HttpHeaders::equal_name(h.first, "Transfer-Encoding") ||
@@ -145,6 +148,7 @@ WriteResult HttpResponseWriter::send(
     }
     const auto header_bytes =
         headers(context.request().request_line(), response, upgrade);
+    // 文件范围与头部在提交前校验；提交后只允许发送或失败，不能改写响应。
     response.commit();
     if (!send_all_or_fail(conn, header_bytes.data(), header_bytes.size()))
         return WriteResult::Failed;
@@ -212,6 +216,7 @@ WriteResult HttpResponseWriter::send(
             sent += count;
         }
     }
+    // 正文完全发送后才写终止 chunk；失败路径不伪造正常结束标记。
     if (p.chunked && !send_all_or_fail(conn, "0\r\n\r\n", 5))
         return WriteResult::Failed;
     return WriteResult::Completed;
