@@ -308,6 +308,20 @@ TEST_F(AllocatorOverrideTest, UsableSizeSupportsManagedAndAlignedAllocations) {
     std::free(ptr);
 }
 
+TEST_F(AllocatorOverrideTest, ReallocWithinSizeClassRetainsPointerAndContents) {
+    auto *ptr = static_cast<unsigned char *>(std::malloc(63));
+    ASSERT_NE(ptr, nullptr);
+    std::memset(ptr, 0x5a, 63);
+    void *next = std::realloc(ptr, 64);
+    ASSERT_EQ(next, ptr);
+    next = std::realloc(next, 49);
+    ASSERT_EQ(next, ptr);
+    for (size_t i = 0; i < 49; ++i) {
+        EXPECT_EQ(ptr[i], 0x5a);
+    }
+    std::free(next);
+}
+
 TEST_F(AllocatorOverrideTest, LargeAlignmentSupportsFreeReallocAndMappingCleanup) {
     constexpr size_t size = 2 * 1024 * 1024;
     constexpr size_t alignment = 65536;

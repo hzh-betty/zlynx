@@ -389,14 +389,18 @@ void deallocate_bytes(void *ptr) noexcept {
         return;
     }
     const bool ready = allocator_ready().load(std::memory_order_acquire);
+    if (ready && managed_span(ptr) != nullptr) {
+        AllocatorCallGuard guard;
+        zfree(ptr);
+        return;
+    }
     if (is_bootstrap_pointer(ptr)) {
         bootstrap_free(ptr);
         return;
     }
 
-    if ((ready || (!tls_initializing_allocator &&
-                   tls_allocator_call_depth == 0)) &&
-        managed_span(ptr) != nullptr) {
+    if (!ready && !tls_initializing_allocator &&
+        tls_allocator_call_depth == 0 && managed_span(ptr) != nullptr) {
         AllocatorCallGuard guard;
         zfree(ptr);
         return;
@@ -440,8 +444,12 @@ void *reallocate_bytes(void *ptr, size_t size) noexcept {
         span = managed_span(ptr);
     }
     if (span != nullptr) {
-        // 分配新块、拷贝并释放旧块。
+        // 同一小对象尺寸类直接复用，否则分配新块、拷贝并释放旧块。
         const size_t old_size = span->obj_size;
+        if (old_size <= MAX_BYTES && size <= MAX_BYTES &&
+            SizeClass::round_up_fast(size) == old_size) {
+            return ptr;
+        }
         void *next = allocate_bytes(size);
         if (next == nullptr) {
             return nullptr;
