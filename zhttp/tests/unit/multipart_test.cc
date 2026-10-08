@@ -1,3 +1,4 @@
+#include "../test_support.h"
 #include <gtest/gtest.h>
 
 #include "zhttp/zhttp_logger.h"
@@ -7,16 +8,16 @@
 
 #include <fstream>
 
+#include "zhttp/content/multipart.h"
 #include "zhttp/http_request.h"
-#include "zhttp/multipart.h"
 
 using namespace zhttp;
 
 class MultipartTest : public ::testing::Test {
   protected:
-    HttpRequest::ptr make_request(const std::string &boundary,
+    TestContext::ptr make_request(const std::string &boundary,
                                   const std::string &body) {
-        auto req = std::make_shared<HttpRequest>();
+        auto req = std::make_shared<TestContext>();
         req->set_method(HttpMethod::POST);
         req->set_path("/upload");
         req->set_header("Content-Type",
@@ -56,7 +57,7 @@ TEST_F(MultipartTest, ParseFieldsAndFile) {
 }
 
 TEST_F(MultipartTest, MissingBoundary_Fails) {
-    auto req = std::make_shared<HttpRequest>();
+    auto req = std::make_shared<TestContext>();
     req->set_method(HttpMethod::POST);
     req->set_path("/upload");
     req->set_header("Content-Type", "multipart/form-data");
@@ -133,7 +134,7 @@ TEST_F(MultipartTest, UploadedFileSaveTo_WritesFile) {
 }
 
 TEST_F(MultipartTest, NonMultipartContentTypeReturnsEmptyResult) {
-    auto req = std::make_shared<HttpRequest>();
+    auto req = std::make_shared<TestContext>();
     req->set_method(HttpMethod::POST);
     req->set_path("/submit");
     req->set_header("Content-Type", "application/json");
@@ -144,7 +145,7 @@ TEST_F(MultipartTest, NonMultipartContentTypeReturnsEmptyResult) {
 }
 
 TEST_F(MultipartTest, SupportsQuotedBoundaryAndLowercaseHeaderNames) {
-    auto req = std::make_shared<HttpRequest>();
+    auto req = std::make_shared<TestContext>();
     req->set_method(HttpMethod::POST);
     req->set_path("/upload");
     req->set_header(
@@ -269,7 +270,7 @@ TEST_F(MultipartTest, UploadedFileSaveToFailureReturnsErrorText) {
 TEST_F(MultipartTest,
        SupportsBoundaryWithUppercaseTokenAndRejectsEmptyBoundary) {
     {
-        auto req = std::make_shared<HttpRequest>();
+        auto req = std::make_shared<TestContext>();
         req->set_method(HttpMethod::POST);
         req->set_path("/upload");
         req->set_header("Content-Type",
@@ -293,7 +294,7 @@ TEST_F(MultipartTest,
     }
 
     {
-        auto req = std::make_shared<HttpRequest>();
+        auto req = std::make_shared<TestContext>();
         req->set_method(HttpMethod::POST);
         req->set_path("/upload");
         req->set_header("Content-Type", "multipart/form-data; boundary=\"\"");
@@ -305,7 +306,7 @@ TEST_F(MultipartTest,
 }
 
 TEST_F(MultipartTest, AcceptsSingleLfAfterBoundaryLine) {
-    auto req = std::make_shared<HttpRequest>();
+    auto req = std::make_shared<TestContext>();
     req->set_method(HttpMethod::POST);
     req->set_path("/upload");
     req->set_header("Content-Type",

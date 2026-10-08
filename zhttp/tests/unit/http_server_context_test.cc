@@ -1,499 +1,263 @@
-#include "zhttp/http_server.h"
-
+#include "../test_support.h"
+#include "zhttp/protocol/http_protocol_handler.h"
 #include "zhttp/zhttp_logger.h"
-
-#include "zco/sched.h"
 #include "znet/socket.h"
-
-#include <csignal>
-#include <gtest/gtest.h>
+#include "znet/tcp_server.h"
 #include <limits>
-#include <stdexcept>
 #include <sys/socket.h>
-#include <tuple>
 #include <unistd.h>
-
-namespace zhttp {
+using namespace zhttp;
 namespace {
-
-class ScopedSignalHandler {
-  public:
-    using SignalHandler = void (*)(int);
-
-    ScopedSignalHandler(int signum, SignalHandler handler)
-        : signum_(signum), previous_(::signal(signum, handler)),
-          armed_(previous_ != SIG_ERR) {}
-
-    ~ScopedSignalHandler() {
-        if (armed_) {
-            ::signal(signum_, previous_);
-        }
+struct SocketPair {
+    SocketPair() {
+        int fds[2];
+        if (::socketpair(AF_UNIX, SOCK_STREAM, 0, fds) != 0)
+            throw std::runtime_error("socketpair");
+        connection = std::make_shared<znet::TcpConnection>(
+            std::make_shared<znet::Socket>(fds[0]));
+        peer = fds[1];
     }
-
-    ScopedSignalHandler(const ScopedSignalHandler &) = delete;
-    ScopedSignalHandler &operator=(const ScopedSignalHandler &) = delete;
-
-  private:
-    int signum_;
-    SignalHandler previous_;
-    bool armed_;
+    ~SocketPair() {
+        connection->close();
+        ::close(peer);
+    }
+    std::string read() {
+        std::string bytes;
+        char data[8192];
+        ssize_t n;
+        while ((n = ::recv(peer, data, sizeof(data), MSG_DONTWAIT)) > 0)
+            bytes.append(data, n);
+        return bytes;
+    }
+    znet::TcpConnection::ptr connection;
+    int peer;
 };
-
-class HttpServerContextTestDouble : public HttpServer {
+class ServerAccess : public HttpServer {
   public:
-    explicit HttpServerContextTestDouble(znet::Address::ptr listen_address)
-        : HttpServer(std::move(listen_address)) {}
-
-    using HttpServer::find_websocket_session;
-    using HttpServer::handle_request;
-    using HttpServer::is_async_stream_active;
-    using HttpServer::is_websocket_active;
-    using HttpServer::mark_async_stream_active;
-    using HttpServer::mark_async_stream_finished;
-    using HttpServer::on_close;
-    using HttpServer::on_connection;
-    using HttpServer::on_message;
-    using HttpServer::register_websocket_session;
-    using HttpServer::send_async_chunked_response;
-    using HttpServer::take_websocket_session;
-
-    znet::TcpServer::ptr tcp_server_for_test() const { return tcp_server(); }
+    ServerAccess()
+        : HttpServer(std::make_shared<znet::IPv4Address>("127.0.0.1", 0)) {}
+    using HttpServer::tcp_server;
 };
-
-TEST(HttpServerContextTest, ParserContextLifecycleFollowsConnection) {
-    auto listen_address = std::make_shared<znet::IPv4Address>("127.0.0.1", 0);
-    HttpServerContextTestDouble server(listen_address);
-
-    auto socket = znet::Socket::create_tcp();
-    ASSERT_TRUE(socket != nullptr);
-
-    auto conn = std::make_shared<znet::TcpConnection>(socket);
-    ASSERT_TRUE(conn != nullptr);
-    EXPECT_EQ(conn->context(), nullptr);
-
-    server.on_connection(conn);
-    EXPECT_NE(conn->context(), nullptr);
-
-    server.on_close(conn);
-    EXPECT_EQ(conn->context(), nullptr);
-}
-
-TEST(HttpServerContextTest, HttpServerRejectsInvalidTlsCertificate) {
-    auto listen_address = std::make_shared<znet::IPv4Address>("127.0.0.1", 0);
-    HttpServerContextTestDouble server(listen_address);
-
-    EXPECT_FALSE(server.set_ssl_certificate("/tmp/not-exist-cert.pem",
-                                            "/tmp/not-exist-key.pem"));
-}
-
-TEST(HttpServerContextTest, AsyncAndWebSocketStateHelpersCoverEdgeCases) {
-    auto listen_address = std::make_shared<znet::IPv4Address>("127.0.0.1", 0);
-    HttpServerContextTestDouble server(listen_address);
-
-    EXPECT_FALSE(server.is_async_stream_active(nullptr));
-    EXPECT_FALSE(server.is_websocket_active(nullptr));
-    EXPECT_EQ(server.find_websocket_session(-1), nullptr);
-    EXPECT_EQ(server.take_websocket_session(-1), nullptr);
-
-    server.mark_async_stream_active(-1);
-    server.mark_async_stream_finished(-1);
-    server.register_websocket_session(-1, nullptr);
-
-    int pair[2] = {-1, -1};
-    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-    auto conn = std::make_shared<znet::TcpConnection>(
-        std::make_shared<znet::Socket>(pair[0]));
-    ASSERT_NE(conn, nullptr);
-
-    server.mark_async_stream_active(conn->fd());
-    EXPECT_TRUE(server.is_async_stream_active(conn));
-    server.mark_async_stream_finished(conn->fd());
-    EXPECT_FALSE(server.is_async_stream_active(conn));
-
-    auto request = std::make_shared<HttpRequest>();
-    request->set_method(HttpMethod::GET);
-    request->set_version(HttpVersion::HTTP_1_1);
-    WebSocketSession::ptr session = std::make_shared<WebSocketSession>(
-        nullptr, request, WebSocketCallbacks{},
-        WebSocketOptions{kDefaultWebSocketMaxMessageSize, {}}, "");
-    ASSERT_NE(session, nullptr);
-
-    server.register_websocket_session(conn->fd(), session);
-    EXPECT_TRUE(server.is_websocket_active(conn));
-    EXPECT_NE(server.find_websocket_session(conn->fd()), nullptr);
-
-    auto taken = server.take_websocket_session(conn->fd());
-    EXPECT_NE(taken, nullptr);
-    EXPECT_FALSE(server.is_websocket_active(conn));
-    EXPECT_EQ(server.take_websocket_session(conn->fd()), nullptr);
-
-    conn->close();
-    ::close(pair[1]);
-}
-
-TEST(HttpServerContextTest, TimeoutSettersClampAsExpected) {
-    auto listen_address = std::make_shared<znet::IPv4Address>("127.0.0.1", 0);
-    HttpServerContextTestDouble server(listen_address);
-
-    const uint64_t huge_timeout = std::numeric_limits<uint64_t>::max();
-    server.set_recv_timeout(huge_timeout);
-    server.set_write_timeout(huge_timeout);
+TEST(HttpServerContextTest, TimeoutSettersClampAndInvalidTlsIsRejected) {
+    ServerAccess server;
+    server.set_recv_timeout(std::numeric_limits<uint64_t>::max());
+    server.set_write_timeout(std::numeric_limits<uint64_t>::max());
     server.set_keepalive_timeout(123456);
-
-    auto tcp = server.tcp_server_for_test();
-    ASSERT_NE(tcp, nullptr);
-    EXPECT_EQ(tcp->read_timeout(),
-              std::numeric_limits<uint32_t>::max() - static_cast<uint32_t>(1));
-    EXPECT_EQ(tcp->write_timeout(),
-              std::numeric_limits<uint32_t>::max() - static_cast<uint32_t>(1));
-    EXPECT_EQ(tcp->keepalive_timeout(), 123456u);
+    EXPECT_EQ(server.tcp_server()->read_timeout(),
+              std::numeric_limits<uint32_t>::max() - 1);
+    EXPECT_EQ(server.tcp_server()->write_timeout(),
+              std::numeric_limits<uint32_t>::max() - 1);
+    EXPECT_EQ(server.tcp_server()->keepalive_timeout(), 123456u);
+    EXPECT_FALSE(server.set_ssl_certificate("/missing/cert", "/missing/key"));
 }
-
-TEST(HttpServerContextTest, NullConnectionCallbacksAreNoops) {
-    auto listen_address = std::make_shared<znet::IPv4Address>("127.0.0.1", 0);
-    HttpServerContextTestDouble server(listen_address);
-
-    server.on_connection(nullptr);
-    server.on_close(nullptr);
+TEST(HttpWriterTest, SynchronousStreamFinishesBeforeSendReturns) {
+    SocketPair pair;
+    auto request = std::make_shared<HttpRequest>();
+    HttpContext context(request);
+    context.response().stream([remaining = 1](char *buffer, size_t) mutable {
+        if (!remaining--)
+            return size_t{0};
+        buffer[0] = 'o';
+        buffer[1] = 'k';
+        return size_t{2};
+    });
+    EXPECT_EQ(HttpResponseWriter::send(pair.connection, context),
+              WriteResult::Completed);
+    EXPECT_NE(pair.read().find("2\r\nok\r\n0\r\n\r\n"), std::string::npos);
 }
+TEST(HttpWriterTest, DeclaredStreamLengthMustMatchExactly) {
+    for (size_t length : {1U, 2U, 3U}) {
+        SocketPair pair;
+        HttpContext context(std::make_shared<HttpRequest>());
+        context.response().stream([remaining = 1](char *buffer, size_t) mutable {
+            if (!remaining--)
+                return size_t{0};
+            buffer[0] = 'a';
+            buffer[1] = 'b';
+            return size_t{2};
+        }, length);
+        EXPECT_EQ(HttpResponseWriter::send(pair.connection, context),
+                  length == 2 ? WriteResult::Completed : WriteResult::Failed);
+        const auto wire = pair.read();
+        EXPECT_EQ(wire.find("Transfer-Encoding"), std::string::npos);
+        if (length == 2)
+            EXPECT_EQ(wire.substr(wire.find("\r\n\r\n") + 4), "ab");
+    }
+}
+TEST(HttpWriterTest, InvalidStreamDoesNotEmitTerminalChunk) {
+    for (bool throws : {false, true}) {
+        SocketPair pair;
+        HttpContext context(std::make_shared<HttpRequest>());
+        context.response().stream([throws](char *, size_t capacity) -> size_t {
+            if (throws)
+                throw std::runtime_error("stream failed");
+            return capacity + 1;
+        });
+        EXPECT_EQ(HttpResponseWriter::send(pair.connection, context),
+                  WriteResult::Failed);
+        const auto wire = pair.read();
+        EXPECT_EQ(wire.substr(wire.find("\r\n\r\n") + 4), "");
+    }
+}
+TEST(HttpWriterTest, SlowClientStreamFailsWithinWriteTimeout) {
+    SocketPair pair;
+    int size = 1024;
+    ASSERT_EQ(::setsockopt(pair.connection->fd(), SOL_SOCKET, SO_SNDBUF, &size,
+                           sizeof(size)), 0);
+    pair.connection->set_write_timeout(20);
+    HttpContext context(std::make_shared<HttpRequest>());
+    context.response().stream([](char *buffer, size_t capacity) {
+        std::memset(buffer, 'x', capacity);
+        return capacity;
+    });
+    const auto begin = std::chrono::steady_clock::now();
+    EXPECT_EQ(HttpResponseWriter::send(pair.connection, context),
+              WriteResult::Failed);
+    EXPECT_LT(std::chrono::duration_cast<std::chrono::milliseconds>(
+                  std::chrono::steady_clock::now() - begin).count(), 500);
+}
+TEST(HttpProtocolTest, SynchronousStreamProcessesAlreadyBufferedNextRequest) {
+    SocketPair pair;
+    Router router;
+    RequestPipeline pipeline;
+    int next = 0, completed = 0;
+    router.get("/stream", [&](HttpContext &context) {
+        context.on_complete([&](CompletionResult result) {
+            EXPECT_EQ(result, CompletionResult::Completed);
+            ++completed;
+        });
+        context.response().stream([](char *, size_t) { return 0U; });
+    });
+    router.get("/next", [&](HttpContext &context) {
+        EXPECT_EQ(completed, 1);
+        ++next;
+        context.response().text("next");
+    });
+    HttpProtocolHandler handler(router, pipeline, {}, 30000, "test", {});
+    auto &buffer = pair.connection->input_buffer();
+    buffer.append("GET /stream HTTP/1.1\r\nHost: test\r\n\r\nGET /next "
+                  "HTTP/1.1\r\nHost: test\r\n\r\n");
+    handler.on_data(pair.connection, buffer);
+    EXPECT_EQ(next, 1);
+    EXPECT_EQ(buffer.readable_bytes(), 0U);
+    EXPECT_NE(pair.read().find("0\r\n\r\nHTTP/1.1 200 OK"), std::string::npos);
+}
+TEST(HttpProtocolTest, ExpectIsRejectedBeforeBodyArrives) {
+    SocketPair pair;
+    Router router;
+    RequestPipeline pipeline;
+    int calls = 0;
+    router.post("/", [&](HttpContext &) { ++calls; });
+    HttpProtocolHandler handler(router, pipeline, {}, 30000, "test", {});
+    znet::Buffer buffer;
+    buffer.append("POST / HTTP/1.1\r\nHost: test\r\nExpect: "
+                  "100-continue\r\nContent-Length: 100\r\n\r\n");
+    handler.on_data(pair.connection, buffer);
+    EXPECT_EQ(calls, 0);
+    EXPECT_NE(pair.read().find("417 Expectation Failed"), std::string::npos);
+    EXPECT_FALSE(pair.connection->connected());
+}
+TEST(HttpWriterTest,
+     SuppressedBodiesDoNotStartProducersAndHttp10ClosesUnknownLength) {
+    for (auto code : {200, 204, 205, 304}) {
+        SocketPair pair;
+        auto request = std::make_shared<HttpRequest>();
+        request->set_method(code == 200 ? HttpMethod::HEAD : HttpMethod::GET);
+        HttpContext context(request);
+        int calls = 0;
+        context.response().status(code).stream(
+            [&](char *, size_t) { ++calls; return 0U; });
+            EXPECT_EQ(HttpResponseWriter::send(pair.connection, context),
+                  WriteResult::Completed);
+        EXPECT_EQ(calls, 0);
+        EXPECT_EQ(pair.read().find("Transfer-Encoding"), std::string::npos);
+    }
+    auto request = std::make_shared<HttpRequest>();
+    request->set_version(HttpVersion::HTTP_1_0);
+    request->set_method(HttpMethod::GET);
+    HttpContext context(request);
+    context.response().stream([](char *, size_t) { return 0U; });
+    const auto headers = HttpResponseWriter::headers(request->request_line(),
+                                                     context.response());
+    EXPECT_NE(headers.find("Connection: close"), std::string::npos);
+    EXPECT_EQ(headers.find("Transfer-Encoding"), std::string::npos);
+}
+} // namespace
 
-TEST(HttpServerContextTest,
-     OnMessageParseErrorAndWebSocketSessionFailurePaths) {
-    auto listen_address = std::make_shared<znet::IPv4Address>("127.0.0.1", 0);
-    HttpServerContextTestDouble server(listen_address);
-
-    int pair1[2] = {-1, -1};
-    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair1), 0);
-    auto conn1 = std::make_shared<znet::TcpConnection>(
-        std::make_shared<znet::Socket>(pair1[0]));
-    ASSERT_NE(conn1, nullptr);
-    server.on_connection(conn1);
-
-    // Host 行缺少 ':'，触发 HTTP 解析错误分支。
-    znet::Buffer malformed;
-    malformed.append("GET /bad HTTP/1.1\r\n");
-    malformed.append("Host localhost\r\n");
-    malformed.append("\r\n");
-    server.on_message(conn1, malformed);
-
-    int pair2[2] = {-1, -1};
-    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair2), 0);
-    auto conn2 = std::make_shared<znet::TcpConnection>(
-        std::make_shared<znet::Socket>(pair2[0]));
-    ASSERT_NE(conn2, nullptr);
-    server.on_connection(conn2);
-
+TEST(HttpWriterTest, FileOwnsResourceAndIsCheckedBeforeCommit) {
+    char path[] = "/tmp/zhttp-body-XXXXXX";
+    const int fd = ::mkstemp(path);
+    ASSERT_GE(fd, 0);
+    ASSERT_EQ(::write(fd, "abcdef", 6), 6);
+    SocketPair pair;
     auto request = std::make_shared<HttpRequest>();
     request->set_method(HttpMethod::GET);
-    request->set_version(HttpVersion::HTTP_1_1);
-    auto session = std::make_shared<WebSocketSession>(
-        nullptr, request, WebSocketCallbacks{},
-        WebSocketOptions{kDefaultWebSocketMaxMessageSize, {}}, "");
-    server.register_websocket_session(conn2->fd(), session);
-    ASSERT_TRUE(server.is_websocket_active(conn2));
-
-    // 非掩码客户端帧会使 session->on_message 返回 false，从会话表移除。
-    znet::Buffer invalid_ws_frame;
-    invalid_ws_frame.append(std::string("\x81\x01x", 3));
-    server.on_message(conn2, invalid_ws_frame);
-    EXPECT_FALSE(server.is_websocket_active(conn2));
-
-    conn1->close();
-    conn2->close();
-    ::close(pair1[1]);
-    ::close(pair2[1]);
+    HttpContext context(request);
+    context.response().body(HttpBody::file(path, 2, 3));
+    ::unlink(path);
+    ::close(fd);
+    EXPECT_EQ(HttpResponseWriter::send(pair.connection, context),
+              WriteResult::Completed);
+    const auto wire = pair.read();
+    EXPECT_NE(wire.find("Content-Length: 3\r\n"), std::string::npos);
+    EXPECT_EQ(wire.substr(wire.find("\r\n\r\n") + 4), "cde");
+    char truncated[] = "/tmp/zhttp-body-XXXXXX";
+    const int second = ::mkstemp(truncated);
+    ASSERT_GE(second, 0);
+    ASSERT_EQ(::write(second, "abc", 3), 3);
+    HttpContext invalid(request);
+    invalid.response().body(HttpBody::file(truncated));
+    ASSERT_EQ(::ftruncate(second, 0), 0);
+    ::unlink(truncated);
+    ::close(second);
+    EXPECT_THROW(HttpResponseWriter::send(pair.connection, invalid), std::runtime_error);
+    EXPECT_FALSE(invalid.response().committed());
+    EXPECT_TRUE(pair.read().empty());
 }
-
-TEST(HttpServerContextTest, HandleRequestCoversSendFailureBranches) {
-    auto listen_address = std::make_shared<znet::IPv4Address>("127.0.0.1", 0);
-    HttpServerContextTestDouble server(listen_address);
-    server.router().get("/plain",
-                        [](const HttpRequest::ptr &, HttpResponse &resp) {
-                            resp.status(HttpStatus::OK).text("ok");
-                        });
-    server.router().get(
-        "/chunked", [](const HttpRequest::ptr &, HttpResponse &resp) {
-            resp.status(HttpStatus::OK).body("chunk").enable_chunked();
-        });
-
-    ScopedSignalHandler ignore_sigpipe(SIGPIPE, SIG_IGN);
-
-    {
-        int pair[2] = {-1, -1};
-        ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-        auto conn = std::make_shared<znet::TcpConnection>(
-            std::make_shared<znet::Socket>(pair[0]));
-        ASSERT_NE(conn, nullptr);
-
-        server.on_connection(conn);
-
-        auto request_plain = std::make_shared<HttpRequest>();
-        request_plain->set_method(HttpMethod::GET);
-        request_plain->set_version(HttpVersion::HTTP_1_1);
-        request_plain->set_path("/plain");
-
-        auto request_chunked = std::make_shared<HttpRequest>();
-        request_chunked->set_method(HttpMethod::GET);
-        request_chunked->set_version(HttpVersion::HTTP_1_1);
-        request_chunked->set_path("/chunked");
-
-        ::close(pair[1]); // 让写回失败，覆盖 send 错误分支。
-        EXPECT_FALSE(server.handle_request(conn, request_plain));
-        EXPECT_FALSE(server.handle_request(conn, request_chunked));
-        conn->close();
-    }
+TEST(HttpWriterTest, FreezesResponseAndNormalizesFraming) {
+    SocketPair pair;
+    auto request = std::make_shared<HttpRequest>();
+    request->set_method(HttpMethod::GET);
+    HttpContext context(request);
+    context.response()
+        .status(599)
+        .header("Content-Length", "100")
+        .append_header("Transfer-Encoding", "gzip")
+        .body("abc");
+    EXPECT_EQ(HttpResponseWriter::send(pair.connection, context),
+              WriteResult::Completed);
+    const auto wire = pair.read();
+    EXPECT_EQ(wire.find("HTTP/1.1 599 \r\n"), 0u);
+    EXPECT_NE(wire.find("Content-Length: 3\r\n"), std::string::npos);
+    EXPECT_EQ(wire.find("Transfer-Encoding"), std::string::npos);
+    EXPECT_THROW(context.response().text("late"), std::logic_error);
+    EXPECT_THROW(context.response().header("Late", "value"), std::logic_error);
+    HttpResponse reset;
+    reset.status(205).stream([](char *, size_t) { return 0U; });
+    EXPECT_NE(
+        HttpResponseWriter::serialize(reset).find("Content-Length: 0\r\n"),
+        std::string::npos);
+    EXPECT_THROW(HttpContext(nullptr), std::invalid_argument);
 }
-
-TEST(HttpServerContextTest, HandleRequestWebSocketUpgradeBranches) {
-    auto listen_address = std::make_shared<znet::IPv4Address>("127.0.0.1", 0);
-    HttpServerContextTestDouble server(listen_address);
-
-    server.router().get("/ws-ok",
-                        [](const HttpRequest::ptr &, HttpResponse &resp) {
-                            resp.upgrade_to_websocket(WebSocketCallbacks{});
-                        });
-    server.router().get(
-        "/ws-subproto", [](const HttpRequest::ptr &, HttpResponse &resp) {
-            WebSocketOptions opt;
-            opt.subprotocols = {"chat"};
-            resp.upgrade_to_websocket(WebSocketCallbacks{}, opt);
-        });
-    server.router().get(
-        "/ws-throw", [](const HttpRequest::ptr &, HttpResponse &resp) {
-            WebSocketCallbacks callbacks;
-            callbacks.on_open = [](const WebSocketConnection::ptr &,
-                                   const HttpRequest::ptr &) {
-                throw std::runtime_error("open failed");
-            };
-            resp.upgrade_to_websocket(callbacks);
-        });
-
-    auto make_conn = []() {
-        int pair[2] = {-1, -1};
-        EXPECT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-        auto conn = std::make_shared<znet::TcpConnection>(
-            std::make_shared<znet::Socket>(pair[0]));
-        return std::tuple<znet::TcpConnection::ptr, int, int>{conn, pair[0],
-                                                              pair[1]};
-    };
-
-    auto make_ws_request = [](const std::string &path,
-                              const std::string &version_header,
-                              const std::string &subprotocol) {
-        auto request = std::make_shared<HttpRequest>();
-        request->set_method(HttpMethod::GET);
-        request->set_version(HttpVersion::HTTP_1_1);
-        request->set_path(path);
-        request->set_header("Connection", "keep-alive, Upgrade");
-        request->set_header("Upgrade", "websocket");
-        request->set_header("Sec-WebSocket-Version", version_header);
-        request->set_header("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==");
-        if (!subprotocol.empty()) {
-            request->set_header("Sec-WebSocket-Protocol", subprotocol);
-        }
-        return request;
-    };
-
-    {
-        auto conn_tuple = make_conn();
-        auto conn = std::get<0>(conn_tuple);
-        const int fd1 = std::get<2>(conn_tuple);
-        ASSERT_NE(conn, nullptr);
-        auto request = make_ws_request("/ws-ok", "12", "");
-        EXPECT_FALSE(server.handle_request(conn, request));
-        EXPECT_FALSE(server.is_websocket_active(conn));
-        conn->close();
-        ::close(fd1);
-    }
-
-    {
-        auto conn_tuple = make_conn();
-        auto conn = std::get<0>(conn_tuple);
-        const int fd1 = std::get<2>(conn_tuple);
-        ASSERT_NE(conn, nullptr);
-        auto request = make_ws_request("/ws-subproto", "13", "json");
-        EXPECT_FALSE(server.handle_request(conn, request));
-        EXPECT_FALSE(server.is_websocket_active(conn));
-        conn->close();
-        ::close(fd1);
-    }
-
-    {
-        auto conn_tuple = make_conn();
-        auto conn = std::get<0>(conn_tuple);
-        const int fd1 = std::get<2>(conn_tuple);
-        ASSERT_NE(conn, nullptr);
-        auto request = make_ws_request("/ws-throw", "13", "");
-        EXPECT_FALSE(server.handle_request(conn, request));
-        EXPECT_FALSE(server.is_websocket_active(conn));
-        conn->close();
-        ::close(fd1);
-    }
-
-    {
-        auto conn_tuple = make_conn();
-        auto conn = std::get<0>(conn_tuple);
-        const int fd1 = std::get<2>(conn_tuple);
-        ASSERT_NE(conn, nullptr);
-        auto request = make_ws_request("/ws-ok", "13", "");
-        const bool upgraded = server.handle_request(conn, request);
-        if (upgraded) {
-            EXPECT_TRUE(server.is_websocket_active(conn));
-            server.on_close(conn);
-            EXPECT_FALSE(server.is_websocket_active(conn));
-        } else {
-            EXPECT_FALSE(server.is_websocket_active(conn));
-        }
-        conn->close();
-        ::close(fd1);
-    }
+TEST(RouterMatchTest, ReturnsStablePatternWithoutExecutingBusinessCode) {
+    Router router;
+    int calls = 0;
+    router.get("/users/:id", [&](HttpContext &) { ++calls; });
+    auto match = router.match("/users/42", HttpMethod::GET);
+    ASSERT_TRUE(match.found);
+    EXPECT_EQ(match.route_id, "/users/:id");
+    EXPECT_EQ(match.params.at("id"), "42");
+    EXPECT_EQ(calls, 0);
+    router.add_regex_route(HttpMethod::GET, "^/files/(.*)$", {"name"},
+                           [](HttpContext &) {});
+    EXPECT_EQ(router.match("/files/readme", HttpMethod::GET).route_id,
+              "^/files/(.*)$");
+    router.freeze();
+    EXPECT_THROW(router.get("/late", [](HttpContext &) {}), std::logic_error);
 }
-
-TEST(HttpServerContextTest, OnMessageReturnsEarlyWhenAsyncStreamIsActive) {
-    auto listen_address = std::make_shared<znet::IPv4Address>("127.0.0.1", 0);
-    HttpServerContextTestDouble server(listen_address);
-
-    int pair[2] = {-1, -1};
-    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-    auto conn = std::make_shared<znet::TcpConnection>(
-        std::make_shared<znet::Socket>(pair[0]));
-    ASSERT_NE(conn, nullptr);
-    server.on_connection(conn);
-
-    server.mark_async_stream_active(conn->fd());
-
-    znet::Buffer request_buffer;
-    request_buffer.append("GET /x HTTP/1.1\r\n");
-    request_buffer.append("Host: localhost\r\n");
-    request_buffer.append("\r\n");
-    const size_t before = request_buffer.readable_bytes();
-
-    server.on_message(conn, request_buffer);
-    EXPECT_EQ(request_buffer.readable_bytes(), before);
-
-    server.mark_async_stream_finished(conn->fd());
-    server.on_close(conn);
-    conn->close();
-    ::close(pair[1]);
-}
-
-TEST(HttpServerContextTest,
-     SendAsyncChunkedResponseCoversFailureAndClosePaths) {
-    auto listen_address = std::make_shared<znet::IPv4Address>("127.0.0.1", 0);
-    HttpServerContextTestDouble server(listen_address);
-    ScopedSignalHandler ignore_sigpipe(SIGPIPE, SIG_IGN);
-
-    {
-        HttpResponse response;
-        EXPECT_FALSE(server.send_async_chunked_response(nullptr, response));
-    }
-
-    {
-        int pair[2] = {-1, -1};
-        ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-        auto conn = std::make_shared<znet::TcpConnection>(
-            std::make_shared<znet::Socket>(pair[0]));
-        ASSERT_NE(conn, nullptr);
-
-        HttpResponse response;
-        EXPECT_FALSE(server.send_async_chunked_response(conn, response));
-        conn->close();
-        ::close(pair[1]);
-    }
-
-    {
-        int pair[2] = {-1, -1};
-        ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-        auto conn = std::make_shared<znet::TcpConnection>(
-            std::make_shared<znet::Socket>(pair[0]));
-        ASSERT_NE(conn, nullptr);
-
-        HttpResponse response;
-        response.set_version(HttpVersion::HTTP_1_1);
-        response.async_stream(
-            [](HttpResponse::AsyncChunkSender,
-               HttpResponse::AsyncStreamCloser close) { close(); });
-
-        ::close(pair[1]); // 响应头发送失败。
-        EXPECT_FALSE(server.send_async_chunked_response(conn, response));
-        conn->close();
-    }
-
-    {
-        int pair[2] = {-1, -1};
-        ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-        auto conn = std::make_shared<znet::TcpConnection>(
-            std::make_shared<znet::Socket>(pair[0]));
-        ASSERT_NE(conn, nullptr);
-
-        int peer_fd = pair[1];
-        HttpResponse response;
-        response.set_version(HttpVersion::HTTP_1_1);
-        response.async_stream(
-            [&peer_fd](HttpResponse::AsyncChunkSender send,
-                       HttpResponse::AsyncStreamCloser close) {
-                ::close(peer_fd);
-                peer_fd = -1;
-                EXPECT_FALSE(send("abc"));
-                close();
-                close(); // 覆盖 finish_stream 的重复关闭分支。
-            });
-
-        EXPECT_TRUE(server.send_async_chunked_response(conn, response));
-        EXPECT_FALSE(server.is_async_stream_active(conn));
-        conn->close();
-    }
-
-    {
-        int pair[2] = {-1, -1};
-        ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-        auto conn = std::make_shared<znet::TcpConnection>(
-            std::make_shared<znet::Socket>(pair[0]));
-        ASSERT_NE(conn, nullptr);
-
-        HttpResponse response;
-        response.set_version(HttpVersion::HTTP_1_1);
-        response.async_stream([](HttpResponse::AsyncChunkSender send,
-                                 HttpResponse::AsyncStreamCloser close) {
-            EXPECT_TRUE(send(""));
-            close();
-        });
-
-        EXPECT_TRUE(server.send_async_chunked_response(conn, response));
-        EXPECT_FALSE(server.is_async_stream_active(conn));
-        conn->close();
-        ::close(pair[1]);
-    }
-
-    {
-        int pair[2] = {-1, -1};
-        ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-        auto conn = std::make_shared<znet::TcpConnection>(
-            std::make_shared<znet::Socket>(pair[0]));
-        ASSERT_NE(conn, nullptr);
-
-        HttpResponse response;
-        response.set_version(HttpVersion::HTTP_1_1);
-        response.async_stream([](HttpResponse::AsyncChunkSender,
-                                 HttpResponse::AsyncStreamCloser) {
-            throw std::runtime_error("async boom");
-        });
-
-        EXPECT_FALSE(server.send_async_chunked_response(conn, response));
-        EXPECT_FALSE(server.is_async_stream_active(conn));
-        conn->close();
-        ::close(pair[1]);
-    }
-}
-
-} // namespace
-} // namespace zhttp
 
 int main(int argc, char **argv) {
-    zco::init(1);
     ::testing::InitGoogleTest(&argc, argv);
     zhttp::init_logger();
-    const int rc = RUN_ALL_TESTS();
-    zco::shutdown();
-    return rc;
+    return RUN_ALL_TESTS();
 }

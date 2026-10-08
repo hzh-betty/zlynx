@@ -1,157 +1,240 @@
-#include "zhttp/mid/middleware.h"
+#include "../test_support.h"
 #include "zhttp/zhttp_logger.h"
-
-#include <gtest/gtest.h>
-
+#include <stdexcept>
+#include <functional>
+#include <vector>
 using namespace zhttp;
-using namespace zhttp::mid;
-
-// 测试中间件：记录调用顺序
-class OrderTrackingMiddleware : public Middleware {
+namespace {
+class FunctionMiddleware : public Middleware {
   public:
-    OrderTrackingMiddleware(std::vector<std::string> &log,
-                            const std::string &name, bool pass = true)
-        : log_(log), name_(name), pass_(pass) {}
-
-    bool before(const HttpRequest::ptr &, HttpResponse &) override {
-        log_.push_back(name_ + "_before");
-        return pass_;
+    using Before = std::function<bool(HttpContext &)>;
+    using After = std::function<void(HttpContext &)>;
+    explicit FunctionMiddleware(Before before = {}, After after = {})
+        : before_(std::move(before)), after_(std::move(after)) {}
+    bool before(HttpContext &context) override {
+        return before_ ? before_(context) : true;
     }
-
-    void after(const HttpRequest::ptr &, HttpResponse &) override {
-        log_.push_back(name_ + "_after");
+    void after(HttpContext &context) override {
+        if (after_)
+            after_(context);
     }
 
   private:
-    std::vector<std::string> &log_;
-    std::string name_;
-    bool pass_;
+    Before before_;
+    After after_;
 };
-
-TEST(MiddlewareTest, BeforeCalledInOrder) {
-    std::vector<std::string> log;
-    MiddlewareChain chain;
-
-    chain.add(std::make_shared<OrderTrackingMiddleware>(log, "A"));
-    chain.add(std::make_shared<OrderTrackingMiddleware>(log, "B"));
-    chain.add(std::make_shared<OrderTrackingMiddleware>(log, "C"));
-
+TEST(MiddlewareTest, BeforeAfterOrderAndShortCircuitAreRequestLocal) {
+    RequestPipeline pipeline;
+    Router router;
+    std::vector<int> trace;
+    int inner_before = 0;
+    pipeline.use(std::make_shared<FunctionMiddleware>(
+        [&](HttpContext &) {
+            trace.push_back(1);
+            return true;
+        },
+        [&](HttpContext &) { trace.push_back(5); }));
+    pipeline.use(std::make_shared<FunctionMiddleware>(
+        [&](HttpContext &context) {
+            trace.push_back(2);
+            return context.header("Stop").empty();
+        },
+        [&](HttpContext &) { trace.push_back(4); }));
+    pipeline.use(std::make_shared<FunctionMiddleware>(
+        [&](HttpContext &) {
+            ++inner_before;
+            return true;
+        }));
+    router.get("/", [&](HttpContext &) { trace.push_back(3); });
     auto request = std::make_shared<HttpRequest>();
-    HttpResponse response;
-
-    bool result = chain.execute_before(request, response);
-
-    EXPECT_TRUE(result);
-    ASSERT_EQ(log.size(), 3u);
-    EXPECT_EQ(log[0], "A_before");
-    EXPECT_EQ(log[1], "B_before");
-    EXPECT_EQ(log[2], "C_before");
+    request->set_method(HttpMethod::GET);
+    HttpContext context(request);
+    EXPECT_TRUE(pipeline.execute(context, router));
+    EXPECT_EQ(trace, (std::vector<int>{1, 2, 3, 4, 5}));
+    trace.clear();
+    auto stopped = std::make_shared<HttpRequest>();
+    stopped->set_method(HttpMethod::GET);
+    stopped->set_header("Stop", "yes");
+    HttpContext second(stopped);
+    pipeline.execute(second, router);
+    EXPECT_EQ(trace, (std::vector<int>{1, 2, 4, 5}));
+    EXPECT_EQ(inner_before, 1);
 }
-
-TEST(MiddlewareTest, AfterCalledInReverseOrder) {
-    std::vector<std::string> log;
-    MiddlewareChain chain;
-
-    chain.add(std::make_shared<OrderTrackingMiddleware>(log, "A"));
-    chain.add(std::make_shared<OrderTrackingMiddleware>(log, "B"));
-    chain.add(std::make_shared<OrderTrackingMiddleware>(log, "C"));
-
+TEST(MiddlewareTest, ExceptionsResetStreamAndUpgradeBeforeAfterHooks) {
+    RequestPipeline pipeline;
+    Router router;
+    bool outer = false;
+    pipeline.use(std::make_shared<FunctionMiddleware>(
+        FunctionMiddleware::Before{}, [&](HttpContext &context) {
+            outer = true;
+            EXPECT_FALSE(context.upgrade());
+            EXPECT_EQ(context.response().body_source().kind(),
+                      HttpBody::Kind::Memory);
+        }));
+    router.get("/", [](HttpContext &context) {
+        context.upgrade_to_websocket({});
+        context.response().stream([](char *, size_t) { return 0U; });
+        throw std::runtime_error("failure");
+    });
     auto request = std::make_shared<HttpRequest>();
-    HttpResponse response;
-
-    chain.execute_before(request, response);
-    log.clear();
-    chain.execute_after(request, response);
-
-    ASSERT_EQ(log.size(), 3u);
-    EXPECT_EQ(log[0], "C_after");
-    EXPECT_EQ(log[1], "B_after");
-    EXPECT_EQ(log[2], "A_after");
+    request->set_method(HttpMethod::GET);
+    HttpContext context(request);
+    pipeline.execute(context, router);
+    EXPECT_TRUE(outer);
+    EXPECT_EQ(context.response().status_code(),
+              HttpStatus::INTERNAL_SERVER_ERROR);
 }
-
-TEST(MiddlewareTest, BeforeInterruptsChain) {
-    std::vector<std::string> log;
-    MiddlewareChain chain;
-
-    chain.add(std::make_shared<OrderTrackingMiddleware>(log, "A"));
-    chain.add(
-        std::make_shared<OrderTrackingMiddleware>(log, "B", false)); // 中断
-    chain.add(std::make_shared<OrderTrackingMiddleware>(log, "C"));
-
-    auto request = std::make_shared<HttpRequest>();
-    HttpResponse response;
-
-    bool result = chain.execute_before(request, response);
-
-    EXPECT_FALSE(result);
-    ASSERT_EQ(log.size(), 2u);
-    EXPECT_EQ(log[0], "A_before");
-    EXPECT_EQ(log[1], "B_before");
-    // C_before 不应被调用
-}
-
-TEST(MiddlewareTest, AfterOnlyCalledForExecutedMiddlewares) {
-    std::vector<std::string> log;
-    MiddlewareChain chain;
-
-    chain.add(std::make_shared<OrderTrackingMiddleware>(log, "A"));
-    chain.add(
-        std::make_shared<OrderTrackingMiddleware>(log, "B", false)); // 中断
-    chain.add(std::make_shared<OrderTrackingMiddleware>(log, "C"));
-
-    auto request = std::make_shared<HttpRequest>();
-    HttpResponse response;
-
-    chain.execute_before(request, response);
-    log.clear();
-    chain.execute_after(request, response);
-
-    // 只有 A 和 B 的 after 应该被调用（逆序）
-    ASSERT_EQ(log.size(), 2u);
-    EXPECT_EQ(log[0], "B_after");
-    EXPECT_EQ(log[1], "A_after");
-}
-
-TEST(MiddlewareTest, EmptyChain) {
-    MiddlewareChain chain;
-
-    EXPECT_TRUE(chain.empty());
-    EXPECT_EQ(chain.size(), 0u);
-
-    auto request = std::make_shared<HttpRequest>();
-    HttpResponse response;
-
-    EXPECT_TRUE(chain.execute_before(request, response));
-    chain.execute_after(request, response); // 不应崩溃
-}
-
-// 测试中间件：修改响应
-class ResponseModifyMiddleware : public Middleware {
-  public:
-    bool before(const HttpRequest::ptr &, HttpResponse &resp) override {
-        resp.header("X-Before", "true");
-        return true;
+TEST(MiddlewareTest, AfterHookCanReplaceUpgradeWithOrdinaryResponse) {
+    for (auto status : {HttpStatus::OK, HttpStatus::UNAUTHORIZED,
+                        HttpStatus::FORBIDDEN}) {
+        RequestPipeline pipeline;
+        Router router;
+        pipeline.use(std::make_shared<FunctionMiddleware>(
+            FunctionMiddleware::Before{}, [status](HttpContext &context) {
+                context.response().status(status).text("ordinary response");
+                context.response().header("X-Middleware", "retained");
+            }));
+        router.get("/", [](HttpContext &context) {
+            context.upgrade_to_websocket({});
+        });
+        auto request = std::make_shared<HttpRequest>();
+        request->set_method(HttpMethod::GET);
+        HttpContext context(request);
+        ASSERT_TRUE(pipeline.execute(context, router));
+        EXPECT_FALSE(context.upgrade());
+        EXPECT_EQ(context.response().status_code(), status);
+        EXPECT_EQ(context.response().body_content(), "ordinary response");
+        EXPECT_EQ(context.response().headers().get("X-Middleware"),
+                  "retained");
     }
-
-    void after(const HttpRequest::ptr &, HttpResponse &resp) override {
-        resp.header("X-After", "true");
-    }
-};
-
-TEST(MiddlewareTest, MiddlewareCanModifyResponse) {
-    MiddlewareChain chain;
-    chain.add(std::make_shared<ResponseModifyMiddleware>());
-
-    auto request = std::make_shared<HttpRequest>();
-    HttpResponse response;
-
-    chain.execute_before(request, response);
-    EXPECT_EQ(response.headers().at("X-Before"), "true");
-
-    chain.execute_after(request, response);
-    EXPECT_EQ(response.headers().at("X-After"), "true");
 }
-
+TEST(MiddlewareTest, UpgradeWithNonemptyBodyIsRejectedBeforeCommit) {
+    RequestPipeline pipeline;
+    Router router;
+    router.get("/", [](HttpContext &context) {
+        context.upgrade_to_websocket({});
+        context.response().text("invalid upgrade body");
+    });
+    auto request = std::make_shared<HttpRequest>();
+    request->set_method(HttpMethod::GET);
+    HttpContext context(request);
+    ASSERT_TRUE(pipeline.execute(context, router));
+    EXPECT_FALSE(context.upgrade());
+    EXPECT_EQ(context.response().status_code(),
+              HttpStatus::INTERNAL_SERVER_ERROR);
+    EXPECT_FALSE(context.response().committed());
+}
+TEST(MiddlewareTest, BeforeExceptionStopsLaterHooksAndRunsOuterAfter) {
+    RequestPipeline pipeline;
+    Router router;
+    std::vector<int> trace;
+    pipeline.use(std::make_shared<FunctionMiddleware>(
+        [&](HttpContext &) {
+            trace.push_back(1);
+            return true;
+        },
+        [&](HttpContext &context) {
+            trace.push_back(4);
+            EXPECT_EQ(context.response().status_code(),
+                      HttpStatus::INTERNAL_SERVER_ERROR);
+        }));
+    pipeline.use(std::make_shared<FunctionMiddleware>(
+        [&](HttpContext &) -> bool {
+            trace.push_back(2);
+            throw std::runtime_error("before failure");
+        },
+        [&](HttpContext &) { ADD_FAILURE() << "Throwing before ran after"; }));
+    pipeline.use(std::make_shared<FunctionMiddleware>(
+        [&](HttpContext &) {
+            ADD_FAILURE() << "Later before ran";
+            return true;
+        }));
+    router.get("/", [&](HttpContext &) { trace.push_back(3); });
+    auto request = std::make_shared<HttpRequest>();
+    request->set_method(HttpMethod::GET);
+    HttpContext context(request);
+    EXPECT_TRUE(pipeline.execute(context, router));
+    EXPECT_EQ(trace, (std::vector<int>{1, 2, 4}));
+}
+TEST(MiddlewareTest, AfterExceptionResetsResultAndContinuesOuterCleanup) {
+    RequestPipeline pipeline;
+    Router router;
+    std::vector<int> trace;
+    pipeline.use(std::make_shared<FunctionMiddleware>(
+        FunctionMiddleware::Before{}, [&](HttpContext &context) {
+            trace.push_back(3);
+            EXPECT_FALSE(context.upgrade());
+            EXPECT_EQ(context.response().body_source().kind(),
+                      HttpBody::Kind::Memory);
+            EXPECT_EQ(context.response().status_code(),
+                      HttpStatus::INTERNAL_SERVER_ERROR);
+        }));
+    pipeline.use(std::make_shared<FunctionMiddleware>(
+        FunctionMiddleware::Before{}, [&](HttpContext &context) {
+            trace.push_back(2);
+            context.upgrade_to_websocket({});
+            context.response().stream([](char *, size_t) { return 0U; });
+            throw 42;
+        }));
+    router.get("/", [&](HttpContext &) { trace.push_back(1); });
+    auto request = std::make_shared<HttpRequest>();
+    request->set_method(HttpMethod::GET);
+    HttpContext context(request);
+    EXPECT_TRUE(pipeline.execute(context, router));
+    EXPECT_EQ(trace, (std::vector<int>{1, 2, 3}));
+}
+TEST(MiddlewareTest, NestedRequestKeepsUnwindCountsIndependent) {
+    RequestPipeline pipeline;
+    Router router;
+    std::vector<std::string> trace;
+    pipeline.use(std::make_shared<FunctionMiddleware>(
+        FunctionMiddleware::Before{}, [&](HttpContext &context) {
+            trace.push_back(context.path() + ":first");
+        }));
+    pipeline.use(std::make_shared<FunctionMiddleware>(
+        [](HttpContext &context) { return context.path() != "/inner"; },
+        [&](HttpContext &context) {
+            trace.push_back(context.path() + ":second");
+        }));
+    pipeline.use(std::make_shared<FunctionMiddleware>(
+        FunctionMiddleware::Before{}, [&](HttpContext &context) {
+            trace.push_back(context.path() + ":third");
+        }));
+    router.get("/inner", [](HttpContext &) {
+        ADD_FAILURE() << "Short-circuited inner handler ran";
+    });
+    router.get("/outer", [&](HttpContext &) {
+        auto request = std::make_shared<HttpRequest>();
+        request->set_method(HttpMethod::GET);
+        request->set_target("/inner");
+        HttpContext inner(request);
+        EXPECT_TRUE(pipeline.execute(inner, router));
+    });
+    auto request = std::make_shared<HttpRequest>();
+    request->set_method(HttpMethod::GET);
+    request->set_target("/outer");
+    HttpContext context(request);
+    EXPECT_TRUE(pipeline.execute(context, router));
+    EXPECT_EQ(trace, (std::vector<std::string>{
+                         "/inner:second", "/inner:first", "/outer:third",
+                         "/outer:second", "/outer:first"}));
+}
+TEST(MiddlewareTest, DefaultHooksAndEmptyPipelineCallHandlerOnce) {
+    for (bool use_middleware : {false, true}) {
+        RequestPipeline pipeline;
+        Router router;
+        int calls = 0;
+        if (use_middleware)
+            pipeline.use(std::make_shared<Middleware>());
+        router.get("/", [&](HttpContext &) { ++calls; });
+        auto request = std::make_shared<HttpRequest>();
+        request->set_method(HttpMethod::GET);
+        HttpContext context(request);
+        EXPECT_TRUE(pipeline.execute(context, router));
+        EXPECT_EQ(calls, 1);
+    }
+}
+} // namespace
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     zhttp::init_logger();

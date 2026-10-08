@@ -6,6 +6,12 @@
 namespace zhttp {
 namespace {
 
+TEST(HttpCommonTest, FormatsHttpDateInGmt) {
+    EXPECT_EQ(format_http_date_gmt(0),
+              "Thu, 01 Jan 1970 00:00:00 GMT");
+
+}
+
 TEST(HttpCommonTest, HeaderTokenMatchingIsCaseInsensitiveAndExact) {
     EXPECT_TRUE(header_contains_token("keep-alive, Upgrade", "UPGRADE"));
     EXPECT_TRUE(header_contains_token(", \tchunked \t,", "chunked"));
@@ -61,7 +67,7 @@ TEST(HttpCommonTest, StatusAndVersionStringConversions) {
     EXPECT_STREQ(status_to_string(HttpStatus::BAD_REQUEST), "Bad Request");
     EXPECT_STREQ(status_to_string(HttpStatus::INTERNAL_SERVER_ERROR),
                  "Internal Server Error");
-    EXPECT_STREQ(status_to_string(static_cast<HttpStatus>(9999)), "Unknown");
+    EXPECT_STREQ(status_to_string(static_cast<HttpStatus>(9999)), "");
 
     EXPECT_STREQ(version_to_string(HttpVersion::HTTP_1_0), "HTTP/1.0");
     EXPECT_STREQ(version_to_string(HttpVersion::HTTP_1_1), "HTTP/1.1");

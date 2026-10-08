@@ -1,4 +1,5 @@
-#include "zhttp/mid/cors_middleware.h"
+#include "../test_support.h"
+#include "zhttp/middleware/cors_middleware.h"
 #include "zhttp/zhttp_logger.h"
 
 #include <gtest/gtest.h>
@@ -17,14 +18,14 @@ TEST(CorsMiddlewareTest, PreflightShortCircuitAndReflectRequestHeaders) {
 
     CorsMiddleware middleware(opt);
 
-    auto req = std::make_shared<HttpRequest>();
+    auto req = std::make_shared<TestContext>();
     req->set_method(HttpMethod::OPTIONS);
     req->set_header("Origin", "https://frontend.example.com");
     req->set_header("Access-Control-Request-Method", "POST");
     req->set_header("Access-Control-Request-Headers", "Authorization, X-Trace");
 
     HttpResponse resp;
-    const bool should_continue = middleware.before(req, resp);
+    const bool should_continue = run_middleware(middleware, req, resp);
 
     EXPECT_FALSE(should_continue);
     EXPECT_EQ(resp.status_code(), HttpStatus::NO_CONTENT);
@@ -45,15 +46,14 @@ TEST(CorsMiddlewareTest, NormalRequestAddCorsHeadersInAfter) {
 
     CorsMiddleware middleware(opt);
 
-    auto req = std::make_shared<HttpRequest>();
+    auto req = std::make_shared<TestContext>();
     req->set_method(HttpMethod::GET);
     req->set_header("Origin", "https://app.example.com");
 
     HttpResponse resp;
     resp.status(HttpStatus::OK).json("{\"ok\":true}");
 
-    EXPECT_TRUE(middleware.before(req, resp));
-    middleware.after(req, resp);
+    EXPECT_TRUE(run_middleware(middleware, req, resp));
 
     EXPECT_EQ(resp.headers().at("Access-Control-Allow-Origin"),
               "https://app.example.com");
@@ -69,13 +69,13 @@ TEST(CorsMiddlewareTest, RejectDisallowedOriginOnPreflight) {
 
     CorsMiddleware middleware(opt);
 
-    auto req = std::make_shared<HttpRequest>();
+    auto req = std::make_shared<TestContext>();
     req->set_method(HttpMethod::OPTIONS);
     req->set_header("Origin", "https://evil.example.com");
     req->set_header("Access-Control-Request-Method", "GET");
 
     HttpResponse resp;
-    const bool should_continue = middleware.before(req, resp);
+    const bool should_continue = run_middleware(middleware, req, resp);
 
     EXPECT_FALSE(should_continue);
     EXPECT_EQ(resp.status_code(), HttpStatus::FORBIDDEN);
@@ -87,13 +87,12 @@ TEST(CorsMiddlewareTest, NonPreflightRequestPassesAndCanSkipCorsHeaders) {
 
     CorsMiddleware middleware(opt);
 
-    auto req = std::make_shared<HttpRequest>();
+    auto req = std::make_shared<TestContext>();
     req->set_method(HttpMethod::GET);
     req->set_header("Origin", "https://evil.example.com");
 
     HttpResponse resp;
-    EXPECT_TRUE(middleware.before(req, resp));
-    middleware.after(req, resp);
+    EXPECT_TRUE(run_middleware(middleware, req, resp));
     EXPECT_EQ(resp.headers().count("Access-Control-Allow-Origin"), 0U);
 }
 
@@ -106,13 +105,13 @@ TEST(CorsMiddlewareTest, PreflightCanContinueWithConfiguredHeadersAndNoMaxAge) {
     opt.short_circuit_preflight = false;
 
     CorsMiddleware middleware(opt);
-    auto req = std::make_shared<HttpRequest>();
+    auto req = std::make_shared<TestContext>();
     req->set_method(HttpMethod::OPTIONS);
     req->set_header("Origin", "https://frontend.example.com");
     req->set_header("Access-Control-Request-Method", "POST");
 
     HttpResponse resp;
-    const bool should_continue = middleware.before(req, resp);
+    const bool should_continue = run_middleware(middleware, req, resp);
     EXPECT_TRUE(should_continue);
     EXPECT_EQ(resp.headers().at("Access-Control-Allow-Origin"),
               "https://frontend.example.com");
@@ -132,13 +131,13 @@ TEST(CorsMiddlewareTest,
 
     CorsMiddleware middleware(opt);
 
-    auto req = std::make_shared<HttpRequest>();
+    auto req = std::make_shared<TestContext>();
     req->set_method(HttpMethod::OPTIONS);
     req->set_header("Origin", "https://evil.example.com");
     req->set_header("Access-Control-Request-Method", "GET");
 
     HttpResponse resp;
-    const bool should_continue = middleware.before(req, resp);
+    const bool should_continue = run_middleware(middleware, req, resp);
     EXPECT_FALSE(should_continue);
     EXPECT_EQ(resp.status_code(), HttpStatus::NO_CONTENT);
     EXPECT_EQ(resp.headers().count("Access-Control-Allow-Origin"), 0U);
@@ -150,11 +149,11 @@ TEST(CorsMiddlewareTest, EmptyOriginFallsBackToWildcardAndNoVary) {
     opt.add_vary_origin = true;
 
     CorsMiddleware middleware(opt);
-    auto req = std::make_shared<HttpRequest>();
+    auto req = std::make_shared<TestContext>();
     req->set_method(HttpMethod::GET);
 
     HttpResponse resp;
-    middleware.after(req, resp);
+    run_middleware(middleware, req, resp);
     EXPECT_EQ(resp.headers().at("Access-Control-Allow-Origin"), "*");
     EXPECT_EQ(resp.headers().count("Vary"), 0U);
 }
@@ -165,13 +164,13 @@ TEST(CorsMiddlewareTest, VaryOriginIsNotDuplicatedAndCanBeDisabled) {
     opt.add_vary_origin = true;
     CorsMiddleware middleware(opt);
 
-    auto req = std::make_shared<HttpRequest>();
+    auto req = std::make_shared<TestContext>();
     req->set_method(HttpMethod::GET);
     req->set_header("Origin", "https://app.example.com");
 
     HttpResponse resp;
     resp.header("Vary", "Accept-Encoding, origin");
-    middleware.after(req, resp);
+    run_middleware(middleware, req, resp);
     EXPECT_EQ(resp.headers().at("Vary"), "Accept-Encoding, origin");
 
     CorsMiddleware::Options no_vary_opt = opt;
@@ -179,7 +178,7 @@ TEST(CorsMiddlewareTest, VaryOriginIsNotDuplicatedAndCanBeDisabled) {
     CorsMiddleware no_vary_middleware(no_vary_opt);
 
     HttpResponse no_vary_resp;
-    no_vary_middleware.after(req, no_vary_resp);
+    run_middleware(no_vary_middleware, req, no_vary_resp);
     EXPECT_EQ(no_vary_resp.headers().count("Vary"), 0U);
 }
 
@@ -187,18 +186,18 @@ TEST(CorsMiddlewareTest, OptionsWithoutOriginOrRequestMethodAreNotPreflight) {
     CorsMiddleware middleware(CorsMiddleware::Options{});
 
     {
-        auto req = std::make_shared<HttpRequest>();
+        auto req = std::make_shared<TestContext>();
         req->set_method(HttpMethod::OPTIONS);
         HttpResponse resp;
-        EXPECT_TRUE(middleware.before(req, resp));
+        EXPECT_TRUE(run_middleware(middleware, req, resp));
     }
 
     {
-        auto req = std::make_shared<HttpRequest>();
+        auto req = std::make_shared<TestContext>();
         req->set_method(HttpMethod::OPTIONS);
         req->set_header("Origin", "https://site.example.com");
         HttpResponse resp;
-        EXPECT_TRUE(middleware.before(req, resp));
+        EXPECT_TRUE(run_middleware(middleware, req, resp));
     }
 }
 
@@ -213,13 +212,13 @@ TEST(CorsMiddlewareTest,
 
     CorsMiddleware middleware(opt);
 
-    auto req = std::make_shared<HttpRequest>();
+    auto req = std::make_shared<TestContext>();
     req->set_method(HttpMethod::OPTIONS);
     req->set_header("Origin", "https://blocked.example.com");
     req->set_header("Access-Control-Request-Method", "POST");
     HttpResponse resp;
 
-    EXPECT_TRUE(middleware.before(req, resp));
+    EXPECT_TRUE(run_middleware(middleware, req, resp));
     EXPECT_EQ(resp.headers().count("Access-Control-Allow-Origin"), 0U);
     EXPECT_EQ(resp.headers().count("Access-Control-Allow-Headers"), 0U);
 }
@@ -233,13 +232,13 @@ TEST(CorsMiddlewareTest, PreflightWithoutReqHeadersKeepsAllowHeadersUnset) {
 
     CorsMiddleware middleware(opt);
 
-    auto req = std::make_shared<HttpRequest>();
+    auto req = std::make_shared<TestContext>();
     req->set_method(HttpMethod::OPTIONS);
     req->set_header("Origin", "https://frontend.example.com");
     req->set_header("Access-Control-Request-Method", "GET");
 
     HttpResponse resp;
-    const bool should_continue = middleware.before(req, resp);
+    const bool should_continue = run_middleware(middleware, req, resp);
     EXPECT_FALSE(should_continue);
     EXPECT_EQ(resp.status_code(), HttpStatus::NO_CONTENT);
     EXPECT_EQ(resp.headers().count("Access-Control-Allow-Headers"), 0U);

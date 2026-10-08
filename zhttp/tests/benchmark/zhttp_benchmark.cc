@@ -235,8 +235,8 @@ int run_server_process(const BenchConfig &cfg, const std::string &mode,
             builder.use_independent_stack();
         }
 
-        builder.get(cfg.path, [](const zhttp::HttpRequest::ptr &,
-                                 zhttp::HttpResponse &resp) {
+        builder.get(cfg.path, [](zhttp::HttpContext &context) {
+            auto &resp = context.response();
             resp.status(zhttp::HttpStatus::OK).text("OK");
         });
 

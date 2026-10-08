@@ -1,4 +1,5 @@
-#include "zhttp/mid/error_middleware.h"
+#include "../test_support.h"
+#include "zhttp/middleware/error_middleware.h"
 #include "zhttp/zhttp_logger.h"
 
 #include <gtest/gtest.h>
@@ -9,15 +10,14 @@ using namespace zhttp::mid;
 TEST(ErrorMiddlewareTest, FormatsNotFoundAsJsonWhenBodyEmpty) {
     ErrorMiddleware middleware;
 
-    auto request = std::make_shared<HttpRequest>();
+    auto request = std::make_shared<TestContext>();
     request->set_method(HttpMethod::GET);
     request->set_path("/missing");
 
     HttpResponse response;
     response.status(HttpStatus::NOT_FOUND);
 
-    EXPECT_TRUE(middleware.before(request, response));
-    middleware.after(request, response);
+    EXPECT_TRUE(run_middleware(middleware, request, response));
 
     EXPECT_EQ(response.status_code(), HttpStatus::NOT_FOUND);
     EXPECT_NE(response.body_content().find("\"code\":404"), std::string::npos);
@@ -32,14 +32,14 @@ TEST(ErrorMiddlewareTest, FormatsNotFoundAsJsonWhenBodyEmpty) {
 TEST(ErrorMiddlewareTest, KeepsExistingErrorBodyByDefault) {
     ErrorMiddleware middleware;
 
-    auto request = std::make_shared<HttpRequest>();
+    auto request = std::make_shared<TestContext>();
     request->set_method(HttpMethod::POST);
     request->set_path("/submit");
 
     HttpResponse response;
     response.status(HttpStatus::BAD_REQUEST).text("custom bad request");
 
-    middleware.after(request, response);
+    run_middleware(middleware, request, response);
 
     EXPECT_EQ(response.status_code(), HttpStatus::BAD_REQUEST);
     EXPECT_EQ(response.body_content(), "custom bad request");
@@ -48,14 +48,14 @@ TEST(ErrorMiddlewareTest, KeepsExistingErrorBodyByDefault) {
 TEST(ErrorMiddlewareTest, MasksServerErrorMessageByDefault) {
     ErrorMiddleware middleware;
 
-    auto request = std::make_shared<HttpRequest>();
+    auto request = std::make_shared<TestContext>();
     request->set_method(HttpMethod::GET);
     request->set_path("/panic");
 
     HttpResponse response;
     response.status(HttpStatus::INTERNAL_SERVER_ERROR);
 
-    middleware.after(request, response);
+    run_middleware(middleware, request, response);
 
     EXPECT_EQ(response.status_code(), HttpStatus::INTERNAL_SERVER_ERROR);
     EXPECT_NE(response.body_content().find("\"code\":500"), std::string::npos);
@@ -71,14 +71,14 @@ TEST(ErrorMiddlewareTest, CanForceOverrideExistingErrorBody) {
 
     ErrorMiddleware middleware(options);
 
-    auto request = std::make_shared<HttpRequest>();
+    auto request = std::make_shared<TestContext>();
     request->set_method(HttpMethod::DELETE);
     request->set_path("/resource/1");
 
     HttpResponse response;
     response.status(HttpStatus::FORBIDDEN).text("will be replaced");
 
-    middleware.after(request, response);
+    run_middleware(middleware, request, response);
 
     EXPECT_EQ(response.status_code(), HttpStatus::FORBIDDEN);
     EXPECT_NE(response.body_content().find("\"code\":403"), std::string::npos);
@@ -89,15 +89,14 @@ TEST(ErrorMiddlewareTest, CanForceOverrideExistingErrorBody) {
 
 TEST(ErrorMiddlewareTest, BeforeAlwaysReturnsTrueAndSkipsSuccessResponse) {
     ErrorMiddleware middleware;
-    auto request = std::make_shared<HttpRequest>();
+    auto request = std::make_shared<TestContext>();
     request->set_method(HttpMethod::GET);
     request->set_path("/ok");
 
     HttpResponse response;
     response.status(HttpStatus::OK).text("success");
 
-    EXPECT_TRUE(middleware.before(request, response));
-    middleware.after(request, response);
+    EXPECT_TRUE(run_middleware(middleware, request, response));
     EXPECT_EQ(response.status_code(), HttpStatus::OK);
     EXPECT_EQ(response.body_content(), "success");
 }
@@ -110,13 +109,13 @@ TEST(ErrorMiddlewareTest, CustomInternalErrorMessageAndEscapingAreApplied) {
     options.only_format_when_body_empty = false;
 
     ErrorMiddleware middleware(options);
-    auto request = std::make_shared<HttpRequest>();
+    auto request = std::make_shared<TestContext>();
     request->set_method(HttpMethod::POST);
     request->set_path("/panic\"\\x");
 
     HttpResponse response;
     response.status(HttpStatus::INTERNAL_SERVER_ERROR).text("old");
-    middleware.after(request, response);
+    run_middleware(middleware, request, response);
 
     EXPECT_NE(response.body_content().find("\"code\":500"), std::string::npos);
     EXPECT_NE(
@@ -135,13 +134,13 @@ TEST(ErrorMiddlewareTest, CanExcludeMethodAndPathFields) {
     options.only_format_when_body_empty = false;
 
     ErrorMiddleware middleware(options);
-    auto request = std::make_shared<HttpRequest>();
+    auto request = std::make_shared<TestContext>();
     request->set_method(HttpMethod::DELETE);
     request->set_path("/hidden");
 
     HttpResponse response;
     response.status(HttpStatus::BAD_REQUEST).text("replace me");
-    middleware.after(request, response);
+    run_middleware(middleware, request, response);
 
     EXPECT_NE(response.body_content().find("\"code\":400"), std::string::npos);
     EXPECT_EQ(response.body_content().find("\"method\":"), std::string::npos);
@@ -156,18 +155,18 @@ TEST(ErrorMiddlewareTest, EscapesAllControlCharactersInMessageAndPath) {
     options.include_path = true;
 
     ErrorMiddleware middleware(options);
-    auto request = std::make_shared<HttpRequest>();
+    auto request = std::make_shared<TestContext>();
     request->set_method(HttpMethod::UNKNOWN);
-    request->set_path("/p\"\b\f\n\r\t\\z");
+    request->set_path("/p%22%08%0C%0A%0D%09%5Cz");
 
     HttpResponse response;
     response.status(HttpStatus::INTERNAL_SERVER_ERROR).text("replace");
-    middleware.after(request, response);
+    run_middleware(middleware, request, response);
 
     const std::string body = response.body_content();
     EXPECT_NE(body.find("x\\\"\\b\\f\\n\\r\\t\\\\y"), std::string::npos);
     EXPECT_NE(body.find("\"method\":\"UNKNOWN\""), std::string::npos);
-    EXPECT_NE(body.find("/p\\\"\\b\\f\\n\\r\\t\\\\z"), std::string::npos);
+    EXPECT_NE(body.find("/p%22%08%0C%0A%0D%09%5Cz"), std::string::npos);
 }
 
 TEST(ErrorMiddlewareTest, SerializesEveryControlCharacterAsValidJson) {
@@ -175,35 +174,45 @@ TEST(ErrorMiddlewareTest, SerializesEveryControlCharacterAsValidJson) {
     for (int ch = 0; ch < 0x20; ++ch) {
         controls.push_back(static_cast<char>(ch));
     }
+    std::string encoded;
+    const char *digits = "0123456789ABCDEF";
+    for (unsigned char ch : controls) {
+        encoded += '%';
+        encoded += digits[ch >> 4];
+        encoded += digits[ch & 15];
+    }
     ErrorMiddleware::Options options;
     options.internal_error_message = controls;
     ErrorMiddleware middleware(options);
-    auto request = std::make_shared<HttpRequest>();
-    request->set_path("/" + controls);
+    auto request = std::make_shared<TestContext>();
+    request->set_path("/" + encoded);
     HttpResponse response;
     response.status(HttpStatus::INTERNAL_SERVER_ERROR);
 
-    middleware.after(request, response);
+    run_middleware(middleware, request, response);
 
-    const auto json = HttpRequest::Json::parse(response.body_content(), nullptr, false);
+    const auto json =
+        HttpContext::Json::parse(response.body_content(), nullptr, false);
     ASSERT_FALSE(json.is_discarded());
     EXPECT_EQ(json.at("message").get<std::string>(), controls);
-    EXPECT_EQ(json.at("path").get<std::string>(), "/" + controls);
+    EXPECT_EQ(json.at("path").get<std::string>(), "/" + encoded);
 }
 
-TEST(ErrorMiddlewareTest, ReplacesInvalidUtf8WithoutThrowingWhileHandlingError) {
+TEST(ErrorMiddlewareTest,
+     ReplacesInvalidUtf8WithoutThrowingWhileHandlingError) {
     const std::string invalid(1, static_cast<char>(0xff));
     ErrorMiddleware::Options options;
     options.internal_error_message = invalid;
     ErrorMiddleware middleware(options);
-    auto request = std::make_shared<HttpRequest>();
+    auto request = std::make_shared<TestContext>();
     request->set_path("/" + invalid);
     HttpResponse response;
     response.status(HttpStatus::INTERNAL_SERVER_ERROR);
 
-    EXPECT_NO_THROW(middleware.after(request, response));
+    EXPECT_NO_THROW(run_middleware(middleware, request, response));
 
-    const auto json = HttpRequest::Json::parse(response.body_content(), nullptr, false);
+    const auto json =
+        HttpContext::Json::parse(response.body_content(), nullptr, false);
     ASSERT_FALSE(json.is_discarded());
     EXPECT_EQ(json.at("message").get<std::string>(), "\xef\xbf\xbd");
     EXPECT_EQ(json.at("path").get<std::string>(), "/\xef\xbf\xbd");

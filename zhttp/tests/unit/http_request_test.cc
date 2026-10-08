@@ -1,3 +1,4 @@
+#include "../test_support.h"
 #include "zhttp/http_request.h"
 #include "zhttp/zhttp_logger.h"
 
@@ -6,15 +7,15 @@
 using namespace zhttp;
 
 TEST(HttpRequestTest, DefaultValues) {
-    HttpRequest req;
+    TestContext req;
     EXPECT_EQ(req.method(), HttpMethod::UNKNOWN);
-    EXPECT_EQ(req.path(), "");
+    EXPECT_EQ(req.path(), "/");
     EXPECT_EQ(req.version(), HttpVersion::HTTP_1_1);
     EXPECT_TRUE(req.body().empty());
 }
 
 TEST(HttpRequestTest, SettersAndGetters) {
-    HttpRequest req;
+    TestContext req;
     req.set_method(HttpMethod::POST);
     req.set_path("/api/users");
     req.set_query("id=123");
@@ -29,7 +30,7 @@ TEST(HttpRequestTest, SettersAndGetters) {
 }
 
 TEST(HttpRequestTest, HeadersCaseInsensitive) {
-    HttpRequest req;
+    TestContext req;
     req.set_header("Content-Type", "application/json");
     req.set_header("X-Custom-Header", "value");
 
@@ -40,7 +41,7 @@ TEST(HttpRequestTest, HeadersCaseInsensitive) {
 }
 
 TEST(HttpRequestTest, HeaderOverwriteUsesLatestValueCaseInsensitively) {
-    HttpRequest req;
+    TestContext req;
     req.set_header("Content-Type", "application/json");
     req.set_header("content-type", "text/plain");
 
@@ -48,7 +49,7 @@ TEST(HttpRequestTest, HeaderOverwriteUsesLatestValueCaseInsensitively) {
 }
 
 TEST(HttpRequestTest, PathParams) {
-    HttpRequest req;
+    TestContext req;
     req.set_path_param("id", "123");
     req.set_path_param("name", "test");
 
@@ -58,7 +59,7 @@ TEST(HttpRequestTest, PathParams) {
 }
 
 TEST(HttpRequestTest, ParseQueryParams) {
-    HttpRequest req;
+    TestContext req;
     req.set_query("name=John&age=30&city=Beijing");
     req.parse_query_params();
 
@@ -68,7 +69,7 @@ TEST(HttpRequestTest, ParseQueryParams) {
 }
 
 TEST(HttpRequestTest, ParseQueryParamsWithUrlEncoding) {
-    HttpRequest req;
+    TestContext req;
     req.set_query("name=John%20Doe&msg=Hello+World");
     req.parse_query_params();
 
@@ -77,7 +78,7 @@ TEST(HttpRequestTest, ParseQueryParamsWithUrlEncoding) {
 }
 
 TEST(HttpRequestTest, ParseQueryParamsHandlesEmptySegmentsAndClearsOnReparse) {
-    HttpRequest req;
+    TestContext req;
     req.set_query("a=1&&flag&k=&encoded=%2B+");
     req.parse_query_params();
 
@@ -92,7 +93,7 @@ TEST(HttpRequestTest, ParseQueryParamsHandlesEmptySegmentsAndClearsOnReparse) {
 }
 
 TEST(HttpRequestTest, KeepAliveHttp11Default) {
-    HttpRequest req;
+    TestContext req;
     req.set_version(HttpVersion::HTTP_1_1);
     EXPECT_TRUE(req.is_keep_alive());
 
@@ -101,7 +102,7 @@ TEST(HttpRequestTest, KeepAliveHttp11Default) {
 }
 
 TEST(HttpRequestTest, KeepAliveHttp10Default) {
-    HttpRequest req;
+    TestContext req;
     req.set_version(HttpVersion::HTTP_1_0);
     EXPECT_FALSE(req.is_keep_alive());
 
@@ -110,7 +111,7 @@ TEST(HttpRequestTest, KeepAliveHttp10Default) {
 }
 
 TEST(HttpRequestTest, ContentLength) {
-    HttpRequest req;
+    TestContext req;
     EXPECT_EQ(req.content_length(), 0u);
 
     req.set_header("Content-Length", "1024");
@@ -118,27 +119,27 @@ TEST(HttpRequestTest, ContentLength) {
 }
 
 TEST(HttpRequestTest, ContentLengthInvalidValueFallsBackToZero) {
-    HttpRequest req;
+    TestContext req;
     req.set_header("Content-Length", "invalid");
     EXPECT_EQ(req.content_length(), 0u);
 }
 
 TEST(HttpRequestTest, ParseJsonBodySuccess) {
-    HttpRequest req;
+    TestContext req;
     req.set_header("Content-Type", "application/json; charset=utf-8");
     req.set_body("{\"name\":\"betty\",\"age\":18}");
 
     EXPECT_TRUE(req.is_json());
     EXPECT_TRUE(req.parse_json());
 
-    const HttpRequest::Json *json = req.json();
+    const HttpContext::Json *json = req.json();
     ASSERT_NE(json, nullptr);
     EXPECT_EQ((*json)["name"], "betty");
     EXPECT_EQ((*json)["age"], 18);
 }
 
 TEST(HttpRequestTest, ParseJsonBodyInvalid) {
-    HttpRequest req;
+    TestContext req;
     req.set_header("Content-Type", "application/json");
     req.set_body("{\"name\":\"broken\"");
 
@@ -148,7 +149,7 @@ TEST(HttpRequestTest, ParseJsonBodyInvalid) {
 }
 
 TEST(HttpRequestTest, ParseJsonCoversNonJsonEmptyBodyAndCachedFailure) {
-    HttpRequest req;
+    TestContext req;
     req.set_header("Content-Type", "text/plain");
     req.set_body("plain");
     EXPECT_TRUE(req.parse_json());
@@ -167,7 +168,7 @@ TEST(HttpRequestTest, ParseJsonCoversNonJsonEmptyBodyAndCachedFailure) {
 }
 
 TEST(HttpRequestTest, ParseFormUrlencodedBody) {
-    HttpRequest req;
+    TestContext req;
     req.set_header("Content-Type", "application/x-www-form-urlencoded");
     req.set_body("name=John+Doe&city=ShenZhen&flag");
 
@@ -180,7 +181,7 @@ TEST(HttpRequestTest, ParseFormUrlencodedBody) {
 }
 
 TEST(HttpRequestTest, ParseFormUrlencodedCoversNonFormEmptyAndCache) {
-    HttpRequest req;
+    TestContext req;
     req.set_header("Content-Type", "text/plain");
     req.set_body("name=ignored");
     EXPECT_TRUE(req.parse_form_urlencoded());
@@ -199,7 +200,7 @@ TEST(HttpRequestTest, ParseFormUrlencodedCoversNonFormEmptyAndCache) {
 }
 
 TEST(HttpRequestTest, CookieParsingHandlesFlagsAndMalformedPairs) {
-    HttpRequest req;
+    TestContext req;
     req.set_header(
         "Cookie",
         "a=1; theme=dark ; flag ; =skip ; ; spaced = value ;multi=a=b");
@@ -214,14 +215,14 @@ TEST(HttpRequestTest, CookieParsingHandlesFlagsAndMalformedPairs) {
     const auto &cookies = req.cookies();
     EXPECT_EQ(cookies.count(""), 0u);
 
-    HttpRequest no_cookie;
+    TestContext no_cookie;
     EXPECT_TRUE(no_cookie.cookies().empty());
     EXPECT_EQ(no_cookie.cookie("none", "fallback"), "fallback");
 }
 
 TEST(HttpRequestTest,
      ParseMultipartCoversFailureCacheAndContentTypeInvalidation) {
-    HttpRequest req;
+    TestContext req;
     req.set_header("Content-Type", "application/json");
     req.set_body("{}");
     EXPECT_TRUE(req.parse_multipart());
@@ -241,7 +242,7 @@ TEST(HttpRequestTest,
 }
 
 TEST(HttpRequestTest, ResetBodyInvalidatesBodyParseCache) {
-    HttpRequest req;
+    TestContext req;
     req.set_header("Content-Type", "application/json");
     req.set_body("{\"v\":1}");
     ASSERT_TRUE(req.parse_json());
@@ -253,9 +254,8 @@ TEST(HttpRequestTest, ResetBodyInvalidatesBodyParseCache) {
     EXPECT_EQ((*req.json())["v"], 2);
 }
 
-
 TEST(HttpRequestTest, RemoteAddrSettersAndFallbackPaths) {
-    HttpRequest req;
+    TestContext req;
     EXPECT_EQ(req.remote_addr(), "");
 
     req.set_remote_addr(std::string("10.0.0.1:1000"));
@@ -267,13 +267,16 @@ TEST(HttpRequestTest, RemoteAddrSettersAndFallbackPaths) {
 }
 
 TEST(HttpRequestTest, QueryAndFormUseTheSameUrlencodedParameterSemantics) {
-    for (const char *text : {"", "&&", "flag&empty=&=value",
-                             "a=1&a=2&x=a=b&space=hello+world&%2B=%26&bad=%GG",
-                             "binary=%00%01&trailing=yes&"}) {
-        HttpRequest request;
+    for (const char *text :
+         {"", "&&", "flag&empty=&=value",
+          "a=1&a=2&x=a=b&space=hello+world&%2B=%26&bad=%25GG",
+          "binary=%00%01&trailing=yes&"}) {
+        TestContext request;
         request.set_query(text);
         request.parse_query_params();
-        request.set_header("Content-Type", " Application/X-WWW-Form-Urlencoded ; charset=UTF-8");
+        request.set_header(
+            "Content-Type",
+            " Application/X-WWW-Form-Urlencoded ; charset=UTF-8");
         request.set_body(text);
         ASSERT_TRUE(request.parse_form_urlencoded());
         EXPECT_EQ(request.query_params(), request.form_params());

@@ -1,9 +1,10 @@
+#include "../test_support.h"
 #include <gtest/gtest.h>
 
 #include "zhttp/zhttp_logger.h"
 
-#include "zhttp/mid/rate_limiter_middleware.h"
-#include "zhttp/router.h"
+#include "zhttp/middleware/rate_limiter_middleware.h"
+#include "zhttp/router/router.h"
 
 using namespace zhttp;
 using namespace zhttp::mid;
@@ -150,25 +151,27 @@ TEST_F(RateLimiterTest, Middleware_UsesKeyFuncIsolation) {
 
     RateLimiterMiddleware::Options opt;
     opt.limiter = limiter;
-    opt.key_func = [](const HttpRequest::ptr &req) { return req->path(); };
+    opt.key_func = [](HttpContext &req) { return req.path(); };
 
-    Router router;
+    TestApplication router;
     router.use(std::make_shared<RateLimiterMiddleware>(opt));
-    router.get("/a", [](const HttpRequest::ptr &, HttpResponse &resp) {
+    router.get("/a", [](HttpContext &context) {
+        auto &resp = context.response();
         resp.text("a");
     });
-    router.get("/b", [](const HttpRequest::ptr &, HttpResponse &resp) {
+    router.get("/b", [](HttpContext &context) {
+        auto &resp = context.response();
         resp.text("b");
     });
 
-    auto ra1 = std::make_shared<HttpRequest>();
+    auto ra1 = std::make_shared<TestContext>();
     ra1->set_method(HttpMethod::GET);
     ra1->set_path("/a");
     HttpResponse rpa1;
     router.route(ra1, rpa1);
     EXPECT_EQ(rpa1.status_code(), HttpStatus::OK);
 
-    auto ra2 = std::make_shared<HttpRequest>();
+    auto ra2 = std::make_shared<TestContext>();
     ra2->set_method(HttpMethod::GET);
     ra2->set_path("/a");
     HttpResponse rpa2;
@@ -176,7 +179,7 @@ TEST_F(RateLimiterTest, Middleware_UsesKeyFuncIsolation) {
     EXPECT_EQ(rpa2.status_code(), HttpStatus::TOO_MANY_REQUESTS);
 
     // /b 使用不同 key，不应被 /a 的限流影响
-    auto rb1 = std::make_shared<HttpRequest>();
+    auto rb1 = std::make_shared<TestContext>();
     rb1->set_method(HttpMethod::GET);
     rb1->set_path("/b");
     HttpResponse rpb1;
@@ -190,20 +193,20 @@ TEST_F(RateLimiterTest, MiddlewareDefaultKeyUsesRemoteXffAndGlobal) {
     opt.limiter = limiter;
     RateLimiterMiddleware middleware(opt);
 
-    auto req = std::make_shared<HttpRequest>();
+    auto req = std::make_shared<TestContext>();
     HttpResponse resp;
 
     req->set_remote_addr("10.0.0.8");
-    EXPECT_TRUE(middleware.before(req, resp));
+    EXPECT_TRUE(run_middleware(middleware, req, resp));
     EXPECT_EQ(limiter->last_key, "10.0.0.8");
 
     req->set_remote_addr("");
     req->set_header("X-Forwarded-For", " 192.168.1.2 , 10.0.0.1 ");
-    EXPECT_TRUE(middleware.before(req, resp));
+    EXPECT_TRUE(run_middleware(middleware, req, resp));
     EXPECT_EQ(limiter->last_key, "192.168.1.2");
 
     req->set_header("X-Forwarded-For", " \t ");
-    EXPECT_TRUE(middleware.before(req, resp));
+    EXPECT_TRUE(run_middleware(middleware, req, resp));
     EXPECT_EQ(limiter->last_key, "global");
 }
 
@@ -216,13 +219,13 @@ TEST_F(RateLimiterTest, MiddlewareWritesRetryAfterWithFloorAndCeiling) {
     opt.retry_after_header = "X-Retry";
     RateLimiterMiddleware middleware(opt);
 
-    auto req = std::make_shared<HttpRequest>();
+    auto req = std::make_shared<TestContext>();
     req->set_remote_addr("198.51.100.7");
 
     {
         HttpResponse resp;
         limiter->retry_after = std::chrono::milliseconds(0);
-        EXPECT_FALSE(middleware.before(req, resp));
+        EXPECT_FALSE(run_middleware(middleware, req, resp));
         EXPECT_EQ(resp.status_code(), HttpStatus::TOO_MANY_REQUESTS);
         ASSERT_TRUE(resp.headers().count("X-Retry") > 0);
         EXPECT_EQ(resp.headers().at("X-Retry"), "1");
@@ -231,7 +234,7 @@ TEST_F(RateLimiterTest, MiddlewareWritesRetryAfterWithFloorAndCeiling) {
     {
         HttpResponse resp;
         limiter->retry_after = std::chrono::milliseconds(1500);
-        EXPECT_FALSE(middleware.before(req, resp));
+        EXPECT_FALSE(run_middleware(middleware, req, resp));
         EXPECT_EQ(resp.status_code(), HttpStatus::TOO_MANY_REQUESTS);
         ASSERT_TRUE(resp.headers().count("X-Retry") > 0);
         EXPECT_EQ(resp.headers().at("X-Retry"), "2");
@@ -247,11 +250,11 @@ TEST_F(RateLimiterTest, MiddlewareCoercesNonPositiveRetryAfterToOneSecond) {
     opt.limiter = limiter;
     RateLimiterMiddleware middleware(opt);
 
-    auto req = std::make_shared<HttpRequest>();
+    auto req = std::make_shared<TestContext>();
     req->set_remote_addr("203.0.113.42");
 
     HttpResponse resp;
-    EXPECT_FALSE(middleware.before(req, resp));
+    EXPECT_FALSE(run_middleware(middleware, req, resp));
     EXPECT_EQ(resp.status_code(), HttpStatus::TOO_MANY_REQUESTS);
     ASSERT_TRUE(resp.headers().count("Retry-After") > 0);
     EXPECT_EQ(resp.headers().at("Retry-After"), "1");
@@ -259,11 +262,11 @@ TEST_F(RateLimiterTest, MiddlewareCoercesNonPositiveRetryAfterToOneSecond) {
 
 TEST_F(RateLimiterTest, MiddlewareWorksWithDefaultLimiterAndKeyResolver) {
     RateLimiterMiddleware middleware(RateLimiterMiddleware::Options{});
-    auto req = std::make_shared<HttpRequest>();
+    auto req = std::make_shared<TestContext>();
     req->set_remote_addr("192.0.2.10");
 
     HttpResponse resp;
-    EXPECT_TRUE(middleware.before(req, resp));
+    EXPECT_TRUE(run_middleware(middleware, req, resp));
 }
 
 int main(int argc, char **argv) {

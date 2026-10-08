@@ -1,6 +1,7 @@
+#include "../test_support.h"
 #include "zhttp/http_server_builder.h"
-#include "zhttp/mid/middleware.h"
-#include "zhttp/route_handler.h"
+#include "zhttp/middleware/middleware.h"
+#include "zhttp/router/route_handler.h"
 #include "zhttp/zhttp_logger.h"
 
 #include <gtest/gtest.h>
@@ -21,7 +22,8 @@ class FixedHandler : public RouteHandler {
   public:
     explicit FixedHandler(std::string body) : body_(std::move(body)) {}
 
-    void handle(const HttpRequest::ptr &, HttpResponse &response) override {
+    void handle(HttpContext &context) override {
+        auto &response = context.response();
         response.status(HttpStatus::OK).text(body_);
     }
 
@@ -31,7 +33,8 @@ class FixedHandler : public RouteHandler {
 
 class NotFoundHandler : public RouteHandler {
   public:
-    void handle(const HttpRequest::ptr &, HttpResponse &response) override {
+    void handle(HttpContext &context) override {
+        auto &response = context.response();
         response.status(HttpStatus::NOT_FOUND).text("nf-handler");
     }
 };
@@ -41,7 +44,8 @@ class MarkerMiddleware : public mid::Middleware {
     MarkerMiddleware(bool *before_called, bool *after_called)
         : before_called_(before_called), after_called_(after_called) {}
 
-    bool before(const HttpRequest::ptr &, HttpResponse &response) override {
+    bool before(HttpContext &context) override {
+        auto &response = context.response();
         if (before_called_) {
             *before_called_ = true;
         }
@@ -49,7 +53,8 @@ class MarkerMiddleware : public mid::Middleware {
         return true;
     }
 
-    void after(const HttpRequest::ptr &, HttpResponse &response) override {
+    void after(HttpContext &context) override {
+        auto &response = context.response();
         if (after_called_) {
             *after_called_ = true;
         }
@@ -88,8 +93,8 @@ uint16_t find_free_port() {
     return port;
 }
 
-HttpRequest::ptr make_request(HttpMethod method, const std::string &path) {
-    auto request = std::make_shared<HttpRequest>();
+TestContext::ptr make_request(HttpMethod method, const std::string &path) {
+    auto request = std::make_shared<TestContext>();
     request->set_method(method);
     request->set_version(HttpVersion::HTTP_1_1);
     request->set_path(path);
@@ -121,16 +126,20 @@ TEST(HttpServerBuilderTest, BuildConfiguresRoutesMiddlewareAndHandlers) {
     builder.use(
         std::make_shared<MarkerMiddleware>(&before_called, &after_called));
 
-    builder.get("/cb-get", [](const HttpRequest::ptr &, HttpResponse &resp) {
+    builder.get("/cb-get", [](HttpContext &context) {
+        auto &resp = context.response();
         resp.status(HttpStatus::OK).text("cb-get");
     });
-    builder.post("/cb-post", [](const HttpRequest::ptr &, HttpResponse &resp) {
+    builder.post("/cb-post", [](HttpContext &context) {
+        auto &resp = context.response();
         resp.status(HttpStatus::OK).text("cb-post");
     });
-    builder.put("/cb-put", [](const HttpRequest::ptr &, HttpResponse &resp) {
+    builder.put("/cb-put", [](HttpContext &context) {
+        auto &resp = context.response();
         resp.status(HttpStatus::OK).text("cb-put");
     });
-    builder.del("/cb-del", [](const HttpRequest::ptr &, HttpResponse &resp) {
+    builder.del("/cb-del", [](HttpContext &context) {
+        auto &resp = context.response();
         resp.status(HttpStatus::OK).text("cb-del");
     });
 
@@ -139,16 +148,17 @@ TEST(HttpServerBuilderTest, BuildConfiguresRoutesMiddlewareAndHandlers) {
     builder.put("/h-put", std::make_shared<FixedHandler>("h-put"));
     builder.del("/h-del", std::make_shared<FixedHandler>("h-del"));
 
-    builder.not_found(
-        [](const HttpRequest::ptr &, HttpResponse &resp) { resp.text("tmp"); });
-    builder.not_found(std::make_shared<NotFoundHandler>());
-    builder.exception_handler(
-        [](const HttpRequest::ptr &, HttpResponse &resp, std::exception_ptr) {
-            resp.status(HttpStatus::INTERNAL_SERVER_ERROR).text("custom-ex");
-        });
-    builder.get("/throw", [](const HttpRequest::ptr &, HttpResponse &) {
-        throw std::runtime_error("boom");
+    builder.not_found([](HttpContext &context) {
+        auto &resp = context.response();
+        resp.text("tmp");
     });
+    builder.not_found(std::make_shared<NotFoundHandler>());
+    builder.exception_handler([](HttpContext &context, std::exception_ptr) {
+        auto &resp = context.response();
+        resp.status(HttpStatus::INTERNAL_SERVER_ERROR).text("custom-ex");
+    });
+    builder.get("/throw",
+                [](HttpContext &context) { throw std::runtime_error("boom"); });
 
     auto server = builder.build();
     ASSERT_NE(server, nullptr);
@@ -156,7 +166,7 @@ TEST(HttpServerBuilderTest, BuildConfiguresRoutesMiddlewareAndHandlers) {
     {
         auto request = make_request(HttpMethod::GET, "/");
         HttpResponse response;
-        EXPECT_TRUE(server->router().route(request, response));
+        EXPECT_TRUE(run_server(*server, request, response));
         EXPECT_EQ(response.status_code(), HttpStatus::FOUND);
         EXPECT_EQ(response.headers().at("Location"), "/landing");
     }
@@ -180,7 +190,7 @@ TEST(HttpServerBuilderTest, BuildConfiguresRoutesMiddlewareAndHandlers) {
     for (const auto &item : cases) {
         auto request = make_request(item.method, item.path);
         HttpResponse response;
-        EXPECT_TRUE(server->router().route(request, response));
+        EXPECT_TRUE(run_server(*server, request, response));
         EXPECT_EQ(response.status_code(), HttpStatus::OK);
         EXPECT_EQ(response.body_content(), item.body);
         EXPECT_EQ(response.headers().at("X-MW-Before"), "1");
@@ -190,7 +200,7 @@ TEST(HttpServerBuilderTest, BuildConfiguresRoutesMiddlewareAndHandlers) {
     {
         auto request = make_request(HttpMethod::GET, "/throw");
         HttpResponse response;
-        EXPECT_TRUE(server->router().route(request, response));
+        EXPECT_TRUE(run_server(*server, request, response));
         EXPECT_EQ(response.status_code(), HttpStatus::INTERNAL_SERVER_ERROR);
         EXPECT_EQ(response.body_content(), "custom-ex");
     }
@@ -198,7 +208,7 @@ TEST(HttpServerBuilderTest, BuildConfiguresRoutesMiddlewareAndHandlers) {
     {
         auto request = make_request(HttpMethod::GET, "/missing");
         HttpResponse response;
-        EXPECT_FALSE(server->router().route(request, response));
+        EXPECT_FALSE(run_server(*server, request, response));
         EXPECT_EQ(response.status_code(), HttpStatus::NOT_FOUND);
         EXPECT_EQ(response.body_content(), "nf-handler");
     }
@@ -241,7 +251,8 @@ TEST(HttpServerBuilderTest, RunStopsGracefullyAfterSignalInForegroundMode) {
         .threads(1)
         .daemon(false)
         .log_level("error")
-        .get("/ok", [](const HttpRequest::ptr &, HttpResponse &resp) {
+        .get("/ok", [](HttpContext &context) {
+            auto &resp = context.response();
             resp.status(HttpStatus::OK).text("ok");
         });
 

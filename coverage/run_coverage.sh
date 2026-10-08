@@ -97,6 +97,10 @@ for module in "${modules[@]}"; do
     branch_file="${module_dir}/branches.txt"
     html_file="${module_dir}/index.html"
     module_extra_args=()
+    module_source_filter="${module}/src"
+    if [[ "${module}" == "zhttp" ]]; then
+        module_source_filter="zhttp/(?!tests/)"
+    fi
 
     case "${module}" in
     zco)
@@ -113,20 +117,20 @@ for module in "${modules[@]}"; do
 
     "${gcovr_common[@]}" \
         "${module_extra_args[@]}" \
-        --filter "${module}/src" \
+        --filter "${module_source_filter}" \
         --decisions \
         --txt-summary >"${summary_file}"
 
     "${gcovr_common[@]}" \
         "${module_extra_args[@]}" \
-        --filter "${module}/src" \
+        --filter "${module_source_filter}" \
         --txt \
         --txt-metric branch \
         --sort uncovered-percent >"${branch_file}"
 
     "${gcovr_common[@]}" \
         "${module_extra_args[@]}" \
-        --filter "${module}/src" \
+        --filter "${module_source_filter}" \
         --decisions \
         --html-details "${html_file}" \
         --html-title "${module} coverage" >/dev/null

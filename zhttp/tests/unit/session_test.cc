@@ -1,8 +1,9 @@
+#include "../test_support.h"
 #include <gtest/gtest.h>
 #include <thread>
 
-#include "zhttp/mid/session_middleware.h"
-#include "zhttp/router.h"
+#include "zhttp/middleware/session_middleware.h"
+#include "zhttp/router/router.h"
 #include "zhttp/session.h"
 #include "zhttp/zhttp_logger.h"
 
@@ -34,9 +35,9 @@ class SessionTest : public ::testing::Test {
         return opt;
     }
 
-    HttpRequest::ptr make_get(const std::string &path,
+    TestContext::ptr make_get(const std::string &path,
                               const std::string &cookie = "") {
-        auto r = std::make_shared<HttpRequest>();
+        auto r = std::make_shared<TestContext>();
         r->set_method(HttpMethod::GET);
         r->set_path(path);
         if (!cookie.empty()) {
@@ -47,10 +48,12 @@ class SessionTest : public ::testing::Test {
 };
 
 TEST_F(SessionTest, CookieRoundTrip) {
-    Router router;
+    TestApplication router;
     router.use(std::make_shared<SessionMiddleware>(mgr_, base_opt()));
 
-    router.get("/s", [](const HttpRequest::ptr &req, HttpResponse &resp) {
+    router.get("/s", [](HttpContext &context) {
+        auto *req = &context;
+        auto &resp = context.response();
         ASSERT_NE(req->session(), nullptr);
         req->session()->set("k", "v");
         resp.text("ok");
@@ -63,7 +66,9 @@ TEST_F(SessionTest, CookieRoundTrip) {
     std::string sid = extract_sid(resp1.set_cookies().front());
     ASSERT_FALSE(sid.empty());
 
-    router.get("/s2", [](const HttpRequest::ptr &req, HttpResponse &resp) {
+    router.get("/s2", [](HttpContext &context) {
+        auto *req = &context;
+        auto &resp = context.response();
         ASSERT_NE(req->session(), nullptr);
         EXPECT_EQ(req->session()->get("k"), "v");
         resp.text("ok2");
@@ -78,10 +83,12 @@ TEST_F(SessionTest, CreateIfMissingFalse_DoesNotCreateSession) {
     SessionMiddleware::Options opt = base_opt();
     opt.create_if_missing = false;
 
-    Router router;
+    TestApplication router;
     router.use(std::make_shared<SessionMiddleware>(mgr_, opt));
 
-    router.get("/s", [](const HttpRequest::ptr &req, HttpResponse &resp) {
+    router.get("/s", [](HttpContext &context) {
+        auto *req = &context;
+        auto &resp = context.response();
         EXPECT_EQ(req->session(), nullptr);
         resp.text("ok");
     });
@@ -92,10 +99,12 @@ TEST_F(SessionTest, CreateIfMissingFalse_DoesNotCreateSession) {
 }
 
 TEST_F(SessionTest, ExistingSessionSettingSameValue_DoesNotTriggerSetCookie) {
-    Router router;
+    TestApplication router;
     router.use(std::make_shared<SessionMiddleware>(mgr_, base_opt()));
 
-    router.get("/init", [](const HttpRequest::ptr &req, HttpResponse &resp) {
+    router.get("/init", [](HttpContext &context) {
+        auto *req = &context;
+        auto &resp = context.response();
         ASSERT_NE(req->session(), nullptr);
         req->session()->set("k", "v");
         resp.text("init");
@@ -107,7 +116,9 @@ TEST_F(SessionTest, ExistingSessionSettingSameValue_DoesNotTriggerSetCookie) {
     std::string sid = extract_sid(init_resp.set_cookies().front());
     ASSERT_FALSE(sid.empty());
 
-    router.get("/noop", [](const HttpRequest::ptr &req, HttpResponse &resp) {
+    router.get("/noop", [](HttpContext &context) {
+        auto *req = &context;
+        auto &resp = context.response();
         ASSERT_NE(req->session(), nullptr);
         EXPECT_EQ(req->session()->get("k"), "v");
         req->session()->set("k", "v");

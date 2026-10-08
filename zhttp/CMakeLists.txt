@@ -33,40 +33,48 @@ else()
 endif()
 
 set(ZHTTP_SOURCES
-    src/zhttp_logger.cc
-    src/http_common.cc
-    src/request_body.cc
-    src/http_request.cc
-    src/http_response.cc
-    src/http_parser.cc
-    src/multipart.cc
-    src/radix_tree.cc
-    src/request_pipeline.cc
-    src/router.cc
-    src/http_utils.cc
-    src/range_parse.cc
-    src/mid/middleware.cc
-    src/mid/rate_limiter_middleware.cc
-    src/mid/static_file_middleware.cc
-    src/mid/auth_middleware.cc
-    src/mid/cors_middleware.cc
-    src/mid/compression_middleware.cc
-    src/mid/error_middleware.cc
-    src/mid/request_body_middleware.cc
-    src/mid/timeout_middleware.cc
-    src/mid/security_middleware.cc
-    src/mid/session_middleware.cc
-    src/http_response_writer.cc
-    src/websocket_upgrade_handler.cc
-    src/http_server.cc
-    src/websocket_frame.cc
-    src/websocket.cc
-    src/session.cc
-    src/daemon.cc
-    src/server_config.cc
-    src/server_bootstrap.cc
-    src/server_runner.cc
-    src/http_server_builder.cc
+    content/multipart.cc
+    content/parsed_request_body.cc
+    http_body.cc
+    http_common.cc
+    http_context.cc
+    http_headers.cc
+    http_request.cc
+    http_response.cc
+    http_server.cc
+    http_server_builder.cc
+    internal/http_utils.cc
+    internal/radix_tree.cc
+    internal/range_parse.cc
+    middleware/auth_middleware.cc
+    middleware/compression_middleware.cc
+    middleware/cors_middleware.cc
+    middleware/error_middleware.cc
+    middleware/rate_limiter_middleware.cc
+    middleware/request_body_middleware.cc
+    middleware/security_middleware.cc
+    middleware/session_middleware.cc
+    middleware/static_file_middleware.cc
+    middleware/timeout_middleware.cc
+    parser/chunked_decoder.cc
+    parser/http_request_parser.cc
+    parser/websocket_frame_parser.cc
+    pipeline/request_pipeline.cc
+    protocol/http_protocol_handler.cc
+    protocol/websocket_protocol_handler.cc
+    router/router.cc
+    runtime/daemon.cc
+    runtime/server_bootstrap.cc
+    runtime/server_runner.cc
+    server_config.cc
+    session.cc
+    uri.cc
+    websocket/websocket_connection.cc
+    websocket/websocket_frame.cc
+    websocket/websocket_handshake.cc
+    websocket/websocket_message_assembler.cc
+    writer/http_response_writer.cc
+    zhttp_logger.cc
 )
 
 add_library(zhttp ${ZHTTP_SOURCES})
@@ -76,7 +84,7 @@ add_library(zhttp::zhttp ALIAS zhttp)
 # 因此这些依赖需要通过 PUBLIC 链接传播给消费者。
 target_include_directories(zhttp
     PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 target_link_libraries(zhttp
@@ -107,5 +115,39 @@ endif()
 
 zlynx_install_module(zhttp zhttp
     VERSION ${PROJECT_VERSION}
+    PUBLIC_HEADERS
+        http_body.h
+        http_common.h
+        http_context.h
+        http_headers.h
+        http_request.h
+        http_response.h
+        http_server.h
+        http_server_builder.h
+        request_limits.h
+        server_config.h
+        session.h
+        uri.h
+        zhttp.h
+        zhttp_logger.h
+        router/route_handler.h
+        router/router.h
+        middleware/auth_middleware.h
+        middleware/compression_middleware.h
+        middleware/cors_middleware.h
+        middleware/error_middleware.h
+        middleware/middleware.h
+        middleware/rate_limiter_middleware.h
+        middleware/request_body_middleware.h
+        middleware/security_middleware.h
+        middleware/session_middleware.h
+        middleware/static_file_middleware.h
+        middleware/timeout_middleware.h
+        content/parsed_request_body.h
+        content/multipart.h
+        runtime/daemon.h
+        websocket/websocket_connection.h
+        websocket/websocket_handler.h
+        websocket/websocket_types.h
     DEPENDENCIES znet zlog OpenSSL fmt ZLIB nlohmann_json
 )

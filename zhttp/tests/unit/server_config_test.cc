@@ -1,3 +1,4 @@
+#include "../test_support.h"
 #include "zco/zco_logger.h"
 #include "zhttp/http_server_builder.h"
 #include "zhttp/server_config.h"
@@ -87,26 +88,26 @@ time_unit = "minute"
 
     zhttp::HttpServerBuilder builder;
     builder.from_config(config_file.path());
-    builder.get("/ping",
-                [](const zhttp::HttpRequest::ptr &, zhttp::HttpResponse &resp) {
-                    resp.status(zhttp::HttpStatus::OK).text("pong");
-                });
+    builder.get("/ping", [](zhttp::HttpContext &context) {
+        auto &resp = context.response();
+        resp.status(zhttp::HttpStatus::OK).text("pong");
+    });
 
     auto server = builder.build();
     ASSERT_TRUE(server);
 
-    auto req1 = std::make_shared<zhttp::HttpRequest>();
+    auto req1 = std::make_shared<zhttp::TestContext>();
     req1->set_method(zhttp::HttpMethod::GET);
     req1->set_path("/ping");
     zhttp::HttpResponse resp1;
-    server->router().route(req1, resp1);
+    run_server(*server, req1, resp1);
     EXPECT_EQ(resp1.status_code(), zhttp::HttpStatus::OK);
 
-    auto req2 = std::make_shared<zhttp::HttpRequest>();
+    auto req2 = std::make_shared<zhttp::TestContext>();
     req2->set_method(zhttp::HttpMethod::GET);
     req2->set_path("/ping");
     zhttp::HttpResponse resp2;
-    server->router().route(req2, resp2);
+    run_server(*server, req2, resp2);
     EXPECT_EQ(resp2.status_code(), zhttp::HttpStatus::OK);
 }
 
@@ -158,12 +159,12 @@ TEST(ServerConfigTest, BuilderSupportsTimeoutChaining) {
 TEST(ServerConfigTest, BuilderSupportsExceptionHandlerChaining) {
     zhttp::HttpServerBuilder builder;
 
-    auto &ref = builder.exception_handler([](const zhttp::HttpRequest::ptr &,
-                                             zhttp::HttpResponse &resp,
-                                             std::exception_ptr) {
-        resp.status(zhttp::HttpStatus::INTERNAL_SERVER_ERROR)
-            .text("builder-custom");
-    });
+    auto &ref = builder.exception_handler(
+        [](zhttp::HttpContext &context, std::exception_ptr) {
+            auto &resp = context.response();
+            resp.status(zhttp::HttpStatus::INTERNAL_SERVER_ERROR)
+                .text("builder-custom");
+        });
 
     EXPECT_EQ(&ref, &builder);
 }

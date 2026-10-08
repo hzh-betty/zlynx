@@ -1,5 +1,6 @@
+#include "../test_support.h"
 #include "zhttp/http_request.h"
-#include "zhttp/websocket.h"
+#include "zhttp/websocket/websocket_handler.h"
 #include "zhttp/zhttp_logger.h"
 
 #include <gtest/gtest.h>
@@ -211,11 +212,9 @@ TEST(WebSocketHandshakeTest, SubprotocolNegotiationValidatesErrorPaths) {
         negotiate_websocket_subprotocol(request, options, &selected, &error));
     EXPECT_TRUE(selected.empty());
 
-    request->set_header("Sec-WebSocket-Protocol", std::string("chat,\x7f", 6));
-    options.subprotocols = {"chat"};
-    EXPECT_FALSE(
-        negotiate_websocket_subprotocol(request, options, &selected, &error));
-    EXPECT_NE(error.find("Invalid"), std::string::npos);
+    EXPECT_THROW(request->set_header("Sec-WebSocket-Protocol",
+                                     std::string("chat,\x7f", 6)),
+                 std::invalid_argument);
 }
 
 TEST(WebSocketHandshakeTest, ConnectionReportsDisconnectedForExpiredSocket) {
@@ -237,7 +236,7 @@ TEST(WebSocketHandshakeTest, ConnectionReportsDisconnectedForExpiredSocket) {
 
 TEST(WebSocketHandshakeTest, SessionOnOpenHandlesCallbacksAndExceptions) {
     {
-        WebSocketSession session(
+        WebSocketProtocolHandler session(
             nullptr, make_valid_websocket_request(), WebSocketCallbacks{},
             WebSocketOptions{kDefaultWebSocketMaxMessageSize, {}}, "");
         EXPECT_TRUE(session.on_open());
@@ -251,7 +250,7 @@ TEST(WebSocketHandshakeTest, SessionOnOpenHandlesCallbacksAndExceptions) {
         std::string error_text;
         WebSocketCallbacks callbacks;
         callbacks.on_open = [](const WebSocketConnection::ptr &,
-                               const HttpRequest::ptr &) {
+                               const std::shared_ptr<const HttpRequest> &) {
             throw std::runtime_error("open boom");
         };
         callbacks.on_close = [&close_count, &close_code, &close_reason](
@@ -268,7 +267,7 @@ TEST(WebSocketHandshakeTest, SessionOnOpenHandlesCallbacksAndExceptions) {
             error_text = text;
         };
 
-        WebSocketSession session(
+        WebSocketProtocolHandler session(
             nullptr, make_valid_websocket_request(), callbacks,
             WebSocketOptions{kDefaultWebSocketMaxMessageSize, {}}, "");
         EXPECT_FALSE(session.on_open());
@@ -286,7 +285,9 @@ TEST(WebSocketHandshakeTest, SessionOnOpenHandlesCallbacksAndExceptions) {
         int error_count = 0;
         WebSocketCallbacks callbacks;
         callbacks.on_open = [](const WebSocketConnection::ptr &,
-                               const HttpRequest::ptr &) { throw 42; };
+                               const std::shared_ptr<const HttpRequest> &) {
+            throw 42;
+        };
         callbacks.on_close = [&close_count](const WebSocketConnection::ptr &,
                                             uint16_t, const std::string &) {
             ++close_count;
@@ -296,7 +297,7 @@ TEST(WebSocketHandshakeTest, SessionOnOpenHandlesCallbacksAndExceptions) {
             ++error_count;
         };
 
-        WebSocketSession session(
+        WebSocketProtocolHandler session(
             nullptr, make_valid_websocket_request(), callbacks,
             WebSocketOptions{kDefaultWebSocketMaxMessageSize, {}}, "");
         EXPECT_FALSE(session.on_open());
@@ -316,7 +317,7 @@ TEST(WebSocketHandshakeTest, SessionOnMessageDeliversTextAndBinary) {
         types.push_back(type);
     };
 
-    WebSocketSession session(
+    WebSocketProtocolHandler session(
         nullptr, make_valid_websocket_request(), callbacks,
         WebSocketOptions{kDefaultWebSocketMaxMessageSize, {}}, "");
 
@@ -324,7 +325,8 @@ TEST(WebSocketHandshakeTest, SessionOnMessageDeliversTextAndBinary) {
     buffer.append(build_masked_client_frame(WebSocketOpcode::kText, "hello"));
     buffer.append(build_masked_client_frame(WebSocketOpcode::kBinary, "abc"));
 
-    EXPECT_TRUE(session.on_message(&buffer));
+    session.on_data(nullptr, buffer);
+    EXPECT_EQ(buffer.readable_bytes(), 0u);
     ASSERT_EQ(texts.size(), 2u);
     EXPECT_EQ(texts[0], "hello");
     EXPECT_EQ(texts[1], "abc");
@@ -348,13 +350,13 @@ TEST(WebSocketHandshakeTest, SessionOnMessageHandlesErrorBranches) {
             ++error_count;
             error_text = text;
         };
-        WebSocketSession session(
+        WebSocketProtocolHandler session(
             nullptr, make_valid_websocket_request(), callbacks,
             WebSocketOptions{kDefaultWebSocketMaxMessageSize, {}}, "");
 
         znet::Buffer invalid;
         invalid.append(std::string("\x81\x01x", 3)); // unmasked client frame
-        EXPECT_FALSE(session.on_message(&invalid));
+        session.on_data(nullptr, invalid);
         EXPECT_EQ(close_count, 1);
         EXPECT_EQ(error_count, 1);
         EXPECT_NE(error_text.find("masked"), std::string::npos);
@@ -376,13 +378,13 @@ TEST(WebSocketHandshakeTest, SessionOnMessageHandlesErrorBranches) {
                                             const std::string &) {
             ++error_count;
         };
-        WebSocketSession session(
+        WebSocketProtocolHandler session(
             nullptr, make_valid_websocket_request(), callbacks,
             WebSocketOptions{kDefaultWebSocketMaxMessageSize, {}}, "");
 
         znet::Buffer text;
         text.append(build_masked_client_frame(WebSocketOpcode::kText, "x"));
-        EXPECT_FALSE(session.on_message(&text));
+        session.on_data(nullptr, text);
         EXPECT_EQ(close_count, 1);
         EXPECT_EQ(error_count, 1);
     }
@@ -402,13 +404,13 @@ TEST(WebSocketHandshakeTest, SessionOnMessageHandlesErrorBranches) {
                                             const std::string &) {
             ++error_count;
         };
-        WebSocketSession session(
+        WebSocketProtocolHandler session(
             nullptr, make_valid_websocket_request(), callbacks,
             WebSocketOptions{kDefaultWebSocketMaxMessageSize, {}}, "");
 
         znet::Buffer binary;
         binary.append(build_masked_client_frame(WebSocketOpcode::kBinary, "x"));
-        EXPECT_FALSE(session.on_message(&binary));
+        session.on_data(nullptr, binary);
         EXPECT_EQ(close_count, 1);
         EXPECT_EQ(error_count, 1);
     }
@@ -427,13 +429,13 @@ TEST(WebSocketHandshakeTest, SessionPingFailureAndCloseNotificationAreHandled) {
                                             const std::string &) {
             ++error_count;
         };
-        WebSocketSession session(
+        WebSocketProtocolHandler session(
             nullptr, make_valid_websocket_request(), callbacks,
             WebSocketOptions{kDefaultWebSocketMaxMessageSize, {}}, "");
 
         znet::Buffer ping;
         ping.append(build_masked_client_frame(WebSocketOpcode::kPing, "hb"));
-        EXPECT_FALSE(session.on_message(&ping));
+        session.on_data(nullptr, ping);
         EXPECT_EQ(close_count, 1);
         EXPECT_EQ(error_count, 1);
     }
@@ -450,7 +452,7 @@ TEST(WebSocketHandshakeTest, SessionPingFailureAndCloseNotificationAreHandled) {
             close_code = code;
             close_reason = reason;
         };
-        WebSocketSession session(
+        WebSocketProtocolHandler session(
             nullptr, make_valid_websocket_request(), callbacks,
             WebSocketOptions{kDefaultWebSocketMaxMessageSize, {}}, "");
 
@@ -462,14 +464,14 @@ TEST(WebSocketHandshakeTest, SessionPingFailureAndCloseNotificationAreHandled) {
         znet::Buffer close_frame;
         close_frame.append(
             build_masked_client_frame(WebSocketOpcode::kClose, close_payload));
-        EXPECT_FALSE(session.on_message(&close_frame));
+        session.on_data(nullptr, close_frame);
         EXPECT_EQ(close_count, 1);
         EXPECT_EQ(close_code,
                   static_cast<uint16_t>(WebSocketCloseCode::kNormalClosure));
         EXPECT_EQ(close_reason, "bye");
 
-        session.on_close();
-        session.on_close();
+        session.on_closed();
+        session.on_closed();
         EXPECT_EQ(close_count, 1);
     }
 }

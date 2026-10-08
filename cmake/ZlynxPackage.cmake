@@ -14,7 +14,7 @@ include(GNUInstallDirs)
 function(zlynx_install_module module_name target_name)
     set(options)
     set(one_value_args VERSION)
-    set(multi_value_args DEPENDENCIES)
+    set(multi_value_args DEPENDENCIES PUBLIC_HEADERS)
     cmake_parse_arguments(ARG "${options}" "${one_value_args}" "${multi_value_args}" ${ARGN})
 
     if(NOT ARG_VERSION)
@@ -36,9 +36,16 @@ function(zlynx_install_module module_name target_name)
         INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     )
 
-    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/"
-        DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
-    )
+    if(ARG_PUBLIC_HEADERS)
+        foreach(header IN LISTS ARG_PUBLIC_HEADERS)
+            get_filename_component(header_dir "${header}" DIRECTORY)
+            install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/${header}"
+                DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/${module_name}/${header_dir}")
+        endforeach()
+    else()
+        install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/"
+            DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+    endif()
 
     # EXPORT_NAME 由各模块目标属性控制，导出后形成 <module>::<target>。
     install(EXPORT ${module_name}Targets

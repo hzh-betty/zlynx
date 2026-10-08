@@ -1,4 +1,5 @@
-#include "zhttp/websocket_frame.h"
+#include "../test_support.h"
+#include "zhttp/websocket/websocket_frame.h"
 #include "zhttp/zhttp_logger.h"
 
 #include <gtest/gtest.h>
@@ -47,7 +48,7 @@ std::string build_masked_client_frame(WebSocketOpcode opcode,
 }
 
 TEST(WebSocketFrameTest, ReturnsFalseWhenRequiredOutputPointersAreNull) {
-    WebSocketFrameParser parser;
+    TestWebSocketParser parser;
     znet::Buffer buffer;
     std::vector<WebSocketFrameEvent> events;
     uint16_t close_code = 0;
@@ -60,7 +61,7 @@ TEST(WebSocketFrameTest, ReturnsFalseWhenRequiredOutputPointersAreNull) {
 }
 
 TEST(WebSocketFrameTest, ParsesMaskedTextFrame) {
-    WebSocketFrameParser parser;
+    TestWebSocketParser parser;
     znet::Buffer buffer;
     buffer.append(build_masked_client_frame(WebSocketOpcode::kText, "hello"));
 
@@ -77,7 +78,7 @@ TEST(WebSocketFrameTest, ParsesMaskedTextFrame) {
 }
 
 TEST(WebSocketFrameTest, ParsesExtendedLengthFrames) {
-    WebSocketFrameParser parser;
+    TestWebSocketParser parser;
     znet::Buffer buffer;
 
     const std::string payload_126(126, 'a');
@@ -102,7 +103,7 @@ TEST(WebSocketFrameTest, ParsesExtendedLengthFrames) {
 }
 
 TEST(WebSocketFrameTest, LeavesDataUntouchedWhenExtendedHeaderIncomplete) {
-    WebSocketFrameParser parser;
+    TestWebSocketParser parser;
     znet::Buffer buffer;
 
     std::string partial;
@@ -127,7 +128,7 @@ TEST(WebSocketFrameTest, LeavesDataUntouchedWhenExtendedHeaderIncomplete) {
 }
 
 TEST(WebSocketFrameTest, ReassemblesFragmentedTextFrames) {
-    WebSocketFrameParser parser;
+    TestWebSocketParser parser;
     znet::Buffer buffer;
     buffer.append(
         build_masked_client_frame(WebSocketOpcode::kText, "Hel", false));
@@ -147,7 +148,7 @@ TEST(WebSocketFrameTest, ReassemblesFragmentedTextFrames) {
 }
 
 TEST(WebSocketFrameTest, RejectsClientUnmaskedFrame) {
-    WebSocketFrameParser parser;
+    TestWebSocketParser parser;
     znet::Buffer buffer;
 
     std::string frame;
@@ -170,7 +171,7 @@ TEST(WebSocketFrameTest, RejectsClientUnmaskedFrame) {
 }
 
 TEST(WebSocketFrameTest, RejectsRsvBitsAndUnknownOpcode) {
-    WebSocketFrameParser parser;
+    TestWebSocketParser parser;
     std::vector<WebSocketFrameEvent> events;
     uint16_t close_code = 0;
     std::string error;
@@ -201,7 +202,7 @@ TEST(WebSocketFrameTest, RejectsRsvBitsAndUnknownOpcode) {
 }
 
 TEST(WebSocketFrameTest, RejectsInvalid64BitPayloadLengthPrefix) {
-    WebSocketFrameParser parser;
+    TestWebSocketParser parser;
     znet::Buffer buffer;
 
     std::string frame;
@@ -223,7 +224,7 @@ TEST(WebSocketFrameTest, RejectsInvalid64BitPayloadLengthPrefix) {
 }
 
 TEST(WebSocketFrameTest, RejectsInvalidUtf8TextFrame) {
-    WebSocketFrameParser parser;
+    TestWebSocketParser parser;
     znet::Buffer buffer;
 
     const std::string invalid_utf8("\xC3\x28", 2);
@@ -243,7 +244,7 @@ TEST(WebSocketFrameTest, RejectsInvalidUtf8TextFrame) {
 }
 
 TEST(WebSocketFrameTest, AcceptsUtf8BoundarySequences) {
-    WebSocketFrameParser parser;
+    TestWebSocketParser parser;
     znet::Buffer buffer;
 
     std::string utf8_payload = "x";
@@ -286,7 +287,7 @@ TEST(WebSocketFrameTest, RejectsUtf8BoundaryViolations) {
 
     for (const auto &test_case : cases) {
         SCOPED_TRACE(test_case.name);
-        WebSocketFrameParser parser;
+        TestWebSocketParser parser;
         znet::Buffer buffer;
         buffer.append(build_masked_client_frame(WebSocketOpcode::kText,
                                                 test_case.payload));
@@ -305,7 +306,7 @@ TEST(WebSocketFrameTest, RejectsUtf8BoundaryViolations) {
 }
 
 TEST(WebSocketFrameTest, RejectsInvalidFragmentationSemantics) {
-    WebSocketFrameParser parser;
+    TestWebSocketParser parser;
     std::vector<WebSocketFrameEvent> events;
     uint16_t close_code = 0;
     std::string error;
@@ -330,7 +331,7 @@ TEST(WebSocketFrameTest, RejectsInvalidFragmentationSemantics) {
 
 TEST(WebSocketFrameTest, ValidatesUtf8OnlyWhenFinalFragmentArrives) {
     {
-        WebSocketFrameParser parser;
+        TestWebSocketParser parser;
         znet::Buffer buffer;
         buffer.append(build_masked_client_frame(WebSocketOpcode::kText,
                                                 "\xE4\xB8", false));
@@ -349,7 +350,7 @@ TEST(WebSocketFrameTest, ValidatesUtf8OnlyWhenFinalFragmentArrives) {
     }
 
     {
-        WebSocketFrameParser parser;
+        TestWebSocketParser parser;
         znet::Buffer buffer;
         buffer.append(build_masked_client_frame(WebSocketOpcode::kText,
                                                 "\xE4\xB8", false));
@@ -370,7 +371,7 @@ TEST(WebSocketFrameTest, ValidatesUtf8OnlyWhenFinalFragmentArrives) {
 }
 
 TEST(WebSocketFrameTest, RejectsControlFrameViolations) {
-    WebSocketFrameParser parser;
+    TestWebSocketParser parser;
     std::vector<WebSocketFrameEvent> events;
     uint16_t close_code = 0;
     std::string error;
@@ -391,7 +392,7 @@ TEST(WebSocketFrameTest, RejectsControlFrameViolations) {
 }
 
 TEST(WebSocketFrameTest, RejectsMessageSizeOverflowPaths) {
-    WebSocketFrameParser parser(4);
+    TestWebSocketParser parser(4);
     std::vector<WebSocketFrameEvent> events;
     uint16_t close_code = 0;
     std::string error;
@@ -416,7 +417,7 @@ TEST(WebSocketFrameTest, RejectsMessageSizeOverflowPaths) {
 }
 
 TEST(WebSocketFrameTest, RejectsInvalidCloseStatusCode) {
-    WebSocketFrameParser parser;
+    TestWebSocketParser parser;
     znet::Buffer buffer;
 
     std::string close_payload;
@@ -439,7 +440,7 @@ TEST(WebSocketFrameTest, RejectsInvalidCloseStatusCode) {
 }
 
 TEST(WebSocketFrameTest, RejectsInvalidUtf8CloseReason) {
-    WebSocketFrameParser parser;
+    TestWebSocketParser parser;
     znet::Buffer buffer;
 
     std::string close_payload;
@@ -463,7 +464,7 @@ TEST(WebSocketFrameTest, RejectsInvalidUtf8CloseReason) {
 }
 
 TEST(WebSocketFrameTest, RejectsClosePayloadWithSingleByte) {
-    WebSocketFrameParser parser;
+    TestWebSocketParser parser;
     znet::Buffer buffer;
     std::string payload(1, '\x01');
     buffer.append(build_masked_client_frame(WebSocketOpcode::kClose, payload));
@@ -480,7 +481,7 @@ TEST(WebSocketFrameTest, RejectsClosePayloadWithSingleByte) {
 }
 
 TEST(WebSocketFrameTest, ParsesClosePingAndPongEvents) {
-    WebSocketFrameParser parser;
+    TestWebSocketParser parser;
     znet::Buffer buffer;
 
     std::string close_payload;

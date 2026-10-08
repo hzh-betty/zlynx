@@ -1,4 +1,5 @@
-#include "zhttp/router.h"
+#include "../test_support.h"
+#include "zhttp/router/router.h"
 #include "zhttp/zhttp_logger.h"
 
 #include <gtest/gtest.h>
@@ -8,7 +9,7 @@ using namespace zhttp::mid;
 
 class RouterDetailedTest : public ::testing::Test {
   protected:
-    Router router_;
+    TestApplication router_;
 };
 
 class TraceMiddleware : public Middleware {
@@ -16,14 +17,13 @@ class TraceMiddleware : public Middleware {
     TraceMiddleware(std::vector<std::string> &trace, const std::string &name)
         : trace_(trace), name_(name) {}
 
-    bool before(const HttpRequest::ptr &, HttpResponse &) override {
+    bool before(HttpContext &context) override {
+
         trace_.push_back(name_ + "_before");
         return true;
     }
 
-    void after(const HttpRequest::ptr &, HttpResponse &) override {
-        trace_.push_back(name_ + "_after");
-    }
+    void after(HttpContext &context) override { trace_.push_back(name_ + "_after"); }
 
   private:
     std::vector<std::string> &trace_;
@@ -34,15 +34,11 @@ TEST_F(RouterDetailedTest, StaticVsParamPriority) {
     int static_called = 0;
     int param_called = 0;
 
-    router_.get("/users/admin", [&](const HttpRequest::ptr &, HttpResponse &) {
-        static_called++;
-    });
+    router_.get("/users/admin", [&](HttpContext &context) { static_called++; });
 
-    router_.get("/users/:id", [&](const HttpRequest::ptr &, HttpResponse &) {
-        param_called++;
-    });
+    router_.get("/users/:id", [&](HttpContext &context) { param_called++; });
 
-    auto req1 = std::make_shared<HttpRequest>();
+    auto req1 = std::make_shared<TestContext>();
     req1->set_method(HttpMethod::GET);
     req1->set_path("/users/admin");
     HttpResponse resp1;
@@ -51,7 +47,7 @@ TEST_F(RouterDetailedTest, StaticVsParamPriority) {
     EXPECT_EQ(static_called, 1);
     EXPECT_EQ(param_called, 0);
 
-    auto req2 = std::make_shared<HttpRequest>();
+    auto req2 = std::make_shared<TestContext>();
     req2->set_method(HttpMethod::GET);
     req2->set_path("/users/123");
     HttpResponse resp2;
@@ -65,13 +61,14 @@ TEST_F(RouterDetailedTest, NestedPathParams) {
     std::string captured_org, captured_repo, captured_issue;
 
     router_.get("/orgs/:org/repos/:repo/issues/:issue",
-                [&](const HttpRequest::ptr &req, HttpResponse &) {
+                [&](HttpContext &context) {
+                    auto *req = &context;
                     captured_org = req->path_param("org");
                     captured_repo = req->path_param("repo");
                     captured_issue = req->path_param("issue");
                 });
 
-    auto request = std::make_shared<HttpRequest>();
+    auto request = std::make_shared<TestContext>();
     request->set_method(HttpMethod::GET);
     request->set_path("/orgs/google/repos/zhttp/issues/42");
     HttpResponse response;
@@ -87,11 +84,12 @@ TEST_F(RouterDetailedTest, NestedPathParams) {
 TEST_F(RouterDetailedTest, ParamWithSpecialChars) {
     std::string captured_id;
 
-    router_.get("/items/:id", [&](const HttpRequest::ptr &req, HttpResponse &) {
+    router_.get("/items/:id", [&](HttpContext &context) {
+        auto *req = &context;
         captured_id = req->path_param("id");
     });
 
-    auto request = std::make_shared<HttpRequest>();
+    auto request = std::make_shared<TestContext>();
     request->set_method(HttpMethod::GET);
     request->set_path("/items/abc-123_xyz");
     HttpResponse response;
@@ -105,16 +103,16 @@ TEST_F(RouterDetailedTest, ParamWithSpecialChars) {
 TEST_F(RouterDetailedTest, RegexWithMultipleGroups) {
     std::string captured_year, captured_month, captured_day;
 
-    router_.add_regex_route(HttpMethod::GET,
-                            "^/archive/(\\d{4})/(\\d{2})/(\\d{2})$",
-                            {"year", "month", "day"},
-                            [&](const HttpRequest::ptr &req, HttpResponse &) {
-                                captured_year = req->path_param("year");
-                                captured_month = req->path_param("month");
-                                captured_day = req->path_param("day");
-                            });
+    router_.add_regex_route(
+        HttpMethod::GET, "^/archive/(\\d{4})/(\\d{2})/(\\d{2})$",
+        {"year", "month", "day"}, [&](HttpContext &context) {
+            auto *req = &context;
+            captured_year = req->path_param("year");
+            captured_month = req->path_param("month");
+            captured_day = req->path_param("day");
+        });
 
-    auto request = std::make_shared<HttpRequest>();
+    auto request = std::make_shared<TestContext>();
     request->set_method(HttpMethod::GET);
     request->set_path("/archive/2024/01/15");
     HttpResponse response;
@@ -130,12 +128,11 @@ TEST_F(RouterDetailedTest, RegexWithMultipleGroups) {
 TEST_F(RouterDetailedTest, RegexNotMatching) {
     bool handler_called = false;
 
-    router_.add_regex_route(HttpMethod::GET, "^/api/v\\d+/users$", {},
-                            [&](const HttpRequest::ptr &, HttpResponse &) {
-                                handler_called = true;
-                            });
+    router_.add_regex_route(
+        HttpMethod::GET, "^/api/v\\d+/users$", {},
+        [&](HttpContext &context) { handler_called = true; });
 
-    auto request = std::make_shared<HttpRequest>();
+    auto request = std::make_shared<TestContext>();
     request->set_method(HttpMethod::GET);
     request->set_path("/api/vX/users"); // 不匹配 \d+
     HttpResponse response;
@@ -157,14 +154,13 @@ TEST_F(RouterDetailedTest, MultipleGlobalMiddlewares) {
                         const std::string &name)
             : order_(order), name_(name) {}
 
-        bool before(const HttpRequest::ptr &, HttpResponse &) override {
+        bool before(HttpContext &context) override {
+
             order_.push_back(name_ + "_before");
             return true;
         }
 
-        void after(const HttpRequest::ptr &, HttpResponse &) override {
-            order_.push_back(name_ + "_after");
-        }
+        void after(HttpContext &context) override { order_.push_back(name_ + "_after"); }
 
       private:
         std::vector<std::string> &order_;
@@ -175,11 +171,11 @@ TEST_F(RouterDetailedTest, MultipleGlobalMiddlewares) {
     router_.use(std::make_shared<OrderMiddleware>(execution_order, "MW2"));
     router_.use(std::make_shared<OrderMiddleware>(execution_order, "MW3"));
 
-    router_.get("/test", [&](const HttpRequest::ptr &, HttpResponse &) {
+    router_.get("/test", [&](HttpContext &context) {
         execution_order.push_back("handler");
     });
 
-    auto request = std::make_shared<HttpRequest>();
+    auto request = std::make_shared<TestContext>();
     request->set_method(HttpMethod::GET);
     request->set_path("/test");
     HttpResponse response;
@@ -202,12 +198,14 @@ TEST_F(RouterDetailedTest, MiddlewareInterruption) {
 
     class BlockingMiddleware : public Middleware {
       public:
-        bool before(const HttpRequest::ptr &, HttpResponse &resp) override {
+        bool before(HttpContext &context) override {
+            auto &resp = context.response();
             resp.status(HttpStatus::UNAUTHORIZED).text("Blocked");
             return false; // 中断
         }
 
-        void after(const HttpRequest::ptr &, HttpResponse &) override {
+        void after(HttpContext &context) override {
+
             // 即使中断也会调用
         }
     };
@@ -216,13 +214,9 @@ TEST_F(RouterDetailedTest, MiddlewareInterruption) {
       public:
         AfterMiddleware(bool &called) : called_(called) {}
 
-        bool before(const HttpRequest::ptr &, HttpResponse &) override {
-            return true;
-        }
+        bool before(HttpContext &context) override { return true; }
 
-        void after(const HttpRequest::ptr &, HttpResponse &) override {
-            called_ = true;
-        }
+        void after(HttpContext &context) override { called_ = true; }
 
       private:
         bool &called_;
@@ -231,11 +225,9 @@ TEST_F(RouterDetailedTest, MiddlewareInterruption) {
     router_.use(std::make_shared<AfterMiddleware>(after_called));
     router_.use(std::make_shared<BlockingMiddleware>());
 
-    router_.get("/test", [&](const HttpRequest::ptr &, HttpResponse &) {
-        handler_called = true;
-    });
+    router_.get("/test", [&](HttpContext &context) { handler_called = true; });
 
-    auto request = std::make_shared<HttpRequest>();
+    auto request = std::make_shared<TestContext>();
     request->set_method(HttpMethod::GET);
     request->set_path("/test");
     HttpResponse response;
@@ -252,11 +244,10 @@ TEST_F(RouterDetailedTest, GroupMiddlewareAppliesToChildRoutesOnly) {
 
     router_.use_group("/api",
                       std::make_shared<TraceMiddleware>(trace, "group"));
-    router_.get("/api/users", [&](const HttpRequest::ptr &, HttpResponse &) {
-        trace.push_back("handler");
-    });
+    router_.get("/api/users",
+                [&](HttpContext &context) { trace.push_back("handler"); });
 
-    auto request = std::make_shared<HttpRequest>();
+    auto request = std::make_shared<TestContext>();
     request->set_method(HttpMethod::GET);
     request->set_path("/api/users");
     HttpResponse response;
@@ -275,11 +266,10 @@ TEST_F(RouterDetailedTest, GroupMiddlewareDoesNotApplyToGroupRoot) {
 
     router_.use_group("/api",
                       std::make_shared<TraceMiddleware>(trace, "group"));
-    router_.get("/api", [&](const HttpRequest::ptr &, HttpResponse &) {
-        trace.push_back("handler");
-    });
+    router_.get("/api",
+                [&](HttpContext &context) { trace.push_back("handler"); });
 
-    auto request = std::make_shared<HttpRequest>();
+    auto request = std::make_shared<TestContext>();
     request->set_method(HttpMethod::GET);
     request->set_path("/api");
     HttpResponse response;
@@ -296,11 +286,10 @@ TEST_F(RouterDetailedTest, GroupMiddlewareRespectsPathBoundary) {
 
     router_.use_group("/api",
                       std::make_shared<TraceMiddleware>(trace, "group"));
-    router_.get("/apiv1/users", [&](const HttpRequest::ptr &, HttpResponse &) {
-        trace.push_back("handler");
-    });
+    router_.get("/apiv1/users",
+                [&](HttpContext &context) { trace.push_back("handler"); });
 
-    auto request = std::make_shared<HttpRequest>();
+    auto request = std::make_shared<TestContext>();
     request->set_method(HttpMethod::GET);
     request->set_path("/apiv1/users");
     HttpResponse response;
@@ -322,11 +311,10 @@ TEST_F(RouterDetailedTest, GroupMiddlewareOrderWithGlobalAndExactPath) {
                       std::make_shared<TraceMiddleware>(trace, "group_v1"));
     router_.use("/api/v1/users",
                 std::make_shared<TraceMiddleware>(trace, "exact"));
-    router_.get("/api/v1/users", [&](const HttpRequest::ptr &, HttpResponse &) {
-        trace.push_back("handler");
-    });
+    router_.get("/api/v1/users",
+                [&](HttpContext &context) { trace.push_back("handler"); });
 
-    auto request = std::make_shared<HttpRequest>();
+    auto request = std::make_shared<TestContext>();
     request->set_method(HttpMethod::GET);
     request->set_path("/api/v1/users");
     HttpResponse response;
@@ -352,7 +340,7 @@ TEST_F(RouterDetailedTest, GroupMiddlewareDoesNotRunFor404) {
     router_.use_group("/api",
                       std::make_shared<TraceMiddleware>(trace, "group"));
 
-    auto request = std::make_shared<HttpRequest>();
+    auto request = std::make_shared<TestContext>();
     request->set_method(HttpMethod::GET);
     request->set_path("/api/missing");
     HttpResponse response;
@@ -370,12 +358,12 @@ TEST_F(RouterDetailedTest, GroupMiddlewareAppliesToDynamicAndRegexRoutes) {
 
     router_.use_group(
         "/api", std::make_shared<TraceMiddleware>(dynamic_trace, "group"));
-    router_.get("/api/users/:id",
-                [&](const HttpRequest::ptr &req, HttpResponse &) {
-                    dynamic_trace.push_back("dynamic_" + req->path_param("id"));
-                });
+    router_.get("/api/users/:id", [&](HttpContext &context) {
+        auto *req = &context;
+        dynamic_trace.push_back("dynamic_" + req->path_param("id"));
+    });
 
-    auto dynamic_request = std::make_shared<HttpRequest>();
+    auto dynamic_request = std::make_shared<TestContext>();
     dynamic_request->set_method(HttpMethod::GET);
     dynamic_request->set_path("/api/users/42");
     HttpResponse dynamic_response;
@@ -388,16 +376,17 @@ TEST_F(RouterDetailedTest, GroupMiddlewareAppliesToDynamicAndRegexRoutes) {
     EXPECT_EQ(dynamic_trace[1], "dynamic_42");
     EXPECT_EQ(dynamic_trace[2], "group_after");
 
-    Router regex_router;
+    TestApplication regex_router;
     regex_router.use_group(
         "/api", std::make_shared<TraceMiddleware>(regex_trace, "group"));
-    regex_router.add_regex_route(
-        HttpMethod::GET, "^/api/v(\\d+)/users$", {"version"},
-        [&](const HttpRequest::ptr &req, HttpResponse &) {
-            regex_trace.push_back("regex_" + req->path_param("version"));
-        });
+    regex_router.add_regex_route(HttpMethod::GET, "^/api/v(\\d+)/users$",
+                                 {"version"}, [&](HttpContext &context) {
+                                     auto *req = &context;
+                                     regex_trace.push_back(
+                                         "regex_" + req->path_param("version"));
+                                 });
 
-    auto regex_request = std::make_shared<HttpRequest>();
+    auto regex_request = std::make_shared<TestContext>();
     regex_request->set_method(HttpMethod::GET);
     regex_request->set_path("/api/v2/users");
     HttpResponse regex_response;
@@ -416,24 +405,20 @@ TEST_F(RouterDetailedTest, GroupMiddlewareAppliesToDynamicAndRegexRoutes) {
 TEST_F(RouterDetailedTest, SamePathDifferentMethods) {
     std::string last_method;
 
-    router_.get("/resource", [&](const HttpRequest::ptr &, HttpResponse &) {
-        last_method = "GET";
-    });
+    router_.get("/resource",
+                [&](HttpContext &context) { last_method = "GET"; });
 
-    router_.post("/resource", [&](const HttpRequest::ptr &, HttpResponse &) {
-        last_method = "POST";
-    });
+    router_.post("/resource",
+                 [&](HttpContext &context) { last_method = "POST"; });
 
-    router_.put("/resource", [&](const HttpRequest::ptr &, HttpResponse &) {
-        last_method = "PUT";
-    });
+    router_.put("/resource",
+                [&](HttpContext &context) { last_method = "PUT"; });
 
-    router_.del("/resource", [&](const HttpRequest::ptr &, HttpResponse &) {
-        last_method = "DELETE";
-    });
+    router_.del("/resource",
+                [&](HttpContext &context) { last_method = "DELETE"; });
 
     auto test_method = [&](HttpMethod method, const std::string &expected) {
-        auto req = std::make_shared<HttpRequest>();
+        auto req = std::make_shared<TestContext>();
         req->set_method(method);
         req->set_path("/resource");
         HttpResponse resp;
@@ -452,13 +437,13 @@ TEST_F(RouterDetailedTest, SamePathDifferentMethods) {
 TEST_F(RouterDetailedTest, Custom404Handler) {
     bool custom_404_called = false;
 
-    router_.set_not_found_handler([&](const HttpRequest::ptr &,
-                                      HttpResponse &resp) {
+    router_.set_not_found_handler([&](HttpContext &context) {
+        auto &resp = context.response();
         custom_404_called = true;
         resp.status(HttpStatus::NOT_FOUND).json("{\"error\":\"Custom 404\"}");
     });
 
-    auto request = std::make_shared<HttpRequest>();
+    auto request = std::make_shared<TestContext>();
     request->set_method(HttpMethod::GET);
     request->set_path("/nonexistent");
     HttpResponse response;
@@ -477,16 +462,12 @@ TEST_F(RouterDetailedTest, OverwriteExistingRoute) {
     int first_handler_calls = 0;
     int second_handler_calls = 0;
 
-    router_.get("/test", [&](const HttpRequest::ptr &, HttpResponse &) {
-        first_handler_calls++;
-    });
+    router_.get("/test", [&](HttpContext &context) { first_handler_calls++; });
 
     // 覆盖同一路由
-    router_.get("/test", [&](const HttpRequest::ptr &, HttpResponse &) {
-        second_handler_calls++;
-    });
+    router_.get("/test", [&](HttpContext &context) { second_handler_calls++; });
 
-    auto request = std::make_shared<HttpRequest>();
+    auto request = std::make_shared<TestContext>();
     request->set_method(HttpMethod::GET);
     request->set_path("/test");
     HttpResponse response;
@@ -503,13 +484,14 @@ TEST_F(RouterDetailedTest, ManyRoutes) {
     // 添加大量路由
     for (int i = 0; i < 1000; ++i) {
         std::string path = "/route" + std::to_string(i);
-        router_.get(path, [](const HttpRequest::ptr &, HttpResponse &resp) {
+        router_.get(path, [](HttpContext &context) {
+            auto &resp = context.response();
             resp.status(HttpStatus::OK);
         });
     }
 
     // 测试查找性能
-    auto request = std::make_shared<HttpRequest>();
+    auto request = std::make_shared<TestContext>();
     request->set_method(HttpMethod::GET);
     request->set_path("/route500");
     HttpResponse response;

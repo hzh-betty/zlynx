@@ -1,4 +1,5 @@
-#include "zhttp/mid/security_middleware.h"
+#include "../test_support.h"
+#include "zhttp/middleware/security_middleware.h"
 #include "zhttp/zhttp_logger.h"
 
 #include <gtest/gtest.h>
@@ -9,11 +10,10 @@ using namespace zhttp::mid;
 TEST(SecurityMiddlewareTest, AddDefaultSecurityHeaders) {
     SecurityMiddleware middleware;
 
-    auto request = std::make_shared<HttpRequest>();
+    auto request = std::make_shared<TestContext>();
     HttpResponse response;
 
-    EXPECT_TRUE(middleware.before(request, response));
-    middleware.after(request, response);
+    EXPECT_TRUE(run_middleware(middleware, request, response));
 
     const auto &headers = response.headers();
 
@@ -36,12 +36,12 @@ TEST(SecurityMiddlewareTest, AddDefaultSecurityHeaders) {
 TEST(SecurityMiddlewareTest, KeepExistingHeadersByDefault) {
     SecurityMiddleware middleware;
 
-    auto request = std::make_shared<HttpRequest>();
+    auto request = std::make_shared<TestContext>();
     HttpResponse response;
     response.header("X-Frame-Options", "SAMEORIGIN");
     response.header("Referrer-Policy", "no-referrer");
 
-    middleware.after(request, response);
+    run_middleware(middleware, request, response);
 
     EXPECT_EQ(response.headers().at("X-Frame-Options"), "SAMEORIGIN");
     EXPECT_EQ(response.headers().at("Referrer-Policy"), "no-referrer");
@@ -54,10 +54,10 @@ TEST(SecurityMiddlewareTest, HstsCanBeEnabled) {
 
     SecurityMiddleware middleware(options);
 
-    auto request = std::make_shared<HttpRequest>();
+    auto request = std::make_shared<TestContext>();
     HttpResponse response;
 
-    middleware.after(request, response);
+    run_middleware(middleware, request, response);
 
     ASSERT_NE(response.headers().find("Strict-Transport-Security"),
               response.headers().end());
@@ -71,10 +71,10 @@ TEST(SecurityMiddlewareTest, CanDisableSingleHeader) {
 
     SecurityMiddleware middleware(options);
 
-    auto request = std::make_shared<HttpRequest>();
+    auto request = std::make_shared<TestContext>();
     HttpResponse response;
 
-    middleware.after(request, response);
+    run_middleware(middleware, request, response);
 
     EXPECT_EQ(response.headers().find("Content-Security-Policy"),
               response.headers().end());
