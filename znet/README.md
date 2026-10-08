@@ -6,8 +6,8 @@
 
 ## 快速开始
 
-下面是一个最小 echo server。`TcpServer::start()` 会初始化 `zco` runtime 并启动
-accept loop，业务通过连接和消息回调处理。
+下面是一个最小 echo server。应用创建 Runtime 并注入 TcpServer；服务器只管理自己的
+监听器和连接。多个服务器可以显式共享 Runtime，其生命周期由应用统一管理。
 
 ```cpp
 #include "znet/address.h"
@@ -19,10 +19,12 @@ accept loop，业务通过连接和消息回调处理。
 #include <thread>
 
 int main() {
+    zco::RuntimeOptions options;
+    options.worker_count = 4;
+    zco::Runtime runtime(options);
     auto addr = std::make_shared<znet::IPv4Address>("0.0.0.0", 18080);
-    auto server = std::make_shared<znet::TcpServer>(addr);
+    auto server = std::make_shared<znet::TcpServer>(runtime, addr);
 
-    server->set_thread_count(4);
     server->set_read_timeout(30000);
     server->set_write_timeout(30000);
     server->set_keepalive_timeout(60000);
@@ -73,7 +75,8 @@ target_link_libraries(znet_demo PRIVATE znet::znet)
 ```text
 zhttp
   -> znet
-      -> zco      协程调度、hook、同步原语
+      -> zco      协程调度、就绪等待、同步原语
+      -> zlog     网络层日志
       -> OpenSSL  TLS context/channel
 ```
 
@@ -96,7 +99,7 @@ znet/
 - `Acceptor`：监听 socket 与 accept loop。
 - `Buffer`：网络 I/O 字节缓冲，支持 prepend 空间、append、retrieve 和 socket 读写。
 - `TcpConnection`：单连接状态机、输入/输出缓冲、send/flush/shutdown/close、TLS channel。
-- `TcpServer`：连接表、回调注册、线程数、超时、TLS、连接分发和 graceful stop。
+- `TcpServer`：连接表、回调注册、执行端点、超时、TLS、连接分发和 graceful stop。
 - `TlsContext`：OpenSSL server context 初始化、证书加载和握手支持。
 - `znet_logger`：模块日志初始化与日志宏。
 
@@ -108,7 +111,7 @@ znet/
 - C++14 编译器，仓库 preset 默认使用 `clang++`
 - Ninja，使用 preset 时需要
 - Linux/POSIX，当前 CMake 明确拒绝非 UNIX 或 Apple 平台
-- `zco`
+- `zco` 2.0、`zlog`
 - OpenSSL
 
 测试和分析额外依赖：
@@ -156,7 +159,7 @@ cmake --build build/debug -j
 cmake --build --preset release --target install
 ```
 
-安装后导出 `znet::znet`，并通过包配置转发 `zco` 和 `OpenSSL` 依赖。
+安装后导出 `znet::znet`，并通过包配置转发 `zco`、`zlog` 和 `OpenSSL` 依赖。
 
 ## 测试
 

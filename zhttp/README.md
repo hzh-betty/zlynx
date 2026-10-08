@@ -37,6 +37,8 @@ int main() {
 
 `run()` 构建并启动服务，阻塞至收到 SIGINT 或 SIGTERM。`build()` 只构造和初始化
 服务器，不启动监听；需要自行管理生命周期时，调用返回对象的 `start()` / `stop()`。
+Builder 将线程数与栈模式映射为每个服务器实例的 RuntimeOptions，不修改全局协程配置。
+直接构造时使用 `HttpServer(address, options)`，线程数由构造选项决定。
 Builder 默认注册请求体解析中间件，按 Content-Type 解析 JSON、URL 编码表单和
 multipart。直接构造 `HttpServer` 时，可自行注册 `RequestBodyMiddleware`，也可通过
 Context 的访问接口惰性解析正文。
