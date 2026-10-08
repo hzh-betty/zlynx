@@ -42,6 +42,14 @@ target_link_libraries(zmalloc_demo PRIVATE zmalloc::override)
 在 zlynx 源码树整体构建时，`ZLYNX_USE_ZMALLOC_OVERRIDE` 默认开启，根工程会把
 `zmalloc_override` 私有链接到 `zlog`、`zco`、`znet`、`zhttp` 等运行时模块。
 
+全局替换入口按 libc 约定处理分配失败，返回空指针并设置 `ENOMEM`；普通
+`new` 抛出 `std::bad_alloc`，`nothrow new` 返回空指针。`malloc(0)` 返回可释放的
+指针，显式 `zmalloc(0)` 仍返回空指针。替换目标也提供对齐分配和
+`malloc_usable_size`，在 glibc 下支持释放、调整和查询外部 glibc 分配块。
+
+Linux 构建使用 `initial-exec` TLS，替换目标应随进程启动链接；运行后的动态
+加载场景未作保证。
+
 ## 项目架构
 
 `zmalloc` 的小对象路径按线程缓存、中心缓存、页缓存分层：
