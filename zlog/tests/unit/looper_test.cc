@@ -1,4 +1,5 @@
-#include "zlog/internal/looper.h"
+#include "zlog/logger.h"
+#include "async/looper.h"
 #include <atomic>
 #include <chrono>
 #include <gmock/gmock.h>
@@ -6,6 +7,7 @@
 #include <thread>
 
 using namespace zlog;
+using namespace zlog::detail;
 
 class LooperTest : public ::testing::Test {
   protected:

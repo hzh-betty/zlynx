@@ -9,6 +9,7 @@
 #include <cstddef>
 
 namespace zlog {
+namespace detail {
 // 缓冲区大小常量定义
 static constexpr size_t kDefaultBufferSize =
     1024 * 1024 * 2; // 默认缓冲区大小：2MB
@@ -31,6 +32,11 @@ class alignas(64) Buffer {
      * 初始化缓冲区为默认大小
      */
     Buffer();
+
+    // 缓冲区独占底层内存，禁止浅拷贝；交换通过 swap 显式完成。
+    Buffer(const Buffer &) = delete;
+    Buffer &operator=(const Buffer &) = delete;
+
 
     /**
      * @brief 析构函数
@@ -112,6 +118,7 @@ class alignas(64) Buffer {
     size_t writer_idx_; // 当前可写数据的下标 (热路径)
     size_t capacity_;   // 缓冲区总容量
 };
+} // namespace detail
 } // namespace zlog
 
 #endif // ZLOG_INTERNAL_BUFFER_H_

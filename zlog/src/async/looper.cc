@@ -4,11 +4,27 @@
  * @author hzh-betty
  */
 
-#include "zlog/internal/looper.h"
+#include "looper.h"
+#include "zlog/logger.h"
 
+#include <cstdlib>
+#include <new>
 #include <stdexcept>
 
 namespace zlog {
+namespace detail {
+
+void *AsyncLooper::operator new(size_t size) {
+    void *memory = nullptr;
+    if (posix_memalign(&memory, alignof(AsyncLooper), size) != 0) {
+        throw std::bad_alloc();
+    }
+    return memory;
+}
+
+void AsyncLooper::operator delete(void *memory) noexcept {
+    std::free(memory);
+}
 
 AsyncLooper::AsyncLooper(Functor func, const AsyncType looper_type,
                          const std::chrono::milliseconds milliseco)
@@ -109,4 +125,5 @@ void AsyncLooper::thread_entry() {
     }
 }
 
+} // namespace detail
 } // namespace zlog

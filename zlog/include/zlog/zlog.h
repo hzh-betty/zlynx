@@ -6,6 +6,8 @@
 
 #ifndef ZLOG_ZLOG_H_
 #define ZLOG_ZLOG_H_
+#include "zlog/logger_builder.h"
+#include "zlog/logger_registry.h"
 #include <stdexcept>
 
 #include "zlog/logger.h"

@@ -4,7 +4,7 @@
  * @author hzh-betty
  */
 
-#include "zlog/internal/buffer.h"
+#include "buffer.h"
 
 #include <sys/mman.h>
 
@@ -13,6 +13,7 @@
 #include <stdexcept>
 
 namespace zlog {
+namespace detail {
 
 // 预热内存：touch所有页面避免首次访问时的page fault
 static void prefault_memory(char *data, size_t size) {
@@ -122,4 +123,5 @@ void Buffer::ensure_enough_size(size_t len) {
 }
 
 
+} // namespace detail
 } // namespace zlog

@@ -8,21 +8,33 @@
 #define ZLOG_LOGGER_H_
 /**
  * @brief 日志器模块
- * 实现同步和异步日志器，以及日志器管理功能
+ * 实现同步和异步日志器的记录接口
  */
 
+#include <chrono>
+#include <memory>
 #include <mutex>
-#include <unordered_map>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include <fmt/format.h>
 
 #include "zlog/format.h"
-#include "zlog/internal/looper.h"
 #include "zlog/level.h"
 #include "zlog/sink.h"
 
 namespace zlog {
+namespace detail {
+class AsyncLooper;
+}
+
+/** @brief 异步缓冲策略；两种策略达到容量上限时都会阻塞等待。 */
+enum class AsyncType {
+    ASYNC_SAFE,  // 固定容量，等待可用空间
+    ASYNC_UNSAFE // 允许扩容，达到上限后等待可用空间
+};
+
 /**
  * @brief 日志器抽象基类
  * 提供日志记录的核心功能，支持模板化的日志接口
@@ -40,8 +52,8 @@ class Logger {
      * @param formatter 日志格式化器
      * @param sinks 日志落地器列表
      */
-    Logger(const char *logger_name, LogLevel::value limit_level,
-           Formatter::ptr formatter, std::vector<LogSink::ptr> &sinks);
+    Logger(std::string logger_name, LogLevel::value limit_level,
+           Formatter::ptr formatter, const std::vector<LogSink::ptr> &sinks);
 
     /**
      * @brief 获取日志器名称
@@ -161,7 +173,7 @@ class Logger {
 
   protected:
     std::mutex mutex_;                // 互斥锁
-    const char *logger_name_;         // 日志器名称
+    const std::string logger_name_;   // 自有名称，生命周期与日志器一致
     LogLevel::value limit_level_;     // 日志等级限制
     Formatter::ptr formatter_;        // 日志格式化器
     std::vector<LogSink::ptr> sinks_; // 日志落地器列表
@@ -180,9 +192,9 @@ class SyncLogger final : public Logger {
      * @param formatter 日志格式化器
      * @param sinks 日志落地器列表
      */
-    SyncLogger(const char *logger_name, const LogLevel::value limit_level,
+    SyncLogger(std::string logger_name, const LogLevel::value limit_level,
                const Formatter::ptr &formatter,
-               std::vector<LogSink::ptr> &sinks);
+               const std::vector<LogSink::ptr> &sinks);
 
   protected:
     /**
@@ -208,10 +220,13 @@ class AsyncLogger final : public Logger {
      * @param looper_type 异步类型
      * @param milliseco 最大等待时间
      */
-    AsyncLogger(const char *logger_name, const LogLevel::value limit_level,
+    AsyncLogger(std::string logger_name, const LogLevel::value limit_level,
                 const Formatter::ptr &formatter,
-                std::vector<LogSink::ptr> &sinks, AsyncType looper_type,
+                const std::vector<LogSink::ptr> &sinks, AsyncType looper_type,
                 std::chrono::milliseconds milliseco);
+
+    // 在实现文件中销毁工作线程，排空后才释放基类持有的 sink。
+    ~AsyncLogger() override;
 
   protected:
     /**
@@ -222,157 +237,9 @@ class AsyncLogger final : public Logger {
      */
     void log(const char *data, const size_t len) override;
 
-    /**
-     * @brief 实际日志落地函数
-     * 将数据从缓冲区中落地到各个sink
-     * @param buffer 缓冲区
-     */
-    void real_log(const Buffer &buffer) const;
-
-  protected:
-    AsyncLooper::ptr looper_; // 异步循环器
-};
-
-/**
- * @brief 日志器类型枚举
- */
-enum class LoggerType {
-    LOGGER_SYNC, // 同步日志器
-    LOGGER_ASYNC // 异步日志器
-};
-
-/**
- * @brief 日志器建造者
- * 使用建造者模式降低用户使用成本
- */
-class LoggerBuilder : public NonCopyable {
-  public:
-    ~LoggerBuilder() = default;
-
-    /**
-     * @brief 构造函数
-     * 初始化默认配置
-     */
-    LoggerBuilder();
-
-    /**
-     * @brief 设置日志器类型
-     * @param logger_type 日志器类型（同步/异步）
-     */
-    void build_logger_type(const LoggerType logger_type);
-
-    /**
-     * @brief 启用非安全异步模式
-     */
-    void build_enable_unsafe();
-
-    /**
-     * @brief 设置日志器名称
-     * @param logger_name 日志器名称
-     */
-    void build_logger_name(const char *logger_name);
-
-    /**
-     * @brief 设置日志等级限制
-     * @param limit_level 日志等级
-     */
-    void build_logger_level(LogLevel::value limit_level);
-
-    /**
-     * @brief 设置异步等待时间
-     * @param milliseco 等待时间（毫秒）
-     */
-    void build_wait_time(const std::chrono::milliseconds milliseco);
-
-    /**
-     * @brief 设置日志格式化器
-     * @param pattern 格式化字符串
-     */
-    void build_logger_formatter(const std::string &pattern);
-
-    /**
-     * @brief 添加日志落地器
-     * @tparam SinkType 落地器类型
-     * @tparam Args 构造参数类型
-     * @param args 构造参数
-     */
-    template <typename SinkType, typename... Args>
-    void build_logger_sink(Args &&...args) {
-        const LogSink::ptr psink =
-            std::make_shared<SinkType>(std::forward<Args>(args)...);
-        sinks_.push_back(psink);
-    }
-
-    /** @brief 构建日志器，不注册到全局管理器。 */
-    Logger::ptr build();
-
-    /** @brief 构建并注册日志器；同名注册保留已有日志器。 */
-    Logger::ptr build_global();
-
-  protected:
-    LoggerType logger_type_;              // 日志器类型
-    const char *logger_name_ = nullptr;   // 日志器名称
-    LogLevel::value limit_level_;         // 日志等级限制
-    Formatter::ptr formatter_;            // 日志格式化器
-    std::vector<LogSink::ptr> sinks_;     // 日志落地器列表
-    AsyncType looper_type_;               // 异步类型
-    std::chrono::milliseconds milliseco_; // 最大等待时间
-};
-
-/**
- * @brief 全局日志器管理器
- * 负责管理所有日志器并提供全局访问接口
- */
-class LoggerManager {
-  public:
-    /**
-     * @brief 获取单例实例
-     * @return 日志器管理器实例引用
-     */
-    static LoggerManager &get_instance() {
-        static LoggerManager eton;
-        return eton;
-    }
-
-    /**
-     * @brief 添加日志器
-     * @param logger 日志器智能指针
-     */
-    void add_logger(Logger::ptr &logger);
-
-    /**
-     * @brief 新增或替换日志器。
-     * @param name 日志器名称
-     * @param logger 日志器实例
-     */
-    void upsert_logger(const std::string &name, Logger::ptr logger);
-
-    /**
-     * @brief 获取指定名称的日志器
-     * @param name 日志器名称
-     * @return 日志器智能指针，不存在则返回空指针
-     */
-    Logger::ptr get_logger(const std::string &name);
-
-    /**
-     * @brief 获取根日志器
-     * @return 根日志器智能指针
-     */
-    Logger::ptr root_logger();
-
   private:
-    /**
-     * @brief 私有构造函数
-     * 初始化根日志器
-     */
-    LoggerManager();
-
-  private:
-    std::mutex mutex_;                                     // 互斥锁
-    Logger::ptr root_logger_;                              // 默认根日志器
-    std::unordered_map<std::string, Logger::ptr> loggers_; // 日志器映射表
+    std::unique_ptr<detail::AsyncLooper> looper_; // 独占异步循环器
 };
-
 
 } // namespace zlog
 

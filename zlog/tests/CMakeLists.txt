@@ -15,6 +15,8 @@ if(BUILD_TESTING)
     foreach(test_src ${ZLOG_UNIT_TESTS})
         get_filename_component(test_name ${test_src} NAME_WE)
         zlynx_add_gtest(zlog_${test_name} ${test_src} zlog unit zlog)
+        # 内部实现测试直接访问源码头；不向库的消费者传递该路径。
+        target_include_directories(zlog_${test_name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
     endforeach()
 
     foreach(test_src ${ZLOG_INTEGRATION_TESTS})

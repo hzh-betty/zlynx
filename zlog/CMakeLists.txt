@@ -18,13 +18,16 @@ find_package(Threads REQUIRED)
 
 # zlog 源文件显式列出，避免 GLOB 在发布包/安装包中引入不确定性。
 set(ZLOG_SOURCES
-    src/buffer.cc
+    src/async/buffer.cc
+    src/async/looper.cc
+    src/async/spinlock.cc
+    src/async_logger.cc
     src/format.cc
     src/level.cc
     src/logger.cc
-    src/looper.cc
+    src/logger_builder.cc
+    src/logger_registry.cc
     src/message.cc
-    src/module_logger.cc
     src/sink.cc
     src/util.cc
 )

@@ -1,5 +1,5 @@
 #define private public
-#include "zlog/internal/buffer.h"
+#include "async/buffer.h"
 #undef private
 #include <cstring>
 #include <gtest/gtest.h>
@@ -8,6 +8,7 @@
 #include <vector>
 
 using namespace zlog;
+using namespace zlog::detail;
 
 class BufferTest : public ::testing::Test {
   protected:

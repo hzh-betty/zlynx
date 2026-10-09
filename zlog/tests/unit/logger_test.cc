@@ -86,24 +86,6 @@ TEST_F(LoggerTest, GlobalBuilderAsyncBranchWithDefaultFormatterAndSink) {
     std::this_thread::sleep_for(std::chrono::milliseconds(30));
 }
 
-TEST_F(LoggerTest, LoggerManagerUpsertNullLoggerNoop) {
-    LoggerManager::get_instance().upsert_logger("upsert_null", Logger::ptr{});
-    EXPECT_EQ(LoggerManager::get_instance().get_logger("upsert_null").get(),
-              static_cast<Logger *>(NULL));
-}
-
-TEST_F(LoggerTest, LoggerManagerUpsertRootReplacesRootLogger) {
-    LoggerBuilder builder;
-    builder.build_logger_name("upsert_root_logger");
-    builder.build_logger_type(LoggerType::LOGGER_SYNC);
-    Logger::ptr logger = builder.build();
-    ASSERT_NE(logger.get(), static_cast<Logger *>(NULL));
-
-    LoggerManager::get_instance().upsert_logger("root", logger);
-    EXPECT_EQ(LoggerManager::get_instance().root_logger(), logger);
-    EXPECT_EQ(LoggerManager::get_instance().get_logger("root"), logger);
-}
-
 TEST_F(LoggerTest, SyncLoggerWithEmptySinksReturnsEarly) {
     std::vector<LogSink::ptr> empty_sinks;
     SyncLogger logger("sync_empty", LogLevel::value::DEBUG, formatter,
@@ -119,22 +101,6 @@ TEST_F(LoggerTest, AsyncLoggerWithEmptySinksReturnsEarlyInRelog) {
                        std::chrono::milliseconds(10));
     logger.log_impl(LogLevel::value::INFO, __FILE__, __LINE__, "async dropped");
     std::this_thread::sleep_for(std::chrono::milliseconds(30));
-}
-
-TEST_F(LoggerTest, LoggerManagerUpsertNonRootDoesNotReplaceRoot) {
-    Logger::ptr old_root = LoggerManager::get_instance().root_logger();
-    ASSERT_NE(old_root.get(), static_cast<Logger *>(NULL));
-
-    LoggerBuilder builder;
-    builder.build_logger_name("non_root_upsert");
-    builder.build_logger_type(LoggerType::LOGGER_SYNC);
-    Logger::ptr logger = builder.build();
-    ASSERT_NE(logger.get(), static_cast<Logger *>(NULL));
-
-    LoggerManager::get_instance().upsert_logger("non_root_upsert", logger);
-    EXPECT_EQ(LoggerManager::get_instance().root_logger(), old_root);
-    EXPECT_EQ(LoggerManager::get_instance().get_logger("non_root_upsert"),
-              logger);
 }
 
 TEST_F(LoggerTest, UninitializedLoggerThrowsWhenLogging) {

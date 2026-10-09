@@ -11,22 +11,18 @@
 #include <condition_variable>
 #include <exception>
 #include <functional>
-#include <memory>
 #include <mutex>
 #include <thread>
 
-#include "zlog/internal/buffer.h"
-#include "zlog/internal/util.h"
+#include "buffer.h"
+#include "spinlock.h"
 
 namespace zlog {
-/**
- * @brief 异步日志器类型枚举
- */
-enum class AsyncType {
-    ASYNC_SAFE,  // 固定长度的缓冲区--阻塞模式
-    ASYNC_UNSAFE // 可扩容缓冲区--非阻塞模式
-};
+enum class AsyncType;
+}
 
+namespace zlog {
+namespace detail {
 static constexpr size_t kFlushBufferSize =
     kDefaultBufferSize / 32; // 刷新缓冲区大小阈值
 
@@ -37,7 +33,6 @@ static constexpr size_t kFlushBufferSize =
 class AsyncLooper {
   public:
     using Functor = std::function<void(Buffer &)>; // 回调函数类型
-    using ptr = std::shared_ptr<AsyncLooper>;      // 智能指针类型
 
     /**
      * @brief 构造函数
@@ -47,6 +42,10 @@ class AsyncLooper {
      */
     AsyncLooper(Functor func, AsyncType looper_type,
                 std::chrono::milliseconds milliseco);
+
+    // C++11 的普通 new 不保证过度对齐，为内部缓存行对齐提供匹配的分配与释放。
+    static void *operator new(size_t size);
+    static void operator delete(void *memory) noexcept;
 
     /**
      * @brief 向生产缓冲区推送数据
@@ -89,6 +88,7 @@ class AsyncLooper {
     std::chrono::milliseconds milliseco_;  // 最大等待时间
     std::exception_ptr callback_exception_; // 回调执行期间捕获的异常
 };
+} // namespace detail
 } // namespace zlog
 
 #endif // ZLOG_INTERNAL_LOOPER_H_
