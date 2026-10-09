@@ -39,8 +39,9 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 function(zlynx_apply_common_options target_name)
-    # PUBLIC 编译特性会被导出为目标用法需求：消费者链接库时也使用 C++14。
-    target_compile_features(${target_name} PUBLIC cxx_std_14)
+    # PUBLIC 编译特性会导出给消费者，统一使用 C++17。
+    target_compile_features(${target_name} PUBLIC cxx_std_17)
+    set_target_properties(${target_name} PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
 
     # warning/coverage 是项目内部构建策略，使用 PRIVATE，避免污染外部消费者。
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")

@@ -10,6 +10,9 @@ project(zlynx
 # - preset 默认使用 Ninja + clang++；
 # - CMakeLists.txt 不强行改 CMAKE_GENERATOR/CMAKE_CXX_COMPILER，方便外部工具链接管。
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 set(ZLYNX_CMAKE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 list(APPEND CMAKE_MODULE_PATH "${ZLYNX_CMAKE_DIR}")
 
@@ -54,7 +57,7 @@ message(STATUS "Version             : ${PROJECT_VERSION}")
 message(STATUS "Generator           : ${CMAKE_GENERATOR}")
 message(STATUS "C++ compiler        : ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
 message(STATUS "Build type          : ${CMAKE_BUILD_TYPE}")
-message(STATUS "C++ standard        : 14")
+message(STATUS "C++ standard        : 17")
 message(STATUS "Build shared libs   : ${BUILD_SHARED_LIBS}")
 message(STATUS "Build testing       : ${BUILD_TESTING}")
 message(STATUS "Coverage            : ${ZLYNX_ENABLE_COVERAGE}")
