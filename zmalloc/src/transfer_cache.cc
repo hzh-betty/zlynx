@@ -9,6 +9,9 @@
 #include <algorithm>
 #include <mutex>
 
+#include "zmalloc/internal/central_cache.h"
+#include "zmalloc/internal/free_list.h"
+
 #include "zmalloc/internal/size_class.h"
 
 namespace zmalloc {
@@ -107,6 +110,43 @@ size_t TransferCache::insert_range(size_t index, void *batch[], size_t count) {
 
 size_t TransferCache::remove_range(size_t index, void *batch[], size_t count) {
     return entries_[index].remove_range(batch, count);
+}
+
+size_t TransferCache::drain() {
+    size_t bytes = 0;
+    std::array<void *, MAX_BATCH_SIZE> objects;
+    for (size_t size = 1; size <= MAX_BYTES;) {
+        const auto &e = SizeClass::lookup(size);
+        // 只处理初始数量的上限；并发补货不会让回收无限追赶生产者。
+        size_t remaining = entries_[e.index].size();
+        while (remaining != 0) {
+            const size_t removed = remove_range(
+                e.index, objects.data(), std::min(remaining, objects.size()));
+            if (removed == 0) {
+                break;
+            }
+            // remove_range 已释放传输锁，再归还中心层，避免形成嵌套锁。
+            for (size_t i = 1; i < removed; ++i) {
+                next_obj(objects[i - 1]) = objects[i];
+            }
+            next_obj(objects[removed - 1]) = nullptr;
+            CentralCache::get_instance().release_list_to_spans(objects[0], e.index);
+            bytes += removed * e.align_size;
+            remaining -= removed;
+        }
+        size = e.align_size + 1;
+    }
+    return bytes;
+}
+
+size_t TransferCache::cached_bytes() const {
+    size_t bytes = 0;
+    for (size_t size = 1; size <= MAX_BYTES;) {
+        const auto &e = SizeClass::lookup(size);
+        bytes += entries_[e.index].size() * e.align_size;
+        size = e.align_size + 1;
+    }
+    return bytes;
 }
 
 } // namespace zmalloc

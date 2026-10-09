@@ -23,6 +23,7 @@ if(BUILD_TESTING)
         central_cache_test
         thread_cache_test
         system_alloc_test
+        memory_test
         override_whitebox_test
     )
 

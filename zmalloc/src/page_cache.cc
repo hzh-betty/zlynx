@@ -42,6 +42,7 @@ Span *PageCache::new_span(size_t k) {
 
             // 普通大对象只登记起始页；override 可为对齐块补登记附加页。
             id_span_map_.set(span->page_id, span);
+            mapped_bytes_ += k * PAGE_SIZE;
             return span;
         } catch (...) {
             if (span != nullptr) {
@@ -62,6 +63,7 @@ Span *PageCache::new_span(size_t k) {
 
         // 该 Span 被分配出去，标记为在用。
         k_span->is_use = true;
+        k_span->is_released = false;
         k_span->obj_size = 0;
         k_span->use_count = 0;
         k_span->free_list = nullptr;
@@ -151,6 +153,7 @@ Span *PageCache::new_span(size_t k) {
     id_span_map_.set(big_span->page_id + big_span->n - 1, big_span);
 
     span_lists_[big_span->n].push_front(big_span);
+    mapped_bytes_ += big_span->n * PAGE_SIZE;
 
     // 递归调用
     return new_span(k);
@@ -164,6 +167,7 @@ void PageCache::release_span_to_page_cache(Span *span) {
     if (span->n > NPAGES - 1) {
         void *ptr = reinterpret_cast<void *>(span->page_id << PAGE_SHIFT);
         system_free(ptr, span->n);
+        mapped_bytes_ -= span->n * PAGE_SIZE;
         span_pool_.deallocate(span);
         return;
     }
@@ -231,6 +235,41 @@ void PageCache::release_span_to_page_cache(Span *span) {
     id_span_map_.set(span->page_id + span->n - 1, span);
 
     span->is_use = false;
+    // 新归还的页可能已被触碰；合并后整段重新允许建议回收。
+    span->is_released = false;
+}
+
+size_t PageCache::release_free_pages() {
+    size_t bytes = 0;
+    // 遍历和系统调用均持有页锁，分配路径不能同时取得正在回收的 Span。
+    for (size_t i = 1; i < NPAGES; ++i) {
+        SpanList &list = span_lists_[i];
+        for (Span *span = list.begin(); span != list.end(); span = span->next) {
+            assert(!span->is_use);
+            if (!span->is_released &&
+                system_release(reinterpret_cast<void *>(span->page_id << PAGE_SHIFT),
+                               span->n)) {
+                span->is_released = true;
+                bytes += span->n * PAGE_SIZE;
+            }
+        }
+    }
+    total_released_bytes_ += bytes;
+    return bytes;
+}
+
+PageCacheStats PageCache::statistics() {
+    PageCacheStats stats{0, 0, mapped_bytes_, total_released_bytes_};
+    for (size_t i = 1; i < NPAGES; ++i) {
+        SpanList &list = span_lists_[i];
+        for (Span *span = list.begin(); span != list.end(); span = span->next) {
+            stats.free_bytes += span->n * PAGE_SIZE;
+            if (span->is_released) {
+                stats.released_bytes += span->n * PAGE_SIZE;
+            }
+        }
+    }
+    return stats;
 }
 
 } // namespace zmalloc

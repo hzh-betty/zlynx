@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <thread>
 
 #include "zmalloc/internal/span_list.h"
@@ -35,6 +36,40 @@ class PageCacheSmallSpanParamTest
     : public PageCacheTest, public ::testing::WithParamInterface<size_t> {};
 class PageCacheLargeSpanParamTest
     : public PageCacheTest, public ::testing::WithParamInterface<size_t> {};
+
+TEST_F(PageCacheTest, ReleasedStateSurvivesSplitAndResetsAfterReuseAndMerge) {
+    // 独立实例保证测试确定地命中切分路径；所有访问仍遵守页锁约定。
+    zmalloc::PageCache cache;
+    std::lock_guard<std::mutex> lock(cache.page_mtx());
+    auto *whole = cache.new_span(zmalloc::NPAGES - 1);
+    auto *address = reinterpret_cast<unsigned char *>(whole->page_id << zmalloc::PAGE_SHIFT);
+    const size_t bytes = whole->n * zmalloc::PAGE_SIZE;
+    std::memset(address, 0x5a, bytes);
+    cache.release_span_to_page_cache(whole);
+    EXPECT_EQ(cache.release_free_pages(), bytes);
+    EXPECT_EQ(cache.release_free_pages(), 0u);
+    EXPECT_EQ(cache.statistics().released_bytes, bytes);
+
+    auto *part = cache.new_span(32);
+    EXPECT_FALSE(part->is_released);
+    EXPECT_EQ(cache.statistics().released_bytes, bytes - 32 * zmalloc::PAGE_SIZE);
+    EXPECT_EQ(cache.release_free_pages(), 0u);
+    EXPECT_EQ(cache.try_map_cached_object_to_span(address), part);
+    std::memset(address, 0xa5, 32 * zmalloc::PAGE_SIZE);
+    EXPECT_EQ(address[32 * zmalloc::PAGE_SIZE - 1], 0xa5);
+
+    cache.release_span_to_page_cache(part);
+    EXPECT_EQ(cache.statistics().released_bytes, 0u);
+    EXPECT_EQ(cache.release_free_pages(), bytes);
+    EXPECT_EQ(cache.release_free_pages(), 0u);
+    whole = cache.new_span(zmalloc::NPAGES - 1);
+    EXPECT_FALSE(whole->is_released);
+    EXPECT_EQ(cache.statistics().released_bytes, 0u);
+    EXPECT_EQ(address[0], 0);
+    EXPECT_EQ(address[bytes - 1], 0);
+    cache.release_span_to_page_cache(whole);
+    EXPECT_EQ(cache.release_free_pages(), bytes);
+}
 
 static void NewSpanCheckMappingAndRelease(zmalloc::PageCache &pc, size_t k) {
     std::lock_guard<std::mutex> lk(pc.page_mtx());

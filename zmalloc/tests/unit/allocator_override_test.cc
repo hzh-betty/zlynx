@@ -22,11 +22,37 @@ namespace {
 
 class AllocatorOverrideTest : public ::testing::Test {};
 
+TEST_F(AllocatorOverrideTest, ExplicitReleaseKeepsMallocAndAlignedBlocksUsable) {
+    auto *small = static_cast<unsigned char *>(std::malloc(64));
+    auto *medium = static_cast<unsigned char *>(std::malloc(512 * 1024));
+    void *aligned = nullptr;
+    ASSERT_NE(small, nullptr);
+    ASSERT_NE(medium, nullptr);
+    ASSERT_EQ(posix_memalign(&aligned, 65536, 128), 0);
+    std::memset(small, 0x5a, 64);
+    std::memset(medium, 0xa5, 512 * 1024);
+    std::memset(aligned, 0x3c, 128);
+    // 显式回收可与全局替换同时使用，存活块及对齐头仍应保留。
+    release_memory();
+    EXPECT_EQ(memory_stats().thread_cache_bytes, 0u);
+    EXPECT_GE(malloc_usable_size(small), 64u);
+    EXPECT_GE(malloc_usable_size(medium), 512u * 1024);
+    EXPECT_GE(malloc_usable_size(aligned), 128u);
+    EXPECT_EQ(small[63], 0x5a);
+    EXPECT_EQ(medium[512 * 1024 - 1], 0xa5);
+    EXPECT_EQ(static_cast<unsigned char *>(aligned)[127], 0x3c);
+    std::free(small);
+    std::free(medium);
+    std::free(aligned);
+    release_memory();
+}
+
 TEST_F(AllocatorOverrideTest, MallocWorksAfterThreadCacheShutdown) {
     bool finished = false;
     std::thread worker([&] {
         void *live = std::malloc(65);
         get_thread_cache()->shutdown();
+        release_memory();
         std::free(live);
         void *p = std::malloc(128);
         if (p != nullptr) {

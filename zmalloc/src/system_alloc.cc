@@ -67,4 +67,16 @@ void *system_alloc_nothrow(size_t kpage) noexcept {
 
 void system_free(void *ptr, size_t kpage) { munmap(ptr, kpage << PAGE_SHIFT); }
 
+bool system_release(void *ptr, size_t kpage) noexcept {
+    // 仅接受分配器整页范围，防止长度或地址溢出后建议回收错误区间。
+    const uintptr_t address = reinterpret_cast<uintptr_t>(ptr);
+    if (ptr == nullptr || kpage == 0 || (address & (PAGE_SIZE - 1)) != 0 ||
+        kpage > std::numeric_limits<size_t>::max() / PAGE_SIZE ||
+        address > std::numeric_limits<uintptr_t>::max() - kpage * PAGE_SIZE) {
+        errno = EINVAL;
+        return false;
+    }
+    return madvise(ptr, kpage * PAGE_SIZE, MADV_DONTNEED) == 0;
+}
+
 } // namespace zmalloc

@@ -22,6 +22,14 @@
 
 namespace zmalloc {
 
+/** @brief 受页锁保护的页缓存统计，不包含元数据映射。 */
+struct PageCacheStats {
+    size_t free_bytes;
+    size_t released_bytes;
+    size_t mapped_bytes;
+    size_t total_released_bytes;
+};
+
 /**
  * @brief 页缓存（单例）
  *
@@ -106,6 +114,12 @@ class PageCache : public NonCopyable {
      */
     void release_span_to_page_cache(Span *span);
 
+    /** @brief 建议回收完全空闲 Span 的物理页；调用者须持有 page_mtx_。 */
+    size_t release_free_pages();
+
+    /** @brief 获取页缓存统计；调用者须持有 page_mtx_。 */
+    PageCacheStats statistics();
+
     /** @brief 返回保护页缓存元数据的互斥锁；调用者负责加锁和解锁。 */
     std::mutex &page_mtx() { return page_mtx_; }
 
@@ -134,6 +148,8 @@ class PageCache : public NonCopyable {
     PageMap id_span_map_;         // 页号到 Span 的映射
     ObjectPool<Span> span_pool_;  // Span 对象池
     std::mutex page_mtx_;         // 全局锁
+    size_t mapped_bytes_ = 0;     // 受管页映射，不含元数据；由页锁保护。
+    size_t total_released_bytes_ = 0; // 累计成功建议回收字节数。
 };
 
 } // namespace zmalloc

@@ -3,10 +3,13 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <cstring>
 #include <cerrno>
 #include <limits>
 #include <new>
 #include <vector>
+#include <sys/mman.h>
+#include <unistd.h>
 
 #include "zmalloc/internal/zmalloc_config.h"
 
@@ -91,6 +94,39 @@ TEST_F(SystemAllocTest, NothrowEntryReportsFailureAndRemainsUsable) {
     EXPECT_EQ(ptr[0], 0x5a);
     EXPECT_EQ(ptr[PAGE_SIZE - 1], 0xa5);
     system_free(ptr, 1);
+}
+
+TEST_F(SystemAllocTest, ReleaseDiscardsPhysicalPagesAndKeepsAddressWritable) {
+    auto *ptr = static_cast<unsigned char *>(system_alloc(2));
+    std::memset(ptr, 0x5a, 2 * PAGE_SIZE);
+    const size_t os_page = static_cast<size_t>(sysconf(_SC_PAGESIZE));
+    std::vector<unsigned char> resident(2 * PAGE_SIZE / os_page);
+    ASSERT_EQ(mincore(ptr, 2 * PAGE_SIZE, resident.data()), 0);
+    for (unsigned char page : resident) EXPECT_EQ(page & 1, 1);
+
+    ASSERT_TRUE(system_release(ptr, 2));
+    // mincore 检查驻留页，避免用进程 RSS 的采样噪声判断回收是否成功。
+    ASSERT_EQ(mincore(ptr, 2 * PAGE_SIZE, resident.data()), 0);
+    for (unsigned char page : resident) EXPECT_EQ(page & 1, 0);
+    for (size_t i = 0; i < 2 * PAGE_SIZE; ++i) EXPECT_EQ(ptr[i], 0);
+    std::memset(ptr, 0xa5, 2 * PAGE_SIZE);
+    EXPECT_EQ(ptr[0], 0xa5);
+    EXPECT_EQ(ptr[2 * PAGE_SIZE - 1], 0xa5);
+    system_free(ptr, 2);
+}
+
+TEST_F(SystemAllocTest, ReleaseRejectsInvalidRanges) {
+    void *ptr = system_alloc(1);
+    EXPECT_FALSE(system_release(nullptr, 1));
+    EXPECT_FALSE(system_release(ptr, 0));
+    EXPECT_FALSE(system_release(static_cast<char *>(ptr) + 1, 1));
+    EXPECT_FALSE(system_release(ptr, std::numeric_limits<size_t>::max()));
+    const uintptr_t last_page =
+        std::numeric_limits<uintptr_t>::max() & ~(uintptr_t(PAGE_SIZE) - 1);
+    EXPECT_FALSE(system_release(reinterpret_cast<void *>(last_page), 1));
+    // 已解除的映射由内核拒绝，不能报告为成功回收。
+    system_free(ptr, 1);
+    EXPECT_FALSE(system_release(ptr, 1));
 }
 
 } // namespace

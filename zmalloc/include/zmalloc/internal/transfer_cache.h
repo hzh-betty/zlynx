@@ -130,6 +130,12 @@ class TransferCache : public NonCopyable {
      */
     size_t remove_range(size_t index, void *batch[], size_t count);
 
+    /** @brief 按每类初始数量有界归还中心层；返回归还对象的字节数。 */
+    size_t drain();
+
+    /** @brief 各大小类分别取样的缓存字节数，并发下不是整体原子快照。 */
+    size_t cached_bytes() const;
+
   private:
     TransferCache();
 

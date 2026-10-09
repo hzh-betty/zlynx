@@ -20,6 +20,31 @@
 namespace zmalloc {
 
 /**
+ * @brief 缓存及页内存统计，不含 PageMap/ObjectPool 等元数据。
+ * @note 线程缓存仅统计调用线程；共享缓存按大小类分别取样，整体不是原子快照。
+ *       released 字节表示成功建议回收的页范围，不代表实际 RSS 降幅。
+ */
+struct MemoryStats {
+    size_t thread_cache_bytes;        // 当前线程缓存的空闲对象字节数。
+    size_t transfer_cache_bytes;      // 共享传输缓存的空闲对象字节数。
+    size_t page_cache_free_bytes;     // 页缓存中完全空闲的页字节数。
+    size_t page_cache_released_bytes; // 其中整段已建议回收的空闲 Span 字节数。
+    size_t page_cache_mapped_bytes;   // 受管页的虚拟映射字节数，含直接分配的大块。
+    size_t total_released_bytes;      // 累计成功建议回收的字节数，重复复用后可再次计入。
+};
+
+/**
+ * @brief 清理当前线程缓存、有界排空传输缓存，并回收完全空闲页的物理内存。
+ * @return 本次成功 MADV_DONTNEED 的页范围字节数；保留虚拟地址映射。
+ * @note 不访问其他线程的 TLS；并发分配时不保证共享缓存最终为空。
+ *       可重复调用，调用后仍可正常分配；首次初始化可能抛出 std::bad_alloc。
+ */
+size_t release_memory();
+
+/** @brief 返回内存统计；首次初始化可能抛出 std::bad_alloc。 */
+MemoryStats memory_stats();
+
+/**
  * @brief 分配内存
  * @param size 请求字节数
  * @return 内存指针，失败抛出 std::bad_alloc

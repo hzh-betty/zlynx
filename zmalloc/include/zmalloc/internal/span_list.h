@@ -34,6 +34,7 @@ struct Span {
     void *free_list = nullptr; // span 内部空闲对象链表头。
 
     bool is_use = false; // 是否处于活跃分配状态。
+    bool is_released = false; // 空闲 Span 的整段页是否已成功建议物理回收。
 };
 
 /**

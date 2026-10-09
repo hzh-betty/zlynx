@@ -32,6 +32,9 @@ void *system_alloc_nothrow(size_t kpage) noexcept;
  */
 void system_free(void *ptr, size_t kpage);
 
+/** @brief 建议回收空闲页的物理内存，保留地址；失败返回 false，不抛异常。 */
+bool system_release(void *ptr, size_t kpage) noexcept;
+
 } // namespace zmalloc
 
 #endif // ZMALLOC_INTERNAL_SYSTEM_ALLOC_H_

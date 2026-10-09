@@ -18,6 +18,7 @@ find_package(Threads REQUIRED)
 set(ZMALLOC_SOURCES
     src/size_class.cc
     src/system_alloc.cc
+    src/memory.cc
     src/free_list.cc
     src/transfer_cache.cc
     src/thread_cache.cc
