@@ -45,8 +45,8 @@ target_link_libraries(zlog
         fmt::fmt
         Threads::Threads
 )
-# 统一注入 C++ 标准、warning 和可选 coverage；这些策略由 helper 控制。
-zlynx_apply_common_options(zlog)
+# 源码与安装接口最低要求 C++11，允许调用方选择更高编译标准。
+zlynx_apply_common_options(zlog CXX_STANDARD 11)
 
 # EXPORT_NAME 决定 install/export 后的目标名为 zlog::zlog。
 set_target_properties(zlog PROPERTIES

@@ -39,9 +39,19 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 function(zlynx_apply_common_options target_name)
-    # PUBLIC 编译特性会导出给消费者，统一使用 C++17。
-    target_compile_features(${target_name} PUBLIC cxx_std_17)
-    set_target_properties(${target_name} PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+    cmake_parse_arguments(ARG "" "CXX_STANDARD" "" ${ARGN})
+    # 模块可声明自己的最低标准；未指定时沿用仓库的 C++17 约定。
+    set(required_standard 17)
+    if(ARG_CXX_STANDARD)
+        set(required_standard ${ARG_CXX_STANDARD})
+    endif()
+    target_compile_features(${target_name} PUBLIC cxx_std_${required_standard})
+    # 调用方选择更高标准时保留该选择，不提高安装接口的最低要求。
+    set(build_standard ${required_standard})
+    if(CMAKE_CXX_STANDARD AND CMAKE_CXX_STANDARD GREATER build_standard)
+        set(build_standard ${CMAKE_CXX_STANDARD})
+    endif()
+    set_target_properties(${target_name} PROPERTIES CXX_STANDARD ${build_standard} CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
 
     # warning/coverage 是项目内部构建策略，使用 PRIVATE，避免污染外部消费者。
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
