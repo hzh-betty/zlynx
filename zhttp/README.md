@@ -38,7 +38,11 @@ int main() {
 `run()` 构建并启动服务，阻塞至收到 SIGINT 或 SIGTERM。`build()` 只构造和初始化
 服务器，不启动监听；需要自行管理生命周期时，调用返回对象的 `start()` / `stop()`。
 Builder 将线程数与栈模式映射为每个服务器实例的 RuntimeOptions，不修改全局协程配置。
-直接构造时使用 `HttpServer(address, options)`，线程数由构造选项决定。
+直接构造时使用 `HttpServer(address, options)`，Runtime 在首次 start() 时创建。
+也可通过 `HttpServer(address, runtime, application)` 借用已有 Runtime，并在多个
+监听器间共享 Application；Runtime 必须比所有监听器活得更久。
+start()/stop()/析构由控制线程负责，请求回调使用 request_stop()，随后由控制线程 stop() 等待。
+start() 与 set_ssl_certificate() 返回 znet::Result<void>，失败原因通过 error() 获取。
 Builder 默认注册请求体解析中间件，按 Content-Type 解析 JSON、URL 编码表单和
 multipart。直接构造 `HttpServer` 时，可自行注册 `RequestBodyMiddleware`，也可通过
 Context 的访问接口惰性解析正文。
@@ -81,7 +85,8 @@ cmake -S . -B build/debug -G Ninja \
 cmake --build build/debug -j 4
 ```
 
-源码树内的应用链接 `zhttp` 或其别名 `zhttp::zhttp`。安装后通过 CMake 包接入：
+源码树内及安装后的完整应用链接 `zhttp::zhttp`；离线 HTTP 处理链接 `zhttp::core`，
+核心库不依赖 znet、zco 或 zlog。安装后通过 CMake 包接入：
 
 ```bash
 cmake --preset release
@@ -241,7 +246,7 @@ std::shared_ptr<zhttp::HttpServer> make_server() {
 | `ErrorMiddleware` | 统一格式化 4xx / 5xx 响应 |
 | `SecurityMiddleware` | 补充缺失的安全响应头，HSTS 默认关闭 |
 
-各中间件通过 `Options` 配置，详见 [middleware](middleware/) 的头文件。
+各中间件通过 `Options` 配置，详见 [middleware](include/zhttp/middleware/) 的头文件。
 `SessionManager` 使用带滑动过期的进程内存存储，按操作次数清理过期项；会话数据
 不跨进程持久化，返回的请求级 `Session` 不支持跨线程共享读写。
 
@@ -362,33 +367,44 @@ keepalive = 60000
 
 ## 目录与接口
 
-头文件与实现相邻，按职责分目录：
+公开头文件位于 include/zhttp/，包含路径继续使用 zhttp/...。私有实现位于 src/：
 
-```text
-zhttp/
-  http_*.h/.cc       请求、响应、Context、头部、正文和服务器
-  uri.h/.cc         请求目标与查询参数
-  server_config.*   TOML 配置与校验
-  router/           路由匹配与业务处理器
-  middleware/       两阶段钩子和内置中间件
-  content/          请求体解析缓存与 multipart
-  parser/           HTTP、chunked、WebSocket 帧解析
-  pipeline/         中间件选择、业务执行与异常处理
-  writer/           响应边界、文件与同步流写出
-  protocol/         连接上的 HTTP/WebSocket 协议处理
-  websocket/        握手、消息组装与发送接口
-  runtime/          服务构建、信号与守护进程
-  internal/         基数树、Range、路径与文件工具
-  tests/            unit、integration、benchmark
+| 位置 | 职责 |
+|---|---|
+| src/application/ | HttpApplication、路由与中间件执行 |
+| src/message/、content/ | 请求、响应、URI、正文与上传数据 |
+| src/router/ | 路由匹配及内部树结构 |
+| src/middleware/、rate_limit/、static_files/、session/ | HTTP 策略与具体资源存储 |
+| src/protocol/http/、protocol/websocket/ | 协议解析、编码、发送与升级 |
+| src/runtime/、config/ | 监听器、Runtime 所有权、日志、配置与进程运行 |
+| tests/support/ | 请求构造与网络测试辅助 |
+
+HttpApplication 拥有 Router 与内部 RequestPipeline，只同步构造响应；传输层负责提交和完成通知。
+ResponseEncoder 决定 framing，HttpResponseWriter 执行网络写出。连接会话在 HTTP 回调返回后
+交接 WebSocket 协议，并继续处理已缓冲的帧。Parser、Pipeline、Writer 和协议实现不安装。
+
+离线执行使用生产入口：
+
+```cpp
+zhttp::HttpApplication application;
+application.router().get("/health", [](zhttp::HttpContext &context) {
+    context.response().text("ok");
+});
+application.freeze();
+auto request = std::make_shared<zhttp::HttpRequest>();
+request->set_method(zhttp::HttpMethod::GET);
+request->set_path("/health");
+zhttp::HttpContext context(request);
+application.handle(context);
+// 最终消费方在写出成功后报告完成。
+context.complete(zhttp::CompletionResult::Completed);
 ```
 
-`HttpRequest` / `HttpResponse` 描述协议值，`HttpContext` 承载本次业务处理；
-Router 只匹配处理器，Pipeline 执行处理链，Writer 决定响应边界并发送。
-连接调度者在 HTTP 回调返回后交接 WebSocket 协议，并继续处理缓冲区内已有的帧。
+build() 为每个服务器创建独立的同步错误日志回调，不注册全局日志器；也可用
+server.set_error_handler() 接入应用自己的日志。配置加载、路由和离线处理没有日志初始化副作用。
+Daemon 只在显式进程运行入口安装信号处理，返回时恢复原处理器；守护模式应在创建线程前调用。
 
-安装包只导出 `CMakeLists.txt` 的 `PUBLIC_HEADERS` 列表；Parser、Pipeline、Writer、
-协议处理器和内部工具不作为安装后的公共接口。头文件采用宏保护，API 使用
-JavaDoc 风格的 `/** ... */` 文档注释，核心实现用行注释说明状态转换与资源约束。
+4.0 的 API 迁移、实际目录树和验证结果见 [重构实施报告](docs/refactoring-report.md)。
 
 ## 测试、覆盖率与性能
 
