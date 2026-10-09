@@ -6,7 +6,7 @@ shift || true
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
-BUILD_DIR="${BUILD_DIR:-${ROOT_DIR}/build}"
+BUILD_DIR="${BUILD_DIR:-${ROOT_DIR}/build/perf}"
 RESULT_ROOT="${RESULT_ROOT:-${SCRIPT_DIR}/perf_results}"
 TS="$(date +%Y%m%d_%H%M%S)"
 
