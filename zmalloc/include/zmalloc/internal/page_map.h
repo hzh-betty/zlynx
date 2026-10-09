@@ -14,15 +14,22 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <new>
 
 #include "object_pool.h"
 #include "system_alloc.h"
 #include "zmalloc_config.h"
 
 namespace zmalloc {
+
+// 各层 PageMap 均允许单写者与多个查询者并发访问；写操作由调用方串行化。
+// 节点完整初始化后以 release 发布，查询以 acquire 读取；发布后的节点不回收。
+// 叶项同样使用原子发布，但返回指针不延长目标对象的生命周期。查询者解引用前
+// 必须持有对象的存活保证或调用方的外部锁；销毁 PageMap 前须停止所有访问。
 
 /**
  * @brief 一层基数树（适用于小地址空间/小 BITS）
@@ -44,13 +51,16 @@ template <int BITS> class PageMap1 {
     /** @brief 分配并清零固定大小的映射数组。 */
     PageMap1() {
         // 需要开辟数组的大小（字节）
-        const size_t bytes = sizeof(void *) * LENGTH;
+        const size_t bytes = sizeof(std::atomic<void *>) * LENGTH;
         // 按页对齐后的大小（字节）
         const size_t aligned_bytes = (bytes + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
         pages_ = aligned_bytes >> PAGE_SHIFT;
 
-        array_ = static_cast<void **>(system_alloc(pages_));
-        std::fill_n(array_, LENGTH, nullptr);
+        array_ = static_cast<std::atomic<void *> *>(system_alloc(pages_));
+        // mmap 只提供原始存储，须先建立原子对象的生命周期。
+        for (size_t i = 0; i < LENGTH; ++i) {
+            new (array_ + i) std::atomic<void *>(nullptr);
+        }
     }
 
     /** @brief 归还构造时申请的映射数组。 */
@@ -70,13 +80,13 @@ template <int BITS> class PageMap1 {
         if ((k >> BITS) > 0) {
             return nullptr;
         }
-        return array_[static_cast<size_t>(k)];
+        return array_[static_cast<size_t>(k)].load(std::memory_order_acquire);
     }
 
     /** @brief 设置单个页号映射；页号必须在本层范围内。 */
     void set(Number k, void *v) {
         assert((k >> BITS) == 0);
-        array_[static_cast<size_t>(k)] = v;
+        array_[static_cast<size_t>(k)].store(v, std::memory_order_release);
     }
 
     // 批量设置 [start, start+n-1] 的映射。
@@ -91,14 +101,18 @@ template <int BITS> class PageMap1 {
         if (!ok) {
             return;
         }
-        std::fill_n(array_ + static_cast<size_t>(start), n, v);
+        for (size_t i = 0; i < n; ++i) {
+            array_[start + i].store(v, std::memory_order_release);
+        }
     }
 
     // 清除已有映射不应分配 radix tree 节点。
     /** @brief 清除连续 n 个页号的映射。 */
     void clear_range(Number start, size_t n) {
         assert(ensure(start, n));
-        std::fill_n(array_ + start, n, nullptr);
+        for (size_t i = 0; i < n; ++i) {
+            array_[start + i].store(nullptr, std::memory_order_release);
+        }
     }
 
     /** @brief 检查连续页号范围是否可表示；固定数组不会额外分配节点。 */
@@ -112,7 +126,7 @@ template <int BITS> class PageMap1 {
     }
 
   private:
-    void **array_ = nullptr;
+    std::atomic<void *> *array_ = nullptr;
     size_t pages_ = 0;
 };
 
@@ -126,7 +140,9 @@ template <int BITS> class PageMap2 {
 
     /** @brief 初始化根层，并预建可表示地址范围的叶节点。 */
     PageMap2() {
-        root_.fill(nullptr);
+        for (auto &entry : root_) {
+            entry.store(nullptr, std::memory_order_relaxed);
+        }
         preallocate_more_memory();
     }
 
@@ -134,10 +150,13 @@ template <int BITS> class PageMap2 {
     void *get(Number k) const {
         const Number i1 = k >> LEAF_BITS;
         const Number i2 = k & (LEAF_LENGTH - 1);
-        if ((k >> BITS) > 0 || root_[i1] == nullptr) {
+        if ((k >> BITS) > 0) {
             return nullptr;
         }
-        return root_[i1]->values[i2];
+        Leaf *leaf = root_[i1].load(std::memory_order_acquire);
+        return leaf == nullptr
+                   ? nullptr
+                   : leaf->values[i2].load(std::memory_order_acquire);
     }
 
     /** @brief 设置单个页号映射；对应叶节点须已由 ensure 建立。 */
@@ -145,7 +164,8 @@ template <int BITS> class PageMap2 {
         const Number i1 = k >> LEAF_BITS;
         const Number i2 = k & (LEAF_LENGTH - 1);
         assert(i1 < ROOT_LENGTH);
-        root_[i1]->values[i2] = v;
+        Leaf *leaf = root_[i1].load(std::memory_order_relaxed);
+        leaf->values[i2].store(v, std::memory_order_release);
     }
 
     // 批量设置 [start, start+n-1] 的映射。
@@ -163,7 +183,10 @@ template <int BITS> class PageMap2 {
             const Number i1 = start >> LEAF_BITS;
             const Number i2 = start & (LEAF_LENGTH - 1);
             const size_t count = std::min<size_t>(n, LEAF_LENGTH - i2);
-            std::fill_n(root_[i1]->values.data() + i2, count, v);
+            Leaf *leaf = root_[i1].load(std::memory_order_relaxed);
+            for (size_t i = 0; i < count; ++i) {
+                leaf->values[i2 + i].store(v, std::memory_order_release);
+            }
             start += count;
             n -= count;
         }
@@ -176,8 +199,11 @@ template <int BITS> class PageMap2 {
             const Number i2 = start & (LEAF_LENGTH - 1);
             const size_t count = std::min<size_t>(n, LEAF_LENGTH - i2);
             assert(i1 < ROOT_LENGTH);
-            if (root_[i1] != nullptr) {
-                std::fill_n(root_[i1]->values.data() + i2, count, nullptr);
+            Leaf *leaf = root_[i1].load(std::memory_order_relaxed);
+            if (leaf != nullptr) {
+                for (size_t i = 0; i < count; ++i) {
+                    leaf->values[i2 + i].store(nullptr, std::memory_order_release);
+                }
             }
             start += count;
             n -= count;
@@ -194,10 +220,12 @@ template <int BITS> class PageMap2 {
             if (i1 >= ROOT_LENGTH) {
                 return false;
             }
-            if (root_[i1] == nullptr) {
+            if (root_[i1].load(std::memory_order_relaxed) == nullptr) {
                 Leaf *leaf = leaf_pool_.allocate();
-                leaf->values.fill(nullptr);
-                root_[i1] = leaf;
+                for (auto &value : leaf->values) {
+                    value.store(nullptr, std::memory_order_relaxed);
+                }
+                root_[i1].store(leaf, std::memory_order_release);
             }
             key = ((key >> LEAF_BITS) + 1) << LEAF_BITS;
         }
@@ -216,10 +244,10 @@ template <int BITS> class PageMap2 {
     static constexpr int LEAF_LENGTH = 1 << LEAF_BITS;
 
     struct Leaf {
-        std::array<void *, LEAF_LENGTH> values;
+        std::array<std::atomic<void *>, LEAF_LENGTH> values;
     };
 
-    std::array<Leaf *, ROOT_LENGTH> root_;
+    std::array<std::atomic<Leaf *>, ROOT_LENGTH> root_;
     ObjectPool<Leaf> leaf_pool_;
 };
 
@@ -240,11 +268,18 @@ template <int BITS> class PageMap3 {
         const Number i2 = (k >> LEAF_BITS) & (INTERIOR_LENGTH - 1);
         const Number i3 = k & (LEAF_LENGTH - 1);
 
-        if ((k >> BITS) > 0 || root_->ptrs[i1] == nullptr ||
-            root_->ptrs[i1]->ptrs[i2] == nullptr) {
+        if ((k >> BITS) > 0) {
             return nullptr;
         }
-        return reinterpret_cast<Leaf *>(root_->ptrs[i1]->ptrs[i2])->values[i3];
+        Node *node = root_->ptrs[i1].load(std::memory_order_acquire);
+        if (node == nullptr) {
+            return nullptr;
+        }
+        Leaf *leaf = reinterpret_cast<Leaf *>(
+            node->ptrs[i2].load(std::memory_order_acquire));
+        return leaf == nullptr
+                   ? nullptr
+                   : leaf->values[i3].load(std::memory_order_acquire);
     }
 
     /** @brief 设置单个页号映射，必要时建立对应的中间节点和叶节点。 */
@@ -254,11 +289,15 @@ template <int BITS> class PageMap3 {
         const Number i2 = (k >> LEAF_BITS) & (INTERIOR_LENGTH - 1);
         const Number i3 = k & (LEAF_LENGTH - 1);
 
-        if (root_->ptrs[i1] == nullptr ||
-            root_->ptrs[i1]->ptrs[i2] == nullptr) {
+        Node *node = root_->ptrs[i1].load(std::memory_order_relaxed);
+        if (node == nullptr ||
+            node->ptrs[i2].load(std::memory_order_relaxed) == nullptr) {
             ensure(k, 1);
+            node = root_->ptrs[i1].load(std::memory_order_relaxed);
         }
-        reinterpret_cast<Leaf *>(root_->ptrs[i1]->ptrs[i2])->values[i3] = v;
+        Leaf *leaf = reinterpret_cast<Leaf *>(
+            node->ptrs[i2].load(std::memory_order_relaxed));
+        leaf->values[i3].store(v, std::memory_order_release);
     }
 
     // 批量设置 [start, start+n-1] 的映射。
@@ -281,9 +320,12 @@ template <int BITS> class PageMap3 {
                 (start >> LEAF_BITS) & (INTERIOR_LENGTH - 1);
             const Number i3 = start & (LEAF_LENGTH - 1);
             const size_t count = std::min<size_t>(n, LEAF_LENGTH - i3);
-            Leaf *leaf =
-                reinterpret_cast<Leaf *>(root_->ptrs[i1]->ptrs[i2]);
-            std::fill_n(leaf->values.data() + i3, count, v);
+            Node *node = root_->ptrs[i1].load(std::memory_order_relaxed);
+            Leaf *leaf = reinterpret_cast<Leaf *>(
+                node->ptrs[i2].load(std::memory_order_relaxed));
+            for (size_t i = 0; i < count; ++i) {
+                leaf->values[i3 + i].store(v, std::memory_order_release);
+            }
             start += count;
             n -= count;
         }
@@ -297,11 +339,16 @@ template <int BITS> class PageMap3 {
             const Number i3 = start & (LEAF_LENGTH - 1);
             const size_t count = std::min<size_t>(n, LEAF_LENGTH - i3);
             assert(i1 < INTERIOR_LENGTH);
-            if (root_->ptrs[i1] != nullptr &&
-                root_->ptrs[i1]->ptrs[i2] != nullptr) {
-                Leaf *leaf =
-                    reinterpret_cast<Leaf *>(root_->ptrs[i1]->ptrs[i2]);
-                std::fill_n(leaf->values.data() + i3, count, nullptr);
+            Node *node = root_->ptrs[i1].load(std::memory_order_relaxed);
+            if (node != nullptr) {
+                Leaf *leaf = reinterpret_cast<Leaf *>(
+                    node->ptrs[i2].load(std::memory_order_relaxed));
+                if (leaf != nullptr) {
+                    for (size_t i = 0; i < count; ++i) {
+                        leaf->values[i3 + i].store(nullptr,
+                                                 std::memory_order_release);
+                    }
+                }
             }
             start += count;
             n -= count;
@@ -320,18 +367,22 @@ template <int BITS> class PageMap3 {
             if (i1 >= INTERIOR_LENGTH || i2 >= INTERIOR_LENGTH) {
                 return false;
             }
-            if (root_->ptrs[i1] == nullptr) {
-                Node *node = new_node();
+            Node *node = root_->ptrs[i1].load(std::memory_order_relaxed);
+            if (node == nullptr) {
+                node = new_node();
                 if (node == nullptr)
                     return false;
-                root_->ptrs[i1] = node;
+                root_->ptrs[i1].store(node, std::memory_order_release);
             }
-            if (root_->ptrs[i1]->ptrs[i2] == nullptr) {
+            if (node->ptrs[i2].load(std::memory_order_relaxed) == nullptr) {
                 Leaf *leaf = leaf_pool_.allocate();
                 if (leaf == nullptr)
                     return false;
-                leaf->values.fill(nullptr);
-                root_->ptrs[i1]->ptrs[i2] = reinterpret_cast<Node *>(leaf);
+                for (auto &value : leaf->values) {
+                    value.store(nullptr, std::memory_order_relaxed);
+                }
+                node->ptrs[i2].store(reinterpret_cast<Node *>(leaf),
+                                    std::memory_order_release);
             }
             key = ((key >> LEAF_BITS) + 1) << LEAF_BITS;
         }
@@ -345,17 +396,19 @@ template <int BITS> class PageMap3 {
     static constexpr int LEAF_LENGTH = 1 << LEAF_BITS;
 
     struct Node {
-        std::array<Node *, INTERIOR_LENGTH> ptrs;
+        std::array<std::atomic<Node *>, INTERIOR_LENGTH> ptrs;
     };
 
     struct Leaf {
-        std::array<void *, LEAF_LENGTH> values;
+        std::array<std::atomic<void *>, LEAF_LENGTH> values;
     };
 
     Node *new_node() {
         Node *result = node_pool_.allocate();
         if (result != nullptr) {
-            result->ptrs.fill(nullptr);
+            for (auto &entry : result->ptrs) {
+                entry.store(nullptr, std::memory_order_relaxed);
+            }
         }
         return result;
     }

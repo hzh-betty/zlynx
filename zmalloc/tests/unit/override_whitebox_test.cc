@@ -30,6 +30,33 @@ TEST_F(OverrideWhiteboxTest, BootstrapAllocateFreeRoundTrip) {
     EXPECT_FALSE(is_bootstrap_pointer(p));
 }
 
+TEST_F(OverrideWhiteboxTest, BootstrapOperationsWhilePageLockIsHeld) {
+    PageCache &pc = PageCache::get_instance();
+    std::lock_guard<std::mutex> lock(pc.page_mtx());
+    AllocatorCallGuard guard;
+    // 模拟页锁内的运行库递归调用；普通和对齐 bootstrap 块均不能重入页锁。
+    void *plain = allocate_bytes(32);
+    ASSERT_NE(plain, nullptr);
+    EXPECT_EQ(managed_span(plain), nullptr);
+    EXPECT_EQ(usable_size(plain), 32u);
+    plain = reallocate_bytes(plain, 64);
+    ASSERT_NE(plain, nullptr);
+    deallocate_bytes(plain);
+
+    void *aligned = aligned_allocate_bytes(32, 65536);
+    ASSERT_NE(aligned, nullptr);
+    EXPECT_EQ(managed_span(aligned), nullptr);
+    EXPECT_EQ(usable_size(aligned), 32u);
+    aligned = reallocate_bytes(aligned, 64);
+    ASSERT_NE(aligned, nullptr);
+    EXPECT_EQ(usable_size(aligned), 64u);
+    deallocate_bytes(aligned);
+
+    aligned = aligned_allocate_bytes(32, 65536);
+    ASSERT_NE(aligned, nullptr);
+    deallocate_bytes(aligned);
+}
+
 TEST_F(OverrideWhiteboxTest, BootstrapReallocatePaths) {
     unsigned char *p =
         static_cast<unsigned char *>(bootstrap_reallocate(nullptr, 8));

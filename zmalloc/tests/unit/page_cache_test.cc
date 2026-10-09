@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <thread>
 
 #include "zmalloc/internal/span_list.h"
 #include "zmalloc/internal/system_alloc.h"
@@ -45,7 +47,7 @@ static void NewSpanCheckMappingAndRelease(zmalloc::PageCache &pc, size_t k) {
     // 小 span：要求每一页都建立映射。
     for (size_t i = 0; i < k; ++i) {
         auto *m =
-            static_cast<zmalloc::Span *>(pc.id_span_map_.get(page_id + i));
+            pc.decode_span(pc.id_span_map_.get(page_id + i));
         ASSERT_EQ(m, span);
         void *addr =
             reinterpret_cast<void *>((page_id + i) << zmalloc::PAGE_SHIFT);
@@ -276,8 +278,7 @@ TEST_F(PageCacheTest, NewSpanEstablishesAllPagesMapForSmallK) {
     zmalloc::Span *span = pc.new_span(3);
     ASSERT_NE(span, nullptr);
     for (size_t i = 0; i < span->n; ++i) {
-        auto *m = static_cast<zmalloc::Span *>(
-            pc.id_span_map_.get(span->page_id + i));
+        auto *m = pc.decode_span(pc.id_span_map_.get(span->page_id + i));
         ASSERT_EQ(m, span);
     }
 }
@@ -347,6 +348,79 @@ TEST_P(PageCacheLargeSpanParamTest, LargeSpanAllocFree) {
 
 INSTANTIATE_TEST_SUITE_P(SpanSizes, PageCacheLargeSpanParamTest,
                          ::testing::Values(129u, 256u, 512u));
+
+TEST_F(PageCacheTest, CachedObjectTagIsDecodedAndClearedBeforeReuse) {
+    std::lock_guard<std::mutex> lock(pc.page_mtx());
+    zmalloc::Span *span = pc.new_span(1);
+    span->obj_size = 64;
+    void *address = reinterpret_cast<void *>(span->page_id << zmalloc::PAGE_SHIFT);
+    // 通用查询去除标记，释放后缓存边界映射不得继续携带分配标记。
+    EXPECT_EQ(pc.try_map_cached_object_to_span(address), span);
+    EXPECT_EQ(pc.try_map_object_to_span(address), span);
+    EXPECT_EQ(pc.map_object_to_span(address), span);
+    pc.release_span_to_page_cache(span);
+    EXPECT_EQ(pc.try_map_cached_object_to_span(address), nullptr);
+
+    span = pc.new_span(64);
+    address = reinterpret_cast<void *>(span->page_id << zmalloc::PAGE_SHIFT);
+    EXPECT_EQ(pc.try_map_cached_object_to_span(address), span);
+    EXPECT_EQ(pc.try_map_object_to_span(address), span);
+    pc.release_span_to_page_cache(span);
+    EXPECT_EQ(pc.try_map_cached_object_to_span(address), nullptr);
+
+    // 直接系统映射可能被解除，必须保留有锁查询路径。
+    span = pc.new_span(256);
+    address = reinterpret_cast<void *>(span->page_id << zmalloc::PAGE_SHIFT);
+    EXPECT_EQ(pc.try_map_cached_object_to_span(address), nullptr);
+    EXPECT_EQ(pc.try_map_object_to_span(address), span);
+    pc.release_span_to_page_cache(span);
+}
+
+TEST_F(PageCacheTest, ArbitraryQueriesHoldPageLockDuringSpanReuse) {
+    std::atomic<void *> candidate(nullptr);
+    std::atomic<bool> reader_ready(false);
+    std::atomic<bool> done(false);
+    std::atomic<bool> valid(true);
+    std::thread reader([&] {
+        reader_ready.store(true, std::memory_order_release);
+        do {
+            // candidate 不保证对象存活，必须从查询开始就持锁，防止 Span 被复用。
+            std::lock_guard<std::mutex> lock(pc.page_mtx());
+            void *address = candidate.load(std::memory_order_relaxed);
+            zmalloc::Span *span = pc.try_map_object_to_span(address);
+            if (span != nullptr) {
+                const zmalloc::PageId id =
+                    reinterpret_cast<zmalloc::PageId>(address) >>
+                    zmalloc::PAGE_SHIFT;
+                if (span->n == 0 || id < span->page_id ||
+                    id - span->page_id >= span->n ||
+                    (!span->is_use && span->obj_size != 0)) {
+                    valid.store(false, std::memory_order_relaxed);
+                }
+            }
+        } while (!done.load(std::memory_order_acquire));
+    });
+    std::thread writer([&] {
+        while (!reader_ready.load(std::memory_order_acquire)) {
+            std::this_thread::yield();
+        }
+        for (size_t round = 0; round < 1000; ++round) {
+            std::lock_guard<std::mutex> lock(pc.page_mtx());
+            // 同时覆盖缓存块拆分/合并，以及系统映射释放后的元数据复用。
+            const size_t pages = round % 2 == 0 ? round % 128 + 1 : 256;
+            zmalloc::Span *span = pc.new_span(pages);
+            span->obj_size = pages * zmalloc::PAGE_SIZE;
+            candidate.store(
+                reinterpret_cast<void *>(span->page_id << zmalloc::PAGE_SHIFT),
+                std::memory_order_relaxed);
+            pc.release_span_to_page_cache(span);
+        }
+        done.store(true, std::memory_order_release);
+    });
+    writer.join();
+    reader.join();
+    EXPECT_TRUE(valid.load(std::memory_order_relaxed));
+}
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

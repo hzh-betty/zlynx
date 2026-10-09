@@ -71,7 +71,7 @@ Span *PageCache::new_span(size_t k) {
         // 关键步骤：小对象 span 需要为每一页建立映射，支持：
         // - map_object_to_span（任意对象地址 -> 页号 -> span）
         // - Central/Thread 回收时按对象地址找到 span
-        id_span_map_.set_range(k_span->page_id, k_span->n, k_span);
+        map_cached_span(k_span);
         return k_span;
     }
 
@@ -115,7 +115,7 @@ Span *PageCache::new_span(size_t k) {
             id_span_map_.set(n_span->page_id + n_span->n - 1, n_span);
 
             // 建立 k_span 所有页的映射
-            id_span_map_.set_range(k_span->page_id, k_span->n, k_span);
+            map_cached_span(k_span);
             return k_span;
         }
     }
@@ -178,7 +178,7 @@ void PageCache::release_span_to_page_cache(Span *span) {
     // 1) 向前合并
     while (true) {
         PageId prev_id = span->page_id - 1;
-        Span *ret = static_cast<Span *>(id_span_map_.get(prev_id));
+        Span *ret = decode_span(id_span_map_.get(prev_id));
         if (ret == nullptr) {
             break;
         }
@@ -201,7 +201,7 @@ void PageCache::release_span_to_page_cache(Span *span) {
     // 2) 向后合并
     while (true) {
         PageId next_id = span->page_id + span->n;
-        Span *ret = static_cast<Span *>(id_span_map_.get(next_id));
+        Span *ret = decode_span(id_span_map_.get(next_id));
         if (ret == nullptr) {
             break;
         }

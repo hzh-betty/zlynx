@@ -489,28 +489,31 @@ TEST_F(ConcurrentAllocTest, MultiProducerSingleConsumer) {
     constexpr int kProducers = 4;
     constexpr int kItemsPerProducer = 100;
 
-    std::vector<void *> shared_buffer(kProducers * kItemsPerProducer, nullptr);
-    std::atomic<int> produced{0};
-    std::atomic<int> consumed{0};
+    std::vector<std::atomic<void *>> shared_buffer(kProducers * kItemsPerProducer);
+    for (auto &slot : shared_buffer) {
+        slot.store(nullptr, std::memory_order_relaxed);
+    }
+    int consumed = 0;
 
-    auto producer = [&shared_buffer, &produced](int start_idx) {
+    auto producer = [&shared_buffer](int start_idx) {
         for (int i = 0; i < kItemsPerProducer; ++i) {
-            shared_buffer[start_idx + i] = zmalloc(64);
-            produced.fetch_add(1);
+            // 总产量不能证明当前槽已写入，按槽发布指针才能安全交接所有权。
+            shared_buffer[start_idx + i].store(zmalloc(64),
+                                               std::memory_order_release);
         }
     };
 
-    auto consumer = [&shared_buffer, &produced, &consumed]() {
-        int total = kProducers * kItemsPerProducer;
-        while (consumed.load() < total) {
-            int idx = consumed.load();
-            if (idx < produced.load() && shared_buffer[idx] != nullptr) {
-                if (consumed.compare_exchange_weak(idx, idx + 1)) {
-                    zfree(shared_buffer[idx]);
-                    shared_buffer[idx] = nullptr;
-                }
+    auto consumer = [&shared_buffer, &consumed]() {
+        const int total = kProducers * kItemsPerProducer;
+        while (consumed < total) {
+            void *ptr = shared_buffer[consumed].load(std::memory_order_acquire);
+            if (ptr != nullptr) {
+                zfree(ptr);
+                shared_buffer[consumed].store(nullptr, std::memory_order_relaxed);
+                ++consumed;
+            } else {
+                std::this_thread::yield();
             }
-            std::this_thread::yield();
         }
     };
 
@@ -525,7 +528,7 @@ TEST_F(ConcurrentAllocTest, MultiProducerSingleConsumer) {
     }
     cons_thread.join();
 
-    EXPECT_EQ(consumed.load(), kProducers * kItemsPerProducer);
+    EXPECT_EQ(consumed, kProducers * kItemsPerProducer);
 }
 
 // 边界大小并发分配

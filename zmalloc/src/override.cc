@@ -239,8 +239,7 @@ bool is_power_of_two(size_t value) noexcept {
     return value != 0 && (value & (value - 1)) == 0;
 }
 
-Span *managed_span(void *ptr) {
-    Span *span = PageCache::get_instance().try_map_object_to_span(ptr);
+Span *validate_managed_span(void *ptr, Span *span) {
     if (span == nullptr || !span->is_use) {
         return nullptr;
     }
@@ -265,6 +264,31 @@ Span *managed_span(void *ptr) {
     }
 
     return span;
+}
+
+// 冷路径单独保留锁的生命周期，避免常见的小对象查询承担加锁路径的栈开销。
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#endif
+Span *managed_span_slow(void *ptr) {
+    // 页锁内的递归分配（包括对齐块）来自 bootstrap，须先识别以避免重入页锁。
+    if ((tls_initializing_allocator || tls_allocator_call_depth != 0) &&
+        bootstrap_contains_address(ptr)) {
+        return nullptr;
+    }
+    PageCache &pc = PageCache::get_instance();
+    std::lock_guard<std::mutex> lock(pc.page_mtx());
+    return validate_managed_span(ptr, pc.try_map_object_to_span(ptr));
+}
+
+Span *managed_span(void *ptr) {
+    // 带标记的缓存页不会被解除映射；合法指针的存活期保护 Span 字段。
+    Span *span = PageCache::get_instance().try_map_cached_object_to_span(ptr);
+    if (span != nullptr) {
+        return validate_managed_span(ptr, span);
+    }
+    // 外部地址及直接系统映射没有上述保证，查询及字段检查须与回收串行化。
+    return managed_span_slow(ptr);
 }
 
 bool unwrap_aligned_pointer(void *ptr, void **raw_out,
@@ -364,21 +388,23 @@ void *aligned_allocate_bytes(size_t size, size_t alignment) noexcept {
     header->raw = raw;
     header->user_size = actual;
 
-    if (allocator_ready().load(std::memory_order_acquire)) {
+    // 初始化及递归分配来自 bootstrap，不登记页映射，也不重入页锁。
+    if (!should_use_bootstrap_allocator()) {
         PageCache &pc = PageCache::get_instance();
-        Span *span = pc.try_map_object_to_span(raw);
-        if (span != nullptr && span->n > NPAGES - 1) {
-            AllocatorCallGuard guard;
-            try {
-                std::lock_guard<std::mutex> lock(pc.page_mtx());
+        AllocatorCallGuard guard;
+        try {
+            // 查询及附加页登记共用页锁，保持 Span 元数据的访问约定。
+            std::lock_guard<std::mutex> lock(pc.page_mtx());
+            Span *span = pc.try_map_object_to_span(raw);
+            if (span != nullptr && span->n > NPAGES - 1) {
                 // 普通大块仍只登记起始页；对齐块额外登记回溯头和用户页。
                 pc.map_span_page(span, header);
                 pc.map_span_page(span, reinterpret_cast<void *>(aligned));
-            } catch (const std::bad_alloc &) {
-                zfree(raw);
-                errno = ENOMEM;
-                return nullptr;
             }
+        } catch (const std::bad_alloc &) {
+            zfree(raw);
+            errno = ENOMEM;
+            return nullptr;
         }
     }
     return reinterpret_cast<void *>(aligned);

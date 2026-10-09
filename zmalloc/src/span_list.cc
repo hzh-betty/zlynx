@@ -8,25 +8,17 @@
 
 #include <cassert>
 
-#include "zmalloc/internal/object_pool.h"
-
 namespace zmalloc {
 
-ObjectPool<Span> &SpanList::span_pool() {
-    static ObjectPool<Span> pool;
-    return pool;
-}
-
 SpanList::SpanList() {
-    head_ = span_pool().allocate();
-    head_->next = head_;
-    head_->prev = head_;
+    head_.next = &head_;
+    head_.prev = &head_;
 }
 
 void SpanList::push_front(Span *span) { insert(begin(), span); }
 
 Span *SpanList::pop_front() {
-    Span *front = head_->next;
+    Span *front = head_.next;
     erase(front);
     return front;
 }
@@ -41,7 +33,7 @@ void SpanList::insert(Span *pos, Span *new_span) {
 }
 
 void SpanList::erase(Span *pos) {
-    assert(pos && pos != head_);
+    assert(pos && pos != &head_);
     Span *prev = pos->prev;
     Span *next = pos->next;
     prev->next = next;

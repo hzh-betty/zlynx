@@ -14,6 +14,7 @@ if(BUILD_TESTING)
     set(ZMALLOC_UNIT_TESTS
         size_class_test
         free_list_test
+        span_list_test
         object_pool_test
         transfer_cache_test
         zmalloc_test
@@ -60,6 +61,15 @@ if(BUILD_TESTING)
     foreach(test_name ${ZMALLOC_INTEGRATION_TESTS})
         zlynx_add_gtest(zmalloc_${test_name} integration/${test_name}.cc zmalloc integration zmalloc)
     endforeach()
+
+    # 冷启动复现独立运行，确保首次小/大对象分配发生在两个并发线程中。
+    add_executable(zmalloc_cold_start_test integration/cold_start_test.cc)
+    target_link_libraries(zmalloc_cold_start_test PRIVATE zmalloc zlynx_coverage_options)
+    add_test(NAME zmalloc.integration.zmalloc_cold_start_test COMMAND zmalloc_cold_start_test)
+    set_tests_properties(zmalloc.integration.zmalloc_cold_start_test PROPERTIES
+        LABELS "integration;total"
+        TIMEOUT 30
+    )
 
     zlynx_add_module_test_targets(zmalloc)
 endif()

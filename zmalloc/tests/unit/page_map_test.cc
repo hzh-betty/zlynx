@@ -1,6 +1,9 @@
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <cstdint>
+#include <thread>
+#include <vector>
 
 #include "zmalloc/internal/page_map.h"
 
@@ -478,6 +481,75 @@ TEST(PageMapClearRangeTest, OneAndTwoLevelMapsPreserveNeighbors) {
         EXPECT_EQ(one.get(i), nullptr);
         EXPECT_EQ(two.get(i), nullptr);
     }
+}
+
+namespace {
+
+template <typename PM>
+void CheckConcurrentPublicationAndClearing(PM &pm, uintptr_t key_count) {
+    std::vector<int> values(key_count);
+    int range_value = 0;
+    std::atomic<bool> reader_ready(false);
+    std::atomic<bool> done(false);
+    std::atomic<bool> valid(true);
+    std::thread reader([&] {
+        uintptr_t key = 0;
+        // 查询先于首次建树开始，覆盖缺失节点以及发布途中的查询。
+        reader_ready.store(true, std::memory_order_release);
+        do {
+            key = (key * 1664525 + 1013904223) & (key_count - 1);
+            void *ptr = pm.get(key);
+            if (ptr == &values[key]) {
+                // 数据由写线程在 set 前初始化，只能依赖叶项的 acquire 发布。
+                if (*static_cast<int *>(ptr) != static_cast<int>(key + 1)) {
+                    valid.store(false, std::memory_order_relaxed);
+                }
+            } else if (ptr == &range_value) {
+                if (*static_cast<int *>(ptr) != -1) {
+                    valid.store(false, std::memory_order_relaxed);
+                }
+            } else if (ptr != nullptr) {
+                valid.store(false, std::memory_order_relaxed);
+            }
+        } while (!done.load(std::memory_order_relaxed));
+    });
+    std::thread writer([&] {
+        while (!reader_ready.load(std::memory_order_acquire)) {
+            std::this_thread::yield();
+        }
+        for (uintptr_t key = 0; key < key_count; ++key) {
+            values[key] = static_cast<int>(key + 1);
+            pm.set(key, &values[key]);
+        }
+        range_value = -1;
+        for (int round = 0; round < 4; ++round) {
+            pm.set_range(0, key_count, &range_value);
+            pm.clear_range(1, key_count - 2);
+        }
+        done.store(true, std::memory_order_relaxed);
+    });
+    writer.join();
+    reader.join();
+    EXPECT_TRUE(valid.load(std::memory_order_relaxed));
+    EXPECT_EQ(pm.get(0), &range_value);
+    EXPECT_EQ(pm.get(key_count - 1), &range_value);
+    for (uintptr_t key = 1; key < key_count - 1; ++key) {
+        EXPECT_EQ(pm.get(key), nullptr);
+    }
+}
+
+} // namespace
+
+TEST_F(PageMap1Test, ConcurrentPublicationAndClearing) {
+    CheckConcurrentPublicationAndClearing(pm, 1u << 12);
+}
+
+TEST_F(PageMap2Test, ConcurrentPublicationAndClearing) {
+    CheckConcurrentPublicationAndClearing(pm, 1u << 16);
+}
+
+TEST_F(PageMap3Test, ConcurrentPublicationAndClearing) {
+    CheckConcurrentPublicationAndClearing(pm, 1u << 18);
 }
 
 int main(int argc, char **argv) {

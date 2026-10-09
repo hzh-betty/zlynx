@@ -9,6 +9,7 @@
 
 #include <array>
 #include <cassert>
+#include <cstdint>
 #include <mutex>
 
 #include <new>
@@ -56,22 +57,40 @@ class PageCache : public NonCopyable {
      * @brief 根据对象地址获取对应的 Span
      * @param obj 对象指针
      * @return Span 指针
+     * @note 仅用于存活的受管对象，或持有 page_mtx_ 的内部访问。小对象及
+     *       尚未归还中心层的缓存对象计入 use_count，保证所属 Span 不被复用。
      */
     inline Span *map_object_to_span(void *obj) {
         PageId id = reinterpret_cast<PageId>(obj) >> PAGE_SHIFT;
-        Span *ret = static_cast<Span *>(id_span_map_.get(id));
+        Span *ret = decode_span(id_span_map_.get(id));
         assert(ret != nullptr);
         return ret;
     }
 
     /**
-     * @brief 安全尝试根据对象地址获取 Span
+     * @brief 尝试根据任意地址查询 Span，允许映射缺失
      * @param obj 对象指针
      * @return 找到则返回 Span，否则返回 nullptr
+     * @note 原子查询不锁定 Span 生命周期。任意地址的查询结果若需解引用，
+     *       必须在查询前取得 page_mtx_ 并保持到检查结束；存活对象可无锁查询。
      */
     inline Span *try_map_object_to_span(void *obj) {
         PageId id = reinterpret_cast<PageId>(obj) >> PAGE_SHIFT;
-        return static_cast<Span *>(id_span_map_.get(id));
+        return decode_span(id_span_map_.get(id));
+    }
+
+    /**
+     * @brief 查询带缓存映射标记的 Span，供 override 的无锁常见路径使用。
+     * @note 缓存映射不会 munmap，合法外部指针不可能落入这些页。
+     *       合法受管指针自身保证 Span 存活；非法释放仍不在本接口的保证范围内。
+     *       若未来解除缓存映射，必须同步调整此标记及查询的生命周期协议。
+     */
+    Span *try_map_cached_object_to_span(void *obj) {
+        const PageId id = reinterpret_cast<PageId>(obj) >> PAGE_SHIFT;
+        void *entry = id_span_map_.get(id);
+        return (reinterpret_cast<uintptr_t>(entry) & kCachedObjectTag) != 0
+                   ? decode_span(entry)
+                   : nullptr;
     }
 
     /** @brief 登记大对齐块的附加页；调用者须持有 page_mtx_。 */
@@ -91,6 +110,23 @@ class PageCache : public NonCopyable {
     std::mutex &page_mtx() { return page_mtx_; }
 
   private:
+    static_assert(alignof(Span) >= 2, "Span must reserve a low bit for tagging");
+    static constexpr uintptr_t kCachedObjectTag = 1;
+
+    // 标记保存在原子叶项的低位；所有通用查询和合并路径须先去除标记。
+    static Span *decode_span(void *entry) {
+        return reinterpret_cast<Span *>(
+            reinterpret_cast<uintptr_t>(entry) & ~kCachedObjectTag);
+    }
+
+    // 缓存中的已分配 Span 带标记，空闲边界和直接系统映射均不带标记。
+    void map_cached_span(Span *span) {
+        assert(span->n <= NPAGES - 1 && span->is_use);
+        void *entry = reinterpret_cast<void *>(
+            reinterpret_cast<uintptr_t>(span) | kCachedObjectTag);
+        id_span_map_.set_range(span->page_id, span->n, entry);
+    }
+
     PageCache() = default;
 
   private:

@@ -13,8 +13,6 @@
 
 namespace zmalloc {
 
-template <typename T> class ObjectPool;
-
 /**
  * @brief Span 元数据，描述一段连续页和其切分状态
  *
@@ -41,7 +39,7 @@ struct Span {
 /**
  * @brief Span 双向循环链表（带哨兵节点）
  *
- * 链表节点由 ObjectPool<Span> 提供，链表本身只负责链接关系。
+ * 哨兵内嵌于链表，普通节点由调用方提供，链表本身只负责链接关系。
  * 使用循环哨兵可把空表和非空表操作统一成 O(1) 指针拼接。
  */
 class SpanList {
@@ -49,12 +47,18 @@ class SpanList {
     /** @brief 创建只含哨兵节点的空循环链表。 */
     SpanList();
 
+    // 节点保存哨兵地址，复制或移动会破坏循环链的链接关系。
+    SpanList(const SpanList &) = delete;
+    SpanList &operator=(const SpanList &) = delete;
+    SpanList(SpanList &&) = delete;
+    SpanList &operator=(SpanList &&) = delete;
+
     /** @brief 返回首个 Span；空表时返回 end()。 */
-    Span *begin() { return head_->next; }
+    Span *begin() { return head_.next; }
     /** @brief 返回哨兵节点，作为遍历结束标记。 */
-    Span *end() { return head_; }
+    Span *end() { return &head_; }
     /** @brief 判断链表是否为空。 */
-    bool empty() const { return head_ == head_->next; }
+    bool empty() const { return &head_ == head_.next; }
 
     /** @brief 将 Span 插入链表头。 */
     void push_front(Span *span);
@@ -66,10 +70,8 @@ class SpanList {
     void erase(Span *pos);
 
   private:
-    Span *head_;
-
-    // Span 元数据对象池，降低高频拆分/合并时的 new/delete 抖动。
-    static ObjectPool<Span> &span_pool();
+    // 每个链表独立持有哨兵，避免并发初始化时访问共享的无锁对象池。
+    Span head_;
 };
 
 } // namespace zmalloc
