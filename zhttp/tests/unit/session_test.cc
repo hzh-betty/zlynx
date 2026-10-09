@@ -1,11 +1,10 @@
-#include "../test_support.h"
+#include "../support/request_builder.h"
 #include <gtest/gtest.h>
 #include <thread>
 
 #include "zhttp/middleware/session_middleware.h"
 #include "zhttp/router/router.h"
 #include "zhttp/session.h"
-#include "zhttp/zhttp_logger.h"
 
 using namespace zhttp;
 using namespace zhttp::mid;
@@ -48,10 +47,10 @@ class SessionTest : public ::testing::Test {
 };
 
 TEST_F(SessionTest, CookieRoundTrip) {
-    TestApplication router;
+    HttpApplication router;
     router.use(std::make_shared<SessionMiddleware>(mgr_, base_opt()));
 
-    router.get("/s", [](HttpContext &context) {
+    router.router().get("/s", [](HttpContext &context) {
         auto *req = &context;
         auto &resp = context.response();
         ASSERT_NE(req->session(), nullptr);
@@ -60,13 +59,13 @@ TEST_F(SessionTest, CookieRoundTrip) {
     });
 
     HttpResponse resp1;
-    router.route(make_get("/s"), resp1);
+    run_application(router, make_get("/s"), resp1);
 
     ASSERT_FALSE(resp1.set_cookies().empty());
     std::string sid = extract_sid(resp1.set_cookies().front());
     ASSERT_FALSE(sid.empty());
 
-    router.get("/s2", [](HttpContext &context) {
+    router.router().get("/s2", [](HttpContext &context) {
         auto *req = &context;
         auto &resp = context.response();
         ASSERT_NE(req->session(), nullptr);
@@ -75,7 +74,7 @@ TEST_F(SessionTest, CookieRoundTrip) {
     });
 
     HttpResponse resp2;
-    router.route(make_get("/s2", "ZHTTPSESSID=" + sid), resp2);
+    run_application(router, make_get("/s2", "ZHTTPSESSID=" + sid), resp2);
     EXPECT_TRUE(resp2.set_cookies().empty());
 }
 
@@ -83,10 +82,10 @@ TEST_F(SessionTest, CreateIfMissingFalse_DoesNotCreateSession) {
     SessionMiddleware::Options opt = base_opt();
     opt.create_if_missing = false;
 
-    TestApplication router;
+    HttpApplication router;
     router.use(std::make_shared<SessionMiddleware>(mgr_, opt));
 
-    router.get("/s", [](HttpContext &context) {
+    router.router().get("/s", [](HttpContext &context) {
         auto *req = &context;
         auto &resp = context.response();
         EXPECT_EQ(req->session(), nullptr);
@@ -94,15 +93,15 @@ TEST_F(SessionTest, CreateIfMissingFalse_DoesNotCreateSession) {
     });
 
     HttpResponse resp;
-    router.route(make_get("/s"), resp);
+    run_application(router, make_get("/s"), resp);
     EXPECT_TRUE(resp.set_cookies().empty());
 }
 
 TEST_F(SessionTest, ExistingSessionSettingSameValue_DoesNotTriggerSetCookie) {
-    TestApplication router;
+    HttpApplication router;
     router.use(std::make_shared<SessionMiddleware>(mgr_, base_opt()));
 
-    router.get("/init", [](HttpContext &context) {
+    router.router().get("/init", [](HttpContext &context) {
         auto *req = &context;
         auto &resp = context.response();
         ASSERT_NE(req->session(), nullptr);
@@ -111,12 +110,12 @@ TEST_F(SessionTest, ExistingSessionSettingSameValue_DoesNotTriggerSetCookie) {
     });
 
     HttpResponse init_resp;
-    router.route(make_get("/init"), init_resp);
+    run_application(router, make_get("/init"), init_resp);
     ASSERT_FALSE(init_resp.set_cookies().empty());
     std::string sid = extract_sid(init_resp.set_cookies().front());
     ASSERT_FALSE(sid.empty());
 
-    router.get("/noop", [](HttpContext &context) {
+    router.router().get("/noop", [](HttpContext &context) {
         auto *req = &context;
         auto &resp = context.response();
         ASSERT_NE(req->session(), nullptr);
@@ -126,7 +125,7 @@ TEST_F(SessionTest, ExistingSessionSettingSameValue_DoesNotTriggerSetCookie) {
     });
 
     HttpResponse noop_resp;
-    router.route(make_get("/noop", "ZHTTPSESSID=" + sid), noop_resp);
+    run_application(router, make_get("/noop", "ZHTTPSESSID=" + sid), noop_resp);
     EXPECT_TRUE(noop_resp.set_cookies().empty());
 }
 
@@ -192,6 +191,6 @@ TEST(SessionManagerCoreTest, HandlesLoadCreateSaveDestroyAndExpiration) {
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
-    zhttp::init_logger();
+
     return RUN_ALL_TESTS();
 }

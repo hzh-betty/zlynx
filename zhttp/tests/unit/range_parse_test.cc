@@ -1,6 +1,6 @@
-#include "../test_support.h"
-#include "zhttp/internal/range_parse.h"
-#include "zhttp/zhttp_logger.h"
+#include "protocol/http/response_encoder.h"
+#include "../support/request_builder.h"
+#include "static_files/range.h"
 
 #include <gtest/gtest.h>
 
@@ -109,73 +109,11 @@ TEST(RangeParseTest, ReturnsNotSatisfiableForSemanticErrors) {
               RangeParseState::NOT_SATISFIABLE);
 }
 
-TEST(RangeParseTest, WritePayloadByRangeHandlesNotSatisfiable) {
-    auto request = make_request();
-    HttpResponse response;
-    ParsedRange parsed;
-    parsed.state = RangeParseState::NOT_SATISFIABLE;
-
-    write_payload_by_range(*request, response, parsed, 10, "0123456789");
-
-    EXPECT_EQ(response.status_code(),
-              HttpStatus::REQUESTED_RANGE_NOT_SATISFIABLE);
-    EXPECT_EQ(response.headers().at("Content-Range"), "bytes */10");
-    EXPECT_TRUE(response.body_content().empty());
-}
-
-TEST(RangeParseTest, WritePayloadByRangeHandlesSatisfiableGetAndHead) {
-    ParsedRange parsed;
-    parsed.state = RangeParseState::SATISFIABLE;
-    parsed.start = 2;
-    parsed.end = 5;
-
-    auto get_req = make_request(HttpMethod::GET);
-    HttpResponse get_resp;
-    write_payload_by_range(*get_req, get_resp, parsed, 10, "0123456789");
-    EXPECT_EQ(get_resp.status_code(), HttpStatus::PARTIAL_CONTENT);
-    EXPECT_EQ(get_resp.headers().at("Content-Range"), "bytes 2-5/10");
-    EXPECT_EQ(get_resp.headers().at("Content-Length"), "4");
-    EXPECT_EQ(get_resp.body_content(), "2345");
-
-    auto head_req = make_request(HttpMethod::HEAD);
-    HttpResponse head_resp;
-    write_payload_by_range(*head_req, head_resp, parsed, 10, "0123456789");
-    EXPECT_EQ(head_resp.status_code(), HttpStatus::PARTIAL_CONTENT);
-    EXPECT_EQ(head_resp.headers().at("Content-Range"), "bytes 2-5/10");
-    EXPECT_EQ(head_resp.headers().at("Content-Length"), "4");
-    const auto wire =
-        HttpResponseWriter::serialize(head_resp, true, HttpMethod::HEAD);
-    EXPECT_EQ(wire.substr(wire.find("\r\n\r\n") + 4), "");
-}
-
-TEST(RangeParseTest, WritePayloadByRangeFallsBackToFullEntity) {
-    auto get_req = make_request(HttpMethod::GET);
-    auto head_req = make_request(HttpMethod::HEAD);
-    ParsedRange invalid;
-    invalid.state = RangeParseState::INVALID;
-    ParsedRange none;
-    none.state = RangeParseState::NONE;
-
-    HttpResponse get_resp;
-    write_payload_by_range(*get_req, get_resp, invalid, 10, "0123456789");
-    EXPECT_EQ(get_resp.status_code(), HttpStatus::OK);
-    EXPECT_EQ(get_resp.body_content(), "0123456789");
-
-    HttpResponse head_resp;
-    write_payload_by_range(*head_req, head_resp, none, 10, "0123456789");
-    EXPECT_EQ(head_resp.status_code(), HttpStatus::OK);
-    EXPECT_EQ(head_resp.headers().at("Content-Length"), "10");
-    const auto wire =
-        HttpResponseWriter::serialize(head_resp, true, HttpMethod::HEAD);
-    EXPECT_EQ(wire.substr(wire.find("\r\n\r\n") + 4), "");
-}
-
 } // namespace
 } // namespace zhttp
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
 
-    zhttp::init_logger();
     return RUN_ALL_TESTS();
 }

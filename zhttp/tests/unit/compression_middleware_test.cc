@@ -1,6 +1,5 @@
-#include "../test_support.h"
+#include "../support/request_builder.h"
 #include "zhttp/middleware/compression_middleware.h"
-#include "zhttp/zhttp_logger.h"
 
 #include <brotli/decode.h>
 #include <gtest/gtest.h>
@@ -444,6 +443,6 @@ TEST(CompressionMiddlewareTest, VaryUsesExactTokensAndPreservesWildcard) {
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
-    zhttp::init_logger();
+
     return RUN_ALL_TESTS();
 }

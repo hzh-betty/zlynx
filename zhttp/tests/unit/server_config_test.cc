@@ -1,8 +1,7 @@
-#include "../test_support.h"
+#include "../support/network_fixture.h"
 
 #include "zhttp/http_server_builder.h"
 #include "zhttp/server_config.h"
-#include "zhttp/zhttp_logger.h"
 
 #include <cstdio>
 #include <fstream>
@@ -308,34 +307,6 @@ level = "warning"
     EXPECT_EQ(config.log_level, "warning");
 }
 
-TEST(ServerConfigTest, BuilderAppliesUnifiedLoggingConfig) {
-    TempTomlFile config_file(R"(
-[server]
-host = "127.0.0.1"
-port = 18082
-
-[threads]
-count = 1
-
-[logging]
-level = "warning"
-)");
-
-    zhttp::HttpServerBuilder builder;
-    builder.from_config(config_file.path());
-
-    auto server = builder.build();
-    ASSERT_TRUE(server);
-
-    auto http_logger = zhttp::get_logger_ptr();
-
-    ASSERT_NE(http_logger, nullptr);
-
-    EXPECT_EQ(http_logger->get_name(), "zhttp_logger");
-
-    EXPECT_NE(dynamic_cast<zlog::AsyncLogger *>(http_logger.get()), nullptr);
-}
-
 TEST(ServerConfigTest, LoadsSyntaxErrorsAsRuntimeErrorWithTomlPrefix) {
     TempTomlFile invalid_file(R"(
 [server
@@ -367,6 +338,6 @@ TEST(ServerConfigTest, StackModeHelpersCoverKnownAndFallbackValues) {
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
-    zhttp::init_logger();
+
     return RUN_ALL_TESTS();
 }

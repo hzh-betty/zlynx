@@ -1,6 +1,6 @@
-#include "../test_support.h"
+#include "protocol/http/response_encoder.h"
+#include "../support/request_builder.h"
 #include "zhttp/http_response.h"
-#include "zhttp/zhttp_logger.h"
 
 #include <gtest/gtest.h>
 
@@ -77,7 +77,7 @@ TEST(HttpResponseTest, Serialize) {
     resp.status(HttpStatus::OK).content_type("text/plain").body("Hello");
     resp.set_keep_alive(true);
 
-    std::string serialized = HttpResponseWriter::serialize(resp);
+    std::string serialized = ResponseEncoder::serialize(resp);
 
     // 检查状态行
     EXPECT_NE(serialized.find("HTTP/1.1 200 OK"), std::string::npos);
@@ -105,7 +105,7 @@ TEST(HttpResponseTest, ChunkedResponseOmitsContentLength) {
         .body("Hello")
         .enable_chunked();
 
-    std::string serialized = HttpResponseWriter::serialize(resp);
+    std::string serialized = ResponseEncoder::serialize(resp);
 
     EXPECT_NE(serialized.find("Transfer-Encoding: chunked"), std::string::npos);
     EXPECT_EQ(serialized.find("Content-Length:"), std::string::npos);
@@ -125,7 +125,7 @@ TEST(HttpResponseTest, StreamCallbackEnablesChunked) {
         return 2;
     });
 
-    std::string serialized = HttpResponseWriter::serialize(resp);
+    std::string serialized = ResponseEncoder::serialize(resp);
 
     EXPECT_TRUE(resp.has_stream_callback());
     EXPECT_TRUE(resp.is_chunked_enabled());
@@ -138,7 +138,7 @@ TEST(HttpResponseTest, NoBodyStatusDoesNotEmitChunkedBody) {
     HttpResponse resp;
     resp.status(HttpStatus::NO_CONTENT).body("ignored").enable_chunked();
 
-    std::string serialized = HttpResponseWriter::serialize(resp);
+    std::string serialized = ResponseEncoder::serialize(resp);
 
     EXPECT_EQ(serialized.find("Transfer-Encoding: chunked"), std::string::npos);
     EXPECT_EQ(serialized.find("\r\n\r\nignored"), std::string::npos);
@@ -153,27 +153,27 @@ TEST(HttpResponseTest, SerializeToMatchesSerializeOutput) {
     resp.set_keep_alive(false);
 
     std::string serialized;
-    HttpResponseWriter::serialize_to(resp, &serialized);
+    ResponseEncoder::serialize_to(resp, &serialized);
 
-    EXPECT_EQ(serialized, HttpResponseWriter::serialize(resp));
+    EXPECT_EQ(serialized, ResponseEncoder::serialize(resp));
 }
 
 TEST(HttpResponseTest, NoBodyStatusesDoNotEmitBodyOrContentLength) {
     HttpResponse no_content;
     no_content.status(HttpStatus::NO_CONTENT).body("ignored");
-    const std::string s1 = HttpResponseWriter::serialize(no_content);
+    const std::string s1 = ResponseEncoder::serialize(no_content);
     EXPECT_EQ(s1.find("Content-Length:"), std::string::npos);
     EXPECT_EQ(s1.find("\r\n\r\nignored"), std::string::npos);
 
     HttpResponse not_modified;
     not_modified.status(HttpStatus::NOT_MODIFIED).body("ignored");
-    const std::string s2 = HttpResponseWriter::serialize(not_modified);
+    const std::string s2 = ResponseEncoder::serialize(not_modified);
     EXPECT_NE(s2.find("Content-Length: 7\r\n"), std::string::npos);
     EXPECT_EQ(s2.find("\r\n\r\nignored"), std::string::npos);
 
     HttpResponse switching;
     switching.status(HttpStatus::SWITCHING_PROTOCOLS).body("ignored");
-    const std::string s3 = HttpResponseWriter::serialize(switching);
+    const std::string s3 = ResponseEncoder::serialize(switching);
     EXPECT_EQ(s3.find("Content-Length:"), std::string::npos);
     EXPECT_EQ(s3.find("\r\n\r\nignored"), std::string::npos);
 }
@@ -183,7 +183,7 @@ TEST(HttpResponseTest, Http10DoesNotUseChunkedTransportEncoding) {
     resp.set_version(HttpVersion::HTTP_1_0);
     resp.status(HttpStatus::OK).body("legacy").enable_chunked();
 
-    const std::string serialized = HttpResponseWriter::serialize(resp);
+    const std::string serialized = ResponseEncoder::serialize(resp);
     EXPECT_EQ(serialized.find("Transfer-Encoding: chunked"), std::string::npos);
     EXPECT_NE(serialized.find("Content-Length: 6"), std::string::npos);
     EXPECT_NE(serialized.find("\r\n\r\nlegacy"), std::string::npos);
@@ -197,7 +197,7 @@ TEST(HttpResponseTest, SerializeHandlesConnectionAndTransferEncodingHeaders) {
         .header("Content-Length", "999")
         .header("Transfer-Encoding", "gzip")
         .header("Connection", "close");
-    const std::string chunked = HttpResponseWriter::serialize(chunked_resp);
+    const std::string chunked = ResponseEncoder::serialize(chunked_resp);
     EXPECT_EQ(chunked.find("Content-Length:"), std::string::npos);
     EXPECT_EQ(chunked.find("Transfer-Encoding: gzip"), std::string::npos);
     EXPECT_NE(chunked.find("Transfer-Encoding: chunked"), std::string::npos);
@@ -207,7 +207,7 @@ TEST(HttpResponseTest, SerializeHandlesConnectionAndTransferEncodingHeaders) {
     no_body_resp.status(HttpStatus::NO_CONTENT)
         .header("Transfer-Encoding", "chunked")
         .body("ignored");
-    const std::string no_body = HttpResponseWriter::serialize(no_body_resp);
+    const std::string no_body = ResponseEncoder::serialize(no_body_resp);
     EXPECT_EQ(no_body.find("Transfer-Encoding:"), std::string::npos);
 }
 
@@ -255,7 +255,7 @@ TEST(HttpResponseTest, CookieFormattingCoversOptionalAttributes) {
     resp.set_cookie("sid", "abc", minimal_opt);
     resp.delete_cookie("sid", minimal_opt);
 
-    const std::string serialized = HttpResponseWriter::serialize(resp);
+    const std::string serialized = ResponseEncoder::serialize(resp);
     EXPECT_NE(serialized.find("Set-Cookie: sid=abc"), std::string::npos);
     EXPECT_EQ(serialized.find("Set-Cookie: sid=abc;"), std::string::npos);
     EXPECT_NE(serialized.find("Set-Cookie: sid=; Max-Age=0"),
@@ -266,7 +266,7 @@ TEST(HttpResponseTest, SerializeWithoutBodyStillWritesHeaders) {
     HttpResponse resp;
     resp.status(HttpStatus::OK).content_type("text/plain").body("payload");
 
-    const std::string serialized = HttpResponseWriter::serialize(resp, false);
+    const std::string serialized = ResponseEncoder::serialize(resp, false);
     EXPECT_NE(serialized.find("Content-Length: 7"), std::string::npos);
     EXPECT_EQ(serialized.find("\r\n\r\npayload"), std::string::npos);
 }
@@ -274,12 +274,12 @@ TEST(HttpResponseTest, SerializeWithoutBodyStillWritesHeaders) {
 TEST(HttpResponseTest, SerializeToAcceptsNullOutputPointer) {
     HttpResponse resp;
     resp.status(HttpStatus::OK).body("ok");
-    HttpResponseWriter::serialize_to(resp, nullptr);
+    ResponseEncoder::serialize_to(resp, nullptr);
     SUCCEED();
 }
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
-    zhttp::init_logger();
+
     return RUN_ALL_TESTS();
 }

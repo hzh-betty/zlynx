@@ -1,6 +1,5 @@
-#include "../test_support.h"
+#include "../support/request_builder.h"
 #include "zhttp/middleware/error_middleware.h"
-#include "zhttp/zhttp_logger.h"
 
 #include <gtest/gtest.h>
 
@@ -220,6 +219,6 @@ TEST(ErrorMiddlewareTest,
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
-    zhttp::init_logger();
+
     return RUN_ALL_TESTS();
 }

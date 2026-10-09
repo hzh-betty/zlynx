@@ -1,7 +1,6 @@
-#include "../test_support.h"
+#include "../support/network_fixture.h"
 #include "zhttp/http_server.h"
 #include "zhttp/http_server_builder.h"
-#include "zhttp/zhttp_logger.h"
 
 #include <arpa/inet.h>
 #include <atomic>
@@ -229,9 +228,9 @@ std::string recv_until_close(int fd, int timeout_ms) {
 
 TEST(HttpServerIntegrationTest, RouteRegistration) {
     bool handler_called = false;
-    TestApplication router;
+    HttpApplication router;
 
-    router.get("/test", [&handler_called](HttpContext &context) {
+    router.router().get("/test", [&handler_called](HttpContext &context) {
         auto &resp = context.response();
         handler_called = true;
         resp.status(HttpStatus::OK).text("OK");
@@ -243,7 +242,7 @@ TEST(HttpServerIntegrationTest, RouteRegistration) {
     request->set_path("/test");
     HttpResponse response;
 
-    bool found = router.route(request, response);
+    bool found = run_application(router, request, response);
 
     EXPECT_TRUE(found);
     EXPECT_TRUE(handler_called);
@@ -277,10 +276,10 @@ TEST(HttpServerIntegrationTest, MiddlewareIntegration) {
 
     bool before_called = false;
     bool after_called = false;
-    TestApplication router;
+    HttpApplication router;
 
     router.use(std::make_shared<TestMiddleware>(before_called, after_called));
-    router.get("/middleware-test", [](HttpContext &context) {
+    router.router().get("/middleware-test", [](HttpContext &context) {
         auto &resp = context.response();
         resp.status(HttpStatus::OK).text("OK");
     });
@@ -290,7 +289,7 @@ TEST(HttpServerIntegrationTest, MiddlewareIntegration) {
     request->set_path("/middleware-test");
     HttpResponse response;
 
-    router.route(request, response);
+    run_application(router, request, response);
 
     EXPECT_TRUE(before_called);
     EXPECT_TRUE(after_called);
@@ -299,13 +298,13 @@ TEST(HttpServerIntegrationTest, MiddlewareIntegration) {
 }
 
 TEST(HttpServerIntegrationTest, NotFoundRoute) {
-    TestApplication router;
+    HttpApplication router;
     auto request = std::make_shared<TestContext>();
     request->set_method(HttpMethod::GET);
     request->set_path("/nonexistent");
     HttpResponse response;
 
-    bool found = router.route(request, response);
+    bool found = run_application(router, request, response);
 
     EXPECT_FALSE(found);
     EXPECT_EQ(response.status_code(), HttpStatus::NOT_FOUND);
@@ -983,6 +982,6 @@ TEST(HttpServerIntegrationTest, LargePullStreamIsFullyDrained) {
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
-    zhttp::init_logger();
+
     return RUN_ALL_TESTS();
 }

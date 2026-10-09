@@ -1,5 +1,4 @@
 #include "zhttp/http_common.h"
-#include "zhttp/zhttp_logger.h"
 
 #include <gtest/gtest.h>
 
@@ -164,6 +163,5 @@ TEST(HttpCommonTest, UrlDecodeHandlesValidAndInvalidEscapes) {
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
 
-    zhttp::init_logger();
     return RUN_ALL_TESTS();
 }

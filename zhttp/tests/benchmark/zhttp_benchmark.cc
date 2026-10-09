@@ -1,5 +1,4 @@
 #include "zhttp/http_server_builder.h"
-#include "zhttp/zhttp_logger.h"
 
 #include <atomic>
 #include <cerrno>
@@ -221,7 +220,7 @@ int run_server_process(const BenchConfig &cfg, const std::string &mode,
     std::signal(SIGPIPE, SIG_IGN);
 
     try {
-        zhttp::init_logger(zlog::LogLevel::value::OFF);
+
 
         zhttp::HttpServerBuilder builder;
         builder.listen("127.0.0.1", static_cast<uint16_t>(cfg.port))

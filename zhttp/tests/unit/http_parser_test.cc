@@ -1,6 +1,5 @@
-#include "../test_support.h"
-#include "zhttp/parser/http_request_parser.h"
-#include "zhttp/zhttp_logger.h"
+#include "../support/network_fixture.h"
+#include "protocol/http/http_request_parser.h"
 #include "znet/byte_buffer.h"
 
 #include <gtest/gtest.h>
@@ -568,6 +567,5 @@ TEST(HttpRequestParserContractTest,
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
 
-    zhttp::init_logger();
     return RUN_ALL_TESTS();
 }

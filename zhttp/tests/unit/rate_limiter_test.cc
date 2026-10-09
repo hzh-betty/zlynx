@@ -1,7 +1,6 @@
-#include "../test_support.h"
+#include "../support/request_builder.h"
 #include <gtest/gtest.h>
 
-#include "zhttp/zhttp_logger.h"
 
 #include "zhttp/middleware/rate_limiter_middleware.h"
 #include "zhttp/router/router.h"
@@ -153,13 +152,13 @@ TEST_F(RateLimiterTest, Middleware_UsesKeyFuncIsolation) {
     opt.limiter = limiter;
     opt.key_func = [](HttpContext &req) { return req.path(); };
 
-    TestApplication router;
+    HttpApplication router;
     router.use(std::make_shared<RateLimiterMiddleware>(opt));
-    router.get("/a", [](HttpContext &context) {
+    router.router().get("/a", [](HttpContext &context) {
         auto &resp = context.response();
         resp.text("a");
     });
-    router.get("/b", [](HttpContext &context) {
+    router.router().get("/b", [](HttpContext &context) {
         auto &resp = context.response();
         resp.text("b");
     });
@@ -168,14 +167,14 @@ TEST_F(RateLimiterTest, Middleware_UsesKeyFuncIsolation) {
     ra1->set_method(HttpMethod::GET);
     ra1->set_path("/a");
     HttpResponse rpa1;
-    router.route(ra1, rpa1);
+    run_application(router, ra1, rpa1);
     EXPECT_EQ(rpa1.status_code(), HttpStatus::OK);
 
     auto ra2 = std::make_shared<TestContext>();
     ra2->set_method(HttpMethod::GET);
     ra2->set_path("/a");
     HttpResponse rpa2;
-    router.route(ra2, rpa2);
+    run_application(router, ra2, rpa2);
     EXPECT_EQ(rpa2.status_code(), HttpStatus::TOO_MANY_REQUESTS);
 
     // /b 使用不同 key，不应被 /a 的限流影响
@@ -183,7 +182,7 @@ TEST_F(RateLimiterTest, Middleware_UsesKeyFuncIsolation) {
     rb1->set_method(HttpMethod::GET);
     rb1->set_path("/b");
     HttpResponse rpb1;
-    router.route(rb1, rpb1);
+    run_application(router, rb1, rpb1);
     EXPECT_EQ(rpb1.status_code(), HttpStatus::OK);
 }
 
@@ -271,6 +270,31 @@ TEST_F(RateLimiterTest, MiddlewareWorksWithDefaultLimiterAndKeyResolver) {
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
-    zhttp::init_logger();
+
     return RUN_ALL_TESTS();
+}
+
+TEST_F(RateLimiterTest, ExpiryReclaimsKeysWithoutResettingActiveQuotas) {
+    for (auto type : {RateLimiter::Type::FIXED_WINDOW, RateLimiter::Type::SLIDING_WINDOW,
+                      RateLimiter::Type::TOKEN_BUCKET}) {
+        auto limiter = RateLimiter::newRateLimiter(type, 1, RateLimiter::TimeUnit::SECOND, now());
+        EXPECT_TRUE(limiter->isAllowed("inactive"));
+        advance_ms(500);
+        EXPECT_TRUE(limiter->isAllowed("active"));
+        advance_ms(500);
+        EXPECT_EQ(limiter->prune_expired(), 1U);
+        EXPECT_FALSE(limiter->isAllowed("active"));
+        EXPECT_TRUE(limiter->isAllowed("inactive"));
+    }
+}
+TEST(RateLimiterOwnershipTest, CopiedMiddlewareDoesNotCaptureTheOriginalInstance) {
+    std::unique_ptr<RateLimiterMiddleware> copy;
+    {
+        RateLimiterMiddleware original;
+        copy = std::make_unique<RateLimiterMiddleware>(original);
+    }
+    auto request = std::make_shared<HttpRequest>();
+    request->set_header("X-Forwarded-For", "127.0.0.1");
+    HttpContext context(request);
+    EXPECT_TRUE(copy->before(context));
 }

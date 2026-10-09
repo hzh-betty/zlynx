@@ -1,7 +1,6 @@
-#include "../test_support.h"
+#include "../support/network_fixture.h"
 #include "zhttp/http_request.h"
 #include "zhttp/websocket/websocket_handler.h"
-#include "zhttp/zhttp_logger.h"
 
 #include <gtest/gtest.h>
 #include <stdexcept>
@@ -230,7 +229,6 @@ TEST(WebSocketHandshakeTest, ConnectionReportsDisconnectedForExpiredSocket) {
     EXPECT_FALSE(connection.pong("q"));
     EXPECT_FALSE(connection.close(WebSocketCloseCode::kNormalClosure, "bye"));
 
-    connection.mark_closed();
     EXPECT_FALSE(connection.connected());
 }
 
@@ -479,6 +477,5 @@ TEST(WebSocketHandshakeTest, SessionPingFailureAndCloseNotificationAreHandled) {
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
 
-    zhttp::init_logger();
     return RUN_ALL_TESTS();
 }

@@ -1,7 +1,6 @@
-#include "../test_support.h"
+#include "../support/network_fixture.h"
 #include "zhttp/http_server_builder.h"
 #include "zhttp/websocket/websocket_handler.h"
-#include "zhttp/zhttp_logger.h"
 
 #include <arpa/inet.h>
 #include <cerrno>
@@ -506,6 +505,6 @@ TEST(WebSocketServerIntegrationTest, LocalCloseWaitsForPeerWithBoundedTimeout) {
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
-    zhttp::init_logger();
+
     return RUN_ALL_TESTS();
 }

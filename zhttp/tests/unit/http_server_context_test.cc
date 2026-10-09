@@ -1,9 +1,11 @@
-#include "../test_support.h"
-#include "zhttp/protocol/http_protocol_handler.h"
-#include "zhttp/zhttp_logger.h"
+#include "protocol/http/response_encoder.h"
+#include "../support/network_fixture.h"
+#include "protocol/http/http_protocol_handler.h"
 #include "znet/transport/socket.h"
 #include "znet/server/tcp_server.h"
 #include <limits>
+#include <fcntl.h>
+#include <filesystem>
 #include <sys/socket.h>
 #include <unistd.h>
 using namespace zhttp;
@@ -113,8 +115,8 @@ TEST(HttpWriterTest, SlowClientStreamFailsWithinWriteTimeout) {
 }
 TEST(HttpProtocolTest, SynchronousStreamProcessesAlreadyBufferedNextRequest) {
     SocketPair pair;
-    Router router;
-    RequestPipeline pipeline;
+    HttpApplication application;
+    auto &router = application.router();
     int next = 0, completed = 0;
     router.get("/stream", [&](HttpContext &context) {
         context.on_complete([&](CompletionResult result) {
@@ -128,7 +130,7 @@ TEST(HttpProtocolTest, SynchronousStreamProcessesAlreadyBufferedNextRequest) {
         ++next;
         context.response().text("next");
     });
-    HttpProtocolHandler handler(router, pipeline, {}, 30000, "test", {});
+    HttpProtocolHandler handler(application, {}, 30000, "test", {});
     znet::ByteBuffer buffer;
     buffer.append("GET /stream HTTP/1.1\r\nHost: test\r\n\r\nGET /next "
                   "HTTP/1.1\r\nHost: test\r\n\r\n");
@@ -139,11 +141,11 @@ TEST(HttpProtocolTest, SynchronousStreamProcessesAlreadyBufferedNextRequest) {
 }
 TEST(HttpProtocolTest, ExpectIsRejectedBeforeBodyArrives) {
     SocketPair pair;
-    Router router;
-    RequestPipeline pipeline;
+    HttpApplication application;
+    auto &router = application.router();
     int calls = 0;
     router.post("/", [&](HttpContext &) { ++calls; });
-    HttpProtocolHandler handler(router, pipeline, {}, 30000, "test", {});
+    HttpProtocolHandler handler(application, {}, 30000, "test", {});
     znet::ByteBuffer buffer;
     buffer.append("POST / HTTP/1.1\r\nHost: test\r\nExpect: "
                   "100-continue\r\nContent-Length: 100\r\n\r\n");
@@ -172,7 +174,7 @@ TEST(HttpWriterTest,
     request->set_method(HttpMethod::GET);
     HttpContext context(request);
     context.response().stream([](char *, size_t) { return 0U; });
-    const auto headers = HttpResponseWriter::headers(request->request_line(),
+    const auto headers = ResponseEncoder::headers(request->request_line(),
                                                      context.response());
     EXPECT_NE(headers.find("Connection: close"), std::string::npos);
     EXPECT_EQ(headers.find("Transfer-Encoding"), std::string::npos);
@@ -230,7 +232,7 @@ TEST(HttpWriterTest, FreezesResponseAndNormalizesFraming) {
     HttpResponse reset;
     reset.status(205).stream([](char *, size_t) { return 0U; });
     EXPECT_NE(
-        HttpResponseWriter::serialize(reset).find("Content-Length: 0\r\n"),
+        ResponseEncoder::serialize(reset).find("Content-Length: 0\r\n"),
         std::string::npos);
     EXPECT_THROW(HttpContext(nullptr), std::invalid_argument);
 }
@@ -253,6 +255,97 @@ TEST(RouterMatchTest, ReturnsStablePatternWithoutExecutingBusinessCode) {
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
-    zhttp::init_logger();
+
     return RUN_ALL_TESTS();
+}
+
+namespace {
+std::string fetch(HttpServer &server, const std::string &path) {
+    const auto endpoint = server.local_endpoint().value();
+    auto socket = znet::Socket::adopt(::socket(endpoint.family(), SOCK_STREAM, 0)).value();
+    const int flags = ::fcntl(socket.native_handle(), F_GETFL, 0);
+    ::fcntl(socket.native_handle(), F_SETFL, flags & ~O_NONBLOCK);
+    if (::connect(socket.native_handle(), endpoint.native_address(), endpoint.native_size()) != 0)
+        throw std::runtime_error("connect");
+    timeval timeout{2, 0};
+    ::setsockopt(socket.native_handle(), SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+    const std::string request = "GET " + path + " HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n";
+    if (::send(socket.native_handle(), request.data(), request.size(), MSG_NOSIGNAL) !=
+        static_cast<ssize_t>(request.size()))
+        throw std::runtime_error("send");
+    std::string result;
+    char buffer[4096];
+    ssize_t count;
+    while ((count = ::recv(socket.native_handle(), buffer, sizeof(buffer), 0)) > 0)
+        result.append(buffer, count);
+    return result;
+}
+TEST(HttpServerOwnershipTest, SharedRuntimeAndApplicationOutliveIndependentListeners) {
+    zco::Runtime runtime(zco::RuntimeOptions{1});
+    auto application = std::make_shared<HttpApplication>();
+    application->router().get("/items/:id", [](HttpContext &context) {
+        context.response().text(context.path_param("id"));
+    });
+    auto endpoint = znet::Endpoint::ipv4("127.0.0.1", 0).value();
+    HttpServer first(endpoint, runtime, application);
+    HttpServer second(endpoint, runtime, application);
+    ASSERT_TRUE(first.start());
+    ASSERT_TRUE(second.start());
+    application.reset(); // Listeners and session factories retain the application.
+    EXPECT_NE(fetch(first, "/items/1").find("\r\n\r\n1"), std::string::npos);
+    EXPECT_NE(fetch(second, "/items/2").find("\r\n\r\n2"), std::string::npos);
+    first.stop();
+    EXPECT_NE(fetch(second, "/items/3").find("\r\n\r\n3"), std::string::npos);
+    ASSERT_TRUE(first.start());
+    EXPECT_FALSE(first.stop_requested());
+    EXPECT_NE(fetch(first, "/items/4").find("\r\n\r\n4"), std::string::npos);
+    first.stop();
+    second.stop();
+    EXPECT_TRUE(runtime.spawn([] {}).value().join());
+}
+TEST(HttpServerOwnershipTest, RequestCallbackStopsWithoutJoiningItself) {
+    HttpServer server(znet::Endpoint::ipv4("127.0.0.1", 0).value(), zco::RuntimeOptions{1});
+    std::atomic<bool> returned{false};
+    server.router().get("/stop", [&](HttpContext &) {
+        server.request_stop();
+        returned.store(true);
+    });
+    ASSERT_TRUE(server.start());
+    (void)fetch(server, "/stop");
+    server.stop();
+    EXPECT_TRUE(returned.load());
+    EXPECT_TRUE(server.stop_requested());
+    EXPECT_FALSE(server.is_running());
+}
+TEST(HttpServerOwnershipTest, StartupFailureRetainsErrorAndFreezesRegistration) {
+    zco::Runtime runtime(zco::RuntimeOptions{1});
+    HttpServer first(znet::Endpoint::ipv4("127.0.0.1", 0).value(), runtime);
+    ASSERT_TRUE(first.start());
+    HttpServer conflicting(first.local_endpoint().value(), runtime);
+    auto started = conflicting.start();
+    ASSERT_FALSE(started);
+    EXPECT_EQ(started.error().code, std::make_error_code(std::errc::address_in_use));
+    EXPECT_THROW(conflicting.router().get("/late", [](HttpContext &) {}), std::logic_error);
+    HttpServer tls(znet::Endpoint::ipv4("127.0.0.1", 0).value(), runtime);
+    auto loaded = tls.set_ssl_certificate("/missing/cert", "/missing/key");
+    ASSERT_FALSE(loaded);
+    EXPECT_FALSE(loaded.error().message().empty());
+}
+} // namespace
+
+TEST(HttpServerOwnershipTest, OfflineServerConstructionDoesNotCreateWorkers) {
+    auto thread_count = [] {
+        return static_cast<size_t>(std::distance(
+            std::filesystem::directory_iterator("/proc/self/task"), std::filesystem::directory_iterator{}));
+    };
+    const auto before = thread_count();
+    HttpServer server(znet::Endpoint::ipv4("127.0.0.1", 0).value(), zco::RuntimeOptions{8});
+    server.router().get("/offline", [](HttpContext &context) { context.response().text("offline"); });
+    auto request = std::make_shared<HttpRequest>();
+    request->set_method(HttpMethod::GET);
+    request->set_path("/offline");
+    HttpContext context(request);
+    EXPECT_TRUE(server.handle(context));
+    EXPECT_EQ(context.response().body_content(), "offline");
+    EXPECT_EQ(thread_count(), before);
 }

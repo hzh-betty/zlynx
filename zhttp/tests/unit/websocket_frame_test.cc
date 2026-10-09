@@ -1,6 +1,5 @@
-#include "../test_support.h"
-#include "zhttp/websocket/websocket_frame.h"
-#include "zhttp/zhttp_logger.h"
+#include "../support/network_fixture.h"
+#include "protocol/websocket/websocket_frame.h"
 
 #include <gtest/gtest.h>
 
@@ -555,6 +554,5 @@ TEST(WebSocketFrameTest, RejectsInvalidBuildInputs) {
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
 
-    zhttp::init_logger();
     return RUN_ALL_TESTS();
 }

@@ -1,0 +1,90 @@
+/**
+ * daemon.h
+ * daemon 定义。
+ *
+ * @author hzh-betty
+ */
+
+#ifndef ZHTTP_DAEMON_H_
+#define ZHTTP_DAEMON_H_
+
+#include <sys/types.h>
+
+#include <cstdint>
+#include <functional>
+#include <string>
+
+namespace zhttp {
+
+/**
+ * 进程信息结构体
+ *
+ * 守护进程模式下通常会存在父进程和真正执行业务的工作进程，
+ * 该结构用于记录它们的 PID、启动时间和重启次数，便于排障和状态输出。
+ */
+struct ProcessInfo {
+    pid_t parent_id = 0;            // 父进程（守护进程）ID
+    pid_t main_id = 0;              // 主进程（工作进程）ID
+    uint64_t parent_start_time = 0; // 父进程启动时间
+    uint64_t main_start_time = 0;   // 主进程启动时间
+    uint32_t restart_count = 0;     // 重启次数
+
+    /**
+     * 转换为字符串
+     *
+     * @return 便于日志输出的描述字符串
+     */
+    std::string to_string() const;
+
+    /**
+     * 获取全局单例
+     *
+     * @return 进程信息单例引用
+     */
+    static ProcessInfo &instance();
+};
+
+/**
+ * 守护进程操作模块
+ *
+ * 该模块封装了一组与服务进程部署相关的能力，例如：
+ * 1. 前后台启动
+ * 2. 子进程崩溃后的自动拉起
+ * 3. 优雅退出信号处理
+ */
+// 保留 Daemon:: 调用名称；进程共享停止标记，不创建没有实例状态的空对象。
+namespace Daemon {
+/**
+ * 主函数回调类型
+ *
+ * 回调的签名与普通 main 函数保持一致，便于复用现有启动逻辑。
+ */
+using MainCallback = std::function<int(int argc, char **argv)>;
+
+/**
+ * 启动守护进程（带子进程监控和自动重启）
+ *
+ * @param argc 参数个数
+ * @param argv 参数数组
+ * @param main_cb 主函数回调
+ * @param is_daemon 是否以守护进程模式运行
+ * @param restart_interval_sec 子进程崩溃后重启间隔（秒）
+ * 信号处理器只在此调用期间安装，返回或异常时恢复；不允许嵌套/并发运行。
+ * 守护模式必须在应用创建线程之前调用。
+ * @return 程序退出码
+ */
+int start_daemon(int argc, char **argv, MainCallback main_cb,
+                 bool is_daemon = true, uint32_t restart_interval_sec = 5);
+
+/**
+ * 检查是否收到停止信号
+ *
+ * @return true 表示进程应开始退出
+ */
+bool should_stop();
+
+} // namespace Daemon
+
+} // namespace zhttp
+
+#endif // ZHTTP_DAEMON_H_

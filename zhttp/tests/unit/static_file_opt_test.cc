@@ -1,8 +1,8 @@
-#include "../test_support.h"
+#include "protocol/http/response_encoder.h"
+#include "../support/request_builder.h"
 #include "zhttp/http_request.h"
 #include "zhttp/http_response.h"
 #include "zhttp/middleware/static_file_middleware.h"
-#include "zhttp/zhttp_logger.h"
 
 #include <cstdio>
 #include <fstream>
@@ -492,7 +492,7 @@ TEST_F(StaticFileMiddlewareTest, ServeHeadPartialContentWhenRangeIsValid) {
     EXPECT_EQ(resp.headers().at("Content-Length"), "4");
     EXPECT_EQ(resp.body_source().length(), 4u);
     const auto wire =
-        HttpResponseWriter::serialize(resp, true, HttpMethod::HEAD);
+        ResponseEncoder::serialize(resp, true, HttpMethod::HEAD);
     EXPECT_EQ(wire.substr(wire.find("\r\n\r\n") + 4), "");
 }
 
@@ -636,6 +636,6 @@ TEST_F(StaticFileMiddlewareTest,
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
-    zhttp::init_logger();
+
     return RUN_ALL_TESTS();
 }

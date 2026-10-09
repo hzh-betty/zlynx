@@ -1,6 +1,5 @@
-#include "../test_support.h"
+#include "../support/request_builder.h"
 #include "zhttp/router/router.h"
-#include "zhttp/zhttp_logger.h"
 
 #include <gtest/gtest.h>
 #include <stdexcept>
@@ -12,7 +11,7 @@ using namespace zhttp::mid;
 
 class RouterTest : public ::testing::Test {
   protected:
-    TestApplication router_;
+    HttpApplication router_;
 };
 
 namespace {
@@ -45,7 +44,7 @@ class ParamRouteHandler : public RouteHandler {
 
 TEST_F(RouterTest, StaticRouteMatch) {
     bool handler_called = false;
-    router_.get("/api/users", [&handler_called](HttpContext &context) {
+    router_.router().get("/api/users", [&handler_called](HttpContext &context) {
         auto &resp = context.response();
         handler_called = true;
         resp.status(HttpStatus::OK).text("users");
@@ -56,7 +55,7 @@ TEST_F(RouterTest, StaticRouteMatch) {
     request->set_path("/api/users");
 
     HttpResponse response;
-    bool found = router_.route(request, response);
+    bool found = run_application(router_, request, response);
 
     EXPECT_TRUE(found);
     EXPECT_TRUE(handler_called);
@@ -64,14 +63,14 @@ TEST_F(RouterTest, StaticRouteMatch) {
 }
 
 TEST_F(RouterTest, HomepageRedirectsRootAndHome) {
-    router_.set_homepage("dashboard");
+    router_.router().set_homepage("dashboard");
 
     auto root_request = std::make_shared<TestContext>();
     root_request->set_method(HttpMethod::GET);
     root_request->set_path("/");
 
     HttpResponse root_response;
-    EXPECT_TRUE(router_.route(root_request, root_response));
+    EXPECT_TRUE(run_application(router_, root_request, root_response));
     EXPECT_EQ(root_response.status_code(), HttpStatus::FOUND);
     EXPECT_EQ(root_response.headers().at("Location"), "/dashboard");
 
@@ -80,29 +79,29 @@ TEST_F(RouterTest, HomepageRedirectsRootAndHome) {
     home_request->set_path("/home");
 
     HttpResponse home_response;
-    EXPECT_TRUE(router_.route(home_request, home_response));
+    EXPECT_TRUE(run_application(router_, home_request, home_response));
     EXPECT_EQ(home_response.status_code(), HttpStatus::FOUND);
     EXPECT_EQ(home_response.headers().at("Location"), "/dashboard");
 }
 
 TEST_F(RouterTest, HomepageRedirectsHeadButNotPost) {
-    router_.set_homepage("dashboard");
+    router_.router().set_homepage("dashboard");
 
     HttpResponse head_response;
     EXPECT_TRUE(
-        router_.route(make_request(HttpMethod::HEAD, "/"), head_response));
+        run_application(router_, make_request(HttpMethod::HEAD, "/"), head_response));
     EXPECT_EQ(head_response.status_code(), HttpStatus::FOUND);
     EXPECT_EQ(head_response.headers().at("Location"), "/dashboard");
 
     HttpResponse post_response;
     EXPECT_FALSE(
-        router_.route(make_request(HttpMethod::POST, "/"), post_response));
+        run_application(router_, make_request(HttpMethod::POST, "/"), post_response));
     EXPECT_EQ(post_response.status_code(), HttpStatus::NOT_FOUND);
 }
 
 TEST_F(RouterTest, ParamRouteMatch) {
     std::string captured_id;
-    router_.get("/users/:id", [&captured_id](HttpContext &context) {
+    router_.router().get("/users/:id", [&captured_id](HttpContext &context) {
         auto *req = &context;
         auto &resp = context.response();
         captured_id = req->path_param("id");
@@ -114,7 +113,7 @@ TEST_F(RouterTest, ParamRouteMatch) {
     request->set_path("/users/123");
 
     HttpResponse response;
-    bool found = router_.route(request, response);
+    bool found = run_application(router_, request, response);
 
     EXPECT_TRUE(found);
     EXPECT_EQ(captured_id, "123");
@@ -122,7 +121,7 @@ TEST_F(RouterTest, ParamRouteMatch) {
 
 TEST_F(RouterTest, MultipleParamRoute) {
     std::string captured_user_id, captured_post_id;
-    router_.get("/users/:user_id/posts/:post_id",
+    router_.router().get("/users/:user_id/posts/:post_id",
                 [&captured_user_id, &captured_post_id](HttpContext &context) {
                     auto *req = &context;
                     captured_user_id = req->path_param("user_id");
@@ -134,7 +133,7 @@ TEST_F(RouterTest, MultipleParamRoute) {
     request->set_path("/users/42/posts/99");
 
     HttpResponse response;
-    router_.route(request, response);
+    run_application(router_, request, response);
 
     EXPECT_EQ(captured_user_id, "42");
     EXPECT_EQ(captured_post_id, "99");
@@ -142,7 +141,7 @@ TEST_F(RouterTest, MultipleParamRoute) {
 
 TEST_F(RouterTest, CatchAllRouteMatch) {
     std::string captured_path;
-    router_.get("/static/*filepath", [&captured_path](HttpContext &context) {
+    router_.router().get("/static/*filepath", [&captured_path](HttpContext &context) {
         auto *req = &context;
         auto &resp = context.response();
         captured_path = req->path_param("filepath");
@@ -150,7 +149,7 @@ TEST_F(RouterTest, CatchAllRouteMatch) {
     });
 
     HttpResponse response;
-    bool found = router_.route(
+    bool found = run_application(router_,
         make_request(HttpMethod::GET, "/static/css/style.css"), response);
     EXPECT_TRUE(found);
     EXPECT_EQ(captured_path, "css/style.css");
@@ -158,7 +157,7 @@ TEST_F(RouterTest, CatchAllRouteMatch) {
 
 TEST_F(RouterTest, RegexRouteMatch) {
     std::string captured_version;
-    router_.add_regex_route(HttpMethod::GET, "^/api/v(\\d+)/users$",
+    router_.router().add_regex_route(HttpMethod::GET, "^/api/v(\\d+)/users$",
                             {"version"},
                             [&captured_version](HttpContext &context) {
                                 auto *req = &context;
@@ -170,21 +169,21 @@ TEST_F(RouterTest, RegexRouteMatch) {
     request->set_path("/api/v2/users");
 
     HttpResponse response;
-    bool found = router_.route(request, response);
+    bool found = run_application(router_, request, response);
 
     EXPECT_TRUE(found);
     EXPECT_EQ(captured_version, "2");
 }
 
 TEST_F(RouterTest, RegexRouteMethodNotMatch) {
-    router_.add_regex_route(HttpMethod::GET, "/only-get/(\\d+)", {"id"},
+    router_.router().add_regex_route(HttpMethod::GET, "/only-get/(\\d+)", {"id"},
                             [](HttpContext &context) {
                                 auto &resp = context.response();
                                 resp.text("ok");
                             });
 
     HttpResponse response;
-    bool found = router_.route(make_request(HttpMethod::POST, "/only-get/123"),
+    bool found = run_application(router_, make_request(HttpMethod::POST, "/only-get/123"),
                                response);
     EXPECT_FALSE(found);
 }
@@ -202,7 +201,7 @@ TEST_F(RouterTest, NotFoundHandler) {
     request->set_path("/nonexistent");
 
     HttpResponse response;
-    bool found = router_.route(request, response);
+    bool found = run_application(router_, request, response);
 
     EXPECT_FALSE(found);
     EXPECT_TRUE(not_found_called);
@@ -218,10 +217,10 @@ TEST_F(RouterTest, NotFoundHandlerWithRouteHandlerPtr) {
         }
     };
 
-    router_.set_not_found_handler(std::make_shared<Custom404Handler>());
+    router_.set_not_found_handler(make_route_callback(std::make_shared<Custom404Handler>()));
     HttpResponse response;
     bool found =
-        router_.route(make_request(HttpMethod::GET, "/missing"), response);
+        run_application(router_, make_request(HttpMethod::GET, "/missing"), response);
     EXPECT_FALSE(found);
     EXPECT_EQ(response.status_code(), HttpStatus::NOT_FOUND);
     EXPECT_EQ(response.body_content(), "custom-404");
@@ -229,10 +228,10 @@ TEST_F(RouterTest, NotFoundHandlerWithRouteHandlerPtr) {
 
 TEST_F(RouterTest, DifferentMethodsSamePath) {
     std::string method_called;
-    router_.get("/resource", [&method_called](HttpContext &context) {
+    router_.router().get("/resource", [&method_called](HttpContext &context) {
         method_called = "GET";
     });
-    router_.post("/resource", [&method_called](HttpContext &context) {
+    router_.router().post("/resource", [&method_called](HttpContext &context) {
         method_called = "POST";
     });
 
@@ -240,28 +239,28 @@ TEST_F(RouterTest, DifferentMethodsSamePath) {
     get_request->set_method(HttpMethod::GET);
     get_request->set_path("/resource");
     HttpResponse get_response;
-    router_.route(get_request, get_response);
+    run_application(router_, get_request, get_response);
     EXPECT_EQ(method_called, "GET");
 
     auto post_request = std::make_shared<TestContext>();
     post_request->set_method(HttpMethod::POST);
     post_request->set_path("/resource");
     HttpResponse post_response;
-    router_.route(post_request, post_response);
+    run_application(router_, post_request, post_response);
     EXPECT_EQ(method_called, "POST");
 }
 
 TEST_F(RouterTest, SupportsAdditionalHttpMethods) {
-    router_.add_route(HttpMethod::HEAD, "/head", [](HttpContext &context) {
+    router_.router().add_route(HttpMethod::HEAD, "/head", [](HttpContext &context) {
         auto &resp = context.response();
         resp.text("head");
     });
-    router_.add_route(HttpMethod::OPTIONS, "/options",
+    router_.router().add_route(HttpMethod::OPTIONS, "/options",
                       [](HttpContext &context) {
                           auto &resp = context.response();
                           resp.text("options");
                       });
-    router_.add_route(HttpMethod::PATCH, "/patch", [](HttpContext &context) {
+    router_.router().add_route(HttpMethod::PATCH, "/patch", [](HttpContext &context) {
         auto &resp = context.response();
         resp.text("patch");
     });
@@ -270,11 +269,11 @@ TEST_F(RouterTest, SupportsAdditionalHttpMethods) {
     HttpResponse options_resp;
     HttpResponse patch_resp;
     EXPECT_TRUE(
-        router_.route(make_request(HttpMethod::HEAD, "/head"), head_resp));
-    EXPECT_TRUE(router_.route(make_request(HttpMethod::OPTIONS, "/options"),
+        run_application(router_, make_request(HttpMethod::HEAD, "/head"), head_resp));
+    EXPECT_TRUE(run_application(router_, make_request(HttpMethod::OPTIONS, "/options"),
                               options_resp));
     EXPECT_TRUE(
-        router_.route(make_request(HttpMethod::PATCH, "/patch"), patch_resp));
+        run_application(router_, make_request(HttpMethod::PATCH, "/patch"), patch_resp));
     EXPECT_EQ(head_resp.body_content(), "head");
     EXPECT_EQ(options_resp.body_content(), "options");
     EXPECT_EQ(patch_resp.body_content(), "patch");
@@ -282,9 +281,9 @@ TEST_F(RouterTest, SupportsAdditionalHttpMethods) {
 
 TEST_F(RouterTest, StaticRoutePriorityOverParam) {
     std::string matched;
-    router_.get("/users/admin",
+    router_.router().get("/users/admin",
                 [&matched](HttpContext &context) { matched = "static"; });
-    router_.get("/users/:id",
+    router_.router().get("/users/:id",
                 [&matched](HttpContext &context) { matched = "param"; });
 
     // 静态路由应该优先匹配
@@ -292,32 +291,32 @@ TEST_F(RouterTest, StaticRoutePriorityOverParam) {
     request->set_method(HttpMethod::GET);
     request->set_path("/users/admin");
     HttpResponse response;
-    router_.route(request, response);
+    run_application(router_, request, response);
 
     EXPECT_EQ(matched, "static");
 
     // 其他路径应该匹配参数路由
     request->set_path("/users/123");
-    router_.route(request, response);
+    run_application(router_, request, response);
     EXPECT_EQ(matched, "param");
 }
 
 TEST_F(RouterTest, RouteHandlerPtrOverloadsWorkAcrossMethods) {
-    router_.get("/handler", std::make_shared<SimpleRouteHandler>());
-    router_.post("/submit", std::make_shared<SimpleRouteHandler>());
-    router_.put("/update/:id", std::make_shared<ParamRouteHandler>());
-    router_.del("/remove/:id", std::make_shared<ParamRouteHandler>());
+    router_.router().get("/handler", std::make_shared<SimpleRouteHandler>());
+    router_.router().post("/submit", std::make_shared<SimpleRouteHandler>());
+    router_.router().put("/update/:id", std::make_shared<ParamRouteHandler>());
+    router_.router().del("/remove/:id", std::make_shared<ParamRouteHandler>());
 
     HttpResponse r1;
     HttpResponse r2;
     HttpResponse r3;
     HttpResponse r4;
 
-    EXPECT_TRUE(router_.route(make_request(HttpMethod::GET, "/handler"), r1));
-    EXPECT_TRUE(router_.route(make_request(HttpMethod::POST, "/submit"), r2));
-    EXPECT_TRUE(router_.route(make_request(HttpMethod::PUT, "/update/99"), r3));
+    EXPECT_TRUE(run_application(router_, make_request(HttpMethod::GET, "/handler"), r1));
+    EXPECT_TRUE(run_application(router_, make_request(HttpMethod::POST, "/submit"), r2));
+    EXPECT_TRUE(run_application(router_, make_request(HttpMethod::PUT, "/update/99"), r3));
     EXPECT_TRUE(
-        router_.route(make_request(HttpMethod::DELETE, "/remove/77"), r4));
+        run_application(router_, make_request(HttpMethod::DELETE, "/remove/77"), r4));
 
     EXPECT_EQ(r1.body_content(), "handler-class");
     EXPECT_EQ(r2.body_content(), "handler-class");
@@ -335,17 +334,17 @@ TEST_F(RouterTest, RegexRouteWithRouteHandlerPtr) {
         }
     };
 
-    router_.add_regex_route(HttpMethod::GET, "/items/(\\d+)", {"id"},
+    router_.router().add_regex_route(HttpMethod::GET, "/items/(\\d+)", {"id"},
                             std::make_shared<RegexHandler>());
 
     HttpResponse response;
     EXPECT_TRUE(
-        router_.route(make_request(HttpMethod::GET, "/items/789"), response));
+        run_application(router_, make_request(HttpMethod::GET, "/items/789"), response));
     EXPECT_EQ(response.body_content(), "regex-789");
 }
 
 TEST_F(RouterTest, HandlerExceptionReturnsInternalServerError) {
-    router_.get("/panic", [](HttpContext &context) {
+    router_.router().get("/panic", [](HttpContext &context) {
         throw std::runtime_error("handler boom");
     });
 
@@ -354,7 +353,7 @@ TEST_F(RouterTest, HandlerExceptionReturnsInternalServerError) {
     request->set_path("/panic");
 
     HttpResponse response;
-    bool found = router_.route(request, response);
+    bool found = run_application(router_, request, response);
 
     EXPECT_TRUE(found);
     EXPECT_EQ(response.status_code(), HttpStatus::INTERNAL_SERVER_ERROR);
@@ -362,10 +361,10 @@ TEST_F(RouterTest, HandlerExceptionReturnsInternalServerError) {
 }
 
 TEST_F(RouterTest, NonStdHandlerExceptionReturnsInternalServerError) {
-    router_.get("/panic-non-std", [](HttpContext &context) { throw 42; });
+    router_.router().get("/panic-non-std", [](HttpContext &context) { throw 42; });
 
     HttpResponse response;
-    bool found = router_.route(make_request(HttpMethod::GET, "/panic-non-std"),
+    bool found = run_application(router_, make_request(HttpMethod::GET, "/panic-non-std"),
                                response);
     EXPECT_TRUE(found);
     EXPECT_EQ(response.status_code(), HttpStatus::INTERNAL_SERVER_ERROR);
@@ -384,7 +383,7 @@ TEST_F(RouterTest, MiddlewareBeforeExceptionReturnsInternalServerError) {
 
     bool handler_called = false;
     router_.use(std::make_shared<ThrowBeforeMiddleware>());
-    router_.get("/mw-before", [&handler_called](HttpContext &context) {
+    router_.router().get("/mw-before", [&handler_called](HttpContext &context) {
         auto &resp = context.response();
         handler_called = true;
         resp.status(HttpStatus::OK).text("ok");
@@ -395,7 +394,7 @@ TEST_F(RouterTest, MiddlewareBeforeExceptionReturnsInternalServerError) {
     request->set_path("/mw-before");
 
     HttpResponse response;
-    bool found = router_.route(request, response);
+    bool found = run_application(router_, request, response);
 
     EXPECT_TRUE(found);
     EXPECT_FALSE(handler_called);
@@ -426,13 +425,13 @@ TEST_F(RouterTest, MiddlewareBeforeReturnsFalseSkipsHandlerButExecutesAfter) {
     bool after_called = false;
     router_.use(std::make_shared<AfterFlagMiddleware>(after_called));
     router_.use(std::make_shared<BlockingMiddleware>());
-    router_.get("/blocked", [&handler_called](HttpContext &context) {
+    router_.router().get("/blocked", [&handler_called](HttpContext &context) {
         handler_called = true;
     });
 
     HttpResponse response;
     bool found =
-        router_.route(make_request(HttpMethod::GET, "/blocked"), response);
+        run_application(router_, make_request(HttpMethod::GET, "/blocked"), response);
     EXPECT_TRUE(found);
     EXPECT_FALSE(handler_called);
     EXPECT_TRUE(after_called);
@@ -452,7 +451,7 @@ TEST_F(RouterTest, MiddlewareAfterExceptionReturnsInternalServerError) {
     };
 
     router_.use(std::make_shared<ThrowAfterMiddleware>());
-    router_.get("/mw-after", [](HttpContext &context) {
+    router_.router().get("/mw-after", [](HttpContext &context) {
         auto &resp = context.response();
         resp.status(HttpStatus::OK).text("ok");
     });
@@ -462,7 +461,7 @@ TEST_F(RouterTest, MiddlewareAfterExceptionReturnsInternalServerError) {
     request->set_path("/mw-after");
 
     HttpResponse response;
-    bool found = router_.route(request, response);
+    bool found = run_application(router_, request, response);
 
     EXPECT_TRUE(found);
     EXPECT_EQ(response.status_code(), HttpStatus::INTERNAL_SERVER_ERROR);
@@ -472,12 +471,12 @@ TEST_F(RouterTest, ExceptionHandlerThrowFallsBackToInternalServerError) {
     router_.set_exception_handler([](HttpContext &context, std::exception_ptr) {
         throw std::runtime_error("exception-handler-boom");
     });
-    router_.get("/eh-throw",
+    router_.router().get("/eh-throw",
                 [](HttpContext &context) { throw std::runtime_error("boom"); });
 
     HttpResponse response;
     bool found =
-        router_.route(make_request(HttpMethod::GET, "/eh-throw"), response);
+        run_application(router_, make_request(HttpMethod::GET, "/eh-throw"), response);
     EXPECT_TRUE(found);
     EXPECT_EQ(response.status_code(), HttpStatus::INTERNAL_SERVER_ERROR);
     EXPECT_EQ(response.body_content(), "Internal Server Error");
@@ -497,7 +496,7 @@ TEST_F(RouterTest, CustomExceptionHandlerOverridesDefaultResponse) {
             resp.status(HttpStatus::BAD_GATEWAY).json("{\"error\":\"custom\"}");
         });
 
-    router_.get("/custom-ex",
+    router_.router().get("/custom-ex",
                 [](HttpContext &context) { throw std::runtime_error("boom"); });
 
     auto request = std::make_shared<TestContext>();
@@ -505,7 +504,7 @@ TEST_F(RouterTest, CustomExceptionHandlerOverridesDefaultResponse) {
     request->set_path("/custom-ex");
 
     HttpResponse response;
-    const bool found = router_.route(request, response);
+    const bool found = run_application(router_, request, response);
 
     EXPECT_TRUE(found);
     EXPECT_TRUE(exception_handler_called);
@@ -521,12 +520,12 @@ TEST_F(RouterTest, SetExceptionHandlerNullResetsToDefault) {
             resp.status(HttpStatus::BAD_GATEWAY).text("custom");
         });
     router_.set_exception_handler(nullptr);
-    router_.get("/default-ex",
+    router_.router().get("/default-ex",
                 [](HttpContext &context) { throw std::runtime_error("boom"); });
 
     HttpResponse response;
     bool found =
-        router_.route(make_request(HttpMethod::GET, "/default-ex"), response);
+        run_application(router_, make_request(HttpMethod::GET, "/default-ex"), response);
     EXPECT_TRUE(found);
     EXPECT_EQ(response.status_code(), HttpStatus::INTERNAL_SERVER_ERROR);
     EXPECT_EQ(response.body_content(), "Internal Server Error");
@@ -535,11 +534,11 @@ TEST_F(RouterTest, SetExceptionHandlerNullResetsToDefault) {
 TEST_F(RouterTest, ExceptionHandlerThrowNonStdFallsBackToInternalServerError) {
     router_.set_exception_handler(
         [](HttpContext &context, std::exception_ptr) { throw 123; });
-    router_.get("/eh-non-std-throw",
+    router_.router().get("/eh-non-std-throw",
                 [](HttpContext &context) { throw std::runtime_error("boom"); });
 
     HttpResponse response;
-    bool found = router_.route(
+    bool found = run_application(router_,
         make_request(HttpMethod::GET, "/eh-non-std-throw"), response);
     EXPECT_TRUE(found);
     EXPECT_EQ(response.status_code(), HttpStatus::INTERNAL_SERVER_ERROR);
@@ -547,9 +546,9 @@ TEST_F(RouterTest, ExceptionHandlerThrowNonStdFallsBackToInternalServerError) {
 }
 
 TEST_F(RouterTest, HomepageAliasTargetDoesNotRedirectAliasPath) {
-    router_.set_homepage("/home");
+    router_.router().set_homepage("/home");
     HttpResponse response;
-    bool found = router_.route(make_request(HttpMethod::GET, "/"), response);
+    bool found = run_application(router_, make_request(HttpMethod::GET, "/"), response);
     EXPECT_FALSE(found);
     EXPECT_EQ(response.status_code(), HttpStatus::NOT_FOUND);
 }
@@ -578,12 +577,12 @@ TEST_F(RouterTest, GroupAndPathUseIgnoreNullMiddlewareAndNormalizePrefix) {
     router_.use_group("", std::make_shared<TraceMiddleware>(trace));
     router_.use_group("/", std::make_shared<TraceMiddleware>(trace));
     router_.use_group("/api///", std::make_shared<TraceMiddleware>(trace));
-    router_.get("/api/users/",
+    router_.router().get("/api/users/",
                 [&trace](HttpContext &context) { trace.push_back("handler"); });
 
     HttpResponse response;
     bool found =
-        router_.route(make_request(HttpMethod::GET, "/api/users/"), response);
+        run_application(router_, make_request(HttpMethod::GET, "/api/users/"), response);
     EXPECT_TRUE(found);
     ASSERT_EQ(trace.size(), 3u);
     EXPECT_EQ(trace[0], "before");
@@ -617,7 +616,7 @@ TEST_F(RouterTest, PathMiddlewareRunsForNotFoundWhenPathMatches) {
 
     HttpResponse response;
     bool found =
-        router_.route(make_request(HttpMethod::GET, "/not-found"), response);
+        run_application(router_, make_request(HttpMethod::GET, "/not-found"), response);
     EXPECT_FALSE(found);
     EXPECT_TRUE(before_called);
     EXPECT_TRUE(after_called);
@@ -627,6 +626,5 @@ TEST_F(RouterTest, PathMiddlewareRunsForNotFoundWhenPathMatches) {
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
 
-    zhttp::init_logger();
     return RUN_ALL_TESTS();
 }

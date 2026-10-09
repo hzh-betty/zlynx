@@ -1,10 +1,9 @@
-#include "../test_support.h"
+#include "../support/request_builder.h"
 #include <gtest/gtest.h>
 
 #include "zhttp/middleware/auth_middleware.h"
 #include "zhttp/router/router.h"
 #include "zhttp/session.h"
-#include "zhttp/zhttp_logger.h"
 
 using namespace zhttp;
 using namespace zhttp::mid;
@@ -50,7 +49,7 @@ class RoleAuthorizationMiddlewareTest : public ::testing::Test {
 } // namespace
 
 TEST_F(AuthenticationMiddlewareTest, RejectWhenNoCredential) {
-    TestApplication router;
+    HttpApplication router;
     AuthenticationMiddleware::Options options;
     options.use_session = true;
     options.session_auth_key = "user_id";
@@ -59,7 +58,7 @@ TEST_F(AuthenticationMiddlewareTest, RejectWhenNoCredential) {
     router.use(std::make_shared<AuthenticationMiddleware>(options));
 
     bool handler_called = false;
-    router.get("/secure", [&](HttpContext &context) {
+    router.router().get("/secure", [&](HttpContext &context) {
         auto &resp = context.response();
         handler_called = true;
         resp.text("ok");
@@ -67,7 +66,7 @@ TEST_F(AuthenticationMiddlewareTest, RejectWhenNoCredential) {
 
     auto req = make_get_request("/secure");
     HttpResponse resp;
-    router.route(req, resp);
+    run_application(router, req, resp);
 
     EXPECT_FALSE(handler_called);
     EXPECT_EQ(resp.status_code(), HttpStatus::UNAUTHORIZED);
@@ -75,7 +74,7 @@ TEST_F(AuthenticationMiddlewareTest, RejectWhenNoCredential) {
 }
 
 TEST_F(AuthenticationMiddlewareTest, AllowWhenSessionCredentialExists) {
-    TestApplication router;
+    HttpApplication router;
     AuthenticationMiddleware::Options options;
     options.use_session = true;
     options.session_auth_key = "user_id";
@@ -84,7 +83,7 @@ TEST_F(AuthenticationMiddlewareTest, AllowWhenSessionCredentialExists) {
     router.use(std::make_shared<AuthenticationMiddleware>(options));
 
     bool handler_called = false;
-    router.get("/secure", [&](HttpContext &context) {
+    router.router().get("/secure", [&](HttpContext &context) {
         auto &resp = context.response();
         handler_called = true;
         resp.text("ok");
@@ -94,7 +93,7 @@ TEST_F(AuthenticationMiddlewareTest, AllowWhenSessionCredentialExists) {
     req->set_session(make_session_with("user_id", "1001"));
 
     HttpResponse resp;
-    router.route(req, resp);
+    run_application(router, req, resp);
 
     EXPECT_TRUE(handler_called);
     EXPECT_EQ(resp.status_code(), HttpStatus::OK);
@@ -102,7 +101,7 @@ TEST_F(AuthenticationMiddlewareTest, AllowWhenSessionCredentialExists) {
 }
 
 TEST_F(AuthenticationMiddlewareTest, AllowWhenBearerTokenValid) {
-    TestApplication router;
+    HttpApplication router;
     AuthenticationMiddleware::Options options;
     options.use_session = false;
     options.use_bearer_token = true;
@@ -114,7 +113,7 @@ TEST_F(AuthenticationMiddlewareTest, AllowWhenBearerTokenValid) {
     router.use(std::make_shared<AuthenticationMiddleware>(options));
 
     bool handler_called = false;
-    router.get("/secure", [&](HttpContext &context) {
+    router.router().get("/secure", [&](HttpContext &context) {
         auto &resp = context.response();
         handler_called = true;
         resp.text("ok");
@@ -124,7 +123,7 @@ TEST_F(AuthenticationMiddlewareTest, AllowWhenBearerTokenValid) {
     req->set_header("Authorization", "Bearer valid-token");
 
     HttpResponse resp;
-    router.route(req, resp);
+    run_application(router, req, resp);
 
     EXPECT_TRUE(handler_called);
     EXPECT_EQ(resp.status_code(), HttpStatus::OK);
@@ -222,12 +221,12 @@ TEST_F(AuthenticationMiddlewareTest,
 }
 
 TEST_F(RoleAuthorizationMiddlewareTest, AllowWhenAnyRoleMatches) {
-    TestApplication router;
+    HttpApplication router;
     router.use(std::make_shared<RoleAuthorizationMiddleware>(
         std::vector<std::string>{"admin", "ops"}));
 
     bool handler_called = false;
-    router.get("/admin", [&](HttpContext &context) {
+    router.router().get("/admin", [&](HttpContext &context) {
         auto &resp = context.response();
         handler_called = true;
         resp.text("ok");
@@ -237,14 +236,14 @@ TEST_F(RoleAuthorizationMiddlewareTest, AllowWhenAnyRoleMatches) {
     req->set_session(make_session_with("roles", "viewer, admin"));
 
     HttpResponse resp;
-    router.route(req, resp);
+    run_application(router, req, resp);
 
     EXPECT_TRUE(handler_called);
     EXPECT_EQ(resp.status_code(), HttpStatus::OK);
 }
 
 TEST_F(RoleAuthorizationMiddlewareTest, RejectWhenRequireAllButMissingRole) {
-    TestApplication router;
+    HttpApplication router;
     RoleAuthorizationMiddleware::Options options;
     options.require_all = true;
 
@@ -252,7 +251,7 @@ TEST_F(RoleAuthorizationMiddlewareTest, RejectWhenRequireAllButMissingRole) {
         std::vector<std::string>{"admin", "ops"}, options));
 
     bool handler_called = false;
-    router.get("/ops", [&](HttpContext &context) {
+    router.router().get("/ops", [&](HttpContext &context) {
         auto &resp = context.response();
         handler_called = true;
         resp.text("ok");
@@ -262,7 +261,7 @@ TEST_F(RoleAuthorizationMiddlewareTest, RejectWhenRequireAllButMissingRole) {
     req->set_session(make_session_with("roles", "admin"));
 
     HttpResponse resp;
-    router.route(req, resp);
+    run_application(router, req, resp);
 
     EXPECT_FALSE(handler_called);
     EXPECT_EQ(resp.status_code(), HttpStatus::FORBIDDEN);
@@ -270,12 +269,12 @@ TEST_F(RoleAuthorizationMiddlewareTest, RejectWhenRequireAllButMissingRole) {
 }
 
 TEST_F(RoleAuthorizationMiddlewareTest, CaseInsensitiveMatchByDefault) {
-    TestApplication router;
+    HttpApplication router;
     router.use(std::make_shared<RoleAuthorizationMiddleware>(
         std::vector<std::string>{"ADMIN"}));
 
     bool handler_called = false;
-    router.get("/panel", [&](HttpContext &context) {
+    router.router().get("/panel", [&](HttpContext &context) {
         auto &resp = context.response();
         handler_called = true;
         resp.text("ok");
@@ -285,7 +284,7 @@ TEST_F(RoleAuthorizationMiddlewareTest, CaseInsensitiveMatchByDefault) {
     req->set_session(make_session_with("roles", "admin"));
 
     HttpResponse resp;
-    router.route(req, resp);
+    run_application(router, req, resp);
 
     EXPECT_TRUE(handler_called);
     EXPECT_EQ(resp.status_code(), HttpStatus::OK);
@@ -361,6 +360,6 @@ TEST_F(RoleAuthorizationMiddlewareTest,
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
-    zhttp::init_logger();
+
     return RUN_ALL_TESTS();
 }

@@ -1,5 +1,4 @@
-#include "../test_support.h"
-#include "zhttp/zhttp_logger.h"
+#include "../support/request_builder.h"
 #include <stdexcept>
 #include <functional>
 #include <vector>
@@ -24,8 +23,8 @@ class FunctionMiddleware : public Middleware {
     After after_;
 };
 TEST(MiddlewareTest, BeforeAfterOrderAndShortCircuitAreRequestLocal) {
-    RequestPipeline pipeline;
-    Router router;
+    HttpApplication pipeline;
+    auto &router = pipeline.router();
     std::vector<int> trace;
     int inner_before = 0;
     pipeline.use(std::make_shared<FunctionMiddleware>(
@@ -49,20 +48,20 @@ TEST(MiddlewareTest, BeforeAfterOrderAndShortCircuitAreRequestLocal) {
     auto request = std::make_shared<HttpRequest>();
     request->set_method(HttpMethod::GET);
     HttpContext context(request);
-    EXPECT_TRUE(pipeline.execute(context, router));
+    EXPECT_TRUE(pipeline.handle(context));
     EXPECT_EQ(trace, (std::vector<int>{1, 2, 3, 4, 5}));
     trace.clear();
     auto stopped = std::make_shared<HttpRequest>();
     stopped->set_method(HttpMethod::GET);
     stopped->set_header("Stop", "yes");
     HttpContext second(stopped);
-    pipeline.execute(second, router);
+    pipeline.handle(second);
     EXPECT_EQ(trace, (std::vector<int>{1, 2, 4, 5}));
     EXPECT_EQ(inner_before, 1);
 }
 TEST(MiddlewareTest, ExceptionsResetStreamAndUpgradeBeforeAfterHooks) {
-    RequestPipeline pipeline;
-    Router router;
+    HttpApplication pipeline;
+    auto &router = pipeline.router();
     bool outer = false;
     pipeline.use(std::make_shared<FunctionMiddleware>(
         FunctionMiddleware::Before{}, [&](HttpContext &context) {
@@ -79,7 +78,7 @@ TEST(MiddlewareTest, ExceptionsResetStreamAndUpgradeBeforeAfterHooks) {
     auto request = std::make_shared<HttpRequest>();
     request->set_method(HttpMethod::GET);
     HttpContext context(request);
-    pipeline.execute(context, router);
+    pipeline.handle(context);
     EXPECT_TRUE(outer);
     EXPECT_EQ(context.response().status_code(),
               HttpStatus::INTERNAL_SERVER_ERROR);
@@ -87,8 +86,8 @@ TEST(MiddlewareTest, ExceptionsResetStreamAndUpgradeBeforeAfterHooks) {
 TEST(MiddlewareTest, AfterHookCanReplaceUpgradeWithOrdinaryResponse) {
     for (auto status : {HttpStatus::OK, HttpStatus::UNAUTHORIZED,
                         HttpStatus::FORBIDDEN}) {
-        RequestPipeline pipeline;
-        Router router;
+        HttpApplication pipeline;
+        auto &router = pipeline.router();
         pipeline.use(std::make_shared<FunctionMiddleware>(
             FunctionMiddleware::Before{}, [status](HttpContext &context) {
                 context.response().status(status).text("ordinary response");
@@ -100,7 +99,7 @@ TEST(MiddlewareTest, AfterHookCanReplaceUpgradeWithOrdinaryResponse) {
         auto request = std::make_shared<HttpRequest>();
         request->set_method(HttpMethod::GET);
         HttpContext context(request);
-        ASSERT_TRUE(pipeline.execute(context, router));
+        ASSERT_TRUE(pipeline.handle(context));
         EXPECT_FALSE(context.upgrade());
         EXPECT_EQ(context.response().status_code(), status);
         EXPECT_EQ(context.response().body_content(), "ordinary response");
@@ -109,8 +108,8 @@ TEST(MiddlewareTest, AfterHookCanReplaceUpgradeWithOrdinaryResponse) {
     }
 }
 TEST(MiddlewareTest, UpgradeWithNonemptyBodyIsRejectedBeforeCommit) {
-    RequestPipeline pipeline;
-    Router router;
+    HttpApplication pipeline;
+    auto &router = pipeline.router();
     router.get("/", [](HttpContext &context) {
         context.upgrade_to_websocket({});
         context.response().text("invalid upgrade body");
@@ -118,15 +117,15 @@ TEST(MiddlewareTest, UpgradeWithNonemptyBodyIsRejectedBeforeCommit) {
     auto request = std::make_shared<HttpRequest>();
     request->set_method(HttpMethod::GET);
     HttpContext context(request);
-    ASSERT_TRUE(pipeline.execute(context, router));
+    ASSERT_TRUE(pipeline.handle(context));
     EXPECT_FALSE(context.upgrade());
     EXPECT_EQ(context.response().status_code(),
               HttpStatus::INTERNAL_SERVER_ERROR);
     EXPECT_FALSE(context.response().committed());
 }
 TEST(MiddlewareTest, BeforeExceptionStopsLaterHooksAndRunsOuterAfter) {
-    RequestPipeline pipeline;
-    Router router;
+    HttpApplication pipeline;
+    auto &router = pipeline.router();
     std::vector<int> trace;
     pipeline.use(std::make_shared<FunctionMiddleware>(
         [&](HttpContext &) {
@@ -153,12 +152,12 @@ TEST(MiddlewareTest, BeforeExceptionStopsLaterHooksAndRunsOuterAfter) {
     auto request = std::make_shared<HttpRequest>();
     request->set_method(HttpMethod::GET);
     HttpContext context(request);
-    EXPECT_TRUE(pipeline.execute(context, router));
+    EXPECT_TRUE(pipeline.handle(context));
     EXPECT_EQ(trace, (std::vector<int>{1, 2, 4}));
 }
 TEST(MiddlewareTest, AfterExceptionResetsResultAndContinuesOuterCleanup) {
-    RequestPipeline pipeline;
-    Router router;
+    HttpApplication pipeline;
+    auto &router = pipeline.router();
     std::vector<int> trace;
     pipeline.use(std::make_shared<FunctionMiddleware>(
         FunctionMiddleware::Before{}, [&](HttpContext &context) {
@@ -180,12 +179,12 @@ TEST(MiddlewareTest, AfterExceptionResetsResultAndContinuesOuterCleanup) {
     auto request = std::make_shared<HttpRequest>();
     request->set_method(HttpMethod::GET);
     HttpContext context(request);
-    EXPECT_TRUE(pipeline.execute(context, router));
+    EXPECT_TRUE(pipeline.handle(context));
     EXPECT_EQ(trace, (std::vector<int>{1, 2, 3}));
 }
 TEST(MiddlewareTest, NestedRequestKeepsUnwindCountsIndependent) {
-    RequestPipeline pipeline;
-    Router router;
+    HttpApplication pipeline;
+    auto &router = pipeline.router();
     std::vector<std::string> trace;
     pipeline.use(std::make_shared<FunctionMiddleware>(
         FunctionMiddleware::Before{}, [&](HttpContext &context) {
@@ -208,21 +207,21 @@ TEST(MiddlewareTest, NestedRequestKeepsUnwindCountsIndependent) {
         request->set_method(HttpMethod::GET);
         request->set_target("/inner");
         HttpContext inner(request);
-        EXPECT_TRUE(pipeline.execute(inner, router));
+        EXPECT_TRUE(pipeline.handle(inner));
     });
     auto request = std::make_shared<HttpRequest>();
     request->set_method(HttpMethod::GET);
     request->set_target("/outer");
     HttpContext context(request);
-    EXPECT_TRUE(pipeline.execute(context, router));
+    EXPECT_TRUE(pipeline.handle(context));
     EXPECT_EQ(trace, (std::vector<std::string>{
                          "/inner:second", "/inner:first", "/outer:third",
                          "/outer:second", "/outer:first"}));
 }
 TEST(MiddlewareTest, DefaultHooksAndEmptyPipelineCallHandlerOnce) {
     for (bool use_middleware : {false, true}) {
-        RequestPipeline pipeline;
-        Router router;
+        HttpApplication pipeline;
+        auto &router = pipeline.router();
         int calls = 0;
         if (use_middleware)
             pipeline.use(std::make_shared<Middleware>());
@@ -230,13 +229,13 @@ TEST(MiddlewareTest, DefaultHooksAndEmptyPipelineCallHandlerOnce) {
         auto request = std::make_shared<HttpRequest>();
         request->set_method(HttpMethod::GET);
         HttpContext context(request);
-        EXPECT_TRUE(pipeline.execute(context, router));
+        EXPECT_TRUE(pipeline.handle(context));
         EXPECT_EQ(calls, 1);
     }
 }
 } // namespace
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
-    zhttp::init_logger();
+
     return RUN_ALL_TESTS();
 }

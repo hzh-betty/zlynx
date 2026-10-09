@@ -1,6 +1,5 @@
-#include "../test_support.h"
+#include "../support/request_builder.h"
 #include "zhttp/middleware/timeout_middleware.h"
-#include "zhttp/zhttp_logger.h"
 
 #include <gtest/gtest.h>
 
@@ -140,8 +139,8 @@ TEST(TimeoutMiddlewareTest, SameInstanceCanBeRegisteredGloballyAndForAPath) {
     TimeoutMiddleware::Options options;
     options.timeout_ms = 10;
     auto middleware = std::make_shared<TimeoutMiddleware>(options);
-    RequestPipeline pipeline;
-    Router router;
+    HttpApplication pipeline;
+    auto &router = pipeline.router();
     pipeline.use(middleware);
     pipeline.use(std::make_shared<DelayAfter>());
     pipeline.use("/", middleware);
@@ -149,12 +148,12 @@ TEST(TimeoutMiddlewareTest, SameInstanceCanBeRegisteredGloballyAndForAPath) {
     auto request = std::make_shared<HttpRequest>();
     request->set_method(HttpMethod::GET);
     HttpContext context(request);
-    EXPECT_TRUE(pipeline.execute(context, router));
+    EXPECT_TRUE(pipeline.handle(context));
     EXPECT_EQ(context.response().status_code(), HttpStatus::GATEWAY_TIMEOUT);
 }
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
-    zhttp::init_logger();
+
     return RUN_ALL_TESTS();
 }

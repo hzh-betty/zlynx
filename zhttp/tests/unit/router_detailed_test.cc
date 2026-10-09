@@ -1,6 +1,5 @@
-#include "../test_support.h"
+#include "../support/request_builder.h"
 #include "zhttp/router/router.h"
-#include "zhttp/zhttp_logger.h"
 
 #include <gtest/gtest.h>
 
@@ -9,7 +8,7 @@ using namespace zhttp::mid;
 
 class RouterDetailedTest : public ::testing::Test {
   protected:
-    TestApplication router_;
+    HttpApplication router_;
 };
 
 class TraceMiddleware : public Middleware {
@@ -34,15 +33,15 @@ TEST_F(RouterDetailedTest, StaticVsParamPriority) {
     int static_called = 0;
     int param_called = 0;
 
-    router_.get("/users/admin", [&](HttpContext &context) { static_called++; });
+    router_.router().get("/users/admin", [&](HttpContext &context) { static_called++; });
 
-    router_.get("/users/:id", [&](HttpContext &context) { param_called++; });
+    router_.router().get("/users/:id", [&](HttpContext &context) { param_called++; });
 
     auto req1 = std::make_shared<TestContext>();
     req1->set_method(HttpMethod::GET);
     req1->set_path("/users/admin");
     HttpResponse resp1;
-    router_.route(req1, resp1);
+    run_application(router_, req1, resp1);
 
     EXPECT_EQ(static_called, 1);
     EXPECT_EQ(param_called, 0);
@@ -51,7 +50,7 @@ TEST_F(RouterDetailedTest, StaticVsParamPriority) {
     req2->set_method(HttpMethod::GET);
     req2->set_path("/users/123");
     HttpResponse resp2;
-    router_.route(req2, resp2);
+    run_application(router_, req2, resp2);
 
     EXPECT_EQ(static_called, 1);
     EXPECT_EQ(param_called, 1);
@@ -60,7 +59,7 @@ TEST_F(RouterDetailedTest, StaticVsParamPriority) {
 TEST_F(RouterDetailedTest, NestedPathParams) {
     std::string captured_org, captured_repo, captured_issue;
 
-    router_.get("/orgs/:org/repos/:repo/issues/:issue",
+    router_.router().get("/orgs/:org/repos/:repo/issues/:issue",
                 [&](HttpContext &context) {
                     auto *req = &context;
                     captured_org = req->path_param("org");
@@ -73,7 +72,7 @@ TEST_F(RouterDetailedTest, NestedPathParams) {
     request->set_path("/orgs/google/repos/zhttp/issues/42");
     HttpResponse response;
 
-    bool found = router_.route(request, response);
+    bool found = run_application(router_, request, response);
 
     EXPECT_TRUE(found);
     EXPECT_EQ(captured_org, "google");
@@ -84,7 +83,7 @@ TEST_F(RouterDetailedTest, NestedPathParams) {
 TEST_F(RouterDetailedTest, ParamWithSpecialChars) {
     std::string captured_id;
 
-    router_.get("/items/:id", [&](HttpContext &context) {
+    router_.router().get("/items/:id", [&](HttpContext &context) {
         auto *req = &context;
         captured_id = req->path_param("id");
     });
@@ -94,7 +93,7 @@ TEST_F(RouterDetailedTest, ParamWithSpecialChars) {
     request->set_path("/items/abc-123_xyz");
     HttpResponse response;
 
-    router_.route(request, response);
+    run_application(router_, request, response);
     EXPECT_EQ(captured_id, "abc-123_xyz");
 }
 
@@ -103,7 +102,7 @@ TEST_F(RouterDetailedTest, ParamWithSpecialChars) {
 TEST_F(RouterDetailedTest, RegexWithMultipleGroups) {
     std::string captured_year, captured_month, captured_day;
 
-    router_.add_regex_route(
+    router_.router().add_regex_route(
         HttpMethod::GET, "^/archive/(\\d{4})/(\\d{2})/(\\d{2})$",
         {"year", "month", "day"}, [&](HttpContext &context) {
             auto *req = &context;
@@ -117,7 +116,7 @@ TEST_F(RouterDetailedTest, RegexWithMultipleGroups) {
     request->set_path("/archive/2024/01/15");
     HttpResponse response;
 
-    bool found = router_.route(request, response);
+    bool found = run_application(router_, request, response);
 
     EXPECT_TRUE(found);
     EXPECT_EQ(captured_year, "2024");
@@ -128,7 +127,7 @@ TEST_F(RouterDetailedTest, RegexWithMultipleGroups) {
 TEST_F(RouterDetailedTest, RegexNotMatching) {
     bool handler_called = false;
 
-    router_.add_regex_route(
+    router_.router().add_regex_route(
         HttpMethod::GET, "^/api/v\\d+/users$", {},
         [&](HttpContext &context) { handler_called = true; });
 
@@ -137,7 +136,7 @@ TEST_F(RouterDetailedTest, RegexNotMatching) {
     request->set_path("/api/vX/users"); // 不匹配 \d+
     HttpResponse response;
 
-    bool found = router_.route(request, response);
+    bool found = run_application(router_, request, response);
 
     EXPECT_FALSE(found);
     EXPECT_FALSE(handler_called);
@@ -171,7 +170,7 @@ TEST_F(RouterDetailedTest, MultipleGlobalMiddlewares) {
     router_.use(std::make_shared<OrderMiddleware>(execution_order, "MW2"));
     router_.use(std::make_shared<OrderMiddleware>(execution_order, "MW3"));
 
-    router_.get("/test", [&](HttpContext &context) {
+    router_.router().get("/test", [&](HttpContext &context) {
         execution_order.push_back("handler");
     });
 
@@ -180,7 +179,7 @@ TEST_F(RouterDetailedTest, MultipleGlobalMiddlewares) {
     request->set_path("/test");
     HttpResponse response;
 
-    router_.route(request, response);
+    run_application(router_, request, response);
 
     ASSERT_EQ(execution_order.size(), 7u);
     EXPECT_EQ(execution_order[0], "MW1_before");
@@ -225,14 +224,14 @@ TEST_F(RouterDetailedTest, MiddlewareInterruption) {
     router_.use(std::make_shared<AfterMiddleware>(after_called));
     router_.use(std::make_shared<BlockingMiddleware>());
 
-    router_.get("/test", [&](HttpContext &context) { handler_called = true; });
+    router_.router().get("/test", [&](HttpContext &context) { handler_called = true; });
 
     auto request = std::make_shared<TestContext>();
     request->set_method(HttpMethod::GET);
     request->set_path("/test");
     HttpResponse response;
 
-    router_.route(request, response);
+    run_application(router_, request, response);
 
     EXPECT_FALSE(handler_called);
     EXPECT_TRUE(after_called); // after 仍然被调用
@@ -244,7 +243,7 @@ TEST_F(RouterDetailedTest, GroupMiddlewareAppliesToChildRoutesOnly) {
 
     router_.use_group("/api",
                       std::make_shared<TraceMiddleware>(trace, "group"));
-    router_.get("/api/users",
+    router_.router().get("/api/users",
                 [&](HttpContext &context) { trace.push_back("handler"); });
 
     auto request = std::make_shared<TestContext>();
@@ -252,7 +251,7 @@ TEST_F(RouterDetailedTest, GroupMiddlewareAppliesToChildRoutesOnly) {
     request->set_path("/api/users");
     HttpResponse response;
 
-    bool found = router_.route(request, response);
+    bool found = run_application(router_, request, response);
 
     EXPECT_TRUE(found);
     ASSERT_EQ(trace.size(), 3u);
@@ -266,7 +265,7 @@ TEST_F(RouterDetailedTest, GroupMiddlewareDoesNotApplyToGroupRoot) {
 
     router_.use_group("/api",
                       std::make_shared<TraceMiddleware>(trace, "group"));
-    router_.get("/api",
+    router_.router().get("/api",
                 [&](HttpContext &context) { trace.push_back("handler"); });
 
     auto request = std::make_shared<TestContext>();
@@ -274,7 +273,7 @@ TEST_F(RouterDetailedTest, GroupMiddlewareDoesNotApplyToGroupRoot) {
     request->set_path("/api");
     HttpResponse response;
 
-    bool found = router_.route(request, response);
+    bool found = run_application(router_, request, response);
 
     EXPECT_TRUE(found);
     ASSERT_EQ(trace.size(), 1u);
@@ -286,7 +285,7 @@ TEST_F(RouterDetailedTest, GroupMiddlewareRespectsPathBoundary) {
 
     router_.use_group("/api",
                       std::make_shared<TraceMiddleware>(trace, "group"));
-    router_.get("/apiv1/users",
+    router_.router().get("/apiv1/users",
                 [&](HttpContext &context) { trace.push_back("handler"); });
 
     auto request = std::make_shared<TestContext>();
@@ -294,7 +293,7 @@ TEST_F(RouterDetailedTest, GroupMiddlewareRespectsPathBoundary) {
     request->set_path("/apiv1/users");
     HttpResponse response;
 
-    bool found = router_.route(request, response);
+    bool found = run_application(router_, request, response);
 
     EXPECT_TRUE(found);
     ASSERT_EQ(trace.size(), 1u);
@@ -311,7 +310,7 @@ TEST_F(RouterDetailedTest, GroupMiddlewareOrderWithGlobalAndExactPath) {
                       std::make_shared<TraceMiddleware>(trace, "group_v1"));
     router_.use("/api/v1/users",
                 std::make_shared<TraceMiddleware>(trace, "exact"));
-    router_.get("/api/v1/users",
+    router_.router().get("/api/v1/users",
                 [&](HttpContext &context) { trace.push_back("handler"); });
 
     auto request = std::make_shared<TestContext>();
@@ -319,7 +318,7 @@ TEST_F(RouterDetailedTest, GroupMiddlewareOrderWithGlobalAndExactPath) {
     request->set_path("/api/v1/users");
     HttpResponse response;
 
-    bool found = router_.route(request, response);
+    bool found = run_application(router_, request, response);
 
     EXPECT_TRUE(found);
     ASSERT_EQ(trace.size(), 9u);
@@ -345,7 +344,7 @@ TEST_F(RouterDetailedTest, GroupMiddlewareDoesNotRunFor404) {
     request->set_path("/api/missing");
     HttpResponse response;
 
-    bool found = router_.route(request, response);
+    bool found = run_application(router_, request, response);
 
     EXPECT_FALSE(found);
     EXPECT_TRUE(trace.empty());
@@ -358,7 +357,7 @@ TEST_F(RouterDetailedTest, GroupMiddlewareAppliesToDynamicAndRegexRoutes) {
 
     router_.use_group(
         "/api", std::make_shared<TraceMiddleware>(dynamic_trace, "group"));
-    router_.get("/api/users/:id", [&](HttpContext &context) {
+    router_.router().get("/api/users/:id", [&](HttpContext &context) {
         auto *req = &context;
         dynamic_trace.push_back("dynamic_" + req->path_param("id"));
     });
@@ -368,7 +367,7 @@ TEST_F(RouterDetailedTest, GroupMiddlewareAppliesToDynamicAndRegexRoutes) {
     dynamic_request->set_path("/api/users/42");
     HttpResponse dynamic_response;
 
-    bool dynamic_found = router_.route(dynamic_request, dynamic_response);
+    bool dynamic_found = run_application(router_, dynamic_request, dynamic_response);
 
     EXPECT_TRUE(dynamic_found);
     ASSERT_EQ(dynamic_trace.size(), 3u);
@@ -376,10 +375,10 @@ TEST_F(RouterDetailedTest, GroupMiddlewareAppliesToDynamicAndRegexRoutes) {
     EXPECT_EQ(dynamic_trace[1], "dynamic_42");
     EXPECT_EQ(dynamic_trace[2], "group_after");
 
-    TestApplication regex_router;
+    HttpApplication regex_router;
     regex_router.use_group(
         "/api", std::make_shared<TraceMiddleware>(regex_trace, "group"));
-    regex_router.add_regex_route(HttpMethod::GET, "^/api/v(\\d+)/users$",
+    regex_router.router().add_regex_route(HttpMethod::GET, "^/api/v(\\d+)/users$",
                                  {"version"}, [&](HttpContext &context) {
                                      auto *req = &context;
                                      regex_trace.push_back(
@@ -391,7 +390,7 @@ TEST_F(RouterDetailedTest, GroupMiddlewareAppliesToDynamicAndRegexRoutes) {
     regex_request->set_path("/api/v2/users");
     HttpResponse regex_response;
 
-    bool regex_found = regex_router.route(regex_request, regex_response);
+    bool regex_found = run_application(regex_router, regex_request, regex_response);
 
     EXPECT_TRUE(regex_found);
     ASSERT_EQ(regex_trace.size(), 3u);
@@ -405,16 +404,16 @@ TEST_F(RouterDetailedTest, GroupMiddlewareAppliesToDynamicAndRegexRoutes) {
 TEST_F(RouterDetailedTest, SamePathDifferentMethods) {
     std::string last_method;
 
-    router_.get("/resource",
+    router_.router().get("/resource",
                 [&](HttpContext &context) { last_method = "GET"; });
 
-    router_.post("/resource",
+    router_.router().post("/resource",
                  [&](HttpContext &context) { last_method = "POST"; });
 
-    router_.put("/resource",
+    router_.router().put("/resource",
                 [&](HttpContext &context) { last_method = "PUT"; });
 
-    router_.del("/resource",
+    router_.router().del("/resource",
                 [&](HttpContext &context) { last_method = "DELETE"; });
 
     auto test_method = [&](HttpMethod method, const std::string &expected) {
@@ -422,7 +421,7 @@ TEST_F(RouterDetailedTest, SamePathDifferentMethods) {
         req->set_method(method);
         req->set_path("/resource");
         HttpResponse resp;
-        router_.route(req, resp);
+        run_application(router_, req, resp);
         EXPECT_EQ(last_method, expected);
     };
 
@@ -448,7 +447,7 @@ TEST_F(RouterDetailedTest, Custom404Handler) {
     request->set_path("/nonexistent");
     HttpResponse response;
 
-    bool found = router_.route(request, response);
+    bool found = run_application(router_, request, response);
 
     EXPECT_FALSE(found);
     EXPECT_TRUE(custom_404_called);
@@ -462,17 +461,17 @@ TEST_F(RouterDetailedTest, OverwriteExistingRoute) {
     int first_handler_calls = 0;
     int second_handler_calls = 0;
 
-    router_.get("/test", [&](HttpContext &context) { first_handler_calls++; });
+    router_.router().get("/test", [&](HttpContext &context) { first_handler_calls++; });
 
     // 覆盖同一路由
-    router_.get("/test", [&](HttpContext &context) { second_handler_calls++; });
+    router_.router().get("/test", [&](HttpContext &context) { second_handler_calls++; });
 
     auto request = std::make_shared<TestContext>();
     request->set_method(HttpMethod::GET);
     request->set_path("/test");
     HttpResponse response;
 
-    router_.route(request, response);
+    run_application(router_, request, response);
 
     EXPECT_EQ(first_handler_calls, 0);
     EXPECT_EQ(second_handler_calls, 1);
@@ -484,7 +483,7 @@ TEST_F(RouterDetailedTest, ManyRoutes) {
     // 添加大量路由
     for (int i = 0; i < 1000; ++i) {
         std::string path = "/route" + std::to_string(i);
-        router_.get(path, [](HttpContext &context) {
+        router_.router().get(path, [](HttpContext &context) {
             auto &resp = context.response();
             resp.status(HttpStatus::OK);
         });
@@ -496,7 +495,7 @@ TEST_F(RouterDetailedTest, ManyRoutes) {
     request->set_path("/route500");
     HttpResponse response;
 
-    bool found = router_.route(request, response);
+    bool found = run_application(router_, request, response);
 
     EXPECT_TRUE(found);
     EXPECT_EQ(response.status_code(), HttpStatus::OK);
@@ -504,6 +503,6 @@ TEST_F(RouterDetailedTest, ManyRoutes) {
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
-    zhttp::init_logger();
+
     return RUN_ALL_TESTS();
 }

@@ -1,14 +1,14 @@
-#include "../test_support.h"
+#include "protocol/http/response_encoder.h"
+#include "../support/request_builder.h"
 #include "zhttp/content/multipart.h"
-#include "zhttp/zhttp_logger.h"
 #include <type_traits>
 using namespace zhttp;
 TEST(RequestBodyTest, MultipartCacheUsesInjectedParserAndInvalidatesTogether) {
     std::string bytes = "payload";
-    ParsedRequestBody body(bytes);
+    detail::ParsedRequestBody body(bytes);
     int calls = 0;
     auto result = std::make_shared<MultipartFormData>();
-    ParsedRequestBody::MultipartParser parser = [&](std::string *) {
+    detail::ParsedRequestBody::MultipartParser parser = [&](std::string *) {
         ++calls;
         return result;
     };
@@ -20,7 +20,7 @@ TEST(RequestBodyTest, MultipartCacheUsesInjectedParserAndInvalidatesTogether) {
     EXPECT_EQ(body.multipart("multipart/form-data", parser), result.get());
     EXPECT_EQ(calls, 2);
     body.invalidate();
-    ParsedRequestBody::MultipartParser failed = [&](std::string *error) {
+    detail::ParsedRequestBody::MultipartParser failed = [&](std::string *error) {
         ++calls;
         *error = "missing boundary";
         return std::shared_ptr<MultipartFormData>{};
@@ -44,7 +44,7 @@ TEST(ProtocolModelTest, ComposedLinesAndEncodedTargetsHaveOneSource) {
     HttpResponse response;
     response.status(299);
     EXPECT_EQ(response.status_line().status_code, 299);
-    EXPECT_EQ(HttpResponseWriter::serialize(response).substr(0, 15),
+    EXPECT_EQ(ResponseEncoder::serialize(response).substr(0, 15),
               "HTTP/1.1 299 \r\n");
     EXPECT_THROW(request.set_target("/%GG"), std::invalid_argument);
 }
@@ -103,6 +103,6 @@ TEST(RequestComponentsTest, ReadonlyContextOwnsMutableDerivedCaches) {
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
-    zhttp::init_logger();
+
     return RUN_ALL_TESTS();
 }

@@ -1,8 +1,7 @@
-#include "../test_support.h"
+#include "../support/network_fixture.h"
 #include "zhttp/http_server_builder.h"
 #include "zhttp/middleware/middleware.h"
 #include "zhttp/router/route_handler.h"
-#include "zhttp/zhttp_logger.h"
 
 #include <gtest/gtest.h>
 
@@ -277,6 +276,5 @@ TEST(HttpServerBuilderTest, RunThrowsWhenBuildFails) {
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
 
-    zhttp::init_logger();
     return RUN_ALL_TESTS();
 }
