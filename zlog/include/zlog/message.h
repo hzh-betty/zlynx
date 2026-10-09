@@ -6,7 +6,10 @@
 
 #ifndef ZLOG_MESSAGE_H_
 #define ZLOG_MESSAGE_H_
+#include <ctime>
 #include <thread>
+
+#include <fmt/core.h>
 
 #include "zlog/level.h"
 
@@ -19,7 +22,7 @@ using ThreadId = std::thread::id;
 
 /**
  * @brief 日志消息结构体
- * 包含一条日志记录的所有信息
+ * 正文和名称视图借用外部存储，调用方须保证其在格式化期间有效。
  */
 struct LogMessage {
     time_t curtime_;          // 日志输出时间
@@ -27,8 +30,8 @@ struct LogMessage {
     const char *file_;        // 源码文件名称
     size_t line_;             // 源码行号
     ThreadId tid_;            // 线程ID
-    const char *payload_;     // 日志主体消息
-    const char *logger_name_; // 日志器名称
+    fmt::string_view payload_;     // 按长度借用日志正文
+    fmt::string_view logger_name_; // 按长度借用日志器自有名称
 
     /**
      * @brief 构造函数
@@ -38,6 +41,10 @@ struct LogMessage {
      * @param payload 日志内容
      * @param logger_name 日志器名称
      */
+    LogMessage(LogLevel::value level, const char *file, size_t line,
+               fmt::string_view payload, fmt::string_view logger_name);
+
+    // 保留 C 字符串入口；空指针按空视图处理。
     LogMessage(LogLevel::value level, const char *file, size_t line,
                const char *payload, const char *logger_name);
 };

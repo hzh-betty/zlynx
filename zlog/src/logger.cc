@@ -17,7 +17,7 @@ Logger::Logger(std::string logger_name, const LogLevel::value limit_level,
       formatter_(std::move(formatter)), sinks_(sinks.begin(), sinks.end()) {}
 
 void Logger::serialize(const LogLevel::value level, const char *file,
-                       const size_t line, const char *data) {
+                       const size_t line, fmt::string_view data) {
     // 1. 线程本地日志消息对象，避免构造/析构开销
     thread_local LogMessage msg(LogLevel::value::DEBUG, "", 0, "", "");
 
@@ -28,7 +28,7 @@ void Logger::serialize(const LogLevel::value level, const char *file,
     msg.line_ = line;
     msg.tid_ = std::this_thread::get_id();
     msg.payload_ = data;
-    msg.logger_name_ = logger_name_.c_str();
+    msg.logger_name_ = fmt::string_view(logger_name_.data(), logger_name_.size());
 
     // 3. 线程本地格式化缓冲区，避免内存分配
     thread_local fmt::memory_buffer buffer;

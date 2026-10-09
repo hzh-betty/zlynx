@@ -72,7 +72,7 @@ class Logger {
      * @param args 格式化参数
      */
     template <typename Level, typename... Args>
-    void log_impl(Level level, const char *file, size_t line, const char *fmt,
+    void log_impl(Level level, const char *file, size_t line, fmt::string_view fmt,
                   Args &&...args) {
         log_impl_helper(level, file, line, fmt, std::forward<Args>(args)...);
     }
@@ -81,7 +81,7 @@ class Logger {
      * @brief 记录 DEBUG 级别日志
      */
     template <typename... Args>
-    void debug(const char *file, size_t line, const char *fmt, Args &&...args) {
+    void debug(const char *file, size_t line, fmt::string_view fmt, Args &&...args) {
         log_impl(LogLevel::value::DEBUG, file, line, fmt,
                  std::forward<Args>(args)...);
     }
@@ -90,7 +90,7 @@ class Logger {
      * @brief 记录 INFO 级别日志
      */
     template <typename... Args>
-    void info(const char *file, size_t line, const char *fmt, Args &&...args) {
+    void info(const char *file, size_t line, fmt::string_view fmt, Args &&...args) {
         log_impl(LogLevel::value::INFO, file, line, fmt,
                  std::forward<Args>(args)...);
     }
@@ -99,7 +99,7 @@ class Logger {
      * @brief 记录 WARNING 级别日志
      */
     template <typename... Args>
-    void warning(const char *file, size_t line, const char *fmt,
+    void warning(const char *file, size_t line, fmt::string_view fmt,
                  Args &&...args) {
         log_impl(LogLevel::value::WARNING, file, line, fmt,
                  std::forward<Args>(args)...);
@@ -109,7 +109,7 @@ class Logger {
      * @brief 记录 ERROR 级别日志
      */
     template <typename... Args>
-    void error(const char *file, size_t line, const char *fmt, Args &&...args) {
+    void error(const char *file, size_t line, fmt::string_view fmt, Args &&...args) {
         log_impl(LogLevel::value::ERROR, file, line, fmt,
                  std::forward<Args>(args)...);
     }
@@ -118,7 +118,7 @@ class Logger {
      * @brief 记录 FATAL 级别日志
      */
     template <typename... Args>
-    void fatal(const char *file, size_t line, const char *fmt, Args &&...args) {
+    void fatal(const char *file, size_t line, fmt::string_view fmt, Args &&...args) {
         log_impl(LogLevel::value::FATAL, file, line, fmt,
                  std::forward<Args>(args)...);
     }
@@ -135,7 +135,7 @@ class Logger {
      */
     template <typename... Args>
     void log_impl_helper(const LogLevel::value level, const char *file,
-                         const size_t line, const char *fmt, Args &&...args) {
+                         const size_t line, fmt::string_view fmt, Args &&...args) {
         if (level < limit_level_)
             return;
 
@@ -147,11 +147,9 @@ class Logger {
         fmt::vformat_to(std::back_inserter(fmt_buffer), fmt,
                         fmt::make_format_args((args)...));
 
-        // 添加终止符（如需要C风格字符串）
-        fmt_buffer.push_back('\0');
-
-        // 使用缓冲区内容（例如输出或转换为字符串）
-        serialize(level, file, line, fmt_buffer.data());
+        // 视图只在本次序列化期间借用缓冲区，保留长度和内嵌零字节。
+        serialize(level, file, line,
+                  fmt::string_view(fmt_buffer.data(), fmt_buffer.size()));
     }
 
     /**
@@ -162,7 +160,7 @@ class Logger {
      * @param data 日志数据
      */
     void serialize(LogLevel::value level, const char *file, size_t line,
-                   const char *data);
+                   fmt::string_view data);
 
     /**
      * @brief 纯虚函数，由子类实现具体的日志输出逻辑

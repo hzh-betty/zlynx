@@ -13,7 +13,7 @@
 namespace zlog {
 
 void StdOutSink::log(const char *data, size_t len) {
-    fmt::print(stdout, "{:.{}}", data, len);
+    fmt::print(stdout, "{}", fmt::string_view(data, len));
 }
 
 FileSink::FileSink(std::string pathname, bool auto_flush)
@@ -25,7 +25,7 @@ FileSink::FileSink(std::string pathname, bool auto_flush)
 }
 
 void FileSink::log(const char *data, size_t len) {
-    fmt::print(ofs_, "{:.{}}", data, len);
+    fmt::print(ofs_, "{}", fmt::string_view(data, len));
     // 只在启用autoFlush时才每次flush，否则依赖系统缓冲
     if (auto_flush_) {
         ofs_.flush();
@@ -48,7 +48,7 @@ void RollBySizeSink::log(const char *data, size_t len) {
     if (cur_size_ + len > max_size_) {
         roll_over();
     }
-    fmt::print(ofs_, "{:.{}}", data, len);
+    fmt::print(ofs_, "{}", fmt::string_view(data, len));
     if (auto_flush_) {
         ofs_.flush();
     }

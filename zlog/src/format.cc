@@ -6,7 +6,6 @@
 
 #include "zlog/format.h"
 
-#include <cstring>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -14,9 +13,15 @@
 namespace zlog {
 namespace {
 
+void append_string(fmt::memory_buffer &buffer, fmt::string_view text) {
+    if (text.size() != 0) {
+        buffer.append(text.data(), text.data() + text.size());
+    }
+}
+
 void append_string(fmt::memory_buffer &buffer, const char *text) {
     if (text) {
-        buffer.append(text, text + std::strlen(text));
+        append_string(buffer, fmt::string_view(text));
     }
 }
 
