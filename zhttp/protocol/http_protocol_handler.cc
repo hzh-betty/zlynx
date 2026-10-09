@@ -3,7 +3,7 @@
 #include "zhttp/protocol/websocket_protocol_handler.h"
 #include "zhttp/websocket/websocket_handshake.h"
 #include "zhttp/writer/http_response_writer.h"
-#include "znet/tcp_connection.h"
+#include "znet/server/connection.h"
 namespace zhttp {
 HttpProtocolHandler::HttpProtocolHandler(Router &router,
                                        RequestPipeline &pipeline,
@@ -20,7 +20,7 @@ void HttpProtocolHandler::on_closed() {
     switch_protocol_ = {};
 }
 void HttpProtocolHandler::on_data(
-    const std::shared_ptr<znet::TcpConnection> &conn, znet::Buffer &buffer) {
+    const std::shared_ptr<znet::Connection> &conn, znet::ByteBuffer &buffer) {
     if (closed_)
         return;
     auto send_error = [&](HttpStatus code, const std::string &message) {
@@ -37,7 +37,7 @@ void HttpProtocolHandler::on_data(
         } catch (...) {
         }
         context.complete(CompletionResult::Failed);
-        conn->shutdown();
+        (void)conn->shutdown();
     };
     while (conn->connected() && !closed_) {
         if (!receiving_) {
@@ -45,7 +45,10 @@ void HttpProtocolHandler::on_data(
                 return;
             receiving_ = true;
             // 从本次请求首字节起设定整体读取期限，半包到达时不延长期限。
-            conn->set_read_deadline(timeout_);
+            conn->set_read_deadline(
+                timeout_
+                    ? zco::Deadline::after(std::chrono::milliseconds{timeout_})
+                    : zco::Deadline{});
         }
         const auto result = parser_.parse(&buffer);
         if (result == ParseResult::HEADERS_READY) {
@@ -59,7 +62,7 @@ void HttpProtocolHandler::on_data(
         if (result == ParseResult::NEED_MORE)
             return;
         receiving_ = false;
-        conn->set_read_deadline(0);
+        conn->set_read_deadline({});
         if (result == ParseResult::ERROR) {
             send_error(parser_.error_status(), parser_.error());
             return;
@@ -70,15 +73,13 @@ void HttpProtocolHandler::on_data(
             return;
         }
         ConnectionInfo info;
-        info.tls = conn->is_tls_enabled();
-        if (conn->socket()) {
-            auto remote = conn->socket()->get_remote_address();
-            if (remote)
-                info.remote_address = remote->to_string();
-            auto local = conn->socket()->get_local_address();
-            if (local)
-                info.local_address = local->to_string();
-        }
+        info.tls = conn->encrypted();
+        auto remote = conn->remote_endpoint();
+        if (remote)
+            info.remote_address = remote.value().to_string();
+        auto local = conn->local_endpoint();
+        if (local)
+            info.local_address = local.value().to_string();
         // 请求上下文在本次同步处理内完成，无需跨回调共享其生命周期。
         HttpContext context(parser_.request(), std::move(info));
         context.response().header("Server", name_);
@@ -130,11 +131,11 @@ void HttpProtocolHandler::on_data(
                                      : CompletionResult::Completed);
         // 响应一旦部分写出，不能再改成错误页；直接关闭以免残留字节被当作下一响应。
         if (written == WriteResult::Failed) {
-            conn->close();
+            (void)conn->close();
             return;
         }
         if (plan.close) {
-            conn->shutdown();
+            (void)conn->shutdown();
             return;
         }
         // 只有 101 握手完整写出后才交接协议；连接调度者在本回调返回后执行切换。

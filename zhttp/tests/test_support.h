@@ -10,7 +10,7 @@
 #include "zhttp/websocket/websocket_handshake.h"
 #include "zhttp/websocket/websocket_message_assembler.h"
 #include "zhttp/writer/http_response_writer.h"
-#include "znet/buffer.h"
+#include "znet/byte_buffer.h"
 #include <gtest/gtest.h>
 #include <stdexcept>
 #include <unistd.h>
@@ -120,7 +120,7 @@ inline bool run_server(HttpServer &server, const TestContext::ptr &context,
     return found;
 }
 inline ParseResult parse_request(HttpRequestParser &parser,
-                                 znet::Buffer *buffer) {
+                                 znet::ByteBuffer *buffer) {
     auto result = parser.parse(buffer);
     return result == ParseResult::HEADERS_READY ? parser.parse(buffer) : result;
 }
@@ -129,7 +129,7 @@ class TestWebSocketParser {
   public:
     explicit TestWebSocketParser(size_t limit = kDefaultWebSocketMaxMessageSize)
         : max_message_size_(limit), assembler_(limit) {}
-    bool parse(znet::Buffer *buffer, std::vector<WebSocketFrameEvent> *events,
+    bool parse(znet::ByteBuffer *buffer, std::vector<WebSocketFrameEvent> *events,
                uint16_t *code, std::string *error) {
         if (!buffer || !events || !code || !error)
             return false;

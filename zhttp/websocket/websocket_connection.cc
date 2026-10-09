@@ -1,7 +1,7 @@
 #include "zhttp/websocket/websocket_connection.h"
 #include "zhttp/websocket/websocket_frame.h"
 #include "zhttp/writer/http_response_writer.h"
-#include "znet/tcp_connection.h"
+#include "znet/server/connection.h"
 namespace zhttp {
 namespace {
 std::string build_close_payload(const WebSocketCloseCode close_code,
@@ -30,7 +30,7 @@ std::string build_close_payload(const WebSocketCloseCode close_code,
 
 } // namespace
 WebSocketConnection::WebSocketConnection(
-    std::weak_ptr<znet::TcpConnection> connection,
+    std::weak_ptr<znet::Connection> connection,
     std::string selected_subprotocol, uint32_t close_timeout_ms)
     : connection_(std::move(connection)),
       selected_subprotocol_(std::move(selected_subprotocol)),
@@ -64,7 +64,7 @@ bool WebSocketConnection::close(WebSocketCloseCode code,
                                         build_close_payload(code, reason));
     if (!accepted)
         if (auto conn = connection_.lock())
-            conn->close();
+            (void)conn->close();
     return accepted;
 }
 bool WebSocketConnection::accept_close(WebSocketCloseCode code,
@@ -75,14 +75,14 @@ bool WebSocketConnection::accept_close(WebSocketCloseCode code,
     const bool was_open = state() == State::Open;
     state_.store(State::Closing, std::memory_order_release);
     if (!was_open) {
-        conn->shutdown();
+        (void)conn->shutdown();
         return true;
     }
     const bool accepted = write_frame(WebSocketOpcode::kClose,
                                       build_close_payload(code, reason), true,
                                       true);
     if (!accepted)
-        conn->close();
+        (void)conn->close();
     return accepted;
 }
 
@@ -97,7 +97,7 @@ bool WebSocketConnection::connected() const {
 
 int WebSocketConnection::fd() const {
     auto conn = connection_.lock();
-    return conn ? conn->fd() : -1;
+    return conn ? conn->native_handle() : -1;
 }
 
 void WebSocketConnection::mark_closed() {
@@ -122,15 +122,15 @@ bool WebSocketConnection::write_frame(WebSocketOpcode opcode,
         return false;
     // 在 WebSocket 连接回调中直接发送，沿用 znet 的既有发送与关闭接口。
     if (!send_all_or_fail(conn, frame.data(), frame.size())) {
-        conn->close();
+        (void)conn->close();
         return false;
     }
     // 回复对端关闭帧后排空并关闭；主动关闭则等待对端响应，受读取期限约束。
     if (opcode == WebSocketOpcode::kClose) {
         if (peer_close)
-            conn->shutdown();
+            (void)conn->shutdown();
         else
-            conn->set_read_deadline(close_timeout_ms_);
+            conn->set_read_deadline(zco::Deadline::after(std::chrono::milliseconds{close_timeout_ms_}));
     }
     return true;
 }

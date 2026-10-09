@@ -1,42 +1,29 @@
 #include "zhttp/http_server.h"
 #include "zhttp/pipeline/request_pipeline.h"
 #include "zhttp/protocol/http_protocol_handler.h"
-#include "znet/tcp_server.h"
+#include "znet/server/tcp_server.h"
+#include "zhttp/zhttp_logger.h"
 #include <limits>
 namespace zhttp {
 namespace {
-// 每个 TCP 连接独占协议状态；configuration 延长共享配置的寿命。
+// 会话闭包持有每连接协议状态；协议切换在当前回调返回之后完成。
 struct ConnectionState {
     std::unique_ptr<ProtocolHandler> current, pending;
-    std::weak_ptr<znet::TcpConnection> connection;
-    std::shared_ptr<void> configuration;
-    bool driving = false, closed = false;
-    void drive(znet::Buffer &buffer) {
-        // 发送或关闭回调可能重入，保护正在执行的协议对象不被递归驱动。
-        if (driving || closed)
-            return;
+    std::weak_ptr<znet::Connection> connection;
+    void drive(znet::ByteBuffer &buffer) {
         auto conn = connection.lock();
         if (!conn)
             return;
-        driving = true;
-        try {
-            current->on_data(conn, buffer);
-            // 先等 HTTP 回调返回，再交接协议，避免升级过程中销毁正在执行的 this。
-            // 握手之后可能已有 WebSocket 帧留在同一缓冲区，切换后立即继续消费。
-            if (pending && conn->connected()) {
-                current = std::move(pending);
-                if (current->on_open() && buffer.readable_bytes())
-                    current->on_data(conn, buffer);
-            }
-        } catch (...) {
-            conn->close();
+        current->on_data(conn, buffer);
+        // 先等 HTTP 回调返回，再交接协议，避免升级过程中销毁正在执行的 this。
+        // 握手之后可能已有 WebSocket 帧留在同一缓冲区，切换后立即继续消费。
+        if (pending && conn->connected()) {
+            current = std::move(pending);
+            if (current->on_open() && buffer.readable_bytes())
+                current->on_data(conn, buffer);
         }
-        driving = false;
     }
     void close() {
-        if (closed)
-            return;
-        closed = true;
         if (current)
             current->on_closed();
         pending.reset();
@@ -56,49 +43,19 @@ struct HttpServer::Runtime {
     uint32_t timeout = 30000;
     std::string name = "zhttp/1.0";
     bool frozen = false;
+    znet::ServerOptions network;
 };
 
-HttpServer::HttpServer(znet::Address::ptr address, zco::RuntimeOptions options,
+HttpServer::HttpServer(znet::Endpoint address, zco::RuntimeOptions options,
                        int backlog)
     : runtime_(std::make_shared<Runtime>()),
-      io_runtime_(new zco::Runtime(options)),
-      tcp_server_(std::make_shared<znet::TcpServer>(
-          *io_runtime_, std::move(address), backlog)) {
-    auto runtime = runtime_;
-    tcp_server_->set_on_connection(
-        [runtime](const znet::TcpConnection::ptr &conn) {
-            auto state = std::make_shared<ConnectionState>();
-            state->configuration = runtime;
-            state->connection = conn;
-            // 切换回调只借用连接状态，避免 state 与 current 形成共享所有权环。
-            std::weak_ptr<ConnectionState> weak = state;
-            state->current.reset(new HttpProtocolHandler(
-                runtime->router, runtime->pipeline, runtime->limits,
-                runtime->timeout, runtime->name,
-                [weak](std::unique_ptr<ProtocolHandler> pending) {
-                    if (auto state = weak.lock())
-                        state->pending = std::move(pending);
-                }));
-            conn->set_context(
-                new std::shared_ptr<ConnectionState>(std::move(state)));
-        });
-    tcp_server_->set_on_message([](const znet::TcpConnection::ptr &conn,
-                                   znet::Buffer &buffer) {
-        auto *state =
-            static_cast<std::shared_ptr<ConnectionState> *>(conn->context());
-        if (state)
-            (*state)->drive(buffer);
-    });
-    tcp_server_->set_on_close([](const znet::TcpConnection::ptr &conn) {
-        auto *state =
-            static_cast<std::shared_ptr<ConnectionState> *>(conn->context());
-        if (state) {
-            (*state)->close();
-            delete state;
-            conn->set_context(nullptr);
-        }
-    });
-    tcp_server_->set_write_timeout(30000);
+      io_runtime_(std::make_unique<zco::Runtime>(options)),
+      endpoint_(std::move(address)) {
+    runtime_->network.backlog = backlog;
+    runtime_->network.write_timeout = std::chrono::milliseconds{30000};
+    runtime_->network.on_error = [](const znet::Error &error) {
+        ZHTTP_LOG_WARN("Network session failed: {}", error.message());
+    };
 }
 HttpServer::~HttpServer() { stop(); }
 void HttpServer::check_mutable() const {
@@ -121,22 +78,30 @@ void HttpServer::set_not_found_handler(HttpHandler handler) {
 void HttpServer::set_exception_handler(ExceptionHandler handler) {
     runtime_->pipeline.set_exception_handler(std::move(handler));
 }
+
 void HttpServer::set_name(const std::string &name) {
     check_mutable();
     runtime_->name = name;
 }
+
 const std::string &HttpServer::name() const { return runtime_->name; }
+
 void HttpServer::set_recv_timeout(uint64_t value) {
     check_mutable();
-    tcp_server_->set_read_timeout(clamp_timeout(value));
+    runtime_->network.read_timeout =
+        std::chrono::milliseconds{clamp_timeout(value)};
 }
+
 void HttpServer::set_write_timeout(uint64_t value) {
     check_mutable();
-    tcp_server_->set_write_timeout(clamp_timeout(value));
+    runtime_->network.write_timeout =
+        std::chrono::milliseconds{clamp_timeout(value)};
 }
+
 void HttpServer::set_keepalive_timeout(uint64_t value) {
     check_mutable();
-    tcp_server_->set_keepalive_timeout(value);
+    runtime_->network.idle_timeout =
+        std::chrono::milliseconds{clamp_timeout(value)};
 }
 void HttpServer::set_request_limits(const RequestLimits &limits) {
     check_mutable();
@@ -149,14 +114,45 @@ void HttpServer::set_request_timeout(uint32_t timeout) {
 bool HttpServer::set_ssl_certificate(const std::string &cert,
                                      const std::string &key) {
     check_mutable();
-    return tcp_server_->enable_tls(cert, key);
+    auto credentials = znet::TlsCredentials::load(cert, key);
+    if (!credentials)
+        return false;
+    runtime_->network.tls = std::make_shared<const znet::TlsCredentials>(
+        std::move(credentials).value());
+    return true;
 }
+
 bool HttpServer::start() {
     // 启动前冻结共享配置，使各连接仅并发读取路由和中间件注册表。
     runtime_->frozen = true;
     runtime_->router.freeze();
     runtime_->pipeline.freeze();
-    return tcp_server_->start();
+    if (!tcp_server_) {
+        auto runtime = runtime_;
+        znet::SessionFactory factory =
+            [runtime](const znet::Connection::ptr &conn) {
+                auto state = std::make_shared<ConnectionState>();
+                state->connection = conn;
+                std::weak_ptr<ConnectionState> weak = state;
+                state->current = std::make_unique<HttpProtocolHandler>(
+                    runtime->router, runtime->pipeline, runtime->limits,
+                    runtime->timeout, runtime->name,
+                    [weak](std::unique_ptr<ProtocolHandler> pending) {
+                        if (auto state = weak.lock())
+                            state->pending = std::move(pending);
+                    });
+                return znet::SessionCallbacks{
+                    [state](const znet::Connection::ptr &,
+                            znet::ByteBuffer &buffer) { state->drive(buffer); },
+                    [state](const znet::Connection::ptr &) { state->close(); }};
+            };
+        tcp_server_ = std::make_unique<znet::TcpServer>(
+            *io_runtime_, endpoint_, std::move(factory), runtime_->network);
+    }
+    auto started = tcp_server_->start();
+    if (!started)
+        ZHTTP_LOG_ERROR("Network server failed to start: {}", started.error().message());
+    return static_cast<bool>(started);
 }
 void HttpServer::stop() {
     if (tcp_server_)

@@ -218,7 +218,7 @@ TEST(WebSocketHandshakeTest, SubprotocolNegotiationValidatesErrorPaths) {
 }
 
 TEST(WebSocketHandshakeTest, ConnectionReportsDisconnectedForExpiredSocket) {
-    WebSocketConnection connection(std::weak_ptr<znet::TcpConnection>{},
+    WebSocketConnection connection(std::weak_ptr<znet::Connection>{},
                                    "superchat");
 
     EXPECT_EQ(connection.selected_subprotocol(), "superchat");
@@ -321,7 +321,7 @@ TEST(WebSocketHandshakeTest, SessionOnMessageDeliversTextAndBinary) {
         nullptr, make_valid_websocket_request(), callbacks,
         WebSocketOptions{kDefaultWebSocketMaxMessageSize, {}}, "");
 
-    znet::Buffer buffer;
+    znet::ByteBuffer buffer;
     buffer.append(build_masked_client_frame(WebSocketOpcode::kText, "hello"));
     buffer.append(build_masked_client_frame(WebSocketOpcode::kBinary, "abc"));
 
@@ -354,7 +354,7 @@ TEST(WebSocketHandshakeTest, SessionOnMessageHandlesErrorBranches) {
             nullptr, make_valid_websocket_request(), callbacks,
             WebSocketOptions{kDefaultWebSocketMaxMessageSize, {}}, "");
 
-        znet::Buffer invalid;
+        znet::ByteBuffer invalid;
         invalid.append(std::string("\x81\x01x", 3)); // unmasked client frame
         session.on_data(nullptr, invalid);
         EXPECT_EQ(close_count, 1);
@@ -382,7 +382,7 @@ TEST(WebSocketHandshakeTest, SessionOnMessageHandlesErrorBranches) {
             nullptr, make_valid_websocket_request(), callbacks,
             WebSocketOptions{kDefaultWebSocketMaxMessageSize, {}}, "");
 
-        znet::Buffer text;
+        znet::ByteBuffer text;
         text.append(build_masked_client_frame(WebSocketOpcode::kText, "x"));
         session.on_data(nullptr, text);
         EXPECT_EQ(close_count, 1);
@@ -408,7 +408,7 @@ TEST(WebSocketHandshakeTest, SessionOnMessageHandlesErrorBranches) {
             nullptr, make_valid_websocket_request(), callbacks,
             WebSocketOptions{kDefaultWebSocketMaxMessageSize, {}}, "");
 
-        znet::Buffer binary;
+        znet::ByteBuffer binary;
         binary.append(build_masked_client_frame(WebSocketOpcode::kBinary, "x"));
         session.on_data(nullptr, binary);
         EXPECT_EQ(close_count, 1);
@@ -433,7 +433,7 @@ TEST(WebSocketHandshakeTest, SessionPingFailureAndCloseNotificationAreHandled) {
             nullptr, make_valid_websocket_request(), callbacks,
             WebSocketOptions{kDefaultWebSocketMaxMessageSize, {}}, "");
 
-        znet::Buffer ping;
+        znet::ByteBuffer ping;
         ping.append(build_masked_client_frame(WebSocketOpcode::kPing, "hb"));
         session.on_data(nullptr, ping);
         EXPECT_EQ(close_count, 1);
@@ -461,7 +461,7 @@ TEST(WebSocketHandshakeTest, SessionPingFailureAndCloseNotificationAreHandled) {
         close_payload.push_back(static_cast<char>(0xE8));
         close_payload.append("bye");
 
-        znet::Buffer close_frame;
+        znet::ByteBuffer close_frame;
         close_frame.append(
             build_masked_client_frame(WebSocketOpcode::kClose, close_payload));
         session.on_data(nullptr, close_frame);

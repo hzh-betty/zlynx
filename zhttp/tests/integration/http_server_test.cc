@@ -805,7 +805,7 @@ TEST(HttpServerIntegrationTest, RejectsOversizedBodyBeforeBodyIsSent) {
     const uint16_t port = find_free_port();
     ASSERT_NE(port, 0);
     auto server = std::make_shared<HttpServer>(
-        std::make_shared<znet::IPv4Address>("127.0.0.1", port),
+        znet::Endpoint::ipv4("127.0.0.1", port).value(),
         zco::RuntimeOptions{2});
     ScopedServer cleanup(server);
     RequestLimits limits;
@@ -825,7 +825,7 @@ TEST(HttpServerIntegrationTest,
     const uint16_t port = find_free_port();
     ASSERT_NE(port, 0);
     auto server = std::make_shared<HttpServer>(
-        std::make_shared<znet::IPv4Address>("127.0.0.1", port),
+        znet::Endpoint::ipv4("127.0.0.1", port).value(),
         zco::RuntimeOptions{2});
     ScopedServer cleanup(server);
     server->set_request_timeout(50);
@@ -848,7 +848,7 @@ TEST(HttpServerIntegrationTest, SlowFragmentsDoNotRenewRequestDeadline) {
     const uint16_t port = find_free_port();
     ASSERT_NE(port, 0);
     auto server = std::make_shared<HttpServer>(
-        std::make_shared<znet::IPv4Address>("127.0.0.1", port),
+        znet::Endpoint::ipv4("127.0.0.1", port).value(),
         zco::RuntimeOptions{2});
     ScopedServer cleanup(server);
     server->set_request_timeout(80);
@@ -874,7 +874,7 @@ TEST(HttpServerIntegrationTest, CompleteRequestClearsDeadlineForKeepAlive) {
     const uint16_t port = find_free_port();
     ASSERT_NE(port, 0);
     auto server = std::make_shared<HttpServer>(
-        std::make_shared<znet::IPv4Address>("127.0.0.1", port),
+        znet::Endpoint::ipv4("127.0.0.1", port).value(),
         zco::RuntimeOptions{2});
     ScopedServer cleanup(server);
     server->set_request_timeout(30);

@@ -1,5 +1,5 @@
 #include "zhttp/parser/http_request_parser.h"
-#include "znet/buffer.h"
+#include "znet/byte_buffer.h"
 #include <algorithm>
 namespace zhttp {
 HttpRequestParser::HttpRequestParser(const RequestLimits &limits)
@@ -99,7 +99,7 @@ bool HttpRequestParser::finish_headers() {
     state_ = content_length_ ? ParseState::BODY : ParseState::COMPLETE;
     return true;
 }
-ParseResult HttpRequestParser::parse(znet::Buffer *buffer) {
+ParseResult HttpRequestParser::parse(znet::ByteBuffer *buffer) {
     if (!buffer)
         return fail(HttpStatus::BAD_REQUEST, "Missing input buffer");
     while (true) {

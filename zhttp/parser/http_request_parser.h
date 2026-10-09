@@ -4,7 +4,7 @@
 #include "zhttp/http_request.h"
 #include "zhttp/request_limits.h"
 namespace znet {
-class Buffer;
+class ByteBuffer;
 }
 namespace zhttp {
 /** 请求解析状态；完成和错误均保持到 reset()。 */
@@ -22,7 +22,7 @@ class ChunkedDecoder {
         : limits_(limits), header_bytes_(header_bytes),
           header_count_(header_count) {}
     /** 消费完整 chunk 部分；未完整部分保留进度，失败可查询 error()。 */
-    ParseResult parse(znet::Buffer &buffer, HttpRequest &request);
+    ParseResult parse(znet::ByteBuffer &buffer, HttpRequest &request);
     /** 返回最近解析错误文本。 */
     const std::string &error() const { return error_; }
     /** 返回错误对应的响应状态；仅 ERROR 时使用。 */
@@ -54,7 +54,7 @@ class HttpRequestParser {
      * @param buffer 可读输入；已消费字节被移除，后续请求字节保留。
      * @return HEADERS_READY 后需再次调用；NEED_MORE 等待更多输入，ERROR 查询错误信息。
      */
-    ParseResult parse(znet::Buffer *buffer);
+    ParseResult parse(znet::ByteBuffer *buffer);
     /** 返回当前共享请求；仅 COMPLETE 时内容完整。 */
     HttpRequest::ptr request() const { return request_; }
     /** 新建请求并清除解析状态；已有共享请求继续有效。 */

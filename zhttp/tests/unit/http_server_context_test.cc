@@ -1,24 +1,26 @@
 #include "../test_support.h"
 #include "zhttp/protocol/http_protocol_handler.h"
 #include "zhttp/zhttp_logger.h"
-#include "znet/socket.h"
-#include "znet/tcp_server.h"
+#include "znet/transport/socket.h"
+#include "znet/server/tcp_server.h"
 #include <limits>
 #include <sys/socket.h>
 #include <unistd.h>
 using namespace zhttp;
 namespace {
 struct SocketPair {
-    SocketPair() : runtime(zco::RuntimeOptions{1}) {
+    explicit SocketPair(std::chrono::milliseconds timeout = {}) : runtime(zco::RuntimeOptions{1}) {
         int fds[2];
         if (::socketpair(AF_UNIX, SOCK_STREAM, 0, fds) != 0)
             throw std::runtime_error("socketpair");
-        connection = std::make_shared<znet::TcpConnection>(
-            std::make_shared<znet::Socket>(fds[0]), runtime.executor(0));
+        connection = std::make_shared<znet::Connection>(
+            std::move(znet::make_tcp_stream(std::move(znet::Socket::adopt(fds[0])).value())).value(),
+            runtime.executor(0), timeout);
+        connection->start().value();
         peer = fds[1];
     }
     ~SocketPair() {
-        connection->close();
+        (void)connection->close();
         ::close(peer);
     }
     std::string read() {
@@ -31,27 +33,18 @@ struct SocketPair {
     }
 
     zco::Runtime runtime;
-    znet::TcpConnection::ptr connection;
+    znet::Connection::ptr connection;
     int peer;
 };
-class ServerAccess : public HttpServer {
-  public:
-    ServerAccess()
-        : HttpServer(std::make_shared<znet::IPv4Address>("127.0.0.1", 0),
-                     zco::RuntimeOptions{1}) {}
-    using HttpServer::tcp_server;
-};
 TEST(HttpServerContextTest, TimeoutSettersClampAndInvalidTlsIsRejected) {
-    ServerAccess server;
+    HttpServer server(znet::Endpoint::ipv4("127.0.0.1", 0).value(), zco::RuntimeOptions{1});
     server.set_recv_timeout(std::numeric_limits<uint64_t>::max());
     server.set_write_timeout(std::numeric_limits<uint64_t>::max());
     server.set_keepalive_timeout(123456);
-    EXPECT_EQ(server.tcp_server()->read_timeout(),
-              std::numeric_limits<uint32_t>::max() - 1);
-    EXPECT_EQ(server.tcp_server()->write_timeout(),
-              std::numeric_limits<uint32_t>::max() - 1);
-    EXPECT_EQ(server.tcp_server()->keepalive_timeout(), 123456u);
     EXPECT_FALSE(server.set_ssl_certificate("/missing/cert", "/missing/key"));
+    EXPECT_TRUE(server.start());
+    EXPECT_THROW(server.set_recv_timeout(1), std::logic_error);
+    server.stop();
 }
 TEST(HttpWriterTest, SynchronousStreamFinishesBeforeSendReturns) {
     SocketPair pair;
@@ -103,11 +96,10 @@ TEST(HttpWriterTest, InvalidStreamDoesNotEmitTerminalChunk) {
     }
 }
 TEST(HttpWriterTest, SlowClientStreamFailsWithinWriteTimeout) {
-    SocketPair pair;
+    SocketPair pair(std::chrono::milliseconds{20});
     int size = 1024;
-    ASSERT_EQ(::setsockopt(pair.connection->fd(), SOL_SOCKET, SO_SNDBUF, &size,
+    ASSERT_EQ(::setsockopt(pair.connection->native_handle(), SOL_SOCKET, SO_SNDBUF, &size,
                            sizeof(size)), 0);
-    pair.connection->set_write_timeout(20);
     HttpContext context(std::make_shared<HttpRequest>());
     context.response().stream([](char *buffer, size_t capacity) {
         std::memset(buffer, 'x', capacity);
@@ -137,7 +129,7 @@ TEST(HttpProtocolTest, SynchronousStreamProcessesAlreadyBufferedNextRequest) {
         context.response().text("next");
     });
     HttpProtocolHandler handler(router, pipeline, {}, 30000, "test", {});
-    auto &buffer = pair.connection->input_buffer();
+    znet::ByteBuffer buffer;
     buffer.append("GET /stream HTTP/1.1\r\nHost: test\r\n\r\nGET /next "
                   "HTTP/1.1\r\nHost: test\r\n\r\n");
     handler.on_data(pair.connection, buffer);
@@ -152,7 +144,7 @@ TEST(HttpProtocolTest, ExpectIsRejectedBeforeBodyArrives) {
     int calls = 0;
     router.post("/", [&](HttpContext &) { ++calls; });
     HttpProtocolHandler handler(router, pipeline, {}, 30000, "test", {});
-    znet::Buffer buffer;
+    znet::ByteBuffer buffer;
     buffer.append("POST / HTTP/1.1\r\nHost: test\r\nExpect: "
                   "100-continue\r\nContent-Length: 100\r\n\r\n");
     handler.on_data(pair.connection, buffer);

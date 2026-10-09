@@ -1,5 +1,5 @@
 #include "zhttp/writer/http_response_writer.h"
-#include "znet/tcp_connection.h"
+#include "znet/server/connection.h"
 #include <algorithm>
 #include <cerrno>
 #include <cstdio>
@@ -20,16 +20,15 @@ std::string encode_http_chunk(const char *data, std::size_t size) {
 }
 } // namespace
 
-bool send_all_or_fail(const std::shared_ptr<znet::TcpConnection> &conn,
+bool send_all_or_fail(const std::shared_ptr<znet::Connection> &conn,
                       const char *data, size_t size) {
     if (!conn || !conn->connected())
         return false;
     // 只在连接回调内调用；每批数据排空后才继续生产，避免积压响应内容。
     while (size) {
         const size_t batch = std::min(size, static_cast<size_t>(64 * 1024));
-        if (conn->output_buffer().readable_bytes() != 0 ||
-            conn->send(data, batch) < 0 || conn->flush_output() < 0 ||
-            conn->output_buffer().readable_bytes() != 0)
+        auto sent = conn->send(std::string_view(data, batch));
+        if (!sent || sent.bytes != batch)
             return false;
         data += batch;
         size -= batch;
@@ -131,7 +130,7 @@ void HttpResponseWriter::serialize_to(const HttpResponse &response,
         *out = serialize(response, include_body, method);
 }
 WriteResult HttpResponseWriter::send(
-    const std::shared_ptr<znet::TcpConnection> &conn, HttpContext &context,
+    const std::shared_ptr<znet::Connection> &conn, HttpContext &context,
     bool upgrade) {
     auto &response = context.response();
     if (response.committed())

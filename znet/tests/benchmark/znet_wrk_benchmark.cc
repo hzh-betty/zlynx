@@ -4,11 +4,10 @@
  * @author hzh-betty
  */
 
-#include "znet/address.h"
-#include "znet/buffer.h"
-#include "znet/tcp_connection.h"
-#include "znet/tcp_server.h"
-#include "znet/znet_logger.h"
+#include "znet/endpoint.h"
+#include "znet/byte_buffer.h"
+#include "znet/server/connection.h"
+#include "znet/server/tcp_server.h"
 
 #include <algorithm>
 #include <atomic>
@@ -499,8 +498,8 @@ void notify_ready(const int ready_fd, const char flag) {
 
 class HelloWorldHandler {
   public:
-    void on_message(const znet::TcpConnection::ptr &conn,
-                    znet::Buffer &buffer) {
+    void on_message(const znet::Connection::ptr &conn,
+                    znet::ByteBuffer &buffer) {
         if (!conn) {
             return;
         }
@@ -543,13 +542,13 @@ class HelloWorldHandler {
 
             const std::string &response =
                 wants_close ? kResponseClose : kResponseKeepAlive;
-            if (conn->send(response.data(), response.size()) < 0) {
-                conn->close();
+            if (!conn->send(response)) {
+                (void)conn->close();
                 return;
             }
 
             if (wants_close) {
-                conn->shutdown();
+                (void)conn->shutdown();
                 return;
             }
         }
@@ -561,24 +560,24 @@ int run_server_process(const BenchConfig &cfg, const int ready_fd) {
     std::signal(SIGINT, server_signal_handler);
     std::signal(SIGPIPE, SIG_IGN);
 
-    znet::init_logger(zlog::LogLevel::value::OFF);
-
-    auto address = std::make_shared<znet::IPv4Address>(
-        "127.0.0.1", static_cast<uint16_t>(cfg.port));
+    auto address = znet::Endpoint::ipv4("127.0.0.1", static_cast<uint16_t>(cfg.port)).value();
     zco::RuntimeOptions runtime_options;
     runtime_options.worker_count = cfg.server_threads;
     zco::Runtime runtime(runtime_options);
-    auto server = std::make_shared<znet::TcpServer>(runtime, address, 4096);
-    server->set_read_timeout(100);
-    server->set_write_timeout(1000);
-
+    znet::ServerOptions options;
+    options.backlog = 4096;
+    options.read_timeout = std::chrono::milliseconds{100};
+    options.write_timeout = std::chrono::milliseconds{1000};
     HelloWorldHandler handler;
-    server->set_on_message(
-        [&handler](const znet::TcpConnection::ptr &conn, znet::Buffer &buffer) {
-            handler.on_message(conn, buffer);
-        });
+    znet::TcpServer server(runtime, address,
+        [&handler](const znet::Connection::ptr &) {
+            return znet::SessionCallbacks{
+                [&handler](const znet::Connection::ptr &conn, znet::ByteBuffer &buffer) {
+                    handler.on_message(conn, buffer);
+                }, {}};
+        }, options);
 
-    if (!server->start()) {
+    if (!server.start()) {
         notify_ready(ready_fd, '0');
         return 2;
     }
@@ -589,7 +588,7 @@ int run_server_process(const BenchConfig &cfg, const int ready_fd) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
-    server->stop();
+    server.stop();
     return 0;
 }
 

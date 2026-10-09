@@ -4,7 +4,7 @@
 #include "zhttp/http_server.h"
 #include "zhttp/server_config.h"
 #include "zhttp/zhttp_logger.h"
-#include "znet/address.h"
+#include "znet/endpoint.h"
 #include <algorithm>
 #include <cctype>
 #include <stdexcept>
@@ -48,8 +48,8 @@ void configure_server_runtime(const ServerConfig &config) {
 }
 
 std::shared_ptr<HttpServer> create_http_server(const ServerConfig &config) {
-    auto addrs = znet::Address::lookup(config.host, config.port);
-    if (addrs.empty()) {
+    auto addrs = znet::resolve_endpoints(config.host, config.port);
+    if (!addrs) {
         throw std::runtime_error("Failed to resolve address: " + config.host +
                                  ":" + std::to_string(config.port));
     }
@@ -58,7 +58,7 @@ std::shared_ptr<HttpServer> create_http_server(const ServerConfig &config) {
     zco::RuntimeOptions options;
     options.worker_count = config.num_threads;
     options.stack_model = config.stack_mode;
-    auto server = std::make_shared<HttpServer>(addrs[0], options);
+    auto server = std::make_shared<HttpServer>(addrs.value().front(), options);
     if (config.enable_https &&
         !server->set_ssl_certificate(config.cert_file, config.key_file)) {
         throw std::runtime_error("Failed to initialize SSL certificate");

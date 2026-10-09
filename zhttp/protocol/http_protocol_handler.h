@@ -24,8 +24,8 @@ class HttpProtocolHandler : public ProtocolHandler {
     /** 关闭处理器并释放切换回调。 */
     ~HttpProtocolHandler();
     /** 逐个处理完整请求，支持 Keep-Alive、流水线请求和 WebSocket 升级。 */
-    void on_data(const std::shared_ptr<znet::TcpConnection> &connection,
-                 znet::Buffer &buffer) override;
+    void on_data(const std::shared_ptr<znet::Connection> &connection,
+                 znet::ByteBuffer &buffer) override;
     /** 幂等标记关闭并解除协议切换回调。 */
     void on_closed() override;
 

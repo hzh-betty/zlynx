@@ -7,7 +7,6 @@
 
 #include "zhttp/zhttp_logger.h"
 
-#include "znet/znet_logger.h"
 
 #include "zlog/module_logger.h"
 
@@ -15,7 +14,7 @@ namespace zhttp {
 
 namespace {
 
-zlog::ModuleLogger module_logger("zhttp_logger", znet::init_logger);
+zlog::ModuleLogger module_logger("zhttp_logger");
 
 } // namespace
 

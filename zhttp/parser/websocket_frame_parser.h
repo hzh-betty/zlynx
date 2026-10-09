@@ -3,7 +3,7 @@
 
 #include "zhttp/websocket/websocket_frame.h"
 namespace znet {
-class Buffer;
+class ByteBuffer;
 }
 namespace zhttp {
 // 单次最多产出一帧；半帧留在输入 Buffer，校验和解码无需解析器对象。
@@ -18,7 +18,7 @@ namespace zhttp {
  * @param max_message_size 单帧载荷上限，单位字节。
  * @return true 表示无协议错误（可能尚无完整帧），false 表示错误或空输出参数。
  */
-bool parse_websocket_frame(znet::Buffer *buffer,
+bool parse_websocket_frame(znet::ByteBuffer *buffer,
                            std::vector<WebSocketFrameEvent> *events,
                            uint16_t *close_code, std::string *error,
                            size_t max_message_size);

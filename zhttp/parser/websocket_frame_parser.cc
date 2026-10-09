@@ -1,5 +1,5 @@
 #include "zhttp/parser/websocket_frame_parser.h"
-#include "znet/buffer.h"
+#include "znet/byte_buffer.h"
 #include <limits>
 namespace zhttp {
 namespace {
@@ -35,7 +35,7 @@ uint64_t read_u64_be(const uint8_t *data) {
 }
 
 } // namespace
-bool parse_websocket_frame(znet::Buffer *buffer,
+bool parse_websocket_frame(znet::ByteBuffer *buffer,
                            std::vector<WebSocketFrameEvent> *events,
                            uint16_t *close_code, std::string *error,
                            size_t max_message_size) {

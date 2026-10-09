@@ -5,7 +5,7 @@
 #include "zhttp/middleware/middleware.h"
 #include "zhttp/request_limits.h"
 #include "zhttp/router/router.h"
-#include "znet/address.h"
+#include "znet/endpoint.h"
 #include <cstdint>
 #include <exception>
 #include <memory>
@@ -31,7 +31,7 @@ class HttpServer {
      * @param address 监听地址。
      * @param backlog 待接受连接队列长度，默认 SOMAXCONN。
      */
-    explicit HttpServer(znet::Address::ptr address, zco::RuntimeOptions options,
+    explicit HttpServer(znet::Endpoint address, zco::RuntimeOptions options,
                         int backlog = SOMAXCONN);
     /** 停止服务器并释放运行资源。 */
     virtual ~HttpServer();
@@ -87,15 +87,13 @@ class HttpServer {
      */
     bool handle(HttpContext &context);
 
-  protected:
-    std::shared_ptr<znet::TcpServer> tcp_server() const { return tcp_server_; }
-
   private:
     void check_mutable() const;
     struct Runtime;
     std::shared_ptr<Runtime> runtime_;
     std::unique_ptr<zco::Runtime> io_runtime_;
-    std::shared_ptr<znet::TcpServer> tcp_server_;
+    znet::Endpoint endpoint_;
+    std::unique_ptr<znet::TcpServer> tcp_server_;
 };
 } // namespace zhttp
 

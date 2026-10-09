@@ -1,627 +1,208 @@
-/**
- * @file socket_test.cc
- * @brief 集成测试。
- * @author hzh-betty
- */
-
-#include "znet/socket.h"
-
-#include <errno.h>
+#include "../support/network_fixture.h"
 #include <fcntl.h>
-#include <sys/socket.h>
-#include <unistd.h>
-
-#include <atomic>
-#include <chrono>
-
 #include <gtest/gtest.h>
+#include <netinet/in.h>
 
-#include "znet/znet_logger.h"
+using namespace znet;
+using namespace std::chrono_literals;
 
-#include "zco/coroutine.h"
-#include "zco/sync/wait_group.h"
-
-namespace znet {
-namespace {
-
-bool is_timeout_errno(int err) {
-    return err == ETIMEDOUT || err == EAGAIN || err == EWOULDBLOCK;
+TEST(SocketTest, CreationAdoptionAndMoveKeepUniqueNonblockingOwnership) {
+    auto socket = Socket::create(AF_INET, SocketKind::stream);
+    ASSERT_TRUE(socket);
+    const int fd = socket.value().native_handle();
+    EXPECT_NE(::fcntl(fd, F_GETFL) & O_NONBLOCK, 0);
+    EXPECT_NE(::fcntl(fd, F_GETFD) & FD_CLOEXEC, 0);
+    Socket moved = std::move(socket).value();
+    EXPECT_EQ(socket.value().native_handle(), -1);
+    EXPECT_EQ(moved.native_handle(), fd);
+    EXPECT_TRUE(moved.close());
+    EXPECT_TRUE(moved.close());
+    EXPECT_EQ(::fcntl(fd, F_GETFD), -1);
+    EXPECT_FALSE(Socket::create(AF_PACKET, SocketKind::stream));
+    EXPECT_FALSE(Socket::adopt(-1));
+    int pipefd[2];
+    ASSERT_EQ(::pipe(pipefd), 0);
+    EXPECT_FALSE(Socket::adopt(pipefd[0]));
+    EXPECT_EQ(::fcntl(pipefd[0], F_GETFD), -1);
+    ::close(pipefd[1]);
 }
 
-class BadAddress : public Address {
-  public:
-    int family() const override { return AF_INET; }
-    const sockaddr *sockaddr_ptr() const override {
-        return reinterpret_cast<const sockaddr *>(&addr_);
+TEST(SocketTest, StreamConnectAcceptAndEndpointQueriesWorkForBothIpFamilies) {
+    zco::Runtime runtime(zco::RuntimeOptions{1});
+    for (int family : {AF_INET, AF_INET6}) {
+        auto listener = Socket::create(family, SocketKind::stream);
+        ASSERT_TRUE(listener);
+        auto endpoint = family == AF_INET ? Endpoint::ipv4("127.0.0.1", 0)
+                                          : Endpoint::ipv6("::1", 0);
+        ASSERT_TRUE(listener.value().bind(endpoint.value()));
+        ASSERT_TRUE(listener.value().listen(8));
+        auto destination = listener.value().local_endpoint();
+        ASSERT_TRUE(destination);
+        EXPECT_GT(destination.value().port(), 0);
+        auto client = Socket::create(family, SocketKind::stream);
+        ASSERT_TRUE(client);
+        auto accept = runtime.spawn([&] {
+            auto accepted = listener.value().accept(zco::Deadline::after(1s));
+            ASSERT_TRUE(accepted);
+            char bytes[4]{};
+            auto received =
+                accepted.value().read_some(bytes, 4, zco::Deadline::after(1s));
+            ASSERT_TRUE(received);
+            EXPECT_EQ(received.bytes, 4u);
+            EXPECT_EQ(std::string(bytes, 4), "ping");
+            EXPECT_TRUE(accepted.value().remote_endpoint());
+        });
+        auto connect = runtime.spawn([&] {
+            ASSERT_TRUE(client.value().connect(destination.value(),
+                                               zco::Deadline::after(1s)));
+            auto sent =
+                client.value().write_some("ping", 4, zco::Deadline::after(1s));
+            EXPECT_TRUE(sent);
+            EXPECT_EQ(sent.bytes, 4u);
+            EXPECT_TRUE(client.value().local_endpoint());
+            EXPECT_EQ(client.value().remote_endpoint().value().port(),
+                      destination.value().port());
+        });
+        ASSERT_TRUE(accept);
+        ASSERT_TRUE(connect);
+        EXPECT_TRUE(accept.value().join());
+        EXPECT_TRUE(connect.value().join());
     }
-    sockaddr *sockaddr_ptr() override {
-        return reinterpret_cast<sockaddr *>(&addr_);
-    }
-    socklen_t sockaddr_len() const override { return 0; }
-    std::string to_string() const override { return "bad"; }
-
-  private:
-    sockaddr_in addr_{};
-};
-
-class SocketCoroutineUnitTest : public ::testing::Test {
-  protected:
-    void TearDown() override {}
-};
-
-TEST_F(SocketCoroutineUnitTest, NewSocketDefaultsToNonBlocking) {
-    zco::Runtime runtime(zco::RuntimeOptions{2});
-    Socket::ptr socket = Socket::create_tcp();
-    ASSERT_NE(socket, nullptr);
-    ASSERT_TRUE(socket->is_valid());
-
-    const int flags = ::fcntl(socket->fd(), F_GETFL, 0);
-    ASSERT_GE(flags, 0);
-    EXPECT_NE((flags & O_NONBLOCK), 0);
 }
 
-TEST_F(SocketCoroutineUnitTest, SendOutsideCoroutineFailsFast) {
-    zco::Runtime runtime(zco::RuntimeOptions{2});
-    int pair[2] = {-1, -1};
-    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-
-    Socket socket(pair[0]);
-    const char payload[] = "ok";
-
-    errno = 0;
-    EXPECT_EQ(socket.send(payload, sizeof(payload) - 1), -1);
-    EXPECT_EQ(errno, EPERM);
-
-    ::close(pair[1]);
-}
-
-TEST_F(SocketCoroutineUnitTest, ConnectOutsideCoroutineFailsFast) {
-    zco::Runtime runtime(zco::RuntimeOptions{2});
-    Socket::ptr client = Socket::create_tcp();
-    ASSERT_NE(client, nullptr);
-
-    Address::ptr target = std::make_shared<IPv4Address>("127.0.0.1", 9);
-    errno = 0;
-    EXPECT_FALSE(client->connect(target, 10));
-    EXPECT_EQ(errno, EPERM);
-}
-
-TEST_F(SocketCoroutineUnitTest, SendAndRecvSucceedInCoroutineContext) {
-    zco::Runtime runtime(zco::RuntimeOptions{2});
-
-    int pair[2] = {-1, -1};
-    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-
-    Socket writer(pair[0]);
-    Socket reader(pair[1]);
-    zco::WaitGroup done(2);
-
-    runtime.spawn([&writer, &done]() {
-        const char payload[] = "ping";
-        EXPECT_EQ(writer.send(payload, sizeof(payload) - 1, 0, 200),
-                  static_cast<ssize_t>(sizeof(payload) - 1));
-        done.done();
-    });
-
-    runtime.spawn([&reader, &done]() {
-        char buffer[8] = {0};
-        EXPECT_EQ(reader.recv(buffer, 4, 0, 200), 4);
-        EXPECT_STREQ(buffer, "ping");
-        done.done();
-    });
-
-    done.wait();
-}
-
-TEST_F(SocketCoroutineUnitTest, RecvRespectsExplicitTimeoutInCoroutineContext) {
+TEST(SocketTest, UdpPreservesSourceEmptyDatagramsAndTruncation) {
     zco::Runtime runtime(zco::RuntimeOptions{1});
-
-    int pair[2] = {-1, -1};
-    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-
-    Socket reader(pair[0]);
-    zco::WaitGroup done(1);
-
-    std::atomic<ssize_t> result{-2};
-    std::atomic<int> err{0};
-    std::atomic<int64_t> elapsed_ms{0};
-
-    runtime.spawn([&]() {
-        char buffer[8] = {0};
-        const auto started = std::chrono::steady_clock::now();
-        errno = 0;
-        const ssize_t n = reader.recv(buffer, sizeof(buffer), 0, 30);
-        const auto ended = std::chrono::steady_clock::now();
-
-        result.store(n, std::memory_order_release);
-        err.store(errno, std::memory_order_release);
-        elapsed_ms.store(std::chrono::duration_cast<std::chrono::milliseconds>(
-                             ended - started)
-                             .count(),
-                         std::memory_order_release);
-        done.done();
-    });
-
-    done.wait();
-
-    EXPECT_EQ(result.load(std::memory_order_acquire), -1);
-    EXPECT_TRUE(is_timeout_errno(err.load(std::memory_order_acquire)));
-    EXPECT_GE(elapsed_ms.load(std::memory_order_acquire), 20);
-
-    ::close(pair[1]);
-}
-
-TEST_F(SocketCoroutineUnitTest,
-       AcceptRespectsExplicitTimeoutInCoroutineContext) {
-    zco::Runtime runtime(zco::RuntimeOptions{1});
-
-    Socket::ptr listener = Socket::create_tcp();
-    ASSERT_NE(listener, nullptr);
-    ASSERT_TRUE(listener->bind(std::make_shared<IPv4Address>("127.0.0.1", 0)));
-    ASSERT_TRUE(listener->listen(8));
-
-    zco::WaitGroup done(1);
-    std::atomic<int> err{0};
-    std::atomic<int64_t> elapsed_ms{0};
-    std::atomic<bool> timed_out{false};
-
-    runtime.spawn([&]() {
-        const auto started = std::chrono::steady_clock::now();
-        errno = 0;
-        Socket::ptr peer = listener->accept(30);
-        const auto ended = std::chrono::steady_clock::now();
-
-        timed_out.store(peer == nullptr, std::memory_order_release);
-        err.store(errno, std::memory_order_release);
-        elapsed_ms.store(std::chrono::duration_cast<std::chrono::milliseconds>(
-                             ended - started)
-                             .count(),
-                         std::memory_order_release);
-        done.done();
-    });
-
-    done.wait();
-
-    EXPECT_TRUE(timed_out.load(std::memory_order_acquire));
-    EXPECT_TRUE(is_timeout_errno(err.load(std::memory_order_acquire)));
-    EXPECT_GE(elapsed_ms.load(std::memory_order_acquire), 20);
-}
-
-TEST_F(SocketCoroutineUnitTest, ConnectFailureIsReportedInCoroutineContext) {
-    zco::Runtime runtime(zco::RuntimeOptions{1});
-
-    Socket::ptr client = Socket::create_tcp();
-    ASSERT_NE(client, nullptr);
-
-    Address::ptr target = std::make_shared<BadAddress>();
-
-    zco::WaitGroup done(1);
-    std::atomic<bool> connected{true};
-    std::atomic<int> err{0};
-
-    runtime.spawn([&]() {
-        errno = 0;
-        const bool ok = client->connect(target, 30);
-
-        connected.store(ok, std::memory_order_release);
-        err.store(errno, std::memory_order_release);
-        done.done();
-    });
-
-    done.wait();
-
-    EXPECT_FALSE(connected.load(std::memory_order_acquire));
-    EXPECT_EQ(err.load(std::memory_order_acquire), EINVAL);
-}
-
-TEST_F(SocketCoroutineUnitTest, FactoryHelpersCreateValidSockets) {
-    zco::Runtime runtime(zco::RuntimeOptions{2});
-    auto tcp = Socket::create_tcp();
-    auto tcp6 = Socket::create_tcp_v6();
-    auto udp = Socket::create_udp();
-    auto udp6 = Socket::create_udp_v6();
-
-    ASSERT_NE(tcp, nullptr);
-    ASSERT_NE(tcp6, nullptr);
-    ASSERT_NE(udp, nullptr);
-    ASSERT_NE(udp6, nullptr);
-    EXPECT_TRUE(tcp->is_valid());
-    EXPECT_TRUE(tcp6->is_valid());
-    EXPECT_TRUE(udp->is_valid());
-    EXPECT_TRUE(udp6->is_valid());
-}
-
-TEST_F(SocketCoroutineUnitTest, BindAndConnectRejectFamilyMismatch) {
-    zco::Runtime runtime(zco::RuntimeOptions{1});
-    auto ipv4_socket = Socket::create_tcp();
-    ASSERT_NE(ipv4_socket, nullptr);
-
-    Address::ptr ipv6_addr = std::make_shared<IPv6Address>("::1", 0);
-    EXPECT_FALSE(ipv4_socket->bind(ipv6_addr));
-    zco::WaitGroup done(1);
-    std::atomic<bool> connected{true};
-    runtime.spawn([&]() {
-        errno = 0;
-        connected.store(ipv4_socket->connect(ipv6_addr, 20),
-                        std::memory_order_release);
-        done.done();
-    });
-    done.wait();
-    EXPECT_FALSE(connected.load(std::memory_order_acquire));
-}
-
-TEST_F(SocketCoroutineUnitTest, ReconnectWithoutRemoteAddressFails) {
-    zco::Runtime runtime(zco::RuntimeOptions{2});
-    auto socket = Socket::create_tcp();
-    ASSERT_NE(socket, nullptr);
-    EXPECT_FALSE(socket->reconnect(10));
-}
-
-TEST_F(SocketCoroutineUnitTest, InvalidSocketOperationsReturnExpectedValues) {
-    zco::Runtime runtime(zco::RuntimeOptions{2});
-    auto socket = Socket::create_tcp();
-    ASSERT_NE(socket, nullptr);
-    ASSERT_TRUE(socket->close());
-    EXPECT_TRUE(socket->close());
-    EXPECT_TRUE(socket->shutdown_write());
-    EXPECT_EQ(socket->get_local_address(), nullptr);
-    EXPECT_EQ(socket->get_remote_address(), nullptr);
-    EXPECT_EQ(socket->get_error(), -1);
-}
-
-TEST_F(SocketCoroutineUnitTest, SetNonBlockingToggleAndSocketOptionsWork) {
-    zco::Runtime runtime(zco::RuntimeOptions{2});
-    auto socket = Socket::create_tcp();
-    ASSERT_NE(socket, nullptr);
-
-    EXPECT_TRUE(socket->set_non_blocking(false));
-    int flags = ::fcntl(socket->fd(), F_GETFL, 0);
-    ASSERT_GE(flags, 0);
-    EXPECT_EQ((flags & O_NONBLOCK), 0);
-
-    EXPECT_TRUE(socket->set_non_blocking(true));
-    flags = ::fcntl(socket->fd(), F_GETFL, 0);
-    ASSERT_GE(flags, 0);
-    EXPECT_NE((flags & O_NONBLOCK), 0);
-
-    EXPECT_TRUE(socket->set_send_timeout(120));
-    EXPECT_TRUE(socket->set_recv_timeout(120));
-    EXPECT_TRUE(socket->set_keep_alive(true));
-    EXPECT_TRUE(socket->set_reuse_addr(true));
-    EXPECT_TRUE(socket->set_reuse_port(true));
-    EXPECT_TRUE(socket->set_tcp_nodelay(true));
-}
-
-TEST_F(SocketCoroutineUnitTest, UdpSendToAndRecvFromWorkInCoroutineContext) {
-    zco::Runtime runtime(zco::RuntimeOptions{1});
-
-    auto receiver = Socket::create_udp();
-    auto sender = Socket::create_udp();
-    ASSERT_NE(receiver, nullptr);
-    ASSERT_NE(sender, nullptr);
-
-    auto bind_addr = std::make_shared<IPv4Address>("127.0.0.1", 0);
-    ASSERT_TRUE(receiver->bind(bind_addr));
-    auto local_addr =
-        std::dynamic_pointer_cast<IPv4Address>(receiver->get_local_address());
-    ASSERT_NE(local_addr, nullptr);
-
-    auto to = std::make_shared<IPv4Address>("127.0.0.1", local_addr->port());
-
-    zco::WaitGroup done(2);
-    std::atomic<ssize_t> recv_n{-1};
-    std::atomic<ssize_t> send_n{-1};
-    std::atomic<int> recv_errno{0};
-
-    runtime.spawn([&]() {
-        char buf[16] = {0};
-        errno = 0;
-        recv_n.store(receiver->recv_from(buf, sizeof(buf), nullptr, 0, 200),
-                     std::memory_order_release);
-        recv_errno.store(errno, std::memory_order_release);
-        if (recv_n.load(std::memory_order_acquire) > 0) {
-            EXPECT_STREQ(buf, "udp");
-        }
-        done.done();
-    });
-
-    runtime.spawn([&]() {
-        send_n.store(sender->send_to("udp", 3, to, 0, 200),
-                     std::memory_order_release);
-        done.done();
-    });
-
-    done.wait();
-    EXPECT_EQ(send_n.load(std::memory_order_acquire), 3);
-    EXPECT_EQ(recv_n.load(std::memory_order_acquire), 3);
-}
-
-TEST_F(SocketCoroutineUnitTest, AcceptOnInvalidSocketFailsInCoroutineContext) {
-    zco::Runtime runtime(zco::RuntimeOptions{1});
-
-    auto listener = Socket::create_tcp();
-    ASSERT_NE(listener, nullptr);
-    ASSERT_TRUE(listener->close());
-
-    zco::WaitGroup done(1);
-    std::atomic<bool> accept_failed{false};
-    runtime.spawn([&]() {
-        errno = 0;
-        Socket::ptr peer = listener->accept(20);
-        accept_failed.store(peer == nullptr, std::memory_order_release);
-        done.done();
-    });
-    done.wait();
-
-    EXPECT_TRUE(accept_failed.load(std::memory_order_acquire));
-}
-
-TEST_F(SocketCoroutineUnitTest, ConnectSuccessPopulatesLocalAndRemoteAddress) {
-    zco::Runtime runtime(zco::RuntimeOptions{1});
-
-    auto listener = Socket::create_tcp();
-    ASSERT_NE(listener, nullptr);
-    ASSERT_TRUE(listener->bind(std::make_shared<IPv4Address>("127.0.0.1", 0)));
-    ASSERT_TRUE(listener->listen(8));
-    auto listen_addr =
-        std::dynamic_pointer_cast<IPv4Address>(listener->get_local_address());
-    ASSERT_NE(listen_addr, nullptr);
-
-    auto client = Socket::create_tcp();
-    ASSERT_NE(client, nullptr);
-
-    zco::WaitGroup done(2);
-    std::atomic<bool> connected{false};
-    std::atomic<bool> accepted{false};
-
-    runtime.spawn([&]() {
-        Socket::ptr peer = listener->accept(200);
-        accepted.store(peer != nullptr, std::memory_order_release);
-        if (peer) {
-            EXPECT_NE(peer->get_local_address(), nullptr);
-            EXPECT_NE(peer->get_remote_address(), nullptr);
-            peer->close();
-        }
-        done.done();
-    });
-
-    runtime.spawn([&]() {
-        connected.store(client->connect(std::make_shared<IPv4Address>(
-                                            "127.0.0.1", listen_addr->port()),
-                                        200),
-                        std::memory_order_release);
-        if (connected.load(std::memory_order_acquire)) {
-            EXPECT_NE(client->get_local_address(), nullptr);
-            EXPECT_NE(client->get_remote_address(), nullptr);
-            // 命中缓存返回分支。
-            EXPECT_NE(client->get_local_address(), nullptr);
-            EXPECT_NE(client->get_remote_address(), nullptr);
-            EXPECT_GE(client->get_error(), 0);
-        }
-        done.done();
-    });
-
-    done.wait();
-    EXPECT_TRUE(connected.load(std::memory_order_acquire));
-    EXPECT_TRUE(accepted.load(std::memory_order_acquire));
-}
-
-TEST_F(SocketCoroutineUnitTest, ReconnectSucceedsAfterInitialConnect) {
-    zco::Runtime runtime(zco::RuntimeOptions{1});
-
-    auto listener = Socket::create_tcp();
-    ASSERT_NE(listener, nullptr);
-    ASSERT_TRUE(listener->bind(std::make_shared<IPv4Address>("127.0.0.1", 0)));
-    ASSERT_TRUE(listener->listen(8));
-    auto listen_addr =
-        std::dynamic_pointer_cast<IPv4Address>(listener->get_local_address());
-    ASSERT_NE(listen_addr, nullptr);
-
-    auto client = Socket::create_tcp();
-    ASSERT_NE(client, nullptr);
-
-    zco::WaitGroup first_round(2);
-    runtime.spawn([&]() {
-        Socket::ptr peer = listener->accept(200);
-        ASSERT_NE(peer, nullptr);
-        peer->close();
-        first_round.done();
-    });
-    runtime.spawn([&]() {
-        ASSERT_TRUE(client->connect(
-            std::make_shared<IPv4Address>("127.0.0.1", listen_addr->port()),
-            200));
-        client->close();
-        first_round.done();
-    });
-    first_round.wait();
-
-    listener->close();
-
-    zco::WaitGroup done(1);
-    std::atomic<bool> reconnected{true};
-    runtime.spawn([&]() {
-        reconnected.store(client->reconnect(30), std::memory_order_release);
-        done.done();
-    });
-    done.wait();
-
-    EXPECT_FALSE(reconnected.load(std::memory_order_acquire));
-}
-
-TEST_F(SocketCoroutineUnitTest, SocketCtorWithInvalidFdFallsBackToDefaults) {
-    zco::Runtime runtime(zco::RuntimeOptions{2});
-    Socket socket(-1);
-    EXPECT_FALSE(socket.is_valid());
-    EXPECT_EQ(socket.family(), AF_INET);
-    EXPECT_EQ(socket.type(), SOCK_STREAM);
-}
-
-TEST_F(SocketCoroutineUnitTest,
-       RawCtorWithInvalidFamilyTriggersSocketCreateFail) {
-    zco::Runtime runtime(zco::RuntimeOptions{2});
-    Socket socket(-1, SOCK_STREAM, 0);
-    EXPECT_FALSE(socket.is_valid());
-}
-
-TEST_F(SocketCoroutineUnitTest, SendRecvAndUdpApisValidateInvalidSocketPaths) {
-    zco::Runtime runtime(zco::RuntimeOptions{1});
-
-    auto socket = Socket::create_tcp();
-    ASSERT_NE(socket, nullptr);
-    ASSERT_TRUE(socket->close());
-
-    zco::WaitGroup done(1);
-    runtime.spawn([&]() {
-        char buf[8] = {0};
-        EXPECT_EQ(socket->send("x", 1, 0, 20), -1);
-        EXPECT_EQ(socket->recv(buf, sizeof(buf), 0, 20), -1);
-        errno = 0;
-        EXPECT_EQ(socket->send_to("x", 1, nullptr, 0, 20), -1);
-        EXPECT_EQ(errno, EINVAL);
-        EXPECT_EQ(socket->recv_from(buf, sizeof(buf), nullptr, 0, 20), -1);
-        done.done();
-    });
-    done.wait();
-}
-
-TEST_F(SocketCoroutineUnitTest, ShutdownWriteFailurePathOnUnconnectedSocket) {
-    zco::Runtime runtime(zco::RuntimeOptions{2});
-    auto socket = Socket::create_tcp();
-    ASSERT_NE(socket, nullptr);
-    EXPECT_FALSE(socket->shutdown_write());
-}
-
-TEST_F(SocketCoroutineUnitTest, BindAndListenFailurePathsAreCovered) {
-    zco::Runtime runtime(zco::RuntimeOptions{2});
-    auto socket = Socket::create_tcp();
-    ASSERT_NE(socket, nullptr);
-
-    ASSERT_TRUE(socket->close());
-    EXPECT_FALSE(socket->bind(std::make_shared<IPv4Address>("127.0.0.1", 0)));
-    EXPECT_FALSE(socket->listen(1));
-
-    auto socket2 = Socket::create_tcp();
-    ASSERT_NE(socket2, nullptr);
-    EXPECT_FALSE(socket2->bind(std::make_shared<BadAddress>()));
-
-    auto udp = Socket::create_udp();
-    ASSERT_NE(udp, nullptr);
-    EXPECT_FALSE(udp->listen(1));
-}
-
-TEST_F(SocketCoroutineUnitTest, SendRecvFromNonCoroutinePathsFailFast) {
-    zco::Runtime runtime(zco::RuntimeOptions{2});
-    auto socket = Socket::create_tcp();
-    ASSERT_NE(socket, nullptr);
-
-    char buf[8] = {0};
-    errno = 0;
-    EXPECT_EQ(socket->recv(buf, sizeof(buf), 0, 10), -1);
-    EXPECT_EQ(errno, EPERM);
-
-    errno = 0;
-    EXPECT_EQ(socket->send_to("x", 1, std::make_shared<IPv4Address>(), 0, 10),
-              -1);
-    EXPECT_EQ(errno, EPERM);
-
-    errno = 0;
-    EXPECT_EQ(socket->recv_from(buf, sizeof(buf), nullptr, 0, 10), -1);
-    EXPECT_EQ(errno, EPERM);
-}
-
-TEST_F(SocketCoroutineUnitTest, RecvFromBranchWithNonNullFromAddressIsCovered) {
-    zco::Runtime runtime(zco::RuntimeOptions{1});
-
-    auto receiver = Socket::create_udp();
-    auto sender = Socket::create_udp();
-    ASSERT_NE(receiver, nullptr);
-    ASSERT_NE(sender, nullptr);
-
-    ASSERT_TRUE(receiver->bind(std::make_shared<IPv4Address>("127.0.0.1", 0)));
-    auto local =
-        std::dynamic_pointer_cast<IPv4Address>(receiver->get_local_address());
-    ASSERT_NE(local, nullptr);
-
-    zco::WaitGroup done(2);
-    runtime.spawn([&]() {
-        char buf[8] = {0};
-        Address::ptr from = std::make_shared<IPv4Address>();
-        EXPECT_EQ(receiver->recv_from(buf, sizeof(buf), &from, 0, 200), 3);
-        done.done();
-    });
-    runtime.spawn([&]() {
-        EXPECT_EQ(sender->send_to(
-                      "udp", 3,
-                      std::make_shared<IPv4Address>("127.0.0.1", local->port()),
-                      0, 200),
-                  3);
-        done.done();
-    });
-    done.wait();
-}
-
-TEST_F(SocketCoroutineUnitTest, SetNonBlockingFalseFailsOnInvalidFdPath) {
-    zco::Runtime runtime(zco::RuntimeOptions{2});
-    auto socket = Socket::create_tcp();
-    ASSERT_NE(socket, nullptr);
-    ASSERT_TRUE(socket->close());
-    EXPECT_FALSE(socket->set_non_blocking(false));
-}
-
-TEST_F(SocketCoroutineUnitTest, ShutdownWriteSuccessPathOnConnectedSocket) {
-    zco::Runtime runtime(zco::RuntimeOptions{1});
-
-    auto listener = Socket::create_tcp();
-    ASSERT_NE(listener, nullptr);
-    ASSERT_TRUE(listener->bind(std::make_shared<IPv4Address>("127.0.0.1", 0)));
-    ASSERT_TRUE(listener->listen(8));
-    auto local =
-        std::dynamic_pointer_cast<IPv4Address>(listener->get_local_address());
-    ASSERT_NE(local, nullptr);
-
-    auto client = Socket::create_tcp();
-    ASSERT_NE(client, nullptr);
-    zco::WaitGroup done(2);
-    runtime.spawn([&]() {
-        auto peer = listener->accept(200);
-        ASSERT_NE(peer, nullptr);
-        EXPECT_TRUE(peer->shutdown_write());
-        peer->close();
-        done.done();
-    });
-    runtime.spawn([&]() {
-        ASSERT_TRUE(client->connect(
-            std::make_shared<IPv4Address>("127.0.0.1", local->port()), 200));
-        done.done();
-    });
-    done.wait();
-}
-
-TEST_F(SocketCoroutineUnitTest,
-       ZeroLengthDatagramsAndSourceAddressArePreserved) {
-    zco::Runtime runtime(zco::RuntimeOptions{1});
-    auto receiver = Socket::create_udp();
-    auto sender = Socket::create_udp();
-    ASSERT_TRUE(receiver->bind(std::make_shared<IPv4Address>("127.0.0.1", 0)));
-    auto destination = receiver->get_local_address();
+    auto receiver = Socket::create(AF_INET, SocketKind::datagram);
+    auto sender = Socket::create(AF_INET, SocketKind::datagram);
+    ASSERT_TRUE(receiver);
+    ASSERT_TRUE(sender);
+    ASSERT_TRUE(receiver.value().bind(Endpoint::ipv4("127.0.0.1", 0).value()));
+    auto destination = receiver.value().local_endpoint().value();
     auto task = runtime.spawn([&] {
-        ASSERT_EQ(sender->send_to("", 0, destination, 0, 200), 0);
-        Address::ptr source;
-        char data;
-        ASSERT_EQ(receiver->recv_from(&data, 1, &source, 0, 200), 0);
-        ASSERT_NE(source, nullptr);
-        EXPECT_EQ(source->family(), AF_INET);
+        auto empty =
+            sender.value().send_to({}, destination, zco::Deadline::after(1s));
+        ASSERT_TRUE(empty);
+        EXPECT_EQ(empty.bytes, 0u);
+        char bytes[2];
+        auto first = receiver.value().receive_from(bytes, sizeof(bytes),
+                                                   zco::Deadline::after(1s));
+        ASSERT_TRUE(first);
+        EXPECT_EQ(first.value().bytes, 0u);
+        EXPECT_FALSE(first.value().truncated);
+        EXPECT_GT(first.value().source.port(), 0);
+        EXPECT_TRUE(sender.value().send_to("abcd", destination,
+                                           zco::Deadline::after(1s)));
+        auto second = receiver.value().receive_from(bytes, sizeof(bytes),
+                                                    zco::Deadline::after(1s));
+        ASSERT_TRUE(second);
+        EXPECT_EQ(second.value().bytes, 2u);
+        EXPECT_TRUE(second.value().truncated);
+        EXPECT_EQ(std::string(bytes, 2), "ab");
+    });
+    ASSERT_TRUE(task);
+    EXPECT_TRUE(task.value().join());
+    EXPECT_FALSE(receiver.value().listen());
+    EXPECT_FALSE(receiver.value().read_some(nullptr, 1));
+}
+
+TEST(SocketTest, UnixAbstractStreamAndDatagramAddressesRoundTrip) {
+    zco::Runtime runtime(zco::RuntimeOptions{1});
+    for (auto kind : {SocketKind::stream, SocketKind::datagram}) {
+        const auto name = std::string("\0znet-test-", 11) +
+                          std::to_string(::getpid()) +
+                          (kind == SocketKind::stream ? "s" : "d");
+        auto endpoint = Endpoint::unix_domain(name).value();
+        auto listener = Socket::create(AF_UNIX, kind);
+        auto client = Socket::create(AF_UNIX, kind);
+        ASSERT_TRUE(listener);
+        ASSERT_TRUE(client);
+        ASSERT_TRUE(listener.value().bind(endpoint));
+        EXPECT_EQ(listener.value().local_endpoint().value().to_string(),
+                  endpoint.to_string());
+        if (kind == SocketKind::stream)
+            ASSERT_TRUE(listener.value().listen());
+        else
+            ASSERT_TRUE(client.value().bind(
+                Endpoint::unix_domain(name + "client").value()));
+        auto task = runtime.spawn([&] {
+            char bytes[4];
+            if (kind == SocketKind::stream) {
+                ASSERT_TRUE(
+                    client.value().connect(endpoint, zco::Deadline::after(1s)));
+                auto accepted =
+                    listener.value().accept(zco::Deadline::after(1s));
+                ASSERT_TRUE(accepted);
+                EXPECT_TRUE(client.value().write_some(
+                    "unix", 4, zco::Deadline::after(1s)));
+                EXPECT_EQ(accepted.value()
+                              .read_some(bytes, 4, zco::Deadline::after(1s))
+                              .bytes,
+                          4u);
+            } else {
+                EXPECT_TRUE(client.value().send_to("unix", endpoint,
+                                                   zco::Deadline::after(1s)));
+                auto received = listener.value().receive_from(
+                    bytes, 4, zco::Deadline::after(1s));
+                ASSERT_TRUE(received);
+                EXPECT_EQ(received.value().source.to_string(),
+                          "@" + name.substr(1) + "client");
+            }
+            EXPECT_EQ(std::string(bytes, 4), "unix");
+        });
+        ASSERT_TRUE(task);
+        EXPECT_TRUE(task.value().join());
+    }
+}
+
+TEST(SocketTest, UnixDatagramsFromUnnamedSendersKeepTheirPayload) {
+    zco::Runtime runtime(zco::RuntimeOptions{1});
+    const auto name =
+        std::string("\0znet-unnamed-", 14) + std::to_string(::getpid());
+    auto endpoint = Endpoint::unix_domain(name).value();
+    auto receiver = Socket::create(AF_UNIX, SocketKind::datagram);
+    auto sender = Socket::create(AF_UNIX, SocketKind::datagram);
+    ASSERT_TRUE(receiver);
+    ASSERT_TRUE(sender);
+    ASSERT_TRUE(receiver.value().bind(endpoint));
+    auto task = runtime.spawn([&] {
+        for (auto payload : {std::string_view{}, std::string_view{"unix"}}) {
+            ASSERT_TRUE(sender.value().send_to(payload, endpoint,
+                                               zco::Deadline::after(1s)));
+            char bytes[4];
+            auto received = receiver.value().receive_from(
+                bytes, sizeof(bytes), zco::Deadline::after(1s));
+            ASSERT_TRUE(received);
+            EXPECT_EQ(received.value().bytes, payload.size());
+            EXPECT_EQ(received.value().source.family(), AF_UNIX);
+            EXPECT_TRUE(received.value().source.to_string().empty());
+            EXPECT_FALSE(received.value().truncated);
+            EXPECT_EQ(std::string_view(bytes, received.value().bytes), payload);
+        }
     });
     ASSERT_TRUE(task);
     EXPECT_TRUE(task.value().join());
 }
 
-} // namespace
-} // namespace znet
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    znet::init_logger();
-    return RUN_ALL_TESTS();
+TEST(SocketTest, TimeoutContextAndClosedDescriptorErrorsAreStructured) {
+    zco::Runtime runtime(zco::RuntimeOptions{1});
+    auto listener = Socket::create(AF_INET, SocketKind::stream);
+    ASSERT_TRUE(listener);
+    ASSERT_TRUE(listener.value().bind(Endpoint::ipv4("127.0.0.1", 0).value()));
+    ASSERT_TRUE(listener.value().listen());
+    auto outside = listener.value().accept();
+    ASSERT_FALSE(outside);
+    EXPECT_EQ(outside.error().code, std::errc::operation_not_permitted);
+    auto task = runtime.spawn([&] {
+        auto timed = listener.value().accept(zco::Deadline::after(20ms));
+        ASSERT_FALSE(timed);
+        EXPECT_EQ(timed.error().code, std::errc::timed_out);
+        EXPECT_TRUE(listener.value().close());
+        auto closed = listener.value().accept();
+        ASSERT_FALSE(closed);
+        EXPECT_EQ(closed.error().code, std::errc::bad_file_descriptor);
+    });
+    ASSERT_TRUE(task);
+    EXPECT_TRUE(task.value().join());
+    EXPECT_FALSE(listener.value().local_endpoint());
+    EXPECT_FALSE(listener.value().option<int>(SOL_SOCKET, SO_ERROR));
 }

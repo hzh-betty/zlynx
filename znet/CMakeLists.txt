@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.18)
 
-project(znet VERSION 2.0.0 LANGUAGES CXX)
+project(znet VERSION 3.0.0 LANGUAGES CXX)
 
 # znet 支持源码树内构建和独立 find_package 构建。
 # 独立构建时需要加载公共 helper，并从安装前缀查找 zco。
@@ -12,11 +12,11 @@ if(NOT COMMAND zlynx_apply_common_options)
     include(ZlynxTesting)
 endif()
 
-if(NOT UNIX OR APPLE)
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
     message(FATAL_ERROR "znet currently supports Linux only.")
 endif()
 
-find_package(OpenSSL REQUIRED)
+find_package(OpenSSL 1.1 REQUIRED)
 
 # 源码树内链接本地 zco target；安装包/独立构建时链接 zco::zco。
 if(TARGET zco)
@@ -26,23 +26,15 @@ else()
     set(ZNET_ZCO_TARGET zco::zco)
 endif()
 
-if(TARGET zlog)
-    set(ZNET_ZLOG_TARGET zlog)
-else()
-    find_package(zlog CONFIG REQUIRED)
-    set(ZNET_ZLOG_TARGET zlog::zlog)
-endif()
-
 add_library(znet
-    src/address.cc
-    src/acceptor.cc
-    src/buffer.cc
-    src/socket.cc
-    src/connection_actor.cc
-    src/tcp_connection.cc
-    src/tcp_server.cc
-    src/tls_context.cc
-    src/znet_logger.cc
+    src/error.cc
+    src/endpoint.cc
+    src/byte_buffer.cc
+    src/transport/socket.cc
+    src/transport/tcp_stream.cc
+    src/transport/tls_stream.cc
+    src/server/connection.cc
+    src/server/tcp_server.cc
 )
 add_library(znet::znet ALIAS znet)
 
@@ -55,7 +47,7 @@ target_include_directories(znet
 target_link_libraries(znet
     PUBLIC
         ${ZNET_ZCO_TARGET}
-        ${ZNET_ZLOG_TARGET}
+    PRIVATE
         OpenSSL::SSL
         OpenSSL::Crypto
 )
@@ -75,5 +67,5 @@ endif()
 
 zlynx_install_module(znet znet
     VERSION ${PROJECT_VERSION}
-    DEPENDENCIES zco zlog OpenSSL
+    DEPENDENCIES zco OpenSSL
 )

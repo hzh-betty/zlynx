@@ -3,7 +3,7 @@
 
 #include "zhttp/http_context.h"
 namespace znet {
-class TcpConnection;
+class Connection;
 }
 namespace zhttp {
 /** 响应写出计划：是否发送正文、分块编码、关闭连接以及正文长度。 */
@@ -47,11 +47,11 @@ void serialize_to(const HttpResponse &response, std::string *out,
  * @throws std::logic_error 响应已提交。
  * @throws std::runtime_error 文件范围在提交前失效。
  */
-WriteResult send(const std::shared_ptr<znet::TcpConnection> &connection,
+WriteResult send(const std::shared_ptr<znet::Connection> &connection,
                  HttpContext &context, bool upgrade = false);
 } // namespace HttpResponseWriter
-/** 分批发送并排空输出缓冲区；连接无效、缓冲区积压或发送失败返回 false。 */
-bool send_all_or_fail(const std::shared_ptr<znet::TcpConnection> &connection,
+/** 分批同步发送；连接无效或未完整写出返回 false。 */
+bool send_all_or_fail(const std::shared_ptr<znet::Connection> &connection,
                       const char *data, std::size_t size);
 } // namespace zhttp
 

@@ -1,5 +1,5 @@
 #include "zhttp/parser/http_request_parser.h"
-#include "znet/buffer.h"
+#include "znet/byte_buffer.h"
 #include <limits>
 namespace zhttp {
 ParseResult ChunkedDecoder::fail(HttpStatus status, const char *message) {
@@ -8,7 +8,7 @@ ParseResult ChunkedDecoder::fail(HttpStatus status, const char *message) {
     state_ = State::Error;
     return ParseResult::ERROR;
 }
-ParseResult ChunkedDecoder::parse(znet::Buffer &buffer, HttpRequest &request) {
+ParseResult ChunkedDecoder::parse(znet::ByteBuffer &buffer, HttpRequest &request) {
     while (true) {
         if (state_ == State::Error)
             return ParseResult::ERROR;

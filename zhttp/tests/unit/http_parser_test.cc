@@ -1,7 +1,7 @@
 #include "../test_support.h"
 #include "zhttp/parser/http_request_parser.h"
 #include "zhttp/zhttp_logger.h"
-#include "znet/buffer.h"
+#include "znet/byte_buffer.h"
 
 #include <gtest/gtest.h>
 #include <vector>
@@ -13,7 +13,7 @@ class HttpRequestParserTest : public ::testing::Test {
     void SetUp() override { parser_ = std::make_unique<HttpRequestParser>(); }
 
     std::unique_ptr<HttpRequestParser> parser_;
-    znet::Buffer buffer_;
+    znet::ByteBuffer buffer_;
 };
 
 TEST_F(HttpRequestParserTest, ParseSimpleGetRequest) {
@@ -398,7 +398,7 @@ TEST(HttpRequestParserLimitsTest,
     limits.max_request_line_bytes = 16;
     for (const std::string &suffix : {std::string{}, std::string("\r\n")}) {
         HttpRequestParser parser(limits);
-        znet::Buffer buffer;
+        znet::ByteBuffer buffer;
         buffer.append(std::string("GET /") + std::string(20, 'x') + suffix);
         EXPECT_EQ(parse_request(parser, &buffer), ParseResult::ERROR);
         EXPECT_EQ(parser.error_status(), HttpStatus::URI_TOO_LONG);
@@ -410,7 +410,7 @@ TEST(HttpRequestParserLimitsTest,
     HttpRequestParser::Limits limits;
     limits.max_header_bytes = 12;
     HttpRequestParser parser(limits);
-    znet::Buffer buffer;
+    znet::ByteBuffer buffer;
     buffer.append("GET / HTTP/1.1\r\nX: a\r\n");
     ASSERT_EQ(parse_request(parser, &buffer), ParseResult::NEED_MORE);
     buffer.append("Y: aaaa");
@@ -437,7 +437,7 @@ TEST(HttpRequestParserLimitsTest, EnforcesHeaderCountIncludingTrailers) {
           std::string("POST / HTTP/1.1\r\nTransfer-Encoding: "
                       "chunked\r\n\r\n0\r\nX: a\r\n\r\n")}) {
         HttpRequestParser parser(limits);
-        znet::Buffer buffer;
+        znet::ByteBuffer buffer;
         buffer.append(request);
         EXPECT_EQ(parse_request(parser, &buffer), ParseResult::ERROR);
         EXPECT_EQ(parser.error_status(),
@@ -450,14 +450,14 @@ TEST(HttpRequestParserLimitsTest, RejectsDeclaredBodyBeforeReceivingIt) {
     limits.max_body_bytes = 4;
     for (const char *length : {"5", "999999999999999999999999999999"}) {
         HttpRequestParser parser(limits);
-        znet::Buffer buffer;
+        znet::ByteBuffer buffer;
         buffer.append(std::string("POST / HTTP/1.1\r\nContent-Length: ") +
                       length + "\r\n\r\n");
         EXPECT_EQ(parse_request(parser, &buffer), ParseResult::ERROR);
         EXPECT_EQ(parser.error_status(), HttpStatus::PAYLOAD_TOO_LARGE);
     }
     HttpRequestParser parser(limits);
-    znet::Buffer buffer;
+    znet::ByteBuffer buffer;
     buffer.append("POST / HTTP/1.1\r\nContent-Length: 4\r\n\r\n1234");
     EXPECT_EQ(parse_request(parser, &buffer), ParseResult::COMPLETE);
 }
@@ -467,7 +467,7 @@ TEST(HttpRequestParserLimitsTest,
     HttpRequestParser::Limits limits;
     limits.max_body_bytes = 4;
     HttpRequestParser parser(limits);
-    znet::Buffer buffer;
+    znet::ByteBuffer buffer;
     buffer.append(
         "POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabc\r\n");
     ASSERT_EQ(parse_request(parser, &buffer), ParseResult::NEED_MORE);
@@ -487,7 +487,7 @@ TEST(HttpRequestParserLimitsTest, LimitsChunkMetadataAndRejectsSizeOverflow) {
          {std::string(1100, 'f'),
           std::string("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF\r\n")}) {
         HttpRequestParser parser;
-        znet::Buffer buffer;
+        znet::ByteBuffer buffer;
         buffer.append("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n" +
                       chunk);
         EXPECT_EQ(parse_request(parser, &buffer), ParseResult::ERROR);
@@ -495,7 +495,7 @@ TEST(HttpRequestParserLimitsTest, LimitsChunkMetadataAndRejectsSizeOverflow) {
     HttpRequestParser::Limits limits;
     limits.max_header_bytes = 40;
     HttpRequestParser parser(limits);
-    znet::Buffer buffer;
+    znet::ByteBuffer buffer;
     buffer.append(
         "POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n0\r\nX: " +
         std::string(30, 'a'));
@@ -507,7 +507,7 @@ TEST(HttpRequestParserLimitsTest, LimitsChunkMetadataAndRejectsSizeOverflow) {
 TEST(HttpRequestParserContractTest,
      PreservesDuplicateHeadersAndSeparatesTrailers) {
     HttpRequestParser parser;
-    znet::Buffer input;
+    znet::ByteBuffer input;
     input.append(
         "POST /a%2Fb?x=1&x=2 HTTP/1.1\r\nX-Value: first\r\nx-value: "
         "second\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabc\r\n0\r\nX-Value: "
@@ -531,7 +531,7 @@ TEST(HttpRequestParserContractTest, ValidatesEveryLengthAndRequestTarget) {
          {"Content-Length: 2\r\nContent-Length: 3\r\n",
           "Content-Length: 2,3\r\n", "Content-Length: 2,\r\n"}) {
         HttpRequestParser parser;
-        znet::Buffer input;
+        znet::ByteBuffer input;
         input.append(std::string("POST / HTTP/1.1\r\n") + headers + "\r\nabc");
         EXPECT_EQ(parse_request(parser, &input), ParseResult::ERROR);
     }
@@ -539,12 +539,12 @@ TEST(HttpRequestParserContractTest, ValidatesEveryLengthAndRequestTarget) {
          {"/bad%", "/bad%GG", "/path#fragment", "/bad path", "http:///empty",
           "http://", "example.com:"}) {
         HttpRequestParser parser;
-        znet::Buffer input;
+        znet::ByteBuffer input;
         input.append(std::string("GET ") + target + " HTTP/1.1\r\n\r\n");
         EXPECT_EQ(parse_request(parser, &input), ParseResult::ERROR);
     }
     HttpRequestParser parser;
-    znet::Buffer input;
+    znet::ByteBuffer input;
     input.append("POST / HTTP/1.1\r\nContent-Length: 2, 2\r\ncontent-length: "
                  "2\r\n\r\nab");
     EXPECT_EQ(parse_request(parser, &input), ParseResult::COMPLETE);
@@ -559,7 +559,7 @@ TEST(HttpRequestParserContractTest,
                              "POST / HTTP/1.1\r\nTransfer-Encoding: "
                              "chunked\r\n\r\n0\r\nX-Test: value\v\r\n\r\n"}) {
         HttpRequestParser parser;
-        znet::Buffer input;
+        znet::ByteBuffer input;
         input.append(wire);
         EXPECT_EQ(parse_request(parser, &input), ParseResult::ERROR);
     }

@@ -1,9 +1,9 @@
 #include "zhttp/protocol/websocket_protocol_handler.h"
-#include "znet/buffer.h"
-#include "znet/tcp_connection.h"
+#include "znet/byte_buffer.h"
+#include "znet/server/connection.h"
 namespace zhttp {
 WebSocketProtocolHandler::WebSocketProtocolHandler(
-    std::shared_ptr<znet::TcpConnection> connection,
+    std::shared_ptr<znet::Connection> connection,
     std::shared_ptr<const HttpRequest> request, WebSocketCallbacks callbacks,
     WebSocketOptions options, std::string selected_subprotocol)
     : connection_(std::make_shared<WebSocketConnection>(
@@ -44,7 +44,7 @@ bool WebSocketProtocolHandler::on_open() {
 }
 
 void WebSocketProtocolHandler::on_data(
-    const std::shared_ptr<znet::TcpConnection> &, znet::Buffer &buffer) {
+    const std::shared_ptr<znet::Connection> &, znet::ByteBuffer &buffer) {
     if (close_notified_)
         return;
     std::vector<WebSocketFrameEvent> events;

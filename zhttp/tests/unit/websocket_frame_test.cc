@@ -49,7 +49,7 @@ std::string build_masked_client_frame(WebSocketOpcode opcode,
 
 TEST(WebSocketFrameTest, ReturnsFalseWhenRequiredOutputPointersAreNull) {
     TestWebSocketParser parser;
-    znet::Buffer buffer;
+    znet::ByteBuffer buffer;
     std::vector<WebSocketFrameEvent> events;
     uint16_t close_code = 0;
     std::string error;
@@ -62,7 +62,7 @@ TEST(WebSocketFrameTest, ReturnsFalseWhenRequiredOutputPointersAreNull) {
 
 TEST(WebSocketFrameTest, ParsesMaskedTextFrame) {
     TestWebSocketParser parser;
-    znet::Buffer buffer;
+    znet::ByteBuffer buffer;
     buffer.append(build_masked_client_frame(WebSocketOpcode::kText, "hello"));
 
     std::vector<WebSocketFrameEvent> events;
@@ -79,7 +79,7 @@ TEST(WebSocketFrameTest, ParsesMaskedTextFrame) {
 
 TEST(WebSocketFrameTest, ParsesExtendedLengthFrames) {
     TestWebSocketParser parser;
-    znet::Buffer buffer;
+    znet::ByteBuffer buffer;
 
     const std::string payload_126(126, 'a');
     const std::string payload_127(66000, 'b');
@@ -104,7 +104,7 @@ TEST(WebSocketFrameTest, ParsesExtendedLengthFrames) {
 
 TEST(WebSocketFrameTest, LeavesDataUntouchedWhenExtendedHeaderIncomplete) {
     TestWebSocketParser parser;
-    znet::Buffer buffer;
+    znet::ByteBuffer buffer;
 
     std::string partial;
     partial.push_back(static_cast<char>(0x82)); // FIN + binary
@@ -129,7 +129,7 @@ TEST(WebSocketFrameTest, LeavesDataUntouchedWhenExtendedHeaderIncomplete) {
 
 TEST(WebSocketFrameTest, ReassemblesFragmentedTextFrames) {
     TestWebSocketParser parser;
-    znet::Buffer buffer;
+    znet::ByteBuffer buffer;
     buffer.append(
         build_masked_client_frame(WebSocketOpcode::kText, "Hel", false));
     buffer.append(
@@ -149,7 +149,7 @@ TEST(WebSocketFrameTest, ReassemblesFragmentedTextFrames) {
 
 TEST(WebSocketFrameTest, RejectsClientUnmaskedFrame) {
     TestWebSocketParser parser;
-    znet::Buffer buffer;
+    znet::ByteBuffer buffer;
 
     std::string frame;
     frame.push_back(static_cast<char>(0x81));
@@ -176,7 +176,7 @@ TEST(WebSocketFrameTest, RejectsRsvBitsAndUnknownOpcode) {
     uint16_t close_code = 0;
     std::string error;
 
-    znet::Buffer rsv_buffer;
+    znet::ByteBuffer rsv_buffer;
     std::string rsv_frame;
     rsv_frame.push_back(static_cast<char>(0xC1)); // RSV + text
     rsv_frame.push_back(static_cast<char>(0x80));
@@ -188,7 +188,7 @@ TEST(WebSocketFrameTest, RejectsRsvBitsAndUnknownOpcode) {
               static_cast<uint16_t>(WebSocketCloseCode::kProtocolError));
     EXPECT_NE(error.find("RSV"), std::string::npos);
 
-    znet::Buffer opcode_buffer;
+    znet::ByteBuffer opcode_buffer;
     std::string bad_opcode_frame;
     bad_opcode_frame.push_back(static_cast<char>(0x83)); // unknown opcode=3
     bad_opcode_frame.push_back(static_cast<char>(0x80));
@@ -203,7 +203,7 @@ TEST(WebSocketFrameTest, RejectsRsvBitsAndUnknownOpcode) {
 
 TEST(WebSocketFrameTest, RejectsInvalid64BitPayloadLengthPrefix) {
     TestWebSocketParser parser;
-    znet::Buffer buffer;
+    znet::ByteBuffer buffer;
 
     std::string frame;
     frame.push_back(static_cast<char>(0x82)); // FIN + binary
@@ -225,7 +225,7 @@ TEST(WebSocketFrameTest, RejectsInvalid64BitPayloadLengthPrefix) {
 
 TEST(WebSocketFrameTest, RejectsInvalidUtf8TextFrame) {
     TestWebSocketParser parser;
-    znet::Buffer buffer;
+    znet::ByteBuffer buffer;
 
     const std::string invalid_utf8("\xC3\x28", 2);
     buffer.append(
@@ -245,7 +245,7 @@ TEST(WebSocketFrameTest, RejectsInvalidUtf8TextFrame) {
 
 TEST(WebSocketFrameTest, AcceptsUtf8BoundarySequences) {
     TestWebSocketParser parser;
-    znet::Buffer buffer;
+    znet::ByteBuffer buffer;
 
     std::string utf8_payload = "x";
     utf8_payload.append(std::string("\xC2\xA2", 2));         // 2-byte
@@ -288,7 +288,7 @@ TEST(WebSocketFrameTest, RejectsUtf8BoundaryViolations) {
     for (const auto &test_case : cases) {
         SCOPED_TRACE(test_case.name);
         TestWebSocketParser parser;
-        znet::Buffer buffer;
+        znet::ByteBuffer buffer;
         buffer.append(build_masked_client_frame(WebSocketOpcode::kText,
                                                 test_case.payload));
 
@@ -311,7 +311,7 @@ TEST(WebSocketFrameTest, RejectsInvalidFragmentationSemantics) {
     uint16_t close_code = 0;
     std::string error;
 
-    znet::Buffer continuation_first;
+    znet::ByteBuffer continuation_first;
     continuation_first.append(
         build_masked_client_frame(WebSocketOpcode::kContinuation, "x"));
     EXPECT_FALSE(
@@ -319,7 +319,7 @@ TEST(WebSocketFrameTest, RejectsInvalidFragmentationSemantics) {
     EXPECT_EQ(close_code,
               static_cast<uint16_t>(WebSocketCloseCode::kProtocolError));
 
-    znet::Buffer mid_data_restart;
+    znet::ByteBuffer mid_data_restart;
     mid_data_restart.append(
         build_masked_client_frame(WebSocketOpcode::kText, "ab", false));
     mid_data_restart.append(
@@ -332,7 +332,7 @@ TEST(WebSocketFrameTest, RejectsInvalidFragmentationSemantics) {
 TEST(WebSocketFrameTest, ValidatesUtf8OnlyWhenFinalFragmentArrives) {
     {
         TestWebSocketParser parser;
-        znet::Buffer buffer;
+        znet::ByteBuffer buffer;
         buffer.append(build_masked_client_frame(WebSocketOpcode::kText,
                                                 "\xE4\xB8", false));
         buffer.append(build_masked_client_frame(WebSocketOpcode::kContinuation,
@@ -351,7 +351,7 @@ TEST(WebSocketFrameTest, ValidatesUtf8OnlyWhenFinalFragmentArrives) {
 
     {
         TestWebSocketParser parser;
-        znet::Buffer buffer;
+        znet::ByteBuffer buffer;
         buffer.append(build_masked_client_frame(WebSocketOpcode::kText,
                                                 "\xE4\xB8", false));
         buffer.append(build_masked_client_frame(WebSocketOpcode::kContinuation,
@@ -376,14 +376,14 @@ TEST(WebSocketFrameTest, RejectsControlFrameViolations) {
     uint16_t close_code = 0;
     std::string error;
 
-    znet::Buffer fragmented_ping;
+    znet::ByteBuffer fragmented_ping;
     fragmented_ping.append(
         build_masked_client_frame(WebSocketOpcode::kPing, "x", false));
     EXPECT_FALSE(parser.parse(&fragmented_ping, &events, &close_code, &error));
     EXPECT_EQ(close_code,
               static_cast<uint16_t>(WebSocketCloseCode::kProtocolError));
 
-    znet::Buffer long_ping;
+    znet::ByteBuffer long_ping;
     long_ping.append(build_masked_client_frame(WebSocketOpcode::kPing,
                                                std::string(126, 'x')));
     EXPECT_FALSE(parser.parse(&long_ping, &events, &close_code, &error));
@@ -397,7 +397,7 @@ TEST(WebSocketFrameTest, RejectsMessageSizeOverflowPaths) {
     uint16_t close_code = 0;
     std::string error;
 
-    znet::Buffer single_frame_too_large;
+    znet::ByteBuffer single_frame_too_large;
     single_frame_too_large.append(
         build_masked_client_frame(WebSocketOpcode::kText, "12345"));
     EXPECT_FALSE(
@@ -405,7 +405,7 @@ TEST(WebSocketFrameTest, RejectsMessageSizeOverflowPaths) {
     EXPECT_EQ(close_code,
               static_cast<uint16_t>(WebSocketCloseCode::kMessageTooLarge));
 
-    znet::Buffer fragmented_too_large;
+    znet::ByteBuffer fragmented_too_large;
     fragmented_too_large.append(
         build_masked_client_frame(WebSocketOpcode::kBinary, "abc", false));
     fragmented_too_large.append(
@@ -418,7 +418,7 @@ TEST(WebSocketFrameTest, RejectsMessageSizeOverflowPaths) {
 
 TEST(WebSocketFrameTest, RejectsInvalidCloseStatusCode) {
     TestWebSocketParser parser;
-    znet::Buffer buffer;
+    znet::ByteBuffer buffer;
 
     std::string close_payload;
     close_payload.push_back(static_cast<char>(0x03));
@@ -441,7 +441,7 @@ TEST(WebSocketFrameTest, RejectsInvalidCloseStatusCode) {
 
 TEST(WebSocketFrameTest, RejectsInvalidUtf8CloseReason) {
     TestWebSocketParser parser;
-    znet::Buffer buffer;
+    znet::ByteBuffer buffer;
 
     std::string close_payload;
     close_payload.push_back(static_cast<char>(0x03));
@@ -465,7 +465,7 @@ TEST(WebSocketFrameTest, RejectsInvalidUtf8CloseReason) {
 
 TEST(WebSocketFrameTest, RejectsClosePayloadWithSingleByte) {
     TestWebSocketParser parser;
-    znet::Buffer buffer;
+    znet::ByteBuffer buffer;
     std::string payload(1, '\x01');
     buffer.append(build_masked_client_frame(WebSocketOpcode::kClose, payload));
 
@@ -482,7 +482,7 @@ TEST(WebSocketFrameTest, RejectsClosePayloadWithSingleByte) {
 
 TEST(WebSocketFrameTest, ParsesClosePingAndPongEvents) {
     TestWebSocketParser parser;
-    znet::Buffer buffer;
+    znet::ByteBuffer buffer;
 
     std::string close_payload;
     close_payload.push_back(static_cast<char>(0x03));

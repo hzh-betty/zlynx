@@ -64,6 +64,8 @@ if(BUILD_TESTING)
         zlynx_add_gtest(${test_name} integration/${test_name}.cc zhttp integration zhttp)
     endforeach()
 
+    target_link_libraries(http_server_test PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+
     zlynx_add_module_test_targets(zhttp)
 endif()
 

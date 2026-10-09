@@ -7,7 +7,7 @@
 #include <memory>
 #include <string>
 namespace znet {
-class TcpConnection;
+class Connection;
 }
 namespace zhttp {
 /**
@@ -25,7 +25,7 @@ class WebSocketConnection {
     State state() const { return state_.load(std::memory_order_acquire); }
 
     /** 绑定底层连接、协商的子协议和关闭握手超时（毫秒）。 */
-    WebSocketConnection(std::weak_ptr<znet::TcpConnection> connection,
+    WebSocketConnection(std::weak_ptr<znet::Connection> connection,
                         std::string selected_subprotocol,
                         uint32_t close_timeout_ms = 5000);
 
@@ -70,7 +70,7 @@ class WebSocketConnection {
                     bool fin = true);
 
   private:
-    std::weak_ptr<znet::TcpConnection> connection_;
+    std::weak_ptr<znet::Connection> connection_;
     std::string selected_subprotocol_;
     std::atomic<State> state_{State::Open};
     uint32_t close_timeout_ms_;

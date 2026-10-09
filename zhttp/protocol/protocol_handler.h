@@ -3,8 +3,8 @@
 
 #include <memory>
 namespace znet {
-class TcpConnection;
-class Buffer;
+class Connection;
+class ByteBuffer;
 } // namespace znet
 namespace zhttp {
 // HTTP 与 WebSocket 的共同连接生命周期；调度者只在回调返回后交接实例。
@@ -16,8 +16,8 @@ class ProtocolHandler {
     /** 协议开始工作时调用；返回 false 表示无法继续处理。 */
     virtual bool on_open() { return true; }
     /** 消费当前可读数据，不完整数据留待后续读取事件继续处理。 */
-    virtual void on_data(const std::shared_ptr<znet::TcpConnection> &connection,
-                         znet::Buffer &buffer) = 0;
+    virtual void on_data(const std::shared_ptr<znet::Connection> &connection,
+                         znet::ByteBuffer &buffer) = 0;
     /** 通知底层连接关闭，释放协议状态；实现应支持重复通知。 */
     virtual void on_closed() = 0;
 };
