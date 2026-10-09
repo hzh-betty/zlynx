@@ -13,8 +13,8 @@
 ```text
 zhttp   HTTP/WebSocket 框架层
   -> znet   TCP/TLS 网络层
-      -> zco    协程运行时、hook、同步原语
-          -> zlog   日志基础设施
+      -> zco    协程运行时、就绪等待、同步原语
+  -> zlog   应用日志基础设施
 
 zmalloc 可选全局 allocator override，也可显式使用 zmalloc/zfree
 ```
@@ -38,8 +38,7 @@ zmalloc 可选全局 allocator override，也可显式使用 zmalloc/zfree
 - `zco` 参考 `coost`：学习 GMP 模型、协程调度、共享栈/独立栈、hook、事件等待、
   定时器、`Channel`/`WaitGroup` 等同步原语和工作窃取队列。
 - `znet` 参考 `muduo`：学习 TCP server、connection、buffer、acceptor、回调模型和 TLS。
-  `znet` 同时引入 actor/信箱模型，让连接的读、写、关闭事件在连接内部串行化，
-  以降低多线程场景下的锁竞争。
+  `znet` 用 ByteStream 隔离 TCP/TLS，读写分别串行化，协议状态由会话持有。
 - `zhttp` 参考 `dragon` 框架：学习路由、中间件、请求/响应抽象、静态文件、压缩、
   限流、Session、HTTPS 和 WebSocket。
 
@@ -47,7 +46,7 @@ zmalloc 可选全局 allocator override，也可显式使用 zmalloc/zfree
 
 这个仓库覆盖的知识点很密：
 
-- C++14 工程组织、target 级 CMake、install/export/find_package
+- C++17 工程组织、target 级 CMake、install/export/find_package
 - RAII、智能指针、类型擦除、设计模式
 - 多线程、原子变量、锁、条件变量、自旋锁、线程本地缓存
 - 高性能日志、格式化、异步生产者/消费者、双缓冲区设计

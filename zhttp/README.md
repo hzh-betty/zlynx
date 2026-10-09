@@ -1,6 +1,6 @@
 # zhttp
 
-`zhttp` 是 zlynx 的 C++14 HTTP/HTTPS 与 WebSocket 服务模块，基于 `znet` 的
+`zhttp` 是 zlynx 的 C++17 HTTP/HTTPS 与 WebSocket 服务模块，基于 `znet` 的
 协程 TCP 服务和 `zlog` 日志模块。它提供路由、中间件、请求体解析、静态文件服务
 以及同步响应写出。
 
@@ -52,7 +52,7 @@ curl -H 'Content-Type: application/json' \
 
 ## 构建与接入
 
-构建需要 CMake 3.18+、C++14 编译器、POSIX/Linux 接口，以及以下依赖：
+构建需要 CMake 3.18+、C++17 编译器、POSIX/Linux 接口，以及以下依赖：
 
 | 依赖 | 用途 |
 |---|---|

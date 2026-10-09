@@ -2,7 +2,7 @@
 
 `zlog` 是 zlynx 的日志模块，整体设计参考 `spdlog` 的易用接口和 sink/formatter
 组合方式，提供同步日志、异步日志、格式化、日志落地器和全局 logger 管理能力。
-它是整个 zlynx 项目的基础设施模块，也可以独立作为轻量级 C++14 日志库使用。
+它是整个 zlynx 项目的基础设施模块，也可以独立作为轻量级 C++17 日志库使用。
 
 ## 快速开始
 
@@ -106,7 +106,7 @@ zlog/
 基础构建依赖：
 
 - CMake 3.18+
-- C++14 编译器，仓库 preset 默认使用 `clang++`
+- C++17 编译器，仓库 preset 默认使用 `clang++`
 - Ninja，使用 preset 时需要
 - fmt
 - Threads

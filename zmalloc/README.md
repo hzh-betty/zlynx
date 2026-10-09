@@ -97,7 +97,7 @@ zmalloc/
 基础构建依赖：
 
 - CMake 3.18+
-- C++14 编译器，仓库 preset 默认使用 `clang++`
+- C++17 编译器，仓库 preset 默认使用 `clang++`
 - Ninja，使用 preset 时需要
 - Threads
 

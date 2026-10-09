@@ -1,282 +1,159 @@
-# znet
+# znet 3（C++17）
 
-`znet` 是 zlynx 的 TCP 网络模块，基于 `zco` 协程运行时提供 TCP server、连接对象、
-字节缓冲、地址抽象、socket 封装和 TLS 支持。它是 `zhttp` 的网络底座，也可以被
-业务代码直接用来构建自定义协议。
+znet 提供 Linux 协程 TCP/UDP 与 TLS 传输，是 zhttp 的网络底座。
+版本 3 是破坏性架构重设计，旧头文件、地址继承树、Acceptor、TcpConnection、
+邮箱、网络全局日志和裸 context API 已删除，没有兼容层。
 
-## 快速开始
+完整评估、P0/P1/P2 问题、依赖图、目录树、删除清单及迁移说明见
+[架构重设计](docs/architecture-redesign.md)，验证记录见
+[重构验证](docs/refactor-validation.md)。
+wrk 的重复对照、持续运行及验证限制也记录在重构验证文档中。
 
-下面是一个最小 echo server。应用创建 Runtime 并注入 TcpServer；服务器只管理自己的
-监听器和连接。多个服务器可以显式共享 Runtime，其生命周期由应用统一管理。
+## 最小 echo 服务
 
 ```cpp
-#include "znet/address.h"
-#include "znet/tcp_server.h"
-
+#include "znet/server/tcp_server.h"
 #include <chrono>
 #include <iostream>
-#include <memory>
 #include <thread>
 
 int main() {
-    zco::RuntimeOptions options;
-    options.worker_count = 4;
-    zco::Runtime runtime(options);
-    auto addr = std::make_shared<znet::IPv4Address>("0.0.0.0", 18080);
-    auto server = std::make_shared<znet::TcpServer>(runtime, addr);
-
-    server->set_read_timeout(30000);
-    server->set_write_timeout(30000);
-    server->set_keepalive_timeout(60000);
-
-    server->set_on_connection([](const znet::TcpConnection::ptr &conn) {
-        std::cout << "connected fd=" << conn->fd() << std::endl;
-    });
-
-    server->set_on_message([](const znet::TcpConnection::ptr &conn,
-                              znet::Buffer &buffer) {
-        std::string payload = buffer.retrieve_all_as_string();
-        conn->send(payload.data(), payload.size());
-    });
-
-    server->set_on_close([](const znet::TcpConnection::ptr &conn) {
-        std::cout << "closed fd=" << conn->fd() << std::endl;
-    });
-
-    if (!server->start()) {
+    zco::Runtime runtime(zco::RuntimeOptions{4});
+    auto endpoint = znet::Endpoint::ipv4("0.0.0.0", 18080);
+    if (!endpoint) {
+        std::cerr << endpoint.error().message() << '\n';
         return 1;
     }
-
-    while (server->is_running()) {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+    znet::ServerOptions options;
+    options.write_timeout = std::chrono::seconds{30};
+    options.idle_timeout = std::chrono::seconds{60};
+    options.on_error = [](const znet::Error &error) {
+        std::cerr << error.message() << '\n';
+    };
+    znet::TcpServer server(runtime, std::move(endpoint).value(),
+        [](const znet::Connection::ptr &) {
+            return znet::SessionCallbacks{
+                [](const znet::Connection::ptr &connection,
+                   znet::ByteBuffer &input) {
+                    auto sent = connection->send(input.view());
+                    if (!sent) {
+                        // bytes 保留已发送进度；传输失败后连接已关闭。
+                        std::cerr << sent.error.message() << '\n';
+                    }
+                    input.retrieve_all();
+                }, {}};
+        }, options);
+    auto started = server.start();
+    if (!started) {
+        std::cerr << started.error().message() << '\n';
+        return 1;
     }
-    return 0;
+    while (server.is_running())
+        std::this_thread::sleep_for(std::chrono::seconds{1});
+    server.stop();
 }
 ```
 
-安装后消费：
+Runtime 由应用拥有，并最后销毁。TcpServer 可放在栈上或由 unique_ptr 拥有。
+多个服务器可以借用同一个 Runtime。start/stop 在控制线程调用；业务回调使用
+request_stop 发出停止请求，控制线程的 stop 等待所有接入、握手、消息及关闭回调完成。
+析构自动停止；不要求 shared_from_this，也不停止应用的 Runtime。
 
-```cmake
-cmake_minimum_required(VERSION 3.18)
-project(znet_demo LANGUAGES CXX)
-
-find_package(znet CONFIG REQUIRED)
-
-add_executable(znet_demo main.cc)
-target_link_libraries(znet_demo PRIVATE znet::znet)
-```
-
-源码树内开发可以直接链接 `znet` target。
-
-## 项目架构
-
-`znet` 处在协程运行时和 HTTP 层之间：
+## 边界与所有权
 
 ```text
-zhttp
-  -> znet
-      -> zco      协程调度、就绪等待、同步原语
-      -> zlog     网络层日志
-      -> OpenSSL  TLS context/channel
+协议会话 → TcpServer → Connection → ByteStream
+                             TCP/TLS 实现 → Socket → zco 就绪等待
+                             TLS 实现 → OpenSSL
+协议会话 → ByteBuffer（纯字节数据，无 IO 依赖）
 ```
 
-核心目录：
+- Endpoint 是校验过的地址值；支持 IPv4/IPv6/Unix，包括 Linux 抽象 Unix 地址。
+  无效 IP、超长路径或截断 sockaddr 返回错误，不回退到 ANY 或截断路径。
+- resolve_endpoints 返回地址值列表或解析错误，属于启动配置时的阻塞操作。
+- Socket 是 move-only RAII 资源，adopt 消费 fd（失败也会关闭），保持非阻塞与 CLOEXEC。
+  bind/listen/选项/端点查询可在普通线程调用；accept/connect/读写必须在 zco 任务内。
+  UDP receive_from 按值返回来源、字节数及截断标志；零长度数据报仍是消息。
+- ByteStream 只描述传输生命周期和字节 IO；Connection 唯一拥有其实现。
+  TCP/TLS/测试假传输使用同一契约，公共头文件不暴露 OpenSSL 类型。
+- Connection 不拥有输入/输出队列或协议状态。read 追加到调用者提供的 ByteBuffer；
+  send 同步发送并返回真实进度。读与写分别串行化，因此空闲读不会阻塞发送。
+  普通线程调用通过显式 executor 提交并等待，协程直接调用，无全局运行时。
+- SessionFactory 每连接调用一次，返回消息/关闭回调。协议状态由回调闭包拥有；
+  WebSocket 等观察者使用 weak_ptr，不形成连接与业务状态的所有权环。
+  不同连接的工厂及 on_error 可能并发调用；同一会话的消息、关闭回调依次执行。
+  on_close 在传输关闭后调用，需要保留的端点信息应在会话建立时捕获。
+- ByteBuffer 支持连续视图、追加、消费、CRLF 查找、增长与自追加。单个缓冲只由
+  一个会话访问；reserve/append 会使借用的指针/视图失效。它可以独立于网络测试。
 
-```text
-znet/
-  include/znet/             公共 API：TcpServer、TcpConnection、Buffer、Address 等
-  include/znet/internal/    基础 noncopyable
-  src/                      网络模块实现
-  tests/unit/               单元测试
-  tests/integration/        socket/TCP/TLS 集成测试
-  tests/benchmark/          wrk benchmark 和 perf/valgrind 脚本
+## 错误与超时
+
+运行时失败返回 Result<T>/Result<void>；传输返回 Transfer：bytes、Error、eof。
+进度和失败可以同时存在，不能仅判断 bytes。Error 包含分类、error_code、操作与细节；
+校验/运行时/IO/协议/应用错误可区分。必要依赖为空、访问 Result 的错误分支等编程错误
+抛出异常。底层不记录日志，服务边界只通过显式 on_error 报告终止错误，应用决定日志策略。
+正常 EOF、停止及读取期限到期不报告；握手失败（包括握手超时）会报告。
+
+超时配置使用 chrono::milliseconds，0 表示无限，负数无效。read 接收绝对 zco::Deadline；
+set_read_deadline 为后续读取设置更早的请求/关闭截止时间，空 Deadline 清除它。
+此设置不打断已经发起的 read，close 则立即撤销 fd 并唤醒所有 IO 等待。
+send 的可选 timeout 覆盖连接默认写超时，整个调用的排队和部分写入共用一个预算。
+发送在传输阶段失败后关闭连接，避免不完整帧和 TLS 写重试状态污染下一次发送。
+
+read 的 eof 表示对端写方向结束，连接仍允许发送最后的响应；close 才释放 fd。
+shutdown 尝试发送 TLS close_notify/SHUT_WR 后关闭，默认无限写超时时关闭预算为 1 秒。
+原写完成/高水位回调与 flush_output 已删除：同步发送结果负责确认完成，等待写出本身提供背压。
+
+## TLS
+
+在创建服务器前显式加载凭据：
+
+```cpp
+auto credentials = znet::TlsCredentials::load("cert.pem", "key.pem");
+if (!credentials)
+    throw std::runtime_error(credentials.error().message());
+options.tls = std::make_shared<const znet::TlsCredentials>(
+    std::move(credentials).value());
+options.handshake_timeout = std::chrono::seconds{10};
 ```
 
-主要组件：
+TLS 最低 1.2，加载完整证书链并验证私钥。握手属于传输启动阶段，服务器在握手前登记连接，
+因此 stop 能取消无限握手。TLS 在 OpenSSL 调用期间互斥，在 IO 等待期间释放互斥锁。
+自定义 Socket BIO 使用 MSG_NOSIGNAL，不修改全进程 SIGPIPE 行为。fd 借用覆盖每次 SSL 调用，
+避免并发关闭后使用已复用 fd。SSL 对象在传输析构时释放，凭据可以早于传输销毁。
 
-- `Address`、`IPv4Address`、`IPv6Address`、`UnixAddress`：网络地址抽象和 DNS lookup。
-- `Socket`：socket fd 生命周期、bind/listen/accept/connect、选项设置和读写封装。
-- `Acceptor`：监听 socket 与 accept loop。
-- `Buffer`：网络 I/O 字节缓冲，支持 prepend 空间、append、retrieve 和 socket 读写。
-- `TcpConnection`：单连接状态机、输入/输出缓冲、send/flush/shutdown/close、TLS channel。
-- `TcpServer`：连接表、回调注册、执行端点、超时、TLS、连接分发和 graceful stop。
-- `TlsContext`：OpenSSL server context 初始化、证书加载和握手支持。
-- `znet_logger`：模块日志初始化与日志宏。
+## 构建、测试与安装
 
-## 依赖
-
-基础构建依赖：
-
-- CMake 3.18+
-- C++14 编译器，仓库 preset 默认使用 `clang++`
-- Ninja，使用 preset 时需要
-- Linux/POSIX，当前 CMake 明确拒绝非 UNIX 或 Apple 平台
-- `zco` 2.0、`zlog`
-- OpenSSL
-
-测试和分析额外依赖：
-
-- GTest / GMock
-- Threads
-- `gcovr`
-- `wrk`
-- `perf`、`valgrind`、`cg_annotate`
-
-## 编译
+依赖：Linux、C++17、CMake 3.18+、zco 2、OpenSSL 1.1+；测试需要 GTest/GMock、
+openssl 命令行工具。网络库不依赖 zlog，OpenSSL 为私有实现依赖。
 
 ```bash
 cmake --preset debug
 cmake --build --preset debug
-```
-
-发布构建：
-
-```bash
+ctest --test-dir build/debug --output-on-failure
+ctest --test-dir build/debug -R '^znet\.' --output-on-failure
 cmake --preset release
 cmake --build --preset release
+cmake --install build/release --prefix /path/to/install
 ```
 
-构建 wrk benchmark：
+安装后：
+
+```cmake
+find_package(znet 3 CONFIG REQUIRED)
+add_executable(application main.cc)
+target_link_libraries(application PRIVATE znet::znet)
+```
+
+测试覆盖纯值模型、假传输和真实 TCP/UDP/TLS，包含并发发送、读写并行、部分写入、取消、
+超时、回调异常、析构、重启与共享运行时。所有测试通过公开契约访问，无 private-public 宏。
+历史 coverage/znet-summary.txt 不能代表此次重写的覆盖率；需要用 coverage/run_coverage.sh 重新生成。
+
+性能程序及脚本沿用入口并已迁移到新 API：
 
 ```bash
 cmake --preset perf
 cmake --build --preset perf --target znet_wrk_benchmark
-```
-
-手动配置：
-
-```bash
-cmake -S . -B build/debug -G Ninja \
-  -DCMAKE_CXX_COMPILER=clang++ \
-  -DCMAKE_BUILD_TYPE=Debug \
-  -DBUILD_TESTING=ON
-cmake --build build/debug -j
-```
-
-安装：
-
-```bash
-cmake --build --preset release --target install
-```
-
-安装后导出 `znet::znet`，并通过包配置转发 `zco`、`zlog` 和 `OpenSSL` 依赖。
-
-## 测试
-
-运行全部 znet 测试：
-
-```bash
-cmake --build --preset debug --target znet_test
-```
-
-只跑单元测试：
-
-```bash
-cmake --build --preset debug --target znet_test_unit
-```
-
-只跑集成测试：
-
-```bash
-cmake --build --preset debug --target znet_test_integration
-```
-
-直接使用 CTest：
-
-```bash
-ctest --test-dir build/debug -R '^znet\.' --output-on-failure
-ctest --test-dir build/debug -R '^znet\.unit\.' --output-on-failure
-ctest --test-dir build/debug -R '^znet\.integration\.' --output-on-failure
-```
-
-当前测试覆盖的主要行为：
-
-- `Address` IPv4/IPv6/Unix 地址格式化、端口、lookup
-- `Buffer` append/retrieve、空间扩展、CRLF 查找、socket 读写
-- `Socket` 创建、bind/listen/connect、socket option、fd 生命周期
-- `Acceptor` accept 回调与关闭路径
-- `TcpConnection` 状态机、send/flush、关闭、上下文和高水位回调
-- `TcpServer` start/stop、连接回调、消息回调、串行资源锁
-- `TlsContext` 证书加载、OpenSSL context、TLS round trip
-- 模块日志
-
-## 覆盖率
-
-统一脚本：
-
-```bash
-coverage/run_coverage.sh
-```
-
-`coverage/znet-summary.txt` 中记录的当前 znet 覆盖率：
-
-| 指标 | 覆盖率 |
-|---|---:|
-| Lines | 92.2% (1082 / 1173) |
-| Functions | 97.3% (145 / 149) |
-| Branches | 80.5% (729 / 906) |
-| Decisions | 87.3% (165 / 189) |
-
-覆盖率报告只统计 `znet/src`。脚本中对 znet 额外过滤了日志宏展开分支和部分
-OpenSSL 状态机错误码分支，避免第三方状态分发污染模块指标。
-
-## 性能
-
-`znet_wrk_benchmark` 会 fork 一个本地 TCP/HTTP-like server，并使用 `wrk` 压测
-`http://127.0.0.1:<port>/<path>`，输出 `Requests/sec`、`Latency`、
-`Transfer/sec` 摘要。
-
-```bash
-cmake --preset perf
-cmake --build --preset perf --target znet_wrk_benchmark
-
-build/perf/znet/tests/znet_wrk_benchmark \
-  --threads 4 \
-  --wrk-threads 4 \
-  --wrk-connections 256 \
-  --wrk-duration 5s \
-  --path /
-```
-
-脚本入口：
-
-```bash
+build/perf/znet/tests/znet_wrk_benchmark --threads 4 --wrk-duration 5s
 BUILD_DIR=build/perf znet/tests/benchmark/znet_wrk_perf.sh baseline
-BUILD_DIR=build/perf znet/tests/benchmark/znet_wrk_perf.sh perf
-BUILD_DIR=build/perf znet/tests/benchmark/znet_wrk_perf.sh valgrind
 ```
-
-benchmark 支持的常用参数：
-
-```bash
---port 18080
---threads 4
---wrk-bin wrk
---wrk-threads 4
---wrk-connections 256
---wrk-duration 5s
---warmup-ms 300
---path /
---scale-pct 100
---server-ready-timeout-ms 3000
---shutdown-timeout-ms 5000
---wrk-arg <arg>
-```
-
-性能测试结果与 CPU、内核、OpenSSL、wrk 参数、fd 限制、线程数和系统负载相关。
-比较优化前后结果时应固定机器、构建类型和压测参数。
-
-## 支持功能
-
-- IPv4、IPv6、Unix Domain Socket 地址抽象
-- DNS/host lookup
-- Socket fd 生命周期和常用 socket option
-- Acceptor 监听与连接接受
-- `TcpServer` 多线程/多协程连接分发
-- 连接建立、消息到达、关闭、写完成、高水位回调
-- 每连接输入/输出缓冲
-- 连接级 read/write/keepalive timeout
-- TLS server context、证书加载和握手
-- Buffer prepend、append、retrieve、自动扩容和 socket I/O
-- 和 `zco` runtime 集成的协程化网络 I/O
-
