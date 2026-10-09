@@ -50,6 +50,22 @@ target_link_libraries(zmalloc_demo PRIVATE zmalloc::override)
 Linux 构建使用 `initial-exec` TLS，替换目标应随进程启动链接；运行后的动态
 加载场景未作保证。
 
+批量释放后，可显式归还完全空闲页的物理内存：
+
+```cpp
+const size_t advised_bytes = zmalloc::release_memory();
+const zmalloc::MemoryStats stats = zmalloc::memory_stats();
+```
+
+`release_memory()` 清理调用线程的空闲对象缓存，按各类初始数量有界排空
+TransferCache，再对完全空闲的 Span 调用 `MADV_DONTNEED`。它保留虚拟地址，
+可重复调用，后续分配继续复用这些页。并发分配时，共享缓存不保证最终为空；
+其他线程的本地缓存需要由各线程自行清理。回收期间持有页锁，可能短暂阻塞页级分配。
+
+`MemoryStats` 提供当前线程/共享传输缓存字节数、空闲页字节数、其中整段已建议
+回收的页字节数、受管页映射字节数和累计建议回收字节数。统计不含元数据，
+各层取样不是整体原子快照；建议回收字节数不等于 RSS 降幅，也不会减少虚拟地址占用。
+
 ## 项目架构
 
 `zmalloc` 的小对象路径按线程缓存、中心缓存、页缓存分层：
