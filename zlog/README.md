@@ -2,7 +2,7 @@
 
 `zlog` 是 zlynx 的日志模块，整体设计参考 `spdlog` 的易用接口和 sink/formatter
 组合方式，提供同步日志、异步日志、格式化、日志落地器和全局 logger 管理能力。
-它是整个 zlynx 项目的基础设施模块，也可以独立作为轻量级 C++17 日志库使用。
+它是整个 zlynx 项目的基础设施模块，也可以独立作为轻量级 C++11 日志库使用。
 
 ## 快速开始
 
@@ -65,6 +65,35 @@ target_link_libraries(zlog_demo PRIVATE zlog::zlog)
 `SinkFactory::create<T>()` 改为 `std::make_shared<T>()`，单独的格式项类改由
 `Formatter` 的格式规则表达。公开类型和内部布局有变化，依赖方需要迁移并重新编译。
 
+`ModuleLogger` 及其依赖初始化回调已删除，调用方使用 `LoggerBuilder` 显式构建，
+需要全局注册时调用 `build_global()`。`LoggerManager::upsert_logger()` 已删除，
+注册表只保留添加和查询接口，不再支持替换日志器。
+
+本轮按架构评审完成接口边界与所有权调整。使用 `zlog/zlog.h` 的代码仍可通过
+聚合入口访问公共接口；使用单独头文件的代码应按职责包含：
+
+```cpp
+#include "zlog/logger.h"          // Logger、SyncLogger、AsyncLogger 与 AsyncType
+#include "zlog/logger_builder.h"  // LoggerBuilder 与 LoggerType
+#include "zlog/logger_registry.h" // LoggerManager
+```
+
+Logger 和 Builder 复制并持有名称；修改或销毁调用方的名称字符串不会影响已有
+配置和日志器。Builder 未设置名称时构建返回空指针，显式设置空字符串仍可构建；
+`build_logger_name(nullptr)` 清除名称配置。
+
+源码与安装接口的最低标准为 C++11，允许使用 C++17 等更高标准编译。
+`LoggerBuilder::build_logger_name(fmt::string_view)` 按长度复制名称，视图只需在
+该次调用期间有效。日志格式串、LogMessage 正文及名称使用 `fmt::string_view`
+借用短期存储；格式化与内置 sink 按指定长度处理数据，保留内嵌 NUL，不要求
+输入零终止。Logger 名称、Builder 配置和 Formatter 的 pattern 仍拥有自己的字符串。
+
+Buffer、AsyncLooper 和 Spinlock 移入 `zlog::detail` 与私有源码目录，不再安装
+对应头文件；NonCopyable 已删除，类型通过删除复制操作表达约束。依赖旧内部
+类型或旧 ABI 的调用方需要迁移并重新编译。当前 `build_global()` 重名时仍返回
+新建实例，注册表保留已有实例。实施范围、验证和后续阶段见
+[重构实施记录](docs/refactoring-report.md)。
+
 ## 项目架构
 
 `zlog` 是 zlynx 的最底层公共模块之一：
@@ -74,17 +103,18 @@ zlog
   -> fmt       格式化库
   -> Threads   异步 looper 和并发写入
 
-zco / znet / zhttp
-  -> zlog      复用日志接口和日志级别
+zhttp runtime
+  -> zlog      每实例同步日志器
 ```
 
 核心目录：
 
 ```text
 zlog/
-  include/zlog/              公共 API：logger、sink、formatter、level 等
-  include/zlog/internal/     Buffer、AsyncLooper、工具函数
+  include/zlog/              公共 API：logger、builder、registry、sink、formatter 等
+  include/zlog/internal/     待后续阶段收回的 File 工具
   src/                       模块实现
+  src/async/                 私有 Buffer、AsyncLooper 与 Spinlock
   tests/unit/                单元测试
   tests/integration/         端到端与多线程集成测试
   tests/benchmark/           benchmark、perf 脚本和第三方对比入口
@@ -93,9 +123,9 @@ zlog/
 主要组件：
 
 - `Logger`：同步/异步 logger 的抽象基类，负责等级过滤、fmt 格式化和消息序列化。
-- `SyncLogger`：调用线程内直接落地日志，适合简单场景或对退出前持久化要求高的路径。
+- `SyncLogger`：调用线程内直接落地日志，适合简单场景或需要在调用线程完成 sink 输出的路径。
 - `AsyncLogger`：将序列化后的日志写入 `AsyncLooper`，由后台线程批量落地。
-- `AsyncLooper`：生产者/消费者模型，维护生产缓冲区和消费缓冲区，支持 safe/unsafe 两种模式。
+- `zlog::detail::AsyncLooper`：内部生产者/消费者实现，由 AsyncLogger 独占；safe 使用固定容量，unsafe 允许扩容，两种模式达到容量上限时均等待可用空间。
 - `Formatter`：以格式项值保存规则，统一解析和执行 `%d`、`%t`、`%c`、`%f`、`%l`、`%p`、`%T`、`%m`、`%n` 等格式项。
 - `LogSink`：日志落地抽象，内置 `StdOutSink`、`FileSink`、`RollBySizeSink`。
 - `LoggerBuilder`：用 builder 方式组装 logger 类型、名称、等级、格式、sink 和异步参数；`build()` 仅构建，`build_global()` 构建并注册。
@@ -106,7 +136,7 @@ zlog/
 基础构建依赖：
 
 - CMake 3.18+
-- C++17 编译器，仓库 preset 默认使用 `clang++`
+- C++11 或更高标准的编译器，仓库 preset 使用 `clang++` 和 C++17
 - Ninja，使用 preset 时需要
 - fmt
 - Threads
@@ -117,6 +147,9 @@ zlog/
 - `spdlog`、`glog`：只用于 `zlog_benchmark` 第三方对比；缺失时跳过该目标
 - `gcovr`
 - `perf`
+
+测试框架可以要求更高的编译标准。单独配置 zlog 时可通过
+`-DCMAKE_CXX_STANDARD=11` 验证生产库，通过 `-DCMAKE_CXX_STANDARD=17` 选择更高标准。
 
 ## 编译
 
@@ -200,7 +233,7 @@ ctest --test-dir build/debug -R '^zlog\.integration\.' --output-on-failure
 - Formatter 格式项解析与输出
 - StdOut/File/RollBySize sink 的构造和输出
 - SyncLogger、AsyncLogger、空 sink、异常路径
-- LoggerBuilder 局部构建、全局注册以及 LoggerManager 替换/查询
+- LoggerBuilder 局部构建、全局注册以及 LoggerManager 添加/查询
 - AsyncLooper safe/unsafe 模式、flush 阈值、stop 和析构
 - 多 sink、滚动文件、多线程同步/异步写入、端到端日志内容校验
 
