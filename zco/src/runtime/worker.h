@@ -46,6 +46,8 @@ class Worker {
 
     void join();
     bool push(PendingTask task, bool pinned);
+    // Caller holds the submission mutex.
+    bool idle() const { return idle_; }
 
     size_t load() const {
         return queues_.size() + live_.load(std::memory_order_relaxed);
@@ -65,6 +67,7 @@ class Worker {
                          io::Interest, Deadline);
 
   private:
+    friend struct Submission;
     enum class Phase { running, ready, waiting, finished };
 
     struct Record {
@@ -97,6 +100,8 @@ class Worker {
     TimerQueue timers_;
     Record *current_ = nullptr;
     std::atomic<size_t> live_{0};
+    Worker *idle_next_ = nullptr, *idle_previous_ = nullptr;
+    bool idle_ = false;
     std::thread thread_;
 };
 

@@ -35,14 +35,10 @@ Result<TaskHandle> submit(const std::shared_ptr<Submission> &endpoint,
             index = peer;
     }
     auto completion = std::make_shared<Completion>(TaskId{++next_task});
-    bool empty =
-        workers[index]->push(PendingTask{std::move(task), completion}, pinned);
-    // Wake idle thieves as well, even if the selected worker is busy running
-    // code.
-    if (!pinned && empty)
-        for (auto *worker : workers)
-            if (worker != workers[index])
-                worker->wake();
+    auto *selected = workers[index];
+    selected->push(PendingTask{std::move(task), completion}, pinned);
+    if (!pinned && !selected->idle())
+        endpoint->wake_idle();
     return Result<TaskHandle>(TaskHandle(std::move(completion)));
 }
 } // namespace detail

@@ -311,6 +311,26 @@ void Worker::run() {
                                          std::numeric_limits<int>::max())));
             }
         }
+        bool registered_idle = false;
+        if (timeout && !reactor_failed) {
+            if (auto endpoint = submission_.lock()) {
+                std::lock_guard<std::mutex> lock(endpoint->mutex);
+                // Admission and idle registration share the same lock. Work
+                // published before registration must also prevent sleeping.
+                bool pending = inbox_->stopping || queues_.size() != 0;
+                for (auto *worker : endpoint->workers)
+                    if (worker->queues_.movable_size()) {
+                        pending = true;
+                        break;
+                    }
+                if (pending)
+                    timeout = 0;
+                else {
+                    endpoint->add_idle(this);
+                    registered_idle = true;
+                }
+            }
+        }
         if (!reactor_failed) {
             try {
                 for (auto event : reactor_->poll(timeout)) {
@@ -330,6 +350,11 @@ void Worker::run() {
                     stop();
             }
         }
+        if (registered_idle)
+            if (auto endpoint = submission_.lock()) {
+                std::lock_guard<std::mutex> lock(endpoint->mutex);
+                endpoint->remove_idle(this);
+            }
     }
     cancel_pending();
 }

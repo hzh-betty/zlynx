@@ -1,6 +1,7 @@
 #pragma once
 #include "io/reactor.h"
 #include <algorithm>
+#include <atomic>
 #include <condition_variable>
 #include <mutex>
 
@@ -43,6 +44,7 @@ class FakeReactor final : public detail::Reactor {
     }
 
     void wake() override {
+        ++wake_calls;
         std::lock_guard<std::mutex> lock(mutex_);
         woken_ = true;
         cv_.notify_all();
@@ -65,6 +67,7 @@ class FakeReactor final : public detail::Reactor {
     }
 
     bool fail_add = false;
+    std::atomic<size_t> wake_calls{0};
 
   private:
     struct Entry {

@@ -259,3 +259,27 @@ TEST(Scheduling, ConcurrentBurstsAndYieldingTasksDoNotLoseWork) {
         EXPECT_EQ(completed, 5000);
     }
 }
+
+TEST(Scheduling, OnlyOneRegisteredIdleWorkerIsWokenPerRequest) {
+    auto endpoint = std::make_shared<detail::Submission>();
+    auto a = std::make_shared<test::FakeReactor>();
+    auto b = std::make_shared<test::FakeReactor>();
+    auto c = std::make_shared<test::FakeReactor>();
+    detail::Worker first(0, RuntimeOptions{3}, endpoint, a);
+    detail::Worker second(1, RuntimeOptions{3}, endpoint, b);
+    detail::Worker third(2, RuntimeOptions{3}, endpoint, c);
+    std::lock_guard<std::mutex> lock(endpoint->mutex);
+    endpoint->add_idle(&first);
+    endpoint->add_idle(&second);
+    endpoint->add_idle(&third);
+    endpoint->remove_idle(&second);
+    endpoint->wake_idle();
+    EXPECT_EQ(a->wake_calls + b->wake_calls + c->wake_calls, 1u);
+    EXPECT_EQ(b->wake_calls, 0u);
+    endpoint->remove_idle(&first);
+    endpoint->wake_idle();
+    EXPECT_EQ(a->wake_calls + b->wake_calls + c->wake_calls, 1u);
+    endpoint->add_idle(&second);
+    endpoint->wake_idle();
+    EXPECT_EQ(b->wake_calls, 1u);
+}
