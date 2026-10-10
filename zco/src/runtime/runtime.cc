@@ -179,11 +179,13 @@ Result<void> TaskHandle::join(Deadline deadline) const {
     std::unique_lock<std::mutex> lock(state_->mutex);
     if (state_->status == TaskStatus::pending ||
         state_->status == TaskStatus::running) {
-        auto ticket = state_->waiters.add();
+        if (!state_->waiters)
+            state_->waiters.emplace();
+        auto ticket = state_->waiters->add();
         lock.unlock();
         auto outcome = ticket.wait(deadline);
         lock.lock();
-        state_->waiters.remove(ticket);
+        state_->waiters->remove(ticket);
         if (outcome != WaitOutcome::ready)
             return Result<void>(wait_error(outcome));
     }

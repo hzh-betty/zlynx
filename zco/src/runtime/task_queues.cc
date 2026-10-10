@@ -6,7 +6,8 @@ void Completion::finish(TaskStatus result, std::exception_ptr error) {
     std::lock_guard<std::mutex> lock(mutex);
     status = result;
     exception = std::move(error);
-    waiters.complete_all();
+    if (waiters)
+        waiters->complete_all();
 }
 
 bool TaskQueues::push(PendingTask task, bool pinned) {

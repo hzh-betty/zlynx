@@ -3,6 +3,7 @@
 #include <atomic>
 #include <deque>
 #include <mutex>
+#include <optional>
 #include <vector>
 
 namespace zco {
@@ -13,7 +14,8 @@ struct Completion {
     void finish(TaskStatus result, std::exception_ptr error = {});
     TaskId id;
     mutable std::mutex mutex;
-    WaitQueue waiters;
+    // Constructed under mutex only when a join needs to wait.
+    std::optional<WaitQueue> waiters;
     TaskStatus status = TaskStatus::pending;
     std::exception_ptr exception;
 };
