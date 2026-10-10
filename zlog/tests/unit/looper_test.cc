@@ -2,6 +2,7 @@
 #include "async/looper.h"
 #include <atomic>
 #include <chrono>
+#include <future>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <thread>
@@ -27,15 +28,15 @@ TEST_F(LooperTest, BasicPushAndCallback) {
     std::string receivedData;
 
     AsyncLooper looper(
-        [&](Buffer &buf) {
-            receivedData = std::string(buf.begin(), buf.readable_size());
+        [&](const char *data, size_t len) {
+            receivedData = std::string(data, len);
             callbackInvoked = true;
         },
         AsyncType::ASYNC_SAFE, std::chrono::milliseconds(50));
 
     looper.push("hello", 5);
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    looper.flush();
     looper.stop();
 
     EXPECT_TRUE(callbackInvoked);
@@ -47,9 +48,9 @@ TEST_F(LooperTest, MultiplePushes) {
     std::mutex mtx;
 
     AsyncLooper looper(
-        [&](Buffer &buf) {
+        [&](const char *data, size_t len) {
             std::lock_guard<std::mutex> lock(mtx);
-            received.push_back(std::string(buf.begin(), buf.readable_size()));
+            received.push_back(std::string(data, len));
         },
         AsyncType::ASYNC_UNSAFE, std::chrono::milliseconds(50));
 
@@ -58,17 +59,13 @@ TEST_F(LooperTest, MultiplePushes) {
         looper.push(msg.c_str(), msg.size());
     }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    looper.flush();
     looper.stop();
 
-    std::string allReceived;
-    for (size_t i = 0; i < received.size(); ++i) {
-        allReceived += received[i];
-    }
-
+    ASSERT_EQ(received.size(), 10u);
     for (int i = 0; i < 10; i++) {
         std::string expected = "msg" + std::to_string(i) + "\n";
-        EXPECT_THAT(allReceived, ::testing::HasSubstr(expected));
+        EXPECT_EQ(received[i], expected);
     }
 }
 
@@ -76,7 +73,7 @@ TEST_F(LooperTest, SafeModeBlocking) {
     std::atomic<int> pushCount(0);
 
     AsyncLooper looper(
-        [&](Buffer &buf) {
+        [&](const char *data, size_t len) {
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
         },
         AsyncType::ASYNC_SAFE, std::chrono::milliseconds(100));
@@ -95,55 +92,57 @@ TEST_F(LooperTest, UnsafeModeNonBlocking) {
     std::atomic<size_t> totalReceived(0);
 
     AsyncLooper looper(
-        [&](Buffer &buf) { totalReceived += buf.readable_size(); },
+        [&](const char *data, size_t len) { totalReceived += len; },
         AsyncType::ASYNC_UNSAFE, std::chrono::milliseconds(50));
 
+    size_t expectedBytes = 0;
     for (int i = 0; i < 100; i++) {
         std::string msg = "test_message_" + std::to_string(i) + "\n";
         looper.push(msg.c_str(), msg.size());
+        expectedBytes += msg.size();
     }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    looper.flush();
     looper.stop();
 
-    EXPECT_GT(totalReceived.load(), static_cast<size_t>(0));
+    EXPECT_EQ(totalReceived.load(), expectedBytes);
 }
 
 TEST_F(LooperTest, StopWithPendingData) {
     std::atomic<bool> callbackCalled(false);
 
-    AsyncLooper looper([&](Buffer &buf) { callbackCalled = true; },
+    AsyncLooper looper([&](const char *data, size_t len) { callbackCalled = true; },
                        AsyncType::ASYNC_SAFE, std::chrono::milliseconds(1000));
 
     looper.push("data", 4);
     looper.stop();
 
-    SUCCEED();
+    EXPECT_TRUE(callbackCalled.load());
 }
 
 TEST_F(LooperTest, EmptyBuffer) {
     std::atomic<int> count(0);
 
-    AsyncLooper looper([&](Buffer &buf) { count++; }, AsyncType::ASYNC_SAFE,
+    AsyncLooper looper([&](const char *data, size_t len) { count++; }, AsyncType::ASYNC_SAFE,
                        std::chrono::milliseconds(50));
 
     std::this_thread::sleep_for(std::chrono::milliseconds(150));
     looper.stop();
 
-    SUCCEED();
+    EXPECT_EQ(count.load(), 0);
 }
 
 TEST_F(LooperTest, LargeDataPush) {
     std::atomic<size_t> receivedBytes(0);
 
     AsyncLooper looper(
-        [&](Buffer &buf) { receivedBytes += buf.readable_size(); },
+        [&](const char *data, size_t len) { receivedBytes += len; },
         AsyncType::ASYNC_UNSAFE, std::chrono::milliseconds(100));
 
     std::string largeData(1024 * 1024, 'A'); // 1MB
     looper.push(largeData.c_str(), largeData.size());
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    looper.flush();
     looper.stop();
 
     EXPECT_EQ(receivedBytes.load(), largeData.size());
@@ -153,7 +152,7 @@ TEST_F(LooperTest, ConcurrentPushes) {
     std::atomic<size_t> totalReceived(0);
 
     AsyncLooper looper(
-        [&](Buffer &buf) { totalReceived += buf.readable_size(); },
+        [&](const char *data, size_t len) { totalReceived += len; },
         AsyncType::ASYNC_UNSAFE, std::chrono::milliseconds(50));
 
     std::vector<std::thread> threads;
@@ -171,16 +170,27 @@ TEST_F(LooperTest, ConcurrentPushes) {
         threads[i].join();
     }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    looper.flush();
     looper.stop();
 
-    EXPECT_GT(totalReceived.load(), static_cast<size_t>(0));
+    size_t expectedBytes = 0;
+    for (int t = 0; t < 4; ++t) {
+        for (int i = 0; i < 100; ++i) {
+            expectedBytes += ("thread" + std::to_string(t) + "_msg" +
+                              std::to_string(i) + "\n").size();
+        }
+    }
+    EXPECT_EQ(totalReceived.load(), expectedBytes);
 }
 
 TEST_F(LooperTest, FlushOnThreshold) {
     std::atomic<int> flushCount(0);
+    std::promise<void> firstCallback;
+    const auto started = firstCallback.get_future();
 
-    AsyncLooper looper([&](Buffer &buf) { flushCount++; },
+    AsyncLooper looper([&](const char *, size_t) {
+                           if (flushCount.fetch_add(1) == 0) firstCallback.set_value();
+                       },
                        AsyncType::ASYNC_UNSAFE,
                        std::chrono::milliseconds(5000));
 
@@ -189,17 +199,18 @@ TEST_F(LooperTest, FlushOnThreshold) {
         looper.push(chunk.c_str(), chunk.size());
     }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    // 在最大等待时间和 stop 之前验证阈值会主动唤醒消费者。
+    EXPECT_EQ(started.wait_for(std::chrono::milliseconds(500)), std::future_status::ready);
     looper.stop();
 
-    EXPECT_GE(flushCount.load(), 1);
+    EXPECT_EQ(flushCount.load(), 20);
 }
 
 TEST_F(LooperTest, CallbackException) {
     std::atomic<int> count(0);
 
     AsyncLooper looper(
-        [&](Buffer &buf) {
+        [&](const char *data, size_t len) {
             count++;
             if (count == 1) {
                 throw std::runtime_error("Test exception");
@@ -208,22 +219,20 @@ TEST_F(LooperTest, CallbackException) {
         AsyncType::ASYNC_UNSAFE, std::chrono::milliseconds(50));
 
     looper.push("data1", 5);
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
     looper.push("data2", 5);
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
+    EXPECT_THROW(looper.flush(), std::runtime_error);
     EXPECT_THROW(looper.stop(), std::runtime_error);
 
-    EXPECT_GE(count.load(), 1);
+    EXPECT_EQ(count.load(), 2);
 }
 
 TEST_F(LooperTest, CallbackUnknownException) {
     std::atomic<int> count(0);
 
     AsyncLooper looper(
-        [&](Buffer &buf) {
-            (void)buf;
+        [&](const char *data, size_t len) {
+            (void)data;
+            (void)len;
             count++;
             if (count == 1) {
                 throw 42;
@@ -232,17 +241,15 @@ TEST_F(LooperTest, CallbackUnknownException) {
         AsyncType::ASYNC_UNSAFE, std::chrono::milliseconds(20));
 
     looper.push("a", 1);
-    std::this_thread::sleep_for(std::chrono::milliseconds(80));
     looper.push("b", 1);
-    std::this_thread::sleep_for(std::chrono::milliseconds(80));
-
+    EXPECT_ANY_THROW(looper.flush());
     EXPECT_ANY_THROW(looper.stop());
-    EXPECT_GE(count.load(), 1);
+    EXPECT_EQ(count.load(), 2);
 }
 
 TEST_F(LooperTest, OversizedMessagesAreRejectedBeforeWaiting) {
     for (AsyncType mode : {AsyncType::ASYNC_SAFE, AsyncType::ASYNC_UNSAFE}) {
-        AsyncLooper looper([](Buffer &) {}, mode, std::chrono::milliseconds(1));
+        AsyncLooper looper([](const char *, size_t) {}, mode, std::chrono::milliseconds(1));
         const size_t limit = mode == AsyncType::ASYNC_SAFE
                                  ? kDefaultBufferSize : kMaxBufferSize;
         EXPECT_THROW(looper.push("x", limit + 1), std::length_error);
@@ -257,14 +264,14 @@ TEST_F(LooperTest, StopWakesAllBlockedProducersAndDrainsAcceptedData) {
     std::condition_variable cv;
     bool consuming = false, release = false;
     size_t received = 0;
-    AsyncLooper looper([&](Buffer &buf) {
+    AsyncLooper looper([&](const char *data, size_t len) {
         std::unique_lock<std::mutex> lock(gate);
         consuming = true;
         cv.notify_all();
         cv.wait(lock, [&]() { return release; });
-        received += buf.readable_size();
+        received += len;
     }, AsyncType::ASYNC_SAFE, std::chrono::milliseconds(1));
-    const std::string full(kDefaultBufferSize, 'x');
+    const std::string full(kDefaultBufferSize - kRecordHeaderSize, 'x');
     looper.push(full.data(), full.size());
     {
         std::unique_lock<std::mutex> lock(gate);
@@ -296,7 +303,7 @@ TEST_F(LooperTest, StopWakesAllBlockedProducersAndDrainsAcceptedData) {
 }
 
 TEST_F(LooperTest, ConcurrentStopIsIdempotent) {
-    AsyncLooper looper([](Buffer &) {}, AsyncType::ASYNC_SAFE,
+    AsyncLooper looper([](const char *, size_t) {}, AsyncType::ASYNC_SAFE,
                        std::chrono::milliseconds(1));
     looper.push("x", 1);
     std::thread first([&]() { looper.stop(); });
@@ -304,6 +311,56 @@ TEST_F(LooperTest, ConcurrentStopIsIdempotent) {
     first.join();
     second.join();
     EXPECT_NO_THROW(looper.stop());
+}
+
+TEST_F(LooperTest, FlushDrainsBelowThresholdAndIncludesSinkFlush) {
+    std::vector<std::string> records;
+    int flushes = 0;
+    AsyncLooper looper([&](const char *data, size_t len) { records.emplace_back(data, len); },
+        AsyncType::ASYNC_SAFE, std::chrono::hours(1), [&] { ++flushes; });
+    looper.push("first", 5);
+    looper.push("", 0);
+    looper.flush();
+    EXPECT_EQ(records, (std::vector<std::string>{"first", ""}));
+    EXPECT_EQ(flushes, 1);
+    looper.push("last", 4);
+    looper.flush();
+    EXPECT_EQ(records.back(), "last");
+    EXPECT_EQ(flushes, 2);
+    looper.stop();
+    EXPECT_EQ(flushes, 3);
+}
+
+TEST_F(LooperTest, FramedCapacityBoundaryAndInvalidWaitTimesAreRejected) {
+    for (AsyncType mode : {AsyncType::ASYNC_SAFE, AsyncType::ASYNC_UNSAFE}) {
+        AsyncLooper looper([](const char *, size_t) {}, mode, std::chrono::hours(1));
+        const size_t limit = mode == AsyncType::ASYNC_SAFE ? kDefaultBufferSize : kMaxBufferSize;
+        EXPECT_THROW(looper.push("x", limit), std::length_error);
+        EXPECT_THROW(looper.push("x", limit - kRecordHeaderSize + 1), std::length_error);
+        looper.stop();
+    }
+    size_t received = 0;
+    AsyncLooper looper([&](const char *, size_t len) { received += len; },
+                       AsyncType::ASYNC_SAFE, std::chrono::hours(1));
+    const std::string full(kDefaultBufferSize - kRecordHeaderSize, 'x');
+    looper.push(full.data(), full.size());
+    looper.flush();
+    EXPECT_EQ(received, full.size());
+    EXPECT_THROW(AsyncLooper([](const char *, size_t) {}, AsyncType::ASYNC_SAFE,
+                            std::chrono::milliseconds(0)), std::invalid_argument);
+    EXPECT_THROW(AsyncLooper([](const char *, size_t) {}, AsyncType::ASYNC_SAFE,
+                            std::chrono::milliseconds(-1)), std::invalid_argument);
+}
+
+TEST_F(LooperTest, ConcurrentFlushAndStopCompleteWithoutLosingRecords) {
+    std::atomic<size_t> bytes(0);
+    AsyncLooper looper([&](const char *, size_t len) { bytes += len; },
+                       AsyncType::ASYNC_SAFE, std::chrono::hours(1));
+    for (int i = 0; i < 1000; ++i) looper.push("record", 6);
+    std::thread first([&] { looper.flush(); });
+    std::thread second([&] { looper.stop(); });
+    first.join(); second.join();
+    EXPECT_EQ(bytes.load(), 6000u);
 }
 
 int main(int argc, char **argv) {

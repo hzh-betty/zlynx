@@ -11,10 +11,12 @@
  * 实现同步和异步日志器的记录接口
  */
 
+#include <atomic>
 #include <chrono>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -60,6 +62,12 @@ class Logger {
      * @return 日志器名称字符串
      */
     std::string get_name() const { return logger_name_; }
+
+    /** @brief 等待此前已接收的日志完成输出并刷新所有 sink；失败时抛出异常。 */
+    virtual void flush() = 0;
+
+    /** @brief 停止接收、排空并刷新；清理后报告错误，重复关闭无操作。 */
+    virtual void close() = 0;
 
     /**
      * @brief 日志记录模板接口
@@ -123,6 +131,18 @@ class Logger {
                  std::forward<Args>(args)...);
     }
 
+  private:
+    // 缓存只借给当前最外层调用；异常退出也必须归还占用标记。
+    class BufferUse {
+      public:
+        explicit BufferUse(bool &in_use) noexcept : in_use_(in_use) { in_use_ = true; }
+        ~BufferUse() { in_use_ = false; }
+        BufferUse(const BufferUse &) = delete;
+        BufferUse &operator=(const BufferUse &) = delete;
+      private:
+        bool &in_use_;
+    };
+
   protected:
     /**
      * @brief 日志记录辅助函数
@@ -136,20 +156,32 @@ class Logger {
     template <typename... Args>
     void log_impl_helper(const LogLevel::value level, const char *file,
                          const size_t line, fmt::string_view fmt, Args &&...args) {
+        if (closed_.load(std::memory_order_acquire)) {
+            throw std::runtime_error("logger is closed");
+        }
         if (level < limit_level_)
             return;
 
-        // 线程局部缓冲区，预分配内存并复用
+        // 线程局部缓冲区复用容量，普通调用不重复构造或释放大消息的内存。
         thread_local fmt::memory_buffer fmt_buffer;
-        fmt_buffer.clear(); // 清空旧数据
-
-        // 格式化到缓冲区
-        fmt::vformat_to(std::back_inserter(fmt_buffer), fmt,
-                        fmt::make_format_args((args)...));
-
-        // 视图只在本次序列化期间借用缓冲区，保留长度和内嵌零字节。
-        serialize(level, file, line,
-                  fmt::string_view(fmt_buffer.data(), fmt_buffer.size()));
+        thread_local bool buffer_in_use = false;
+        const auto write = [&](fmt::memory_buffer &buffer) {
+            buffer.clear(); // 清空旧数据，保留已经扩容的容量。
+            // 格式化到缓冲区。
+            fmt::vformat_to(std::back_inserter(buffer), fmt,
+                            fmt::make_format_args((args)...));
+            // 视图只在本次序列化期间借用缓冲区，保留长度和内嵌零字节。
+            serialize(level, file, line,
+                      fmt::string_view(buffer.data(), buffer.size()));
+        };
+        if (buffer_in_use) {
+            // 自定义参数格式化或 sink 触发嵌套日志时，不覆盖外层还在使用的数据。
+            fmt::memory_buffer nested_buffer;
+            write(nested_buffer);
+        } else {
+            BufferUse use(buffer_in_use);
+            write(fmt_buffer);
+        }
     }
 
     /**
@@ -169,8 +201,14 @@ class Logger {
      */
     virtual void log(const char *data, size_t len) = 0;
 
+    void write_sinks(const char *data, size_t len);
+    void flush_sinks();
+    bool is_active_on_current_thread() const;
+    void close_noexcept() noexcept;
+
   protected:
     std::mutex mutex_;                // 互斥锁
+    std::atomic<bool> closed_{false};  // 关闭后拒绝新日志
     const std::string logger_name_;   // 自有名称，生命周期与日志器一致
     LogLevel::value limit_level_;     // 日志等级限制
     Formatter::ptr formatter_;        // 日志格式化器
@@ -193,6 +231,10 @@ class SyncLogger final : public Logger {
     SyncLogger(std::string logger_name, const LogLevel::value limit_level,
                const Formatter::ptr &formatter,
                const std::vector<LogSink::ptr> &sinks);
+
+    ~SyncLogger() override;
+    void flush() override;
+    void close() override;
 
   protected:
     /**
@@ -225,6 +267,8 @@ class AsyncLogger final : public Logger {
 
     // 在实现文件中销毁工作线程，排空后才释放基类持有的 sink。
     ~AsyncLogger() override;
+    void flush() override;
+    void close() override;
 
   protected:
     /**

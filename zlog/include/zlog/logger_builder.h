@@ -87,9 +87,6 @@ class LoggerBuilder {
     /** @brief 构建日志器，不注册到全局管理器。 */
     Logger::ptr build();
 
-    /** @brief 构建并注册日志器；同名注册保留已有日志器。 */
-    Logger::ptr build_global();
-
   private:
     LoggerType logger_type_;              // 日志器类型
     std::string logger_name_;             // 自有名称

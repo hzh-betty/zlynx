@@ -4,7 +4,6 @@
  */
 
 #include "zlog/logger_builder.h"
-#include "zlog/logger_registry.h"
 
 namespace zlog {
 
@@ -68,14 +67,6 @@ Logger::ptr LoggerBuilder::build() {
     }
     return std::make_shared<SyncLogger>(logger_name_, limit_level_, formatter_,
                                         sinks_);
-}
-
-Logger::ptr LoggerBuilder::build_global() {
-    Logger::ptr logger = build();
-    if (logger) {
-        LoggerManager::get_instance().add_logger(logger);
-    }
-    return logger;
 }
 
 } // namespace zlog

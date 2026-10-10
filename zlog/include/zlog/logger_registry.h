@@ -31,8 +31,9 @@ class LoggerManager {
     /**
      * @brief 添加日志器
      * @param logger 日志器智能指针
+     * @throws std::invalid_argument 空指针或名称已经注册；不替换已有实例。
      */
-    void add_logger(Logger::ptr &logger);
+    void add_logger(const Logger::ptr &logger);
 
     /**
      * @brief 获取指定名称的日志器

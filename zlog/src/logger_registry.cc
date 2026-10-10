@@ -15,9 +15,14 @@ LoggerManager::LoggerManager() {
     loggers_.insert({"root", root_logger_});
 }
 
-void LoggerManager::add_logger(Logger::ptr &logger) {
+void LoggerManager::add_logger(const Logger::ptr &logger) {
+    if (!logger) {
+        throw std::invalid_argument("cannot register a null logger");
+    }
     std::unique_lock<std::mutex> lock(mutex_);
-    loggers_.insert({logger->get_name(), logger});
+    if (!loggers_.insert({logger->get_name(), logger}).second) {
+        throw std::invalid_argument("logger is already registered: " + logger->get_name());
+    }
 }
 
 Logger::ptr LoggerManager::get_logger(const std::string &name) {

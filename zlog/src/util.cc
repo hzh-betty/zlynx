@@ -6,6 +6,9 @@
 
 #include "zlog/internal/util.h"
 
+#include <cerrno>
+#include <system_error>
+
 
 namespace zlog {
 
@@ -33,22 +36,27 @@ void File::create_directory(const std::string &pathname) {
         pos = pathname.find_first_of("/\\", index);
         if (pos == std::string::npos) {
             // 应该创建完整路径而不是原始路径
-            if (!exists(pathname)) {
-                make_dir(pathname);
-            }
+            make_dir(pathname);
             break;
         }
         std::string parent_path = pathname.substr(0, pos + 1);
-        if (!exists(parent_path)) {
-            // 应该创建父路径而不是原始路径
-            make_dir(parent_path);
-        }
+        // 应该创建父路径而不是原始路径；已有路径也必须是目录。
+        make_dir(parent_path);
         index = pos + 1;
     }
 }
 
 void File::make_dir(const std::string &pathname) {
-    mkdir(pathname.c_str(), 0777);
+    if (mkdir(pathname.c_str(), 0777) == 0) {
+        return;
+    }
+    const int error = errno;
+    struct stat st{};
+    // 并发创建同一目录可以成功，已有普通文件不能当成目录使用。
+    if (error == EEXIST && stat(pathname.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) {
+        return;
+    }
+    throw std::system_error(error, std::generic_category(), "cannot create log directory: " + pathname);
 }
 
 } // namespace zlog

@@ -9,6 +9,7 @@
 
 #include <fstream>
 #include <memory>
+#include <mutex>
 #include <string>
 
 #include <fmt/core.h>
@@ -36,6 +37,9 @@ class LogSink {
      * @param len 数据长度
      */
     virtual void log(const char *data, size_t len) = 0;
+
+    /** @brief 刷新已输出数据；无缓冲的自定义 sink 可以使用默认实现。 */
+    virtual void flush() {}
 };
 
 /**
@@ -45,6 +49,10 @@ class LogSink {
 class StdOutSink final : public LogSink {
   public:
     void log(const char *data, size_t len) override;
+    void flush() override;
+
+  private:
+    std::mutex mutex_; // 同步共享 sink 的写入与刷新
 };
 
 /**
@@ -61,11 +69,13 @@ class FileSink final : public LogSink {
     explicit FileSink(std::string pathname, bool auto_flush = false);
 
     void log(const char *data, size_t len) override;
+    void flush() override;
 
   protected:
     std::string pathname_; // 文件路径
     std::ofstream ofs_;    // 输出文件流
     bool auto_flush_;      // 是否自动flush
+    std::mutex mutex_;     // 锁属于 sink，支持多个 logger 共享
 };
 
 /**
@@ -79,11 +89,13 @@ class RollBySizeSink final : public LogSink {
      * @param basename 文件基础名称
      * @param max_size 最大文件大小（字节）
      * @param auto_flush 是否每次写入后自动flush，默认false
+     * @param max_files 保留文件数量上限，默认10，必须大于0
      */
     RollBySizeSink(std::string basename, size_t max_size,
-                   bool auto_flush = false);
+                   bool auto_flush = false, size_t max_files = 10);
 
     void log(const char *data, size_t len) override;
+    void flush() override;
 
   protected:
     /**
@@ -98,12 +110,18 @@ class RollBySizeSink final : public LogSink {
      */
     void roll_over();
 
+    /** @brief 只清理本 basename 生成的旧文件，包含上次运行遗留的文件。 */
+    void prune_files();
+
     std::string basename_; // 文件基础名称
     std::ofstream ofs_;    // 输出文件流
     size_t max_size_;      // 最大文件大小
     size_t cur_size_;      // 当前文件大小
     size_t name_count_;    // 文件名计数器
     bool auto_flush_;      // 是否自动flush
+    size_t max_files_;     // 文件数量上限
+    std::string pathname_; // 当前文件，清理时不得删除
+    std::mutex mutex_;     // 保护文件流、计数与滚动操作
 };
 
 } // namespace zlog

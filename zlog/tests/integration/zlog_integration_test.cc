@@ -187,7 +187,7 @@ TEST_F(ZlogIntegrationTest, AsyncLoggerEndToEnd) {
         logger->log_impl(LogLevel::value::INFO, __FILE__, __LINE__,
                          "async message 3");
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        logger->flush();
     }
 
     std::string content = readFile(logFile);
@@ -216,11 +216,11 @@ TEST_F(ZlogIntegrationTest, AsyncLoggerUnsafeMode) {
                              ("message " + std::to_string(i)).c_str());
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        logger->flush();
     }
 
     std::string content = readFile(logFile);
-    EXPECT_FALSE(content.empty());
+    EXPECT_EQ(countLines(content), 1000);
 }
 
 TEST_F(ZlogIntegrationTest, AsyncLoggerSafeMode) {
@@ -242,10 +242,11 @@ TEST_F(ZlogIntegrationTest, AsyncLoggerSafeMode) {
                              ("safe message " + std::to_string(i)).c_str());
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        logger->flush();
     }
 
     std::string content = readFile(logFile);
+    EXPECT_EQ(countLines(content), 100);
     for (int i = 0; i < 100; i++) {
         EXPECT_THAT(content,
                     ::testing::HasSubstr("safe message " + std::to_string(i)));
@@ -319,14 +320,14 @@ TEST_F(ZlogIntegrationTest, MultithreadedAsyncLogger) {
             threads[i].join();
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        logger->flush();
     }
 
     std::string content = readFile(logFile);
-    EXPECT_GT(countLines(content), 0);
+    EXPECT_EQ(countLines(content), 400);
 }
 
-TEST_F(ZlogIntegrationTest, LoggerBuilderGlobalRegistration) {
+TEST_F(ZlogIntegrationTest, ExplicitLoggerRegistration) {
     std::string logFile = testDir + "/global.log";
 
     LoggerBuilder builder;
@@ -336,7 +337,8 @@ TEST_F(ZlogIntegrationTest, LoggerBuilderGlobalRegistration) {
     builder.build_logger_formatter("%m%n");
     builder.build_logger_sink<FileSink>(logFile);
 
-    Logger::ptr logger = builder.build_global();
+    Logger::ptr logger = builder.build();
+    LoggerManager::get_instance().add_logger(logger);
     ASSERT_NE(logger.get(), static_cast<Logger *>(NULL));
 
     EXPECT_TRUE(LoggerManager::get_instance().get_logger("global_test"));
@@ -369,9 +371,10 @@ TEST_F(ZlogIntegrationTest, GetLoggerByName) {
     builder.build_logger_type(LoggerType::LOGGER_SYNC);
     builder.build_logger_formatter("%m%n");
     builder.build_logger_sink<FileSink>(logFile);
-    builder.build_global();
+    Logger::ptr logger = builder.build();
+    LoggerManager::get_instance().add_logger(logger);
 
-    Logger::ptr logger = zlog::get_logger("named_logger");
+    logger = zlog::get_logger("named_logger");
     ASSERT_NE(logger.get(), static_cast<Logger *>(NULL));
     EXPECT_EQ(logger->get_name(), "named_logger");
 }
@@ -471,6 +474,7 @@ TEST_F(ZlogIntegrationTest, StressTestSync) {
 
 TEST_F(ZlogIntegrationTest, StressTestAsync) {
     std::string logFile = testDir + "/stress_async.log";
+    const int count = 10000;
 
     {
         LoggerBuilder builder;
@@ -486,7 +490,6 @@ TEST_F(ZlogIntegrationTest, StressTestAsync) {
         std::chrono::high_resolution_clock::time_point start =
             std::chrono::high_resolution_clock::now();
 
-        const int count = 10000;
         for (int i = 0; i < count; i++) {
             logger->log_impl(LogLevel::value::INFO, __FILE__, __LINE__,
                              "async stress test");
@@ -501,11 +504,11 @@ TEST_F(ZlogIntegrationTest, StressTestAsync) {
         std::cout << "Async stress test: " << count << " messages pushed in "
                   << duration << "ms" << std::endl;
 
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        logger->flush();
     }
 
     std::string content = readFile(logFile);
-    EXPECT_GT(countLines(content), 0);
+    EXPECT_EQ(countLines(content), count);
 }
 
 int main(int argc, char **argv) {

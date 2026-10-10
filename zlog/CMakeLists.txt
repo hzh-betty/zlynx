@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.18)
 
-project(zlog VERSION 1.0.0 LANGUAGES CXX)
+project(zlog VERSION 2.0.0 LANGUAGES CXX)
 
 # 支持两种使用方式：
 # 1. 从仓库根目录 add_subdirectory(zlog)，公共 helper 已由根 CMakeLists 加载；
