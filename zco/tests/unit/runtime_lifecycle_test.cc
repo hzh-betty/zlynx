@@ -9,12 +9,19 @@ std::atomic<int> fail_thread_after{-1};
 std::atomic<int> fail_epoll_after{-1};
 } // namespace
 
+// Keep Sanitizer's thread registration when this test interposes pthread_create.
+extern "C" int __interceptor_pthread_create(
+    pthread_t *, const pthread_attr_t *, void *(*)(void *), void *) noexcept
+    __attribute__((weak));
+
 extern "C" int pthread_create(pthread_t *thread, const pthread_attr_t *attr,
                               void *(*entry)(void *), void *argument) noexcept {
     using Create =
         int (*)(pthread_t *, const pthread_attr_t *, void *(*)(void *), void *);
-    static auto create =
-        reinterpret_cast<Create>(::dlsym(RTLD_NEXT, "pthread_create"));
+    static auto create = __interceptor_pthread_create
+                             ? __interceptor_pthread_create
+                             : reinterpret_cast<Create>(
+                                   ::dlsym(RTLD_NEXT, "pthread_create"));
     int remaining = fail_thread_after.load();
     if (remaining >= 0 && fail_thread_after.fetch_sub(1) == 0)
         return EAGAIN;
