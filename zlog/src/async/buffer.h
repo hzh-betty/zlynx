@@ -15,8 +15,6 @@ static constexpr size_t kDefaultBufferSize =
     1024 * 1024 * 2; // 默认缓冲区大小：2MB
 static constexpr size_t kThresholdBufferSize =
     1024 * 1024 * 8; // 阈值缓冲区大小：8MB
-static constexpr size_t kIncrementBufferSize =
-    1024 * 1024 * 1; // 增量缓冲区大小：1MB
 static constexpr size_t kMaxBufferSize =
     1024 * 1024 * 512; // 最大缓冲区大小：512MB
 

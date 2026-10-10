@@ -89,8 +89,9 @@ bool Buffer::can_accommodate(size_t len) const {
 }
 
 size_t Buffer::calculate_new_size(size_t len) const {
+    // 几何增长避免大块 realloc 反复复制旧数据；加法前截断到上限。
     const size_t growth = capacity_ < kThresholdBufferSize
-                              ? capacity_ : kIncrementBufferSize;
+                              ? capacity_ : capacity_ / 2;
     const size_t preferred = capacity_ + std::min(growth, kMaxBufferSize - capacity_);
     return std::max(preferred, writer_idx_ + len);
 }

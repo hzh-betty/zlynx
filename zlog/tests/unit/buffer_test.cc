@@ -28,7 +28,6 @@ TEST_F(BufferTest, InitialState) {
 TEST_F(BufferTest, DefaultBufferConstants) {
     EXPECT_EQ(kDefaultBufferSize, 1024u * 1024u * 2u);   // 2MB
     EXPECT_EQ(kThresholdBufferSize, 1024u * 1024u * 8u); // 8MB
-    EXPECT_EQ(kIncrementBufferSize, 1024u * 1024u * 1u); // 1MB
     EXPECT_EQ(kMaxBufferSize, 1024u * 1024u * 512u);     // 512MB
 }
 
@@ -196,30 +195,41 @@ TEST_F(BufferTest, ResizeBelowThreshold) {
     EXPECT_GE(buf.capacity(), origCap * 2);
 }
 
-TEST_F(BufferTest, ResizeAboveThreshold) {
-    // 先扩容到超过阈值
-    std::vector<char> initData(kThresholdBufferSize + 100, 'A');
-    buf.push(initData.data(), initData.size());
-
-    size_t capBeforeSecond = buf.capacity();
-
-    // 再次扩容，超过阈值后按增量扩容
-    std::vector<char> moreData(buf.writable_size() + 100, 'B');
-    buf.push(moreData.data(), moreData.size());
-
-    // 超过阈值后至少增加一个增量，同时满足本次写入
-    EXPECT_GE(buf.capacity(), capBeforeSecond + kIncrementBufferSize);
+TEST_F(BufferTest, GeometricGrowthPreservesDataPastEightMiB) {
+    std::string chunk(1024 * 1024, '\0');
+    for (int i = 0; i < 32; ++i) {
+        chunk.assign(chunk.size(), static_cast<char>(i));
+        buf.push(chunk.data(), chunk.size());
+    }
+    EXPECT_GE(buf.capacity(), 32u * 1024u * 1024u);
+    EXPECT_LT(buf.capacity(), 48u * 1024u * 1024u);
+    EXPECT_EQ(buf.readable_size(), 32u * chunk.size());
+    for (int i = 0; i < 32; ++i) {
+        chunk.assign(chunk.size(), static_cast<char>(i));
+        EXPECT_EQ(std::memcmp(buf.begin() + i * chunk.size(), chunk.data(), chunk.size()), 0);
+    }
 }
 
-TEST_F(BufferTest, MultipleResizes) {
-    for (int i = 0; i < 10; i++) {
-        std::vector<char> data(buf.writable_size() + 1,
-                               static_cast<char>('A' + i));
-        buf.push(data.data(), data.size());
-    }
+TEST_F(BufferTest, GrowthFromExactEightMiBBoundary) {
+    buf.reserve(kThresholdBufferSize);
+    const std::string data(kThresholdBufferSize, 'x');
+    buf.push(data.data(), data.size());
+    buf.push("y", 1);
+    EXPECT_EQ(buf.capacity(), kThresholdBufferSize + kThresholdBufferSize / 2);
+    EXPECT_EQ(std::memcmp(buf.begin(), data.data(), data.size()), 0);
+    EXPECT_EQ(buf.begin()[data.size()], 'y');
+}
 
-    EXPECT_GT(buf.capacity(), kDefaultBufferSize);
-    EXPECT_GT(buf.readable_size(), 0u);
+TEST_F(BufferTest, GrowthIsCappedAtMaximum) {
+    // 只检查容量计算，避免为边界测试实际分配 512 MiB。
+    buf.capacity_ = kMaxBufferSize * 2 / 3 + 1;
+    buf.writer_idx_ = buf.capacity_;
+    EXPECT_EQ(buf.calculate_new_size(1), kMaxBufferSize);
+    buf.capacity_ = kMaxBufferSize;
+    buf.writer_idx_ = kMaxBufferSize - 1;
+    EXPECT_EQ(buf.calculate_new_size(1), kMaxBufferSize);
+    EXPECT_TRUE(buf.can_accommodate(1));
+    EXPECT_FALSE(buf.can_accommodate(2));
 }
 
 TEST_F(BufferTest, CapacityInitial) {
