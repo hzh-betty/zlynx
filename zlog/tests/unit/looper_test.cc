@@ -1,5 +1,6 @@
 #include "zlog/logger.h"
 #include "async/looper.h"
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <future>
@@ -361,6 +362,76 @@ TEST_F(LooperTest, ConcurrentFlushAndStopCompleteWithoutLosingRecords) {
     std::thread second([&] { looper.stop(); });
     first.join(); second.join();
     EXPECT_EQ(bytes.load(), 6000u);
+}
+
+TEST_F(LooperTest, ThresholdCrossingWhileConsumerIsBusyDoesNotLoseWakeup) {
+    for (AsyncType mode : {AsyncType::ASYNC_SAFE, AsyncType::ASYNC_UNSAFE}) {
+        std::mutex gate;
+        std::condition_variable cv;
+        size_t received = 0;
+        bool release = false;
+        AsyncLooper looper([&](const char *, size_t) {
+            std::unique_lock<std::mutex> lock(gate);
+            ++received;
+            cv.notify_all();
+            if (received == 1) cv.wait(lock, [&] { return release; });
+        }, mode, std::chrono::hours(1));
+        const std::string first(kFlushBufferSize, 'x');
+        looper.push(first.data(), first.size());
+        {
+            std::unique_lock<std::mutex> lock(gate);
+            EXPECT_TRUE(cv.wait_for(lock, std::chrono::seconds(2), [&] { return received == 1; }));
+        }
+        // 消费者处理上一批时，生产缓冲再次越过阈值。
+        const std::string record(kFlushBufferSize / 4 - kRecordHeaderSize, 'y');
+        for (int i = 0; i < 8; ++i) looper.push(record.data(), record.size());
+        {
+            std::lock_guard<std::mutex> lock(gate);
+            release = true;
+        }
+        cv.notify_all();
+        {
+            std::unique_lock<std::mutex> lock(gate);
+            EXPECT_TRUE(cv.wait_for(lock, std::chrono::seconds(2), [&] { return received == 9; }));
+        }
+        looper.stop();
+    }
+}
+
+TEST_F(LooperTest, ContendedPushesAndFlushPreserveEveryRecord) {
+    for (AsyncType mode : {AsyncType::ASYNC_SAFE, AsyncType::ASYNC_UNSAFE}) {
+        std::vector<std::string> actual, expected;
+        const int threads = 8, records = 2000;
+        AsyncLooper looper([&](const char *data, size_t len) {
+            actual.emplace_back(data, len);
+            if (actual.size() % 100 == 0) std::this_thread::yield();
+        }, mode, std::chrono::hours(1));
+        std::vector<std::thread> producers;
+        for (int t = 0; t < threads; ++t) {
+            producers.emplace_back([&, t] {
+                for (int i = 0; i < records; ++i) {
+                    const std::string text = std::to_string(t) + ":" + std::to_string(i) +
+                                             std::string(256, 'x');
+                    looper.push(text.data(), text.size());
+                }
+            });
+        }
+        std::thread flusher([&] {
+            for (int i = 0; i < 20; ++i) looper.flush();
+        });
+        for (auto &producer : producers) producer.join();
+        flusher.join();
+        looper.stop();
+        for (int t = 0; t < threads; ++t) {
+            for (int i = 0; i < records; ++i) {
+                expected.push_back(std::to_string(t) + ":" + std::to_string(i) +
+                                   std::string(256, 'x'));
+            }
+        }
+        std::sort(actual.begin(), actual.end());
+        std::sort(expected.begin(), expected.end());
+        EXPECT_EQ(actual, expected);
+    }
 }
 
 int main(int argc, char **argv) {

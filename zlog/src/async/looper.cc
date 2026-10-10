@@ -62,12 +62,17 @@ void AsyncLooper::push(const char *data, size_t len) {
     if (stop_) {
         throw std::runtime_error("async logger is closed");
     }
+    const size_t previous_size = pro_buf_.readable_size();
     // 扩容完成后才写入长度头，保证分配失败不会留下半条记录。
     pro_buf_.reserve(needed);
     pro_buf_.push(reinterpret_cast<const char *>(&len), kRecordHeaderSize);
     pro_buf_.push(data, len);
     ++accepted_;
-    if (pro_buf_.readable_size() >= kFlushBufferSize) {
+    const bool notify = previous_size < kFlushBufferSize &&
+                        pro_buf_.readable_size() >= kFlushBufferSize;
+    lock.unlock();
+    // 只在越过阈值时通知；等待谓词在队列锁下检查，不依赖通知计数。
+    if (notify) {
         cond_con_.notify_one();
     }
 }
