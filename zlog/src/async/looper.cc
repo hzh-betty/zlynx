@@ -53,7 +53,7 @@ void AsyncLooper::push(const char *data, size_t len) {
         throw std::invalid_argument("null async log data");
     }
     const size_t needed = kRecordHeaderSize + len;
-    std::unique_lock<Spinlock> lock(mutex_);
+    std::unique_lock<std::mutex> lock(mutex_);
     cond_pro_.wait(lock, [&] {
         return stop_ || (looper_type_ == AsyncType::ASYNC_SAFE
                             ? pro_buf_.writable_size() >= needed
@@ -82,7 +82,7 @@ void AsyncLooper::flush() {
         throw std::logic_error("cannot flush an async logger from its own sink");
     }
     std::lock_guard<std::mutex> operation(stop_mutex_);
-    std::unique_lock<Spinlock> lock(mutex_);
+    std::unique_lock<std::mutex> lock(mutex_);
     if (!stop_) {
         const uint64_t request = ++flush_requested_;
         flush_target_ = accepted_;
@@ -100,7 +100,7 @@ void AsyncLooper::stop() {
     }
     std::lock_guard<std::mutex> operation(stop_mutex_);
     {
-        std::unique_lock<Spinlock> lock(mutex_);
+        std::unique_lock<std::mutex> lock(mutex_);
         stop_ = true;
     }
     cond_pro_.notify_all();
@@ -121,7 +121,7 @@ AsyncLooper::~AsyncLooper() noexcept {
 }
 
 void AsyncLooper::record_exception(std::exception_ptr exception) {
-    std::unique_lock<Spinlock> lock(mutex_);
+    std::unique_lock<std::mutex> lock(mutex_);
     if (!callback_exception_) {
         callback_exception_ = exception;
     }
@@ -130,7 +130,7 @@ void AsyncLooper::record_exception(std::exception_ptr exception) {
 void AsyncLooper::thread_entry() {
     for (;;) {
         {
-            std::unique_lock<Spinlock> lock(mutex_);
+            std::unique_lock<std::mutex> lock(mutex_);
             cond_con_.wait_for(lock, milliseco_, [&] {
                 return stop_ || flush_requested_ != flush_completed_ ||
                        pro_buf_.readable_size() >= kFlushBufferSize;
@@ -159,7 +159,7 @@ void AsyncLooper::thread_entry() {
         bool stopping = false;
         bool flushing = false;
         {
-            std::unique_lock<Spinlock> lock(mutex_);
+            std::unique_lock<std::mutex> lock(mutex_);
             completed_ += records;
             if (completed_ >= flush_target_) {
                 request = flush_requested_;
@@ -176,7 +176,7 @@ void AsyncLooper::thread_entry() {
                 record_exception(std::current_exception());
             }
             {
-                std::unique_lock<Spinlock> lock(mutex_);
+                std::unique_lock<std::mutex> lock(mutex_);
                 flush_completed_ = request;
             }
             cond_done_.notify_all();

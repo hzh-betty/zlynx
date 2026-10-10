@@ -20,7 +20,6 @@ find_package(Threads REQUIRED)
 set(ZLOG_SOURCES
     src/async/buffer.cc
     src/async/looper.cc
-    src/async/spinlock.cc
     src/async_logger.cc
     src/format.cc
     src/level.cc

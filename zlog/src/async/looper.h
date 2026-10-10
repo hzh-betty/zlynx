@@ -16,7 +16,6 @@
 #include <thread>
 
 #include "buffer.h"
-#include "spinlock.h"
 
 namespace zlog {
 enum class AsyncType;
@@ -72,10 +71,10 @@ class AsyncLooper {
     bool stop_ = false;     // 停止标志，由队列锁保护
     Buffer pro_buf_;        // 生产缓冲区
     Buffer con_buf_;        // 消费缓冲区
-    Spinlock mutex_;        // 保护交换、接收与完成状态
-    std::condition_variable_any cond_pro_; // 生产者条件变量
-    std::condition_variable_any cond_con_; // 消费者条件变量
-    std::condition_variable_any cond_done_; // 刷新完成条件变量
+    std::mutex mutex_;        // 保护交换、接收与完成状态
+    std::condition_variable cond_pro_; // 生产者条件变量
+    std::condition_variable cond_con_; // 消费者条件变量
+    std::condition_variable cond_done_; // 刷新完成条件变量
     std::mutex stop_mutex_; // 串行化 flush 与 stop，避免并发 join
     std::thread thread_;    // 工作线程
     std::thread::id worker_id_; // 构建后不再修改，用于检测工作线程重入
