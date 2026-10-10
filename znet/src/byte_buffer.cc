@@ -58,11 +58,20 @@ void ByteBuffer::ensure_writable_bytes(size_t size) {
     const size_t readable = readable_bytes();
     if (size > bytes_.max_size() - readable)
         throw std::length_error("ByteBuffer capacity overflow");
-    std::memmove(bytes_.data(), peek(), readable);
+    // Compact only when the reclaimed prefix pays for moving the live bytes.
+    // Otherwise grow with slack so small consume/append cycles are amortized.
+    if (reader_ >= readable && size <= bytes_.size() - readable) {
+        std::memmove(bytes_.data(), peek(), readable);
+    } else {
+        const size_t growth =
+            bytes_.size() +
+            std::min(bytes_.size(), bytes_.max_size() - bytes_.size());
+        std::vector<char> storage(std::max(readable + size, growth));
+        std::memcpy(storage.data(), peek(), readable);
+        bytes_.swap(storage);
+    }
     reader_ = 0;
     writer_ = readable;
-    if (size > writable_bytes())
-        bytes_.resize(readable + size);
 }
 
 void ByteBuffer::has_written(size_t size) {
