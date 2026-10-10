@@ -6,6 +6,8 @@
 
 [架构重设计文档](docs/architecture-redesign.md) 保留问题证据和设计依据；
 [重构验证记录](docs/refactor-validation.md) 记录实际实现、验证与限制。
+[完成状态分配优化记录](docs/performance-optimization-20261010.md) 记录延迟构造、回归测试及前后测量。
+[后续优化验证记录](docs/performance-followup-20261010.md) 记录等待者移除、调度、fd 契约和 ABI 升级。
 
 ## 快速开始
 
