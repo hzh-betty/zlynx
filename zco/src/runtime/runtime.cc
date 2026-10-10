@@ -26,10 +26,13 @@ Result<TaskHandle> submit(const std::shared_ptr<Submission> &endpoint,
         return Result<TaskHandle>(
             std::make_error_code(std::errc::invalid_argument));
     if (!pinned) {
-        index = 0;
-        for (size_t i = 1; i < workers.size(); ++i)
-            if (workers[i]->load() < workers[index]->load())
-                index = i;
+        index = endpoint->next_worker;
+        endpoint->next_worker = (index + 1) % workers.size();
+        // Rotate the first candidate and compare one separated peer. Stealing
+        // handles remaining imbalance without scanning every worker here.
+        auto peer = (index + workers.size() / 2) % workers.size();
+        if (peer != index && workers[peer]->load() < workers[index]->load())
+            index = peer;
     }
     auto completion = std::make_shared<Completion>(TaskId{++next_task});
     bool empty =

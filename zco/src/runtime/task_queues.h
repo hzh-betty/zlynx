@@ -44,6 +44,7 @@ struct Submission {
     std::mutex mutex;
     bool accepting = false;
     std::vector<Worker *> workers;
+    size_t next_worker = 0;
 };
 
 Result<TaskHandle> submit(const std::shared_ptr<Submission> &, Task,

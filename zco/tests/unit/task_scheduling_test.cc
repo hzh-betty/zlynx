@@ -2,6 +2,7 @@
 #include "runtime/worker.h"
 #include "support/fake_reactor.h"
 #include "support/runtime_fixture.h"
+#include <array>
 #include <ucontext.h>
 using namespace zco;
 
@@ -177,4 +178,84 @@ TEST(Scheduling, WorkerStealsOrdinaryTasksBeforeContextCreation) {
     second.stop();
     first.join();
     second.join();
+}
+
+TEST(Scheduling, OrdinaryTasksUseAllWorkersUnderBlockingLoad) {
+    for (auto model : {StackModel::kShared, StackModel::kIndependent}) {
+        RuntimeOptions options{8};
+        options.stack_model = model;
+        Runtime runtime(options);
+        std::promise<void> release;
+        auto gate = release.get_future().share();
+        std::atomic<int> started{0};
+        std::vector<TaskHandle> tasks;
+        for (int i = 0; i < 8; ++i)
+            tasks.push_back(test::spawn(runtime, [&] {
+                ++started;
+                gate.wait();
+            }));
+        auto deadline = test::soon();
+        while (started != 8 && !deadline.expired(Deadline::Clock::now()))
+            std::this_thread::yield();
+        EXPECT_EQ(started, 8);
+        release.set_value();
+        for (auto &task : tasks)
+            EXPECT_TRUE(task.join(test::soon()));
+    }
+}
+
+TEST(Scheduling, IdleWorkersRunTasksWhenBothSubmitCandidatesAreBlocked) {
+    for (auto model : {StackModel::kShared, StackModel::kIndependent}) {
+        RuntimeOptions options{4};
+        options.stack_model = model;
+        Runtime runtime(options);
+        std::promise<void> release;
+        auto gate = release.get_future().share();
+        std::atomic<int> entered{0};
+        std::vector<TaskHandle> blockers;
+        for (size_t worker : {0u, 2u})
+            blockers.push_back(test::spawn(runtime.executor(worker), [&] {
+                ++entered;
+                gate.wait();
+            }));
+        while (entered != 2)
+            std::this_thread::yield();
+        auto stolen = test::spawn(runtime, [] {
+            EXPECT_TRUE(current_executor().index() == 1 ||
+                        current_executor().index() == 3);
+        });
+        auto joined = stolen.join(test::soon());
+        release.set_value();
+        EXPECT_TRUE(joined);
+        for (auto &blocker : blockers)
+            EXPECT_TRUE(blocker.join(test::soon()));
+    }
+}
+
+TEST(Scheduling, ConcurrentBurstsAndYieldingTasksDoNotLoseWork) {
+    for (auto model : {StackModel::kShared, StackModel::kIndependent}) {
+        RuntimeOptions options{8};
+        options.stack_model = model;
+        Runtime runtime(options);
+        std::atomic<int> completed{0};
+        for (int burst = 0; burst < 5; ++burst) {
+            std::array<std::vector<TaskHandle>, 4> tasks;
+            std::array<std::thread, 4> producers;
+            for (size_t p = 0; p < producers.size(); ++p)
+                producers[p] = std::thread([&, p] {
+                    for (int i = 0; i < 250; ++i)
+                        tasks[p].push_back(test::spawn(runtime, [&, i] {
+                            if (i % 16 == 0)
+                                yield();
+                            ++completed;
+                        }));
+                });
+            for (auto &producer : producers)
+                producer.join();
+            for (auto &batch : tasks)
+                for (auto &task : batch)
+                    EXPECT_TRUE(task.join(test::soon()));
+        }
+        EXPECT_EQ(completed, 5000);
+    }
 }
