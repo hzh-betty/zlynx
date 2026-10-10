@@ -8,6 +8,8 @@
 
 #include "zmalloc/internal/system_alloc.h"
 
+#include <cerrno>
+
 namespace zmalloc {
 
 namespace {
@@ -37,7 +39,11 @@ Span *PageCache::new_span(size_t k) {
             if (span->n == k) {
                 // 大块可能驱逐并 munmap，始终使用无标记映射和有锁识别。
                 id_span_map_.set(span->page_id, span);
+                advance_release_cursor(span);
                 large_spans_.erase(span);
+                if (!span->is_released) {
+                    unreleased_free_bytes_ -= k * PAGE_SIZE;
+                }
                 large_cached_bytes_ -= k * PAGE_SIZE;
                 span->is_use = true;
                 span->is_released = false;
@@ -74,7 +80,11 @@ Span *PageCache::new_span(size_t k) {
         if (!id_span_map_.ensure(span->page_id, span->n)) {
             throw std::bad_alloc();
         }
+        advance_release_cursor(span);
         Span *k_span = span_lists_[k].pop_front();
+        if (!k_span->is_released) {
+            unreleased_free_bytes_ -= k * PAGE_SIZE;
+        }
 
         // 该 Span 被分配出去，标记为在用。
         k_span->is_use = true;
@@ -101,7 +111,11 @@ Span *PageCache::new_span(size_t k) {
                 throw std::bad_alloc();
             }
             Span *k_span = span_pool_.allocate();
+            advance_release_cursor(n_span);
             span_lists_[i].pop_front();
+            if (!n_span->is_released) {
+                unreleased_free_bytes_ -= k * PAGE_SIZE;
+            }
 
             // 在 n_span 头部切 k 页
             k_span->page_id = n_span->page_id;
@@ -169,6 +183,7 @@ Span *PageCache::new_span(size_t k) {
 
     span_lists_[big_span->n].push_front(big_span);
     mapped_bytes_ += big_span->n * PAGE_SIZE;
+    unreleased_free_bytes_ += big_span->n * PAGE_SIZE;
 
     // 递归调用
     return new_span(k);
@@ -177,6 +192,7 @@ Span *PageCache::new_span(size_t k) {
 void PageCache::release_span_to_page_cache(Span *span) {
     // 第一步：清除旧映射，避免合并过程中查询到已失效的 Span 边界。
     clear_span_mapping(id_span_map_, span);
+    const size_t returned_bytes = span->n * PAGE_SIZE;
 
     // 第二步：大 Span 进入独立缓存，超预算驱逐，超大块直接释放给系统。
     if (span->n > NPAGES - 1) {
@@ -185,7 +201,11 @@ void PageCache::release_span_to_page_cache(Span *span) {
             // 只缓存有限大小的大块；驱逐最早归还的空闲块，严格遵守总预算。
             while (large_cached_bytes_ > LARGE_CACHE_BUDGET - bytes) {
                 Span *old = large_spans_.end()->prev;
+                advance_release_cursor(old);
                 large_spans_.erase(old);
+                if (!old->is_released) {
+                    unreleased_free_bytes_ -= old->n * PAGE_SIZE;
+                }
                 const size_t old_bytes = old->n * PAGE_SIZE;
                 system_free(reinterpret_cast<void *>(old->page_id << PAGE_SHIFT),
                             old->n);
@@ -200,6 +220,8 @@ void PageCache::release_span_to_page_cache(Span *span) {
             span->free_list = nullptr;
             large_spans_.push_front(span);
             large_cached_bytes_ += bytes;
+            unreleased_free_bytes_ += bytes;
+            maybe_release_free_pages(returned_bytes);
             return;
         }
         void *ptr = reinterpret_cast<void *>(span->page_id << PAGE_SHIFT);
@@ -209,6 +231,7 @@ void PageCache::release_span_to_page_cache(Span *span) {
         return;
     }
 
+    unreleased_free_bytes_ += returned_bytes;
     // 第三步：尝试与相邻空闲 Span 合并，减少外碎片。
     // 停止条件：
     // - 相邻 span 不存在
@@ -235,7 +258,11 @@ void PageCache::release_span_to_page_cache(Span *span) {
         span->n += prev_span->n;
 
         clear_span_mapping(id_span_map_, prev_span);
+        advance_release_cursor(prev_span);
         span_lists_[prev_span->n].erase(prev_span);
+        if (prev_span->is_released) {
+            unreleased_free_bytes_ += prev_span->n * PAGE_SIZE;
+        }
         span_pool_.deallocate(prev_span);
     }
 
@@ -257,7 +284,11 @@ void PageCache::release_span_to_page_cache(Span *span) {
         span->n += next_span->n;
 
         clear_span_mapping(id_span_map_, next_span);
+        advance_release_cursor(next_span);
         span_lists_[next_span->n].erase(next_span);
+        if (next_span->is_released) {
+            unreleased_free_bytes_ += next_span->n * PAGE_SIZE;
+        }
         span_pool_.deallocate(next_span);
     }
 
@@ -274,6 +305,58 @@ void PageCache::release_span_to_page_cache(Span *span) {
     span->is_use = false;
     // 新归还的页可能已被触碰；合并后整段重新允许建议回收。
     span->is_released = false;
+    maybe_release_free_pages(returned_bytes);
+}
+
+void PageCache::maybe_release_free_pages(size_t returned_bytes) {
+    if (!AUTO_RELEASE_ENABLED) {
+        return;
+    }
+    // 仅整段页归还走此路径；TLS/传输缓存的逐对象热路径不扫描、不系统调用。
+    if (returned_since_auto_release_ < AUTO_RELEASE_INTERVAL_BYTES) {
+        returned_since_auto_release_ += returned_bytes;
+    }
+    if (unreleased_free_bytes_ < AUTO_RELEASE_MIN_FREE_BYTES ||
+        returned_since_auto_release_ < AUTO_RELEASE_INTERVAL_BYTES) {
+        return;
+    }
+    returned_since_auto_release_ = 0;
+    const int saved_errno = errno;
+    size_t bytes = 0;
+    size_t scanned = 0;
+    size_t buckets = 0;
+    // 从上轮停下的位置继续，避免已回收节点反复占用检查预算。
+    while (buckets < NPAGES && scanned < AUTO_RELEASE_MAX_SPANS &&
+           bytes < AUTO_RELEASE_MAX_BYTES) {
+        SpanList &list = auto_release_bucket_ == 0
+                             ? large_spans_ : span_lists_[auto_release_bucket_];
+        if (auto_release_cursor_ == nullptr) {
+            auto_release_cursor_ = list.end()->prev;
+        }
+        while (auto_release_cursor_ != list.end() &&
+               scanned < AUTO_RELEASE_MAX_SPANS && bytes < AUTO_RELEASE_MAX_BYTES) {
+            Span *span = auto_release_cursor_;
+            auto_release_cursor_ = span->prev;
+            ++scanned;
+            const size_t span_bytes = span->n * PAGE_SIZE;
+            assert(!span->is_use);
+            if (!span->is_released && span_bytes <= AUTO_RELEASE_MAX_BYTES - bytes &&
+                system_release(reinterpret_cast<void *>(span->page_id << PAGE_SHIFT),
+                               span->n)) {
+                span->is_released = true;
+                bytes += span_bytes;
+            }
+        }
+        if (auto_release_cursor_ != list.end()) {
+            break;
+        }
+        auto_release_cursor_ = nullptr;
+        auto_release_bucket_ = (auto_release_bucket_ + 1) % NPAGES;
+        ++buckets;
+    }
+    unreleased_free_bytes_ -= bytes;
+    total_released_bytes_ += bytes;
+    errno = saved_errno;
 }
 
 size_t PageCache::release_free_pages() {
@@ -300,6 +383,8 @@ size_t PageCache::release_free_pages() {
             bytes += span->n * PAGE_SIZE;
         }
     }
+    unreleased_free_bytes_ -= bytes;
+    returned_since_auto_release_ = 0;
     total_released_bytes_ += bytes;
     return bytes;
 }

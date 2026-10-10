@@ -141,6 +141,14 @@ class PageCache : public NonCopyable {
         id_span_map_.set_range(span->page_id, span->n, entry);
     }
 
+    // 游标指向的空闲 Span 被分配、合并或驱逐前，先移到同桶下一个节点。
+    void advance_release_cursor(Span *span) {
+        if (auto_release_cursor_ == span) {
+            auto_release_cursor_ = span->prev;
+        }
+    }
+    void maybe_release_free_pages(size_t returned_bytes);
+
     PageCache() = default;
 
   private:
@@ -152,6 +160,10 @@ class PageCache : public NonCopyable {
     std::mutex page_mtx_;         // 全局锁
     size_t mapped_bytes_ = 0;     // 受管页映射，不含元数据；由页锁保护。
     size_t total_released_bytes_ = 0; // 累计成功建议回收字节数。
+    size_t unreleased_free_bytes_ = 0;
+    size_t returned_since_auto_release_ = 0;
+    size_t auto_release_bucket_ = 0; // 0 为大块链表，1..128 为普通桶。
+    Span *auto_release_cursor_ = nullptr;
 };
 
 } // namespace zmalloc

@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
+#include <cerrno>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -279,6 +280,7 @@ TEST_F(PageCacheTest, MergeClearsOldNeighborBoundaryMappings) {
 
     pc.span_lists_[left->n].push_front(left);
     pc.span_lists_[right->n].push_front(right);
+    pc.unreleased_free_bytes_ += 4 * zmalloc::PAGE_SIZE;
     pc.id_span_map_.set(left->page_id, left);
     pc.id_span_map_.set(left->page_id + left->n - 1, left);
     pc.id_span_map_.set_range(middle->page_id, middle->n, middle);
@@ -302,7 +304,9 @@ TEST_F(PageCacheTest, MergeClearsOldNeighborBoundaryMappings) {
     EXPECT_EQ(pc.id_span_map_.get(base + 3), nullptr);
     EXPECT_EQ(pc.id_span_map_.get(base + 4), nullptr);
 
+    pc.advance_release_cursor(middle);
     pc.span_lists_[middle->n].erase(middle);
+    pc.unreleased_free_bytes_ -= 6 * zmalloc::PAGE_SIZE;
     pc.id_span_map_.set_range(base, 6, nullptr);
     pc.span_pool_.deallocate(middle);
     zmalloc::system_free(region, 6);
@@ -486,6 +490,120 @@ TEST_F(PageCacheTest, BeyondLargeCacheLimitStillUnmapsImmediately) {
     EXPECT_EQ(cache.statistics().free_bytes, 0u);
     EXPECT_EQ(cache.try_map_object_to_span(address), nullptr);
 }
+
+TEST_F(PageCacheTest, AutomaticReleaseIsBoundedAndKeepsLivePagesIntact) {
+    zmalloc::PageCache cache;
+    std::lock_guard<std::mutex> lock(cache.page_mtx());
+    constexpr size_t pages = zmalloc::NPAGES - 1;
+    constexpr size_t bytes = pages * zmalloc::PAGE_SIZE;
+    zmalloc::Span *spans[65];
+    for (auto &span : spans) {
+        span = cache.new_span(pages);
+        auto *p = reinterpret_cast<unsigned char *>(span->page_id << zmalloc::PAGE_SHIFT);
+        std::memset(p, 0x5a, bytes);
+    }
+    for (size_t i = 0; i < 64; ++i) {
+        const auto before = cache.statistics();
+        errno = EDOM;
+        cache.release_span_to_page_cache(spans[i]);
+        EXPECT_EQ(errno, EDOM);
+        const auto after = cache.statistics();
+        EXPECT_LE(after.total_released_bytes - before.total_released_bytes,
+                  zmalloc::AUTO_RELEASE_MAX_BYTES);
+        EXPECT_EQ(cache.unreleased_free_bytes_, after.free_bytes - after.released_bytes);
+        if ((i + 1) * bytes < zmalloc::AUTO_RELEASE_MIN_FREE_BYTES) {
+            EXPECT_EQ(after.total_released_bytes, 0u);
+        }
+    }
+    const auto stats = cache.statistics();
+    if (zmalloc::AUTO_RELEASE_ENABLED) {
+        EXPECT_GT(stats.released_bytes, 0u);
+        EXPECT_LT(stats.released_bytes, stats.free_bytes);
+    } else {
+        EXPECT_EQ(stats.released_bytes, 0u);
+        EXPECT_EQ(stats.total_released_bytes, 0u);
+    }
+    auto *live = reinterpret_cast<unsigned char *>(spans[64]->page_id << zmalloc::PAGE_SHIFT);
+    EXPECT_EQ(live[0], 0x5a);
+    EXPECT_EQ(live[bytes - 1], 0x5a);
+    EXPECT_EQ(cache.release_free_pages(), stats.free_bytes - stats.released_bytes);
+    EXPECT_EQ(cache.unreleased_free_bytes_, 0u);
+    EXPECT_EQ(cache.release_free_pages(), 0u);
+    cache.release_span_to_page_cache(spans[64]);
+    EXPECT_EQ(cache.unreleased_free_bytes_, bytes);
+}
+
+#if ZMALLOC_AUTO_RELEASE_ENABLED
+TEST_F(PageCacheTest, AutomaticReleaseCursorSurvivesLargeCacheEviction) {
+    zmalloc::PageCache cache;
+    std::lock_guard<std::mutex> lock(cache.page_mtx());
+    zmalloc::Span *large[8];
+    zmalloc::Span *normal[16];
+    for (auto &span : large) span = cache.new_span(256);
+    auto *first = cache.new_span(zmalloc::LARGE_CACHE_MAX_PAGES);
+    auto *second = cache.new_span(zmalloc::LARGE_CACHE_MAX_PAGES);
+    for (auto &span : normal) span = cache.new_span(zmalloc::NPAGES - 1);
+    for (auto *span : large) cache.release_span_to_page_cache(span);
+    for (auto *span : normal) cache.release_span_to_page_cache(span);
+    ASSERT_EQ(cache.auto_release_bucket_, 0u);
+    ASSERT_NE(cache.auto_release_cursor_, nullptr);
+    ASSERT_NE(cache.auto_release_cursor_, cache.large_spans_.end());
+    // 显式回收后保留扫描位置，驱逐覆盖该位置的大块，后续扫描不能访问旧元数据。
+    cache.release_free_pages();
+    cache.release_span_to_page_cache(first);
+    cache.release_span_to_page_cache(second);
+    EXPECT_EQ(cache.auto_release_cursor_, first);
+    auto *reused = cache.new_span(zmalloc::LARGE_CACHE_MAX_PAGES);
+    EXPECT_EQ(reused, second);
+    cache.release_span_to_page_cache(reused);
+    for (size_t i = 0; i < 16; ++i) {
+        normal[i] = cache.new_span(zmalloc::NPAGES - 1);
+    }
+    for (auto *span : normal) cache.release_span_to_page_cache(span);
+    const auto stats = cache.statistics();
+    EXPECT_EQ(cache.unreleased_free_bytes_, stats.free_bytes - stats.released_bytes);
+    EXPECT_LE(cache.large_cached_bytes_, zmalloc::LARGE_CACHE_BUDGET);
+    cache.release_free_pages();
+    EXPECT_EQ(cache.unreleased_free_bytes_, 0u);
+}
+
+TEST_F(PageCacheTest, AutomaticReleaseCursorSurvivesAllocationSplitAndMerge) {
+    zmalloc::PageCache cache;
+    std::lock_guard<std::mutex> lock(cache.page_mtx());
+    constexpr size_t pages = zmalloc::NPAGES - 1;
+    zmalloc::Span *spans[48];
+    for (auto &span : spans) {
+        span = cache.new_span(pages);
+    }
+    for (size_t i = 0; i < 32; ++i) {
+        cache.release_span_to_page_cache(spans[i]);
+    }
+    ASSERT_NE(cache.auto_release_cursor_, nullptr);
+    ASSERT_NE(cache.auto_release_cursor_, cache.span_lists_[pages].end());
+    // 分配直到命中跨轮保存的游标，再切分剩余桶并将页合并归还。
+    zmalloc::Span *held[32];
+    size_t count = 0;
+    zmalloc::Span *target = cache.auto_release_cursor_;
+    do {
+        held[count++] = cache.new_span(pages);
+    } while (held[count - 1] != target && count < 32);
+    ASSERT_EQ(held[count - 1], target);
+    auto *part = cache.new_span(1);
+    cache.release_span_to_page_cache(part);
+    for (size_t i = 0; i < count; ++i) {
+        cache.release_span_to_page_cache(held[i]);
+    }
+    for (size_t i = 32; i < 48; ++i) {
+        cache.release_span_to_page_cache(spans[i]);
+    }
+    const auto stats = cache.statistics();
+    EXPECT_EQ(cache.unreleased_free_bytes_, stats.free_bytes - stats.released_bytes);
+    EXPECT_GT(stats.total_released_bytes, 0u);
+    cache.release_free_pages();
+    EXPECT_EQ(cache.unreleased_free_bytes_, 0u);
+}
+
+#endif
 
 TEST_F(PageCacheTest, ArbitraryQueriesHoldPageLockDuringSpanReuse) {
     std::atomic<void *> candidate(nullptr);

@@ -14,6 +14,8 @@ endif()
 
 find_package(Threads REQUIRED)
 
+option(ZLYNX_ZMALLOC_AUTO_RELEASE "Enable bounded automatic page reclamation" OFF)
+
 # allocator 主库只包含正常分配器实现；全局替换符号放在 zmalloc_override。
 set(ZMALLOC_SOURCES
     src/size_class.cc
@@ -37,6 +39,9 @@ target_include_directories(zmalloc
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 target_link_libraries(zmalloc PUBLIC Threads::Threads)
+target_compile_definitions(zmalloc PUBLIC
+    ZMALLOC_AUTO_RELEASE_ENABLED=$<BOOL:${ZLYNX_ZMALLOC_AUTO_RELEASE}>
+)
 zlynx_apply_common_options(zmalloc)
 
 # 安装后保持版本化 soname，并导出为 zmalloc::zmalloc。

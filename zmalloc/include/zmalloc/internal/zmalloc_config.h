@@ -52,6 +52,18 @@ static constexpr size_t CENTRAL_RELEASE_GROUPS = 128;
 static constexpr size_t LARGE_CACHE_BUDGET = 16 * 1024 * 1024;
 static constexpr size_t LARGE_CACHE_MAX_PAGES = 8 * 1024 * 1024 / PAGE_SIZE;
 
+// 自动回收默认关闭，由 CMake 目标传播构建策略到调用方。
+#ifndef ZMALLOC_AUTO_RELEASE_ENABLED
+#define ZMALLOC_AUTO_RELEASE_ENABLED 0
+#endif
+static constexpr bool AUTO_RELEASE_ENABLED = ZMALLOC_AUTO_RELEASE_ENABLED != 0;
+
+// 页缓存按需建议物理回收的门槛、归还间隔及单轮工作上限。
+static constexpr size_t AUTO_RELEASE_MIN_FREE_BYTES = 32 * 1024 * 1024;
+static constexpr size_t AUTO_RELEASE_INTERVAL_BYTES = 8 * 1024 * 1024;
+static constexpr size_t AUTO_RELEASE_MAX_BYTES = 8 * 1024 * 1024;
+static constexpr size_t AUTO_RELEASE_MAX_SPANS = 32;
+
 // 每线程缓存的软字节预算。
 static constexpr size_t THREAD_CACHE_BUDGET = 1024 * 1024;
 static constexpr unsigned THREAD_CACHE_MAX_OVERAGES = 3;
