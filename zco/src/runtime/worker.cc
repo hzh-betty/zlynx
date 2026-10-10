@@ -31,7 +31,7 @@ Worker::Worker(size_t index, const RuntimeOptions &options,
     : index_(index), steal_cursor_(index + 1),
       submission_(std::move(submission)),
       reactor_(std::move(reactor)), inbox_(std::make_shared<Inbox>(reactor_)),
-      stacks_(options) {}
+      stacks_(options), io_waits_(reactor_) {}
 
 Worker::~Worker() {
     if (thread_.joinable()) {
@@ -139,34 +139,11 @@ Result<void>
 Worker::wait_io(const std::shared_ptr<io::detail::Resource> &resource,
                 io::Interest interest, Deadline deadline) {
     auto wait = make_wait();
-    std::shared_ptr<io::detail::Registration> registration;
-    auto result = register_io(reactor_, wait, resource, interest, registration);
-    if (!result)
-        return Result<void>(result.error());
-    auto id = result.value();
-
-    struct RegistrationScope {
-        const std::shared_ptr<Reactor> &reactor;
-        const std::shared_ptr<io::detail::Resource> &resource;
-        const std::shared_ptr<io::detail::Registration> &registration;
-        std::unordered_map<RegistrationId, std::weak_ptr<WaitState>> &waits;
-        bool finished = false;
-
-        Result<void> finish() {
-            finished = true;
-            waits.erase(registration->id);
-            return unregister_io(reactor, resource, registration);
-        }
-
-        ~RegistrationScope() {
-            if (!finished)
-                (void)finish();
-        }
-    } scope{reactor_, resource, registration, io_waits_};
-
-    io_waits_.emplace(id, wait);
+    auto registration = io_waits_.add(wait, resource, interest);
+    if (!registration)
+        return Result<void>(registration.error());
     auto outcome = park(wait, deadline);
-    auto removed = scope.finish();
+    auto removed = registration.value().finish();
     return Result<void>(outcome == WaitOutcome::ready ? removed.error()
                                                       : wait_error(outcome));
 }
@@ -245,6 +222,112 @@ void Worker::resume(Record &record) {
     }
 }
 
+void Worker::run_batch() {
+    for (size_t budget = 0; budget < 64; ++budget) {
+        if (!ready_.empty() && (inbox_->stopping || budget % 2)) {
+            auto id = ready_.front();
+            ready_.pop_front();
+            auto found = tasks_.find(id);
+            if (found != tasks_.end())
+                resume(*found->second);
+        } else {
+            if (inbox_->stopping)
+                break;
+            PendingTask pending;
+            if (!take_task(pending)) {
+                if (ready_.empty())
+                    break;
+                auto id = ready_.front();
+                ready_.pop_front();
+                resume(*tasks_.at(id));
+                continue;
+            }
+            if (inbox_->stopping) {
+                pending.task = {};
+                pending.completion->finish(TaskStatus::canceled);
+                continue;
+            }
+            auto completion = pending.completion;
+            try {
+                auto record = std::unique_ptr<Record>(new Record());
+                record->pending = std::move(pending);
+                auto id = completion->id.value;
+                auto inserted = tasks_.emplace(id, std::move(record));
+                ++live_;
+                {
+                    std::lock_guard<std::mutex> lock(completion->mutex);
+                    completion->status = TaskStatus::running;
+                }
+                resume(*inserted.first->second);
+            } catch (...) {
+                pending.task = {};
+                completion->finish(TaskStatus::failed,
+                                   std::current_exception());
+            }
+        }
+    }
+}
+
+int Worker::poll_timeout() const {
+    int timeout = 0;
+    if (ready_.empty() && queues_.size() == 0) {
+        auto deadline = timers_.next_deadline();
+        timeout = -1;
+        if (!deadline.is_infinite()) {
+            auto duration = deadline.time() - Deadline::Clock::now();
+            auto ms =
+                std::chrono::duration_cast<std::chrono::milliseconds>(duration)
+                    .count();
+            timeout = static_cast<int>(std::max<int64_t>(
+                0, std::min<int64_t>(ms + 1, std::numeric_limits<int>::max())));
+        }
+    }
+    return timeout;
+}
+
+bool Worker::poll_once(int timeout) {
+    bool registered_idle = false;
+    if (timeout) {
+        if (auto endpoint = submission_.lock()) {
+            std::lock_guard<std::mutex> lock(endpoint->mutex);
+            // Admission and idle registration share the same lock. Work
+            // published before registration must also prevent sleeping.
+            bool pending = inbox_->stopping || queues_.size() != 0;
+            for (auto *worker : endpoint->workers)
+                if (worker->queues_.movable_size()) {
+                    pending = true;
+                    break;
+                }
+            if (pending)
+                timeout = 0;
+            else {
+                endpoint->add_idle(this);
+                registered_idle = true;
+            }
+        }
+    }
+    bool succeeded = true;
+    try {
+        for (auto event : reactor_->poll(timeout))
+            io_waits_.dispatch(event);
+    } catch (...) {
+        succeeded = false;
+        if (auto endpoint = submission_.lock()) {
+            std::lock_guard<std::mutex> lock(endpoint->mutex);
+            endpoint->accepting = false;
+            for (auto *worker : endpoint->workers)
+                worker->stop();
+        } else
+            stop();
+    }
+    if (registered_idle)
+        if (auto endpoint = submission_.lock()) {
+            std::lock_guard<std::mutex> lock(endpoint->mutex);
+            endpoint->remove_idle(this);
+        }
+    return succeeded;
+}
+
 void Worker::run() {
     bool reactor_failed = false;
     while (true) {
@@ -256,109 +339,11 @@ void Worker::run() {
         }
         timers_.expire(Deadline::Clock::now());
         collect_notifications();
-        for (size_t budget = 0; budget < 64; ++budget) {
-            if (!ready_.empty() && (inbox_->stopping || budget % 2)) {
-                auto id = ready_.front();
-                ready_.pop_front();
-                auto found = tasks_.find(id);
-                if (found != tasks_.end())
-                    resume(*found->second);
-            } else {
-                if (inbox_->stopping)
-                    break;
-                PendingTask pending;
-                if (!take_task(pending)) {
-                    if (ready_.empty())
-                        break;
-                    auto id = ready_.front();
-                    ready_.pop_front();
-                    resume(*tasks_.at(id));
-                    continue;
-                }
-                if (inbox_->stopping) {
-                    pending.task = {};
-                    pending.completion->finish(TaskStatus::canceled);
-                    continue;
-                }
-                auto completion = pending.completion;
-                try {
-                    auto record = std::unique_ptr<Record>(new Record());
-                    record->pending = std::move(pending);
-                    auto id = completion->id.value;
-                    auto inserted = tasks_.emplace(id, std::move(record));
-                    ++live_;
-                    {
-                        std::lock_guard<std::mutex> lock(completion->mutex);
-                        completion->status = TaskStatus::running;
-                    }
-                    resume(*inserted.first->second);
-                } catch (...) {
-                    pending.task = {};
-                    completion->finish(TaskStatus::failed,
-                                       std::current_exception());
-                }
-            }
-        }
+        run_batch();
         if (inbox_->stopping && tasks_.empty())
             break;
-        int timeout = 0;
-        if (ready_.empty() && queues_.size() == 0) {
-            auto deadline = timers_.next_deadline();
-            timeout = -1;
-            if (!deadline.is_infinite()) {
-                auto duration = deadline.time() - Deadline::Clock::now();
-                auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                              duration)
-                              .count();
-                timeout = static_cast<int>(std::max<int64_t>(
-                    0, std::min<int64_t>(ms + 1,
-                                         std::numeric_limits<int>::max())));
-            }
-        }
-        bool registered_idle = false;
-        if (timeout && !reactor_failed) {
-            if (auto endpoint = submission_.lock()) {
-                std::lock_guard<std::mutex> lock(endpoint->mutex);
-                // Admission and idle registration share the same lock. Work
-                // published before registration must also prevent sleeping.
-                bool pending = inbox_->stopping || queues_.size() != 0;
-                for (auto *worker : endpoint->workers)
-                    if (worker->queues_.movable_size()) {
-                        pending = true;
-                        break;
-                    }
-                if (pending)
-                    timeout = 0;
-                else {
-                    endpoint->add_idle(this);
-                    registered_idle = true;
-                }
-            }
-        }
-        if (!reactor_failed) {
-            try {
-                for (auto event : reactor_->poll(timeout)) {
-                    auto found = io_waits_.find(event.registration);
-                    if (found != io_waits_.end())
-                        if (auto wait = found->second.lock())
-                            wait->complete(WaitOutcome::ready);
-                }
-            } catch (...) {
-                reactor_failed = true;
-                if (auto endpoint = submission_.lock()) {
-                    std::lock_guard<std::mutex> lock(endpoint->mutex);
-                    endpoint->accepting = false;
-                    for (auto *worker : endpoint->workers)
-                        worker->stop();
-                } else
-                    stop();
-            }
-        }
-        if (registered_idle)
-            if (auto endpoint = submission_.lock()) {
-                std::lock_guard<std::mutex> lock(endpoint->mutex);
-                endpoint->remove_idle(this);
-            }
+        if (!reactor_failed)
+            reactor_failed = !poll_once(poll_timeout());
     }
     cancel_pending();
 }

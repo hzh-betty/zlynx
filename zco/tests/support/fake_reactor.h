@@ -38,6 +38,10 @@ class FakeReactor final : public detail::Reactor {
             cv_.wait_for(lock, std::chrono::milliseconds(timeout),
                          [&] { return woken_; });
         woken_ = false;
+        if (fail_poll_) {
+            ++poll_failures;
+            throw std::system_error(std::make_error_code(std::errc::io_error));
+        }
         std::vector<detail::ReadyEvent> result;
         result.swap(events_);
         return result;
@@ -57,6 +61,18 @@ class FakeReactor final : public detail::Reactor {
         cv_.notify_all();
     }
 
+    void fail_poll() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        fail_poll_ = true;
+        woken_ = true;
+        cv_.notify_all();
+    }
+
+    size_t registration_count() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return entries_.size();
+    }
+
     detail::RegistrationId await_registration() {
         std::unique_lock<std::mutex> lock(mutex_);
         if (!cv_.wait_for(lock, std::chrono::seconds(3),
@@ -68,6 +84,7 @@ class FakeReactor final : public detail::Reactor {
 
     bool fail_add = false;
     std::atomic<size_t> wake_calls{0};
+    std::atomic<size_t> poll_failures{0};
 
   private:
     struct Entry {
@@ -81,6 +98,7 @@ class FakeReactor final : public detail::Reactor {
     std::vector<Entry> entries_;
     std::vector<detail::ReadyEvent> events_;
     bool woken_ = false;
+    bool fail_poll_ = false;
     uint64_t next_ = 0;
 };
 } // namespace test

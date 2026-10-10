@@ -1,6 +1,6 @@
 #pragma once
 #include "execution/continuation.h"
-#include "io/resource.h"
+#include "io/wait_registry.h"
 #include "runtime/task_queues.h"
 #include "wait/timer_queue.h"
 #include "wait/wait_state.h"
@@ -82,6 +82,9 @@ class Worker {
 
     static void entry();
     void run();
+    void run_batch();
+    int poll_timeout() const;
+    bool poll_once(int timeout);
     bool take_task(PendingTask &);
     void collect_notifications();
     void resume(Record &);
@@ -97,7 +100,7 @@ class Worker {
     NativeContext caller_;
     std::unordered_map<uint64_t, std::unique_ptr<Record>> tasks_;
     std::deque<uint64_t> ready_;
-    std::unordered_map<RegistrationId, std::weak_ptr<WaitState>> io_waits_;
+    IoWaitRegistry io_waits_;
     TimerQueue timers_;
     Record *current_ = nullptr;
     std::atomic<size_t> live_{0};

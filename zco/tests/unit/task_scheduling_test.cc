@@ -2,7 +2,9 @@
 #include "runtime/worker.h"
 #include "support/fake_reactor.h"
 #include "support/runtime_fixture.h"
+#include "support/worker_fixture.h"
 #include <array>
+#include <sys/socket.h>
 #include <ucontext.h>
 using namespace zco;
 
@@ -133,6 +135,92 @@ TEST(Scheduling, SnapshotAllocationFailureUnwindsTheActiveStack) {
     EXPECT_THROW(failed.join(test::soon()), std::bad_alloc);
     EXPECT_EQ(destroyed, 1);
     EXPECT_TRUE(test::spawn(runtime, [] {}).join(test::soon()));
+}
+
+TEST(Scheduling, SnapshotFailureRevokesIoRegistrationAndAllowsAnotherWait) {
+    test::WorkerFixture fixture;
+    int pair[2];
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, pair), 0);
+    io::Descriptor descriptor(pair[0]), peer(pair[1]);
+    std::atomic<int> destroyed{0};
+    auto failed = fixture.spawn([&] {
+        struct Guard {
+            std::atomic<int> &count;
+            ~Guard() { ++count; }
+        } guard{destroyed};
+        std::function<void()> hook = [] { fail_snapshot_allocation = true; };
+        switch_hook = &hook;
+        (void)io::wait_ready(descriptor, io::Interest::read, test::soon());
+    });
+    EXPECT_THROW(failed.join(test::soon()), std::bad_alloc);
+    EXPECT_EQ(failed.status(), TaskStatus::failed);
+    EXPECT_EQ(destroyed, 1);
+    EXPECT_EQ(fixture.reactor->registration_count(), 0u);
+
+    auto next = fixture.spawn([&] {
+        EXPECT_TRUE(
+            io::wait_ready(descriptor, io::Interest::read, test::soon()));
+    });
+    auto id = fixture.reactor->await_registration();
+    fixture.reactor->emit(id, io::Interest::read);
+    EXPECT_TRUE(next.join(test::soon()));
+    EXPECT_EQ(fixture.reactor->registration_count(), 0u);
+}
+
+TEST(Scheduling, PollFailureStopsAllWorkersAndRevokesTheirIoRegistrations) {
+    int pair[2];
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, pair), 0);
+    io::Descriptor descriptor(pair[0]), peer(pair[1]);
+    auto endpoint = std::make_shared<detail::Submission>();
+    auto first_reactor = std::make_shared<test::FakeReactor>();
+    auto second_reactor = std::make_shared<test::FakeReactor>();
+    detail::Worker first(0, RuntimeOptions{2}, endpoint, first_reactor);
+    detail::Worker second(1, RuntimeOptions{2}, endpoint, second_reactor);
+    endpoint->workers = {&first, &second};
+    first.set_peers(endpoint->workers);
+    second.set_peers(endpoint->workers);
+    auto startup = std::make_shared<detail::Startup>();
+    first.start(startup);
+    second.start(startup);
+    {
+        std::unique_lock<std::mutex> lock(startup->mutex);
+        startup->cv.wait(lock, [&] { return startup->ready == 2; });
+        endpoint->accepting = true;
+        startup->launch = true;
+        startup->cv.notify_all();
+    }
+    std::array<TaskHandle, 2> tasks;
+    for (size_t worker = 0; worker < tasks.size(); ++worker)
+        tasks[worker] =
+            std::move(detail::submit(
+                          endpoint,
+                          [&, worker] {
+                              auto &resource = worker ? peer : descriptor;
+                              EXPECT_EQ(
+                                  io::wait_ready(resource, io::Interest::read)
+                                      .error(),
+                                  wait_error(WaitOutcome::canceled));
+                          },
+                          worker, true))
+                .value();
+    first_reactor->await_registration();
+    second_reactor->await_registration();
+    first_reactor->fail_poll();
+    for (auto &task : tasks)
+        EXPECT_TRUE(task.join(test::soon()));
+    EXPECT_EQ(detail::submit(
+                  endpoint, [] {}, 0, true)
+                  .error(),
+              wait_error(WaitOutcome::canceled));
+    first.stop();
+    second.stop();
+    first.join();
+    second.join();
+    EXPECT_EQ(first_reactor->poll_failures, 1u);
+    EXPECT_EQ(first_reactor->registration_count(), 0u);
+    EXPECT_EQ(second_reactor->registration_count(), 0u);
+    std::lock_guard<std::mutex> lock(endpoint->mutex);
+    EXPECT_EQ(endpoint->idle_first, nullptr);
 }
 
 TEST(Scheduling, WorkerStealsOrdinaryTasksBeforeContextCreation) {

@@ -35,6 +35,7 @@ set(ZCO_SOURCES
     src/wait/timer_queue.cc
     src/io/descriptor.cc
     src/io/operations.cc
+    src/io/wait_registry.cc
     src/io/linux/epoll_reactor.cc
     src/sync/event.cc
     src/sync/mutex.cc
