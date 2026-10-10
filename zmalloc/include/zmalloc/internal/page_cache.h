@@ -38,7 +38,7 @@ struct PageCacheStats {
  *
  * 空闲 Span 按页数放入 span_lists_。已使用 Span 的每一页通过
  * PageMap 映射回所属 Span。超过缓存桶上限的大 Span 直接向系统
- * 申请和归还。
+ * 申请；不超过单块上限的空闲大 Span 在独立预算内按精确尺寸复用。
  *
  * @note 修改页缓存状态时，调用者必须持有 page_mtx_。
  */
@@ -144,6 +144,8 @@ class PageCache : public NonCopyable {
     PageCache() = default;
 
   private:
+    SpanList large_spans_;        // 精确尺寸复用，按归还顺序驱逐，页锁保护。
+    size_t large_cached_bytes_ = 0;
     std::array<SpanList, NPAGES> span_lists_; // 按页数分桶
     PageMap id_span_map_;         // 页号到 Span 的映射
     ObjectPool<Span> span_pool_;  // Span 对象池

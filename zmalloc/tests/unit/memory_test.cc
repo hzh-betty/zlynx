@@ -88,8 +88,10 @@ TEST_F(MemoryTest, ReleaseKeepsLiveSmallAndMediumObjectsAndAccountsDirectMapping
     EXPECT_EQ(std::memcmp(medium, std::vector<unsigned char>(512 * 1024, 0xa5).data(),
                           512 * 1024), 0);
     zmalloc::zfree(large);
-    EXPECT_EQ(zmalloc::memory_stats().page_cache_mapped_bytes,
-              before.page_cache_mapped_bytes);
+    const auto cached = zmalloc::memory_stats();
+    EXPECT_EQ(cached.page_cache_mapped_bytes,
+              before.page_cache_mapped_bytes + 2 * 1024 * 1024);
+    EXPECT_GE(cached.page_cache_free_bytes, 2u * 1024 * 1024);
     auto &pc = zmalloc::PageCache::get_instance();
     EXPECT_NE(pc.try_map_cached_object_to_span(small), nullptr);
     EXPECT_NE(pc.try_map_cached_object_to_span(medium), nullptr);

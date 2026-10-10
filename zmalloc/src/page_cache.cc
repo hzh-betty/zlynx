@@ -26,12 +26,27 @@ Span *PageCache::new_span(size_t k) {
     internal::AllocatorCallGuard guard;
     assert(k > 0);
 
-    // 第一步：超过桶管理上限的大请求直接向系统申请，不参与切分与合并。
+    // 第一步：大请求优先精确尺寸复用，未命中再向系统申请，不切分或合并。
     // 关键策略：
     // - 小于等于 (NPAGES-1) 的 span：在 PageCache
     // 内按页数分桶管理，可切分/合并。
-    // - 大于 (NPAGES-1) 的大 span：直接走系统申请与系统释放，避免进入桶管理。
+    // - 更大的 span：使用独立有界缓存；超过单块上限仍直接释放系统映射。
     if (k > NPAGES - 1) {
+        for (Span *span = large_spans_.begin(); span != large_spans_.end();
+             span = span->next) {
+            if (span->n == k) {
+                // 大块可能驱逐并 munmap，始终使用无标记映射和有锁识别。
+                id_span_map_.set(span->page_id, span);
+                large_spans_.erase(span);
+                large_cached_bytes_ -= k * PAGE_SIZE;
+                span->is_use = true;
+                span->is_released = false;
+                span->obj_size = 0;
+                span->use_count = 0;
+                span->free_list = nullptr;
+                return span;
+            }
+        }
         void *ptr = system_alloc(k);
         Span *span = nullptr;
         try {
@@ -163,8 +178,30 @@ void PageCache::release_span_to_page_cache(Span *span) {
     // 第一步：清除旧映射，避免合并过程中查询到已失效的 Span 边界。
     clear_span_mapping(id_span_map_, span);
 
-    // 第二步：未纳入桶管理的大 Span 直接释放给系统。
+    // 第二步：大 Span 进入独立缓存，超预算驱逐，超大块直接释放给系统。
     if (span->n > NPAGES - 1) {
+        const size_t bytes = span->n * PAGE_SIZE;
+        if (span->n <= LARGE_CACHE_MAX_PAGES) {
+            // 只缓存有限大小的大块；驱逐最早归还的空闲块，严格遵守总预算。
+            while (large_cached_bytes_ > LARGE_CACHE_BUDGET - bytes) {
+                Span *old = large_spans_.end()->prev;
+                large_spans_.erase(old);
+                const size_t old_bytes = old->n * PAGE_SIZE;
+                system_free(reinterpret_cast<void *>(old->page_id << PAGE_SHIFT),
+                            old->n);
+                large_cached_bytes_ -= old_bytes;
+                mapped_bytes_ -= old_bytes;
+                span_pool_.deallocate(old);
+            }
+            span->is_use = false;
+            span->is_released = false;
+            span->obj_size = 0;
+            span->use_count = 0;
+            span->free_list = nullptr;
+            large_spans_.push_front(span);
+            large_cached_bytes_ += bytes;
+            return;
+        }
         void *ptr = reinterpret_cast<void *>(span->page_id << PAGE_SHIFT);
         system_free(ptr, span->n);
         mapped_bytes_ -= span->n * PAGE_SIZE;
@@ -254,6 +291,15 @@ size_t PageCache::release_free_pages() {
             }
         }
     }
+    for (Span *span = large_spans_.begin(); span != large_spans_.end();
+         span = span->next) {
+        if (!span->is_released &&
+            system_release(reinterpret_cast<void *>(span->page_id << PAGE_SHIFT),
+                           span->n)) {
+            span->is_released = true;
+            bytes += span->n * PAGE_SIZE;
+        }
+    }
     total_released_bytes_ += bytes;
     return bytes;
 }
@@ -267,6 +313,13 @@ PageCacheStats PageCache::statistics() {
             if (span->is_released) {
                 stats.released_bytes += span->n * PAGE_SIZE;
             }
+        }
+    }
+    stats.free_bytes += large_cached_bytes_;
+    for (Span *span = large_spans_.begin(); span != large_spans_.end();
+         span = span->next) {
+        if (span->is_released) {
+            stats.released_bytes += span->n * PAGE_SIZE;
         }
     }
     return stats;

@@ -48,6 +48,10 @@ static constexpr size_t SIZE_CLASS_TRANSFER_BYTES = 64 * 1024;
 // CentralCache 单次归还处理中允许建立的最大 Span 分组数。
 static constexpr size_t CENTRAL_RELEASE_GROUPS = 128;
 
+// 大对象精确尺寸复用的总空闲预算和单块上限。
+static constexpr size_t LARGE_CACHE_BUDGET = 16 * 1024 * 1024;
+static constexpr size_t LARGE_CACHE_MAX_PAGES = 8 * 1024 * 1024 / PAGE_SIZE;
+
 // 每线程缓存的软字节预算。
 static constexpr size_t THREAD_CACHE_BUDGET = 1024 * 1024;
 static constexpr unsigned THREAD_CACHE_MAX_OVERAGES = 3;

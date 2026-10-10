@@ -411,6 +411,82 @@ TEST_F(PageCacheTest, CachedObjectTagIsDecodedAndClearedBeforeReuse) {
     pc.release_span_to_page_cache(span);
 }
 
+TEST_F(PageCacheTest, LargeCacheReusesExactSizeAndClearsAlignedMappings) {
+    zmalloc::PageCache cache;
+    std::lock_guard<std::mutex> lock(cache.page_mtx());
+    constexpr size_t pages = 256;
+    auto *span = cache.new_span(pages);
+    auto *address = reinterpret_cast<unsigned char *>(span->page_id << zmalloc::PAGE_SHIFT);
+    void *extra = address + 65536;
+    cache.map_span_page(span, extra);
+    span->obj_size = pages * zmalloc::PAGE_SIZE;
+    address[0] = 0x5a;
+    address[pages * zmalloc::PAGE_SIZE - 1] = 0xa5;
+    EXPECT_EQ(cache.try_map_cached_object_to_span(address), nullptr);
+    cache.release_span_to_page_cache(span);
+    EXPECT_EQ(cache.try_map_object_to_span(address), nullptr);
+    EXPECT_EQ(cache.try_map_object_to_span(extra), nullptr);
+    EXPECT_EQ(cache.statistics().free_bytes, pages * zmalloc::PAGE_SIZE);
+    EXPECT_EQ(cache.statistics().mapped_bytes, pages * zmalloc::PAGE_SIZE);
+    EXPECT_EQ(cache.release_free_pages(), pages * zmalloc::PAGE_SIZE);
+    EXPECT_EQ(cache.release_free_pages(), 0u);
+
+    auto *reused = cache.new_span(pages);
+    EXPECT_EQ(reused, span);
+    EXPECT_TRUE(reused->is_use);
+    EXPECT_FALSE(reused->is_released);
+    EXPECT_EQ(reused->obj_size, 0u);
+    EXPECT_EQ(cache.try_map_cached_object_to_span(address), nullptr);
+    EXPECT_EQ(cache.try_map_object_to_span(address), reused);
+    EXPECT_EQ(cache.try_map_object_to_span(extra), nullptr);
+    EXPECT_EQ(address[0], 0);
+    EXPECT_EQ(address[pages * zmalloc::PAGE_SIZE - 1], 0);
+    cache.release_span_to_page_cache(reused);
+}
+
+TEST_F(PageCacheTest, LargeCacheBudgetEvictsOldestAndLeavesLiveObjectsIntact) {
+    zmalloc::PageCache cache;
+    std::lock_guard<std::mutex> lock(cache.page_mtx());
+    constexpr size_t pages = 256;
+    constexpr size_t bytes = pages * zmalloc::PAGE_SIZE;
+    zmalloc::Span *spans[10];
+    void *addresses[10];
+    for (size_t i = 0; i < 10; ++i) {
+        spans[i] = cache.new_span(pages);
+        addresses[i] = reinterpret_cast<void *>(spans[i]->page_id << zmalloc::PAGE_SHIFT);
+        static_cast<unsigned char *>(addresses[i])[bytes - 1] = 0x5a;
+    }
+    for (size_t i = 0; i < 9; ++i) {
+        cache.release_span_to_page_cache(spans[i]);
+        EXPECT_LE(cache.large_cached_bytes_, zmalloc::LARGE_CACHE_BUDGET);
+        EXPECT_EQ(cache.try_map_object_to_span(addresses[i]), nullptr);
+    }
+    EXPECT_EQ(cache.statistics().free_bytes, zmalloc::LARGE_CACHE_BUDGET);
+    EXPECT_EQ(cache.statistics().mapped_bytes, zmalloc::LARGE_CACHE_BUDGET + bytes);
+    EXPECT_EQ(cache.map_object_to_span(addresses[9]), spans[9]);
+    EXPECT_EQ(static_cast<unsigned char *>(addresses[9])[bytes - 1], 0x5a);
+    cache.release_span_to_page_cache(spans[9]);
+    EXPECT_EQ(cache.statistics().mapped_bytes, zmalloc::LARGE_CACHE_BUDGET);
+    // 精确尺寸，不把大缓存块拆给更小的请求。
+    auto *different = cache.new_span(129);
+    EXPECT_EQ(different->n, 129u);
+    EXPECT_EQ(cache.statistics().mapped_bytes,
+              zmalloc::LARGE_CACHE_BUDGET + 129 * zmalloc::PAGE_SIZE);
+    cache.release_span_to_page_cache(different);
+    EXPECT_LE(cache.statistics().mapped_bytes, zmalloc::LARGE_CACHE_BUDGET);
+}
+
+TEST_F(PageCacheTest, BeyondLargeCacheLimitStillUnmapsImmediately) {
+    zmalloc::PageCache cache;
+    std::lock_guard<std::mutex> lock(cache.page_mtx());
+    auto *span = cache.new_span(zmalloc::LARGE_CACHE_MAX_PAGES + 1);
+    void *address = reinterpret_cast<void *>(span->page_id << zmalloc::PAGE_SHIFT);
+    cache.release_span_to_page_cache(span);
+    EXPECT_EQ(cache.statistics().mapped_bytes, 0u);
+    EXPECT_EQ(cache.statistics().free_bytes, 0u);
+    EXPECT_EQ(cache.try_map_object_to_span(address), nullptr);
+}
+
 TEST_F(PageCacheTest, ArbitraryQueriesHoldPageLockDuringSpanReuse) {
     std::atomic<void *> candidate(nullptr);
     std::atomic<bool> reader_ready(false);

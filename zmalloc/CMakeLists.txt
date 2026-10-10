@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.18)
 
-project(zmalloc VERSION 1.0.0 LANGUAGES CXX)
+project(zmalloc VERSION 2.0.0 LANGUAGES CXX)
 
 # 模块既可被根工程 add_subdirectory，也可独立配置构建。
 # 独立构建时需要手动加载公共 helper，保持 target/install/test 行为一致。
