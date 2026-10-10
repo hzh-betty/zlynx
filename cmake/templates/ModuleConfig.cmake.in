@@ -4,8 +4,10 @@ include(CMakeFindDependencyMacro)
 
 # 由 zlynx_install_module() 写入模块 PUBLIC/PRIVATE 导出所需依赖。
 # find_dependency() 会沿用 REQUIRED/QUIET 等调用语义，适合 CONFIG 包转发依赖。
-foreach(dependency @dependencies@)
-    find_dependency(${dependency})
+set(dependencies "@dependencies@")
+foreach(dependency IN LISTS dependencies)
+    separate_arguments(dependency_arguments UNIX_COMMAND "${dependency}")
+    find_dependency(${dependency_arguments})
 endforeach()
 
 # 加载 install(EXPORT) 生成的目标文件，向消费者提供 <module>::<target>。

@@ -1,6 +1,6 @@
 #pragma once
 #include "zco/coroutine.h"
-#include <deque>
+#include <list>
 
 namespace zco {
 namespace detail {
@@ -24,13 +24,22 @@ class WaitTicket {
 
 class WaitQueue {
   public:
+    WaitQueue() = default;
+    ~WaitQueue();
+    WaitQueue(const WaitQueue &) = delete;
+    WaitQueue &operator=(const WaitQueue &) = delete;
+
     WaitTicket add();
     void remove(const WaitTicket &ticket);
     bool complete_one(WaitOutcome outcome = WaitOutcome::ready);
     void complete_all(WaitOutcome outcome = WaitOutcome::ready);
 
   private:
-    std::deque<std::weak_ptr<WaitState>> entries_;
+    using Entries = std::list<std::weak_ptr<WaitState>>;
+    void erase(Entries::iterator entry);
+    void prune_expired();
+    Entries entries_;
+    Entries::iterator cleanup_ = entries_.end();
 };
 } // namespace detail
 } // namespace zco

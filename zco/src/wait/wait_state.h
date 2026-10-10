@@ -1,11 +1,13 @@
 #pragma once
 #include "zco/coroutine.h"
 #include <condition_variable>
+#include <list>
 #include <mutex>
 #include <vector>
 
 namespace zco {
 namespace detail {
+class WaitQueue;
 class CompletionEndpoint {
   public:
     virtual ~CompletionEndpoint() = default;
@@ -26,6 +28,10 @@ class WaitState {
     WaitId id() const { return id_; }
 
   private:
+    friend class WaitQueue;
+    // Only accessed under the registering queue's predicate mutex.
+    WaitQueue *queue_ = nullptr;
+    std::list<std::weak_ptr<WaitState>>::iterator queue_entry_;
     WaitId id_;
     std::weak_ptr<CompletionEndpoint> endpoint_;
     mutable std::mutex mutex_;

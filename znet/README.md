@@ -1,6 +1,7 @@
-# znet 3（C++17）
+# znet 4（C++17）
 
 znet 提供 Linux 协程 TCP/UDP 与 TLS 传输，是 zhttp 的网络底座。
+版本 4 沿用版本 3 的接口，因内嵌 zco 同步类型布局改变而升级 ABI，消费者需要重新编译。
 版本 3 是破坏性架构重设计，旧头文件、地址继承树、Acceptor、TcpConnection、
 邮箱、网络全局日志和裸 context API 已删除，没有兼容层。
 
@@ -124,7 +125,7 @@ TLS 最低 1.2，加载完整证书链并验证私钥。握手属于传输启动
 
 ## 构建、测试与安装
 
-依赖：Linux、C++17、CMake 3.18+、zco 2、OpenSSL 1.1+；测试需要 GTest/GMock、
+依赖：Linux、C++17、CMake 3.18+、zco 3、OpenSSL 1.1+；测试需要 GTest/GMock、
 openssl 命令行工具。网络库不依赖 zlog，OpenSSL 为私有实现依赖。
 
 ```bash
@@ -140,7 +141,7 @@ cmake --install build/release --prefix /path/to/install
 安装后：
 
 ```cmake
-find_package(znet 3 CONFIG REQUIRED)
+find_package(znet 4 CONFIG REQUIRED)
 add_executable(application main.cc)
 target_link_libraries(application PRIVATE znet::znet)
 ```

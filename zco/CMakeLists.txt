@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.18)
 
-project(zco VERSION 2.0.0 LANGUAGES CXX)
+project(zco VERSION 3.0.0 LANGUAGES CXX)
 
 # zco 可作为根工程子模块，也可作为独立包构建。
 # 独立构建时从 ../cmake 加载公共 helper；核心只依赖 Threads。

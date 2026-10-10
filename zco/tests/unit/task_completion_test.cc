@@ -27,13 +27,13 @@ TEST(TaskCompletion, UnobservedTaskAndCompletedJoinNeedNoWaitAllocations) {
     auto result = TaskHandle(completion).join();
     count_allocations = false;
     EXPECT_TRUE(result);
-    // Only the shared completion itself, with no empty deque storage.
+    // Only the shared completion itself, with no wait storage.
     EXPECT_EQ(allocations, 1u);
 }
 
 TEST(TaskCompletion, FirstJoinAllocationFailureAllowsRetryAndCompletion) {
-    // The deque map, its first block, and the wait state can each fail.
-    for (int allocation = 0; allocation < 3; ++allocation) {
+    // The wait state and its registration node can each fail.
+    for (int allocation = 0; allocation < 2; ++allocation) {
         auto completion = std::make_shared<detail::Completion>(TaskId{1});
         TaskHandle handle(completion);
         bool failed = false;

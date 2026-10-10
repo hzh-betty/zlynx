@@ -22,7 +22,7 @@ find_library(BROTLI_ENC_LIBRARY NAMES brotlienc REQUIRED)
 if(TARGET znet)
     set(ZHTTP_ZNET_TARGET znet)
 else()
-    find_package(znet CONFIG REQUIRED)
+    find_package(znet 4 CONFIG REQUIRED)
     set(ZHTTP_ZNET_TARGET znet::znet)
 endif()
 if(TARGET zlog)
@@ -116,5 +116,5 @@ endif()
 
 zlynx_install_module(zhttp zhttp
     VERSION ${PROJECT_VERSION}
-    DEPENDENCIES znet zlog OpenSSL fmt ZLIB nlohmann_json
+    DEPENDENCIES "znet 4" zlog OpenSSL fmt ZLIB nlohmann_json
 )

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.18)
 
-project(znet VERSION 3.0.0 LANGUAGES CXX)
+project(znet VERSION 4.0.0 LANGUAGES CXX)
 
 # znet 支持源码树内构建和独立 find_package 构建。
 # 独立构建时需要加载公共 helper，并从安装前缀查找 zco。
@@ -22,7 +22,7 @@ find_package(OpenSSL 1.1 REQUIRED)
 if(TARGET zco)
     set(ZNET_ZCO_TARGET zco)
 else()
-    find_package(zco CONFIG REQUIRED)
+    find_package(zco 3 CONFIG REQUIRED)
     set(ZNET_ZCO_TARGET zco::zco)
 endif()
 
@@ -67,5 +67,5 @@ endif()
 
 zlynx_install_module(znet znet
     VERSION ${PROJECT_VERSION}
-    DEPENDENCIES zco OpenSSL
+    DEPENDENCIES "zco 3" OpenSSL
 )

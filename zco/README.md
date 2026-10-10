@@ -88,7 +88,7 @@ TCP/UDP 创建、选项、接受和连接策略属于 znet。
 公共头文件位于 `include/zco`；私有实现位于 `src/runtime`、`src/execution`、
 `src/wait`、`src/io`、`src/sync`，不安装。`detail/wait_queue.h` 只包含 Channel
 模板需要的桥接声明。核心只链接 Threads，不依赖 zlog；znet/zhttp 自行声明日志依赖。
-ABI 主版本为 2。
+ABI 主版本为 3；等待队列布局已改变，使用旧头文件的消费者需要重新编译。
 
 StackArena 为每个工作线程最多缓存一块已结束任务的独立栈，避免连续任务反复映射；
 缓存不含上下文、回调、任务身份或等待状态，join 时释放。这个容量来自本机提交基准
@@ -108,7 +108,7 @@ ctest --test-dir build/zco-standalone --output-on-failure
 安装消费：
 
 ```cmake
-find_package(zco 2 CONFIG REQUIRED)
+find_package(zco 3 CONFIG REQUIRED)
 add_executable(demo main.cc)
 target_link_libraries(demo PRIVATE zco::zco)
 ```
