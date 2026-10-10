@@ -18,6 +18,7 @@ struct Resource {
     std::mutex mutex;
     int fd;
     ResourceId id;
+    const bool nonblocking;
     std::vector<std::weak_ptr<Registration>> registrations;
 };
 } // namespace detail

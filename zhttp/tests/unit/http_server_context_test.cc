@@ -4,7 +4,6 @@
 #include "znet/transport/socket.h"
 #include "znet/server/tcp_server.h"
 #include <limits>
-#include <fcntl.h>
 #include <filesystem>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -262,9 +261,7 @@ int main(int argc, char **argv) {
 namespace {
 std::string fetch(HttpServer &server, const std::string &path) {
     const auto endpoint = server.local_endpoint().value();
-    auto socket = znet::Socket::adopt(::socket(endpoint.family(), SOCK_STREAM, 0)).value();
-    const int flags = ::fcntl(socket.native_handle(), F_GETFL, 0);
-    ::fcntl(socket.native_handle(), F_SETFL, flags & ~O_NONBLOCK);
+    zco::io::Descriptor socket(::socket(endpoint.family(), SOCK_STREAM, 0));
     if (::connect(socket.native_handle(), endpoint.native_address(), endpoint.native_size()) != 0)
         throw std::runtime_error("connect");
     timeval timeout{2, 0};

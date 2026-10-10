@@ -2,7 +2,6 @@
 #include "io/resource.h"
 #include <algorithm>
 #include <cerrno>
-#include <fcntl.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -98,11 +97,7 @@ TransferResult transfer(const std::shared_ptr<detail::Resource> &resource,
             std::lock_guard<std::mutex> lock(resource->mutex);
             if (resource->fd < 0)
                 return {0, wait_error(WaitOutcome::closed), false};
-            int flags = ::fcntl(resource->fd, F_GETFL);
-            if (flags < 0)
-                return {0, std::error_code(errno, std::generic_category()),
-                        false};
-            if (!(flags & O_NONBLOCK))
+            if (!resource->nonblocking)
                 return {
                     0, std::make_error_code(std::errc::operation_not_permitted),
                     false};

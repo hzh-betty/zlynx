@@ -38,6 +38,7 @@ if(BUILD_TESTING)
     target_link_libraries(runtime_lifecycle_test PRIVATE ${CMAKE_DL_LIBS})
     target_link_options(runtime_lifecycle_test PRIVATE -Wl,--wrap=epoll_create1)
     target_link_options(task_completion_test PRIVATE -Wl,--wrap=_Znwm)
+    target_link_options(descriptor_flags_test PRIVATE -Wl,--wrap=fcntl)
     target_link_options(task_scheduling_test PRIVATE -Wl,--wrap=swapcontext -Wl,--wrap=getcontext -Wl,--wrap=_Znwm)
 
 endif()

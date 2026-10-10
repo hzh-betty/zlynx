@@ -9,10 +9,21 @@ namespace zco {
 namespace io {
 namespace {
 std::atomic<uint64_t> next_resource{0};
+
+bool descriptor_is_nonblocking(int fd) {
+    int flags;
+    do {
+        flags = ::fcntl(fd, F_GETFL);
+    } while (flags < 0 && errno == EINTR);
+    if (flags < 0)
+        throw std::system_error(errno, std::generic_category(), "F_GETFL");
+    return flags & O_NONBLOCK;
+}
 }
 
 detail::Resource::Resource(int descriptor)
-    : fd(descriptor), id{++next_resource} {}
+    : fd(descriptor), id{++next_resource},
+      nonblocking(descriptor_is_nonblocking(descriptor)) {}
 
 Descriptor::Borrow::Borrow(std::shared_ptr<detail::Resource> resource)
     : resource_(std::move(resource)) {
