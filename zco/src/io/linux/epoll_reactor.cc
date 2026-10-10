@@ -123,13 +123,15 @@ std::vector<ReadyEvent> EpollReactor::poll(int timeout_ms) {
     std::lock_guard<std::mutex> lock(mutex_);
     for (int i = 0; i < count; ++i) {
         auto &event = events[i];
-        if (!event.data.u64) {
+        // epoll_event is packed; copy before binding a map key reference.
+        const uint64_t resource = event.data.u64;
+        if (!resource) {
             uint64_t value;
             while (::read(event_, &value, sizeof(value)) == sizeof(value)) {
             }
             continue;
         }
-        auto bucket = resources_.find(event.data.u64);
+        auto bucket = resources_.find(resource);
         if (bucket == resources_.end())
             continue;
         unsigned mask = 0;

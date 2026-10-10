@@ -38,6 +38,23 @@ TEST(Reactor, KernelRegistrationFailureLeavesNoUserspaceEntry) {
               std::make_error_code(std::errc::device_or_resource_busy));
 }
 
+TEST(Reactor, PollsPackedKernelEventsWithoutCoroutineContext) {
+    int pair[2];
+    ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, pair), 0);
+    io::Descriptor descriptor(pair[0]), peer(pair[1]);
+    detail::EpollReactor reactor;
+    auto registration = reactor.add(descriptor.id(), descriptor.native_handle(),
+                                    io::Interest::read_write);
+    ASSERT_TRUE(registration);
+    ASSERT_EQ(::write(peer.native_handle(), "x", 1), 1);
+    reactor.wake();
+    auto events = reactor.poll(100);
+    ASSERT_EQ(events.size(), 1u);
+    EXPECT_EQ(events[0].registration, registration.value());
+    EXPECT_EQ(events[0].interest, io::Interest::read_write);
+    EXPECT_TRUE(reactor.remove(registration.value()));
+}
+
 TEST(Reactor, FakeRegistrationFailureAndStaleEventsAreIndependentOfFibers) {
     auto reactor = std::make_shared<test::FakeReactor>();
     reactor->fail_add = true;
