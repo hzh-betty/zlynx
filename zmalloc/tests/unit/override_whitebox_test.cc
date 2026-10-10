@@ -190,6 +190,26 @@ TEST_F(OverrideWhiteboxTest, AllocateBytesBootstrapPathWhenInitializing) {
     deallocate_bytes(p);
 }
 
+TEST_F(OverrideWhiteboxTest, ManagedReallocateAcrossLargeCacheBoundary) {
+    for (size_t initial : {size_t{64}, size_t{2 * 1024 * 1024}}) {
+        auto *ptr = static_cast<unsigned char *>(allocate_bytes(initial));
+        ASSERT_NE(ptr, nullptr);
+        std::memset(ptr, 0x5a, initial);
+        errno = 0;
+        EXPECT_EQ(reallocate_bytes(ptr, std::numeric_limits<size_t>::max()),
+                  nullptr);
+        EXPECT_EQ(errno, ENOMEM);
+        EXPECT_EQ(ptr[initial - 1], 0x5a);
+        const size_t next_size = initial + 1024 * 1024;
+        auto *next = static_cast<unsigned char *>(reallocate_bytes(ptr, next_size));
+        ASSERT_NE(next, nullptr);
+        EXPECT_EQ(next[0], 0x5a);
+        EXPECT_EQ(next[initial - 1], 0x5a);
+        EXPECT_GE(usable_size(next), next_size);
+        deallocate_bytes(next);
+    }
+}
+
 TEST_F(OverrideWhiteboxTest, ManagedSpanChecks) {
     void *p = zmalloc(64);
     ASSERT_NE(p, nullptr);

@@ -73,29 +73,32 @@ ZM_ALWAYS_INLINE void *zmalloc(size_t size) {
     return reinterpret_cast<void *>(span->page_id << PAGE_SHIFT);
 }
 
+namespace internal {
+
+// 调用者已定位并验证存活对象的 Span，避免 override 释放时重复查询 PageMap。
+ZM_ALWAYS_INLINE void deallocate_managed(void *ptr, Span *span) {
+    const size_t size = span->obj_size;
+    if (ZM_LIKELY(size <= MAX_BYTES)) {
+        get_thread_cache_fast()->deallocate(ptr, size);
+        return;
+    }
+    PageCache &pc = PageCache::get_instance();
+    std::lock_guard<std::mutex> lock(pc.page_mtx());
+    pc.release_span_to_page_cache(span);
+}
+
+} // namespace internal
+
 /**
  * @brief 释放内存
  * @param ptr 内存指针
  */
 ZM_ALWAYS_INLINE void zfree(void *ptr) {
-    // 第一步：free(nullptr) 无需处理。
     if (ZM_UNLIKELY(ptr == nullptr)) {
         return;
     }
-
-    PageCache &pc = PageCache::get_instance();
-    Span *span = pc.map_object_to_span(ptr);
-    const size_t size = span->obj_size;
-
-    if (ZM_LIKELY(size <= MAX_BYTES)) {
-        // 第二步：小对象回到当前线程缓存，后续可能批量流向共享缓存。
-        internal::get_thread_cache_fast()->deallocate(ptr, size);
-        return;
-    }
-
-    // 第三步：大对象整段归还 PageCache；超大 Span 会进一步归还系统。
-    std::lock_guard<std::mutex> lock(pc.page_mtx());
-    pc.release_span_to_page_cache(span);
+    Span *span = PageCache::get_instance().map_object_to_span(ptr);
+    internal::deallocate_managed(ptr, span);
 }
 
 } // namespace zmalloc

@@ -415,21 +415,24 @@ void deallocate_bytes(void *ptr) noexcept {
         return;
     }
     const bool ready = allocator_ready().load(std::memory_order_acquire);
-    if (ready && managed_span(ptr) != nullptr) {
-        AllocatorCallGuard guard;
-        zfree(ptr);
-        return;
+    if (ready) {
+        if (Span *span = managed_span(ptr)) {
+            AllocatorCallGuard guard;
+            deallocate_managed(ptr, span);
+            return;
+        }
     }
     if (is_bootstrap_pointer(ptr)) {
         bootstrap_free(ptr);
         return;
     }
 
-    if (!ready && !tls_initializing_allocator &&
-        tls_allocator_call_depth == 0 && managed_span(ptr) != nullptr) {
-        AllocatorCallGuard guard;
-        zfree(ptr);
-        return;
+    if (!ready && !tls_initializing_allocator && tls_allocator_call_depth == 0) {
+        if (Span *span = managed_span(ptr)) {
+            AllocatorCallGuard guard;
+            deallocate_managed(ptr, span);
+            return;
+        }
     }
 
     void *aligned_raw = nullptr;
@@ -482,7 +485,8 @@ void *reallocate_bytes(void *ptr, size_t size) noexcept {
         }
 
         std::memcpy(next, ptr, std::min(old_size, size));
-        deallocate_bytes(ptr);
+        AllocatorCallGuard guard;
+        deallocate_managed(ptr, span);
         return next;
     }
 
