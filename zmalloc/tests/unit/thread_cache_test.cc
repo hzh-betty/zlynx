@@ -376,6 +376,28 @@ TEST_F(ThreadCacheTest, ThreadExitReturnsObjectsButPreservesLiveAllocation) {
     }
 }
 
+TEST_F(ThreadCacheTest, FastAccessInitializesEachThreadAndKeepsShutdownState) {
+    std::thread workers[4];
+    zmalloc::ThreadCache *identities[4] = {};
+    for (size_t i = 0; i < 4; ++i) {
+        workers[i] = std::thread([&, i] {
+            auto *cache = zmalloc::internal::get_thread_cache_fast();
+            identities[i] = cache;
+            EXPECT_EQ(cache, zmalloc::get_thread_cache());
+            void *ptr = zmalloc::zmalloc(64);
+            zmalloc::zfree(ptr);
+            EXPECT_GT(cache->cached_bytes(), 0u);
+            cache->shutdown();
+            EXPECT_EQ(cache, zmalloc::internal::get_thread_cache_fast());
+            ptr = zmalloc::zmalloc(64);
+            zmalloc::zfree(ptr);
+            EXPECT_EQ(cache->cached_bytes(), 0u);
+        });
+    }
+    for (auto &worker : workers) worker.join();
+    for (auto *identity : identities) EXPECT_NE(identity, nullptr);
+}
+
 TEST_F(ThreadCacheTest, LaterTlsDestructorCanAllocateAndFree) {
     bool finished = false;
     std::thread worker([&] {

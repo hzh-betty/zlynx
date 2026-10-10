@@ -16,7 +16,12 @@
 
 namespace zmalloc {
 namespace internal {
+#if defined(__GNUC__) || defined(__clang__)
+__thread size_t tls_allocator_call_depth = 0;
+__thread ThreadCache *tls_thread_cache_ptr = nullptr;
+#else
 thread_local size_t tls_allocator_call_depth = 0;
+#endif
 } // namespace internal
 
 constexpr size_t ThreadCache::kCacheBudget;
@@ -47,7 +52,11 @@ ThreadCache *get_thread_cache() {
         thread_local ThreadCacheCleanup cleanup;
         (void)cleanup;
     }
-    return &tls_thread_cache;
+    ThreadCache *cache = &tls_thread_cache;
+#if defined(__GNUC__) || defined(__clang__)
+    internal::tls_thread_cache_ptr = cache;
+#endif
+    return cache;
 }
 
 void *ThreadCache::fetch_from_central_cache(const SizeClassLookup &e) {

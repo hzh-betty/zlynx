@@ -17,7 +17,13 @@ namespace zmalloc {
 
 namespace internal {
 
+#if defined(__GNUC__) || defined(__clang__)
+// 常量初始化的递归深度无需 C++ TLS 初始化包装器；保持原有 guard 语义。
+extern __thread size_t tls_allocator_call_depth
+    __attribute__((tls_model("initial-exec")));
+#else
 extern thread_local size_t tls_allocator_call_depth;
+#endif
 
 class AllocatorCallGuard {
   public:

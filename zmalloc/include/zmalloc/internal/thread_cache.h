@@ -92,6 +92,26 @@ class ThreadCache : public NonCopyable {
 /** @brief 获取当前线程专属的 ThreadCache，并注册线程退出清理钩子。 */
 ThreadCache *get_thread_cache();
 
+namespace internal {
+
+#if defined(__GNUC__) || defined(__clang__)
+// 常量初始化的原始 TLS 指针，避免 C++ 动态 TLS 包装器再次进入分配器。
+extern __thread ThreadCache *tls_thread_cache_ptr
+    __attribute__((tls_model("initial-exec")));
+#endif
+
+ZM_ALWAYS_INLINE ThreadCache *get_thread_cache_fast() {
+#if defined(__GNUC__) || defined(__clang__)
+    if (ZM_LIKELY(tls_thread_cache_ptr != nullptr)) {
+        return tls_thread_cache_ptr;
+    }
+#endif
+    // 第一次访问仍走既有注册协议；晚期析构返回同一个已关闭的缓存。
+    return get_thread_cache();
+}
+
+} // namespace internal
+
 } // namespace zmalloc
 
 #endif // ZMALLOC_INTERNAL_THREAD_CACHE_H_

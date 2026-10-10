@@ -57,7 +57,7 @@ ZM_ALWAYS_INLINE void *zmalloc(size_t size) {
 
     if (ZM_LIKELY(size <= MAX_BYTES)) {
         // 第二步：小对象进入当前线程缓存，这是最常见的无锁路径。
-        return get_thread_cache()->allocate(size);
+        return internal::get_thread_cache_fast()->allocate(size);
     }
 
     // 第三步：大对象按页向 PageCache 申请，记录原始请求大小供释放时分流。
@@ -89,7 +89,7 @@ ZM_ALWAYS_INLINE void zfree(void *ptr) {
 
     if (ZM_LIKELY(size <= MAX_BYTES)) {
         // 第二步：小对象回到当前线程缓存，后续可能批量流向共享缓存。
-        get_thread_cache()->deallocate(ptr, size);
+        internal::get_thread_cache_fast()->deallocate(ptr, size);
         return;
     }
 
