@@ -22,9 +22,6 @@
 #include <spdlog/sinks/stdout_sinks.h>
 #include <spdlog/spdlog.h>
 
-// glog
-#include <glog/logging.h>
-
 // 递归删除目录
 void remove_directory(const char *path) {
     DIR *dir = opendir(path);
@@ -268,32 +265,6 @@ void test_spdlog_async(int thread_count, size_t message_size) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
 }
 
-// Glog 同步模式测试 (仅支持同步)
-void test_glog(int thread_count, size_t message_size) {
-    prepare_log_dir();
-
-    static bool glog_init = false;
-    if (!glog_init) {
-        google::InitGoogleLogging("bench_glog");
-        FLAGS_logtostderr = 0;
-        FLAGS_alsologtostderr = 0;
-        FLAGS_log_dir = "bench_logs";
-        glog_init = true;
-    }
-
-    std::string msg = make_string(message_size);
-
-    auto result = run_timed_benchmark("Glog-Sync", thread_count, message_size,
-                                      [&](int thread_id) {
-                                          (void)thread_id;
-                                          LOG(INFO) << msg;
-                                      }, [] { google::FlushLogFiles(google::INFO); });
-
-    g_results.push_back(result);
-    cleanup_log_dir();
-    std::this_thread::sleep_for(std::chrono::seconds(1));
-}
-
 // 打印结果表格
 void print_results() {
     std::cout << "\n"
@@ -356,10 +327,6 @@ int main() {
             // Spdlog 异步
             std::cout << " Spdlog-Async...";
             test_spdlog_async(threads, msg_size);
-
-            // Glog
-            std::cout << " Glog-Sync...";
-            test_glog(threads, msg_size);
 
             std::cout << " Done\n";
         }

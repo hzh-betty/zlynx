@@ -36,7 +36,7 @@
 | 头文件依赖检查 | 核心与 Builder 头不传递注册表、internal 或 async 头 |
 | 安装消费 | `find_package(zlog 2 CONFIG REQUIRED)` 编译、链接、运行通过；含独立核心头构造同步/异步日志器、局部构建和全局注册 |
 | 安装边界与 ABI | 没有安装 Buffer、AsyncLooper、Spinlock 头；SONAME 为 `libzlog.so.2` |
-| 性能程序编译 | zlog_performance 成功；缺少 spdlog/glog，第三方对比 benchmark 未构建 |
+| 性能程序编译 | zlog_performance 成功；缺少第三方日志库依赖，第三方对比 benchmark 未构建 |
 | 全仓构建 | 成功，包含 zhttp 的生产日志调用方 |
 | 全仓 CTest | 75/75 测试目标通过，包含 zlog 与 zhttp 单元和集成测试 |
 
@@ -236,7 +236,7 @@ Debug、共享库，并关闭 zmalloc override：
 也不据此推断实际磁盘吞吐提升。
 
 构建与验证产物位于 `/tmp/zlog-fix-KoH6Pj`，未写入仓库构建目录。
-第三方对比 benchmark 的完成计时已更新，但本机缺少 spdlog/glog 安装依赖，
+第三方对比 benchmark 的完成计时已更新，但本机缺少第三方日志库安装依赖，
 该目标未编译运行；不据冒烟数据推断性能提升，也未对其他模块运行 sanitizer。
 
 本轮按既有提交格式分为格式与容量、日志器与输出、性能测试、文档四批。

@@ -179,7 +179,7 @@ zlog/
 测试和分析额外依赖：
 
 - GTest / GMock
-- `spdlog`、`glog`：只用于 `zlog_benchmark` 第三方对比；缺失时跳过该目标
+- `spdlog`：只用于 `zlog_benchmark` 第三方对比；缺失时跳过该目标
 - `gcovr`
 - `perf`
 
@@ -209,7 +209,7 @@ cmake --preset perf
 cmake --build --preset perf --target zlog_performance
 ```
 
-如果系统安装了 `spdlog` 和 `glog`，还可以构建第三方对比 benchmark：
+如果系统安装了 `spdlog`，还可以构建第三方对比 benchmark：
 
 ```bash
 cmake --build --preset perf --target zlog_benchmark
