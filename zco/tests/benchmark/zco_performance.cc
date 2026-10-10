@@ -63,19 +63,38 @@ int main() {
     if (auto *value = std::getenv("ZCO_PERF_SCALE_PCT"))
         scale = std::max(1, std::atoi(value));
     size_t count = 1000 * scale;
+    const char *selected_model = std::getenv("ZCO_PERF_STACK_MODEL");
+    if (selected_model && std::string(selected_model) != "shared" &&
+        std::string(selected_model) != "independent")
+        throw std::invalid_argument("ZCO_PERF_STACK_MODEL");
     for (auto model : {StackModel::kShared, StackModel::kIndependent}) {
+        const char *model_name =
+            model == StackModel::kShared ? "shared" : "independent";
+        if (selected_model && std::string(selected_model) != model_name)
+            continue;
         std::cout << "stack="
-                  << (model == StackModel::kShared ? "shared" : "independent")
+                  << model_name
                   << '\n';
         RuntimeOptions options{2};
         options.stack_model = model;
         Runtime runtime(options);
+        std::vector<TaskHandle> warmup;
+        warmup.reserve(2000);
+        for (size_t i = 0; i < 2000; ++i)
+            warmup.push_back(std::move(runtime.spawn([] {})).value());
+        for (auto &task : warmup)
+            task.join().value();
+        warmup.clear();
         benchmark("submit", count, [&] {
             std::vector<TaskHandle> tasks;
+            tasks.reserve(count);
             for (size_t i = 0; i < count; ++i)
                 tasks.push_back(std::move(runtime.spawn([] {})).value());
-            for (auto &task : tasks)
+            for (auto &task : tasks) {
                 task.join().value();
+                if (task.status() != TaskStatus::succeeded)
+                    throw std::runtime_error("submit status mismatch");
+            }
         });
         benchmark("yield", count, [&] {
             auto task = runtime.spawn([&] {
@@ -91,9 +110,14 @@ int main() {
                     channel.send(i).value();
                 channel.close();
             });
-            while (channel.receive()) {
+            size_t received = 0;
+            while (auto value = channel.receive()) {
+                if (value.value() != received++)
+                    throw std::runtime_error("channel value mismatch");
             }
             sender.value().join().value();
+            if (received != count)
+                throw std::runtime_error("channel count mismatch");
         });
         size_t waits = std::max<size_t>(10, count / 100);
         benchmark("timer", waits, [&] {
@@ -128,11 +152,15 @@ int main() {
         io::Descriptor reader(pair[0]), writer(pair[1]);
         benchmark("io", count, [&] {
             auto sending = runtime.spawn([&] {
-                char data[64]{};
+                char data[64];
                 for (size_t i = 0; i < count; ++i) {
+                    std::fill(std::begin(data), std::end(data),
+                              static_cast<char>(i));
                     auto result = io::write_all(writer, data, sizeof(data));
                     if (result.error)
                         throw std::system_error(result.error);
+                    if (result.bytes != sizeof(data) || result.eof)
+                        throw std::runtime_error("incomplete write");
                 }
             });
             auto reading = runtime.spawn([&] {
@@ -141,6 +169,12 @@ int main() {
                     auto result = io::read_exact(reader, data, sizeof(data));
                     if (result.error)
                         throw std::system_error(result.error);
+                    if (result.bytes != sizeof(data) || result.eof ||
+                        !std::all_of(std::begin(data), std::end(data),
+                                     [i](char byte) {
+                                         return byte == static_cast<char>(i);
+                                     }))
+                        throw std::runtime_error("io content mismatch");
                 }
             });
             sending.value().join().value();
