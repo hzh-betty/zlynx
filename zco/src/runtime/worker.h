@@ -87,6 +87,7 @@ class Worker {
     void resume(Record &);
     void cancel_pending();
     size_t index_;
+    size_t steal_cursor_;
     std::weak_ptr<Submission> submission_;
     std::vector<Worker *> peers_;
     TaskQueues queues_;

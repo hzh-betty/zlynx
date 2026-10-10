@@ -35,6 +35,8 @@ bool TaskQueues::take(PendingTask &task) {
 }
 
 bool TaskQueues::steal(PendingTask &task) {
+    if (!movable_size())
+        return false;
     std::lock_guard<std::mutex> lock(mutex_);
     if (movable_.empty())
         return false;

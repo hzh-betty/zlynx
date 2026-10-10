@@ -28,7 +28,8 @@ std::vector<WaitId> Inbox::drain() {
 Worker::Worker(size_t index, const RuntimeOptions &options,
                std::weak_ptr<Submission> submission,
                std::shared_ptr<Reactor> reactor)
-    : index_(index), submission_(std::move(submission)),
+    : index_(index), steal_cursor_(index + 1),
+      submission_(std::move(submission)),
       reactor_(std::move(reactor)), inbox_(std::make_shared<Inbox>(reactor_)),
       stacks_(options) {}
 
@@ -173,9 +174,12 @@ Worker::wait_io(const std::shared_ptr<io::detail::Resource> &resource,
 bool Worker::take_task(PendingTask &task) {
     if (queues_.take(task))
         return true;
-    for (size_t offset = 1; offset < peers_.size(); ++offset)
-        if (peers_[(index_ + offset) % peers_.size()]->queues_.steal(task))
+    auto start = steal_cursor_++;
+    for (size_t offset = 0; offset < peers_.size(); ++offset) {
+        auto *peer = peers_[(start + offset) % peers_.size()];
+        if (peer != this && peer->queues_.steal(task))
             return true;
+    }
     return false;
 }
 
