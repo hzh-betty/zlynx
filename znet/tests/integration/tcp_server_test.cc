@@ -98,6 +98,87 @@ TEST(TcpServerTest, RequestStopFromCallbackDoesNotJoinItself) {
     EXPECT_EQ(server.active_connections(), 0u);
 }
 
+TEST(TcpServerTest, CompletedSessionsAreReleasedWithoutAnotherAccept) {
+    for (auto model : {zco::StackModel::kShared, zco::StackModel::kIndependent}) {
+        zco::RuntimeOptions options{2};
+        options.stack_model = model;
+        zco::Runtime runtime(options);
+        zco::Event opened(true), closed(true);
+        std::weak_ptr<Connection> session;
+        TcpServer server(runtime, loopback(), [&](const Connection::ptr &connection) {
+            session = connection;
+            opened.signal();
+            return SessionCallbacks{{}, [&](const Connection::ptr &) {
+                                        closed.signal();
+                                    }};
+        });
+        ASSERT_TRUE(server.start());
+        auto client = test::connect_to(server.local_endpoint().value());
+        ASSERT_TRUE(opened.wait(zco::Deadline::after(1s)));
+        ASSERT_TRUE(client.close());
+        ASSERT_TRUE(closed.wait(zco::Deadline::after(1s)));
+        const auto deadline = std::chrono::steady_clock::now() + 1s;
+        while (!session.expired() && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::yield();
+        EXPECT_TRUE(session.expired());
+        EXPECT_EQ(server.active_connections(), 0u);
+        EXPECT_TRUE(server.is_running());
+        server.stop();
+    }
+}
+
+TEST(TcpServerTest, StopWaitsForSuspendedCloseCallbackBeforeRetiringSession) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
+    zco::Event opened(true), closing(true), release(true);
+    std::atomic<bool> callback_done{false}, stopped{false};
+    std::weak_ptr<Connection> session;
+    TcpServer server(runtime, loopback(), [&](const Connection::ptr &connection) {
+        session = connection;
+        opened.signal();
+        return SessionCallbacks{{}, [&](const Connection::ptr &) {
+                                    closing.signal();
+                                    EXPECT_TRUE(release.wait());
+                                    callback_done = true;
+                                }};
+    });
+    ASSERT_TRUE(server.start());
+    auto client = test::connect_to(server.local_endpoint().value());
+    ASSERT_TRUE(opened.wait(zco::Deadline::after(1s)));
+    ASSERT_TRUE(client.close());
+    ASSERT_TRUE(closing.wait(zco::Deadline::after(1s)));
+    std::thread stopper([&] {
+        server.stop();
+        EXPECT_TRUE(callback_done);
+        stopped = true;
+    });
+    std::this_thread::sleep_for(30ms);
+    EXPECT_FALSE(stopped);
+    EXPECT_FALSE(session.expired());
+    release.signal();
+    stopper.join();
+    EXPECT_TRUE(stopped);
+    EXPECT_TRUE(session.expired());
+    EXPECT_EQ(server.active_connections(), 0u);
+}
+
+TEST(TcpServerTest, RuntimeCancellationStillAllowsServerToJoinSessions) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
+    zco::Event opened(true);
+    std::atomic<int> closed{0};
+    TcpServer server(runtime, loopback(), [&](const Connection::ptr &) {
+        opened.signal();
+        return SessionCallbacks{{}, [&](const Connection::ptr &) { ++closed; }};
+    });
+    ASSERT_TRUE(server.start());
+    auto client = test::connect_to(server.local_endpoint().value());
+    ASSERT_TRUE(opened.wait(zco::Deadline::after(1s)));
+    runtime.request_stop();
+    runtime.join();
+    EXPECT_NO_THROW(server.stop());
+    EXPECT_EQ(closed, 1);
+    EXPECT_EQ(server.active_connections(), 0u);
+}
+
 TEST(TcpServerTest, DestructionCancelsIdleConnectionsWithoutStoppingRuntime) {
     zco::Runtime runtime(zco::RuntimeOptions{1});
     std::atomic<int> closed{0};

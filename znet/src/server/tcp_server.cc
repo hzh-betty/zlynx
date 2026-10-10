@@ -1,5 +1,6 @@
 #include "znet/server/tcp_server.h"
 #include "zco/coroutine.h"
+#include "zco/sync/event.h"
 #include "znet/transport/socket.h"
 #include <atomic>
 #include <unordered_map>
@@ -30,8 +31,12 @@ struct ServerRun {
     const std::vector<zco::Executor> workers;
     std::atomic<bool> running{true};
     zco::TaskHandle accept_task;
+    zco::TaskHandle reaper_task;
+    zco::Event completed_event;
     mutable std::mutex sessions_mutex;
     std::unordered_map<uint64_t, Session> sessions;
+    std::vector<uint64_t> completed_sessions;
+    bool accepting_done = false;
     uint64_t next_id = 0;
 
     void report(const Error &error) const noexcept {
@@ -59,10 +64,13 @@ struct ServerRun {
     void join() {
         if (accept_task)
             (void)accept_task.join();
+        if (reaper_task)
+            (void)reaper_task.join();
         std::unordered_map<uint64_t, Session> pending;
         {
             std::lock_guard<std::mutex> lock(sessions_mutex);
             pending.swap(sessions);
+            completed_sessions.clear();
         }
         for (auto &entry : pending) {
             (void)entry.second.connection->close();
@@ -71,15 +79,56 @@ struct ServerRun {
         }
     }
 
+    void session_completed(uint64_t id) {
+        bool wake;
+        {
+            std::lock_guard<std::mutex> lock(sessions_mutex);
+            completed_sessions.push_back(id);
+            wake = completed_sessions.size() == 1;
+        }
+        if (wake)
+            completed_event.signal();
+    }
+
+    void finish_accepting() {
+        {
+            std::lock_guard<std::mutex> lock(sessions_mutex);
+            accepting_done = true;
+        }
+        completed_event.signal();
+    }
+
     void reap_completed() {
-        std::lock_guard<std::mutex> lock(sessions_mutex);
-        for (auto it = sessions.begin(); it != sessions.end();) {
-            const auto status = it->second.task.status();
-            if (status == zco::TaskStatus::pending ||
-                status == zco::TaskStatus::running)
-                ++it;
-            else
-                it = sessions.erase(it);
+        std::vector<uint64_t> completed;
+        while (completed_event.wait()) {
+            bool done;
+            {
+                std::lock_guard<std::mutex> lock(sessions_mutex);
+                completed.swap(completed_sessions);
+                done = accepting_done;
+            }
+            for (auto id : completed) {
+                zco::TaskHandle task;
+                {
+                    std::lock_guard<std::mutex> lock(sessions_mutex);
+                    task = sessions.at(id).task;
+                }
+                // The notification precedes the task's final return. Keep its
+                // registration until execution resources have been released.
+                // A canceled wait leaves it for the control-thread join.
+                if (!task.join())
+                    return;
+                Session retired;
+                {
+                    std::lock_guard<std::mutex> lock(sessions_mutex);
+                    auto found = sessions.find(id);
+                    retired = std::move(found->second);
+                    sessions.erase(found);
+                }
+            }
+            completed.clear();
+            if (done)
+                return;
         }
     }
 };
@@ -180,7 +229,6 @@ void accept_connections(const std::shared_ptr<ServerRun> &run) {
             }
             if (!run->running)
                 break;
-            run->reap_completed();
             auto stream =
                 run->options.tls
                     ? run->options.tls->make_stream(std::move(accepted).value())
@@ -204,7 +252,10 @@ void accept_connections(const std::shared_ptr<ServerRun> &run) {
                 auto position = run->sessions.emplace(
                     id, Session{connection, zco::TaskHandle{}});
                 auto submitted = executor.spawn(
-                    [run, connection] { serve_session(run, connection); });
+                    [run, connection, id] {
+                        serve_session(run, connection);
+                        run->session_completed(id);
+                    });
                 if (submitted) {
                     position.first->second.task = std::move(submitted).value();
                 } else {
@@ -226,6 +277,7 @@ void accept_connections(const std::shared_ptr<ServerRun> &run) {
         run->report(callback_error("unknown accept exception"));
     }
     run->request_stop();
+    run->finish_accepting();
 }
 } // namespace
 
@@ -302,9 +354,29 @@ Result<void> TcpServer::start() {
         impl_->options, std::move(workers));
     // Publish before submission; a callback can immediately request_stop.
     std::atomic_store(&impl_->run, run);
-    auto task = run->workers.front().spawn([run] { accept_connections(run); });
+    auto reaper = run->workers.front().spawn([run] { run->reap_completed(); });
+    if (!reaper) {
+        run->request_stop();
+        std::atomic_store(&impl_->run, std::shared_ptr<ServerRun>{});
+        return runtime_error("start session reaper", reaper.error());
+    }
+    run->reaper_task = std::move(reaper).value();
+    auto task = [&] {
+        try {
+            return run->workers.front().spawn([run] { accept_connections(run); });
+        } catch (...) {
+            // A submission exception must also retire the waiting reaper.
+            run->request_stop();
+            run->finish_accepting();
+            run->join();
+            std::atomic_store(&impl_->run, std::shared_ptr<ServerRun>{});
+            throw;
+        }
+    }();
     if (!task) {
         run->request_stop();
+        run->finish_accepting();
+        run->join();
         std::atomic_store(&impl_->run, std::shared_ptr<ServerRun>{});
         return runtime_error("start TCP server", task.error());
     }
