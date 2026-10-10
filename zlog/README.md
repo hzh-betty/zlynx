@@ -92,7 +92,7 @@ Logger 和 Builder 复制并持有名称；修改或销毁调用方的名称字�
 借用短期存储；格式化与内置 sink 按指定长度处理数据，保留内嵌 NUL，不要求
 输入零终止。Logger 名称、Builder 配置和 Formatter 的 pattern 仍拥有自己的字符串。
 
-Buffer、AsyncLooper 和 Spinlock 移入 `zlog::detail` 与私有源码目录，不再安装
+Buffer、AsyncLooper 移入 `zlog::detail` 与私有源码目录，不再安装
 对应头文件；NonCopyable 已删除，类型通过删除复制操作表达约束。依赖旧内部
 类型或旧 ABI 的调用方需要迁移并重新编译。本轮新增虚函数和成员布局，
 共享库版本已升为 2.0.0（SONAME 为 `libzlog.so.2`）。实施范围和验证见
@@ -121,8 +121,30 @@ sink 回调中重入同一 logger 会抛出异常，避免锁等待或队列自�
 不会拆分或写入超限文件。异步模式也按单条记录轮转。相同 basename 应由一个
 共享 sink 管理，避免多个独立 sink 的保留策略互相影响。
 
+文件 sink 的原构造函数保持无缓冲输出。需要合并小记录写入时，可显式选择
+标准库文件缓冲，不增加公开对象成员或虚函数：
+
+```cpp
+builder.build_logger_sink<zlog::FileSink>(
+    "app.log", false, zlog::FileBufferMode::BUFFERED);
+builder.build_logger_sink<zlog::RollBySizeSink>(
+    "logs/app", 10 * 1024 * 1024, false, 10, zlog::FileBufferMode::BUFFERED);
+```
+
+启用缓冲后，小记录可能留在用户态；调用 `logger->flush()` 或 `close()` 后才保证
+此前记录已提交给操作系统。写错误也可能延迟到后续写入、`flush()` 或 `close()`；
+需要检查错误时显式调用这些接口。`auto_flush=true` 仍逐条刷新，滚动仍按单条
+记录计数并在轮转前刷新旧文件。缓冲大小由标准库决定，不保证跨平台一致。
+
+异步队列使用 `std::mutex` 与 `std::condition_variable` 同步，已删除自定义自旋锁。
+生产者背压、阈值通知、flush 完成屏障与停止唤醒仍由同一队列锁保护。
+
 异步 safe/unsafe 的单缓冲容量分别为 2 MiB / 512 MiB；每条记录的长度头也计入
 容量，单条超限会立即报错，容量不足时等待消费者。异步等待时间必须为正数。
+unsafe 在 8 MiB 以下按两倍扩容，此后按 1.5 倍扩容，始终截断到 512 MiB；
+一次大记录也会预留完整空间。几何增长减少重复复制，但可能更早增加驻留容量；
+双缓冲不在排空时缩容，两个缓冲最多合计 1 GiB，扩容期间还可能同时持有旧、新块。
+本轮改动、实测收益及内存代价见[性能优化记录](docs/performance-optimization-20261010.md)。
 时间格式化继续按线程、秒缓存，缓存同时校验格式串，避免不同格式混用结果。
 
 正文和序列化缓冲区也继续通过 `thread_local` 复用容量。普通调用独占借用缓存，
@@ -149,7 +171,7 @@ zlog/
   include/zlog/              公共 API：logger、builder、registry、sink、formatter 等
   include/zlog/internal/     待后续阶段收回的 File 工具
   src/                       模块实现
-  src/async/                 私有 Buffer、AsyncLooper 与 Spinlock
+  src/async/                 私有 Buffer 与 AsyncLooper
   tests/unit/                单元测试
   tests/integration/         端到端与多线程集成测试
   tests/benchmark/           benchmark、perf 脚本和第三方对比入口
