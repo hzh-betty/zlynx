@@ -71,10 +71,16 @@ void StdOutSink::flush() {
 }
 
 FileSink::FileSink(std::string pathname, bool auto_flush)
+    : FileSink(std::move(pathname), auto_flush, FileBufferMode::UNBUFFERED) {}
+
+FileSink::FileSink(std::string pathname, bool auto_flush,
+                   FileBufferMode buffer_mode)
     : pathname_(std::move(pathname)), auto_flush_(auto_flush) {
     File::create_directory(File::path(pathname_));
-    // 沿用无标准库缓冲的写入策略；打开、写入及刷新失败均抛出异常。
-    ofs_.rdbuf()->pubsetbuf(nullptr, 0);
+    // 打开前选择缓冲策略；打开、写入及刷新失败均抛出异常。
+    if (buffer_mode == FileBufferMode::UNBUFFERED) {
+        ofs_.rdbuf()->pubsetbuf(nullptr, 0);
+    }
     ofs_.exceptions(std::ios::failbit | std::ios::badbit);
     ofs_.open(pathname_, std::ios::binary | std::ios::app);
 }
@@ -95,6 +101,12 @@ void FileSink::flush() {
 
 RollBySizeSink::RollBySizeSink(std::string basename, size_t max_size,
                                bool auto_flush, size_t max_files)
+    : RollBySizeSink(std::move(basename), max_size, auto_flush, max_files,
+                     FileBufferMode::UNBUFFERED) {}
+
+RollBySizeSink::RollBySizeSink(std::string basename, size_t max_size,
+                               bool auto_flush, size_t max_files,
+                               FileBufferMode buffer_mode)
     : basename_(std::move(basename)), max_size_(max_size), cur_size_(0),
       name_count_(0), auto_flush_(auto_flush), max_files_(max_files) {
     if (max_size_ == 0 || max_files_ == 0) {
@@ -102,7 +114,9 @@ RollBySizeSink::RollBySizeSink(std::string basename, size_t max_size,
     }
     // 1. 创建日志文件所用的路径。
     File::create_directory(File::path(basename_));
-    ofs_.rdbuf()->pubsetbuf(nullptr, 0);
+    if (buffer_mode == FileBufferMode::UNBUFFERED) {
+        ofs_.rdbuf()->pubsetbuf(nullptr, 0);
+    }
     ofs_.exceptions(std::ios::failbit | std::ios::badbit);
     // 2. 创建并打开日志文件，清理超出保留数量的旧文件。
     roll_over();

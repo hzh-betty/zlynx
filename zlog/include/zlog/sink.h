@@ -55,6 +55,9 @@ class StdOutSink final : public LogSink {
     std::mutex mutex_; // 同步共享 sink 的写入与刷新
 };
 
+/** @brief 文件流缓冲策略；BUFFERED 的写错误可能延迟到 flush()/close()。 */
+enum class FileBufferMode { UNBUFFERED, BUFFERED };
+
 /**
  * @brief 文件日志落地器
  * 将日志输出到指定文件
@@ -67,6 +70,9 @@ class FileSink final : public LogSink {
      * @param auto_flush 是否每次写入后自动flush，默认false以提高性能
      */
     explicit FileSink(std::string pathname, bool auto_flush = false);
+
+    /** @brief 显式选择标准库文件缓冲；原构造函数保持无缓冲行为。 */
+    FileSink(std::string pathname, bool auto_flush, FileBufferMode buffer_mode);
 
     void log(const char *data, size_t len) override;
     void flush() override;
@@ -93,6 +99,10 @@ class RollBySizeSink final : public LogSink {
      */
     RollBySizeSink(std::string basename, size_t max_size,
                    bool auto_flush = false, size_t max_files = 10);
+
+    /** @brief 显式选择文件缓冲；仍按完整单条记录检查滚动边界。 */
+    RollBySizeSink(std::string basename, size_t max_size, bool auto_flush,
+                   size_t max_files, FileBufferMode buffer_mode);
 
     void log(const char *data, size_t len) override;
     void flush() override;
