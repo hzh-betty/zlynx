@@ -22,6 +22,7 @@ int main() {
     auto logger = builder.build();
     logger->ZLOG_INFO("hello {}", "zlog");
     logger->ZLOG_WARN("answer={}", 42);
+    logger->close();
     return 0;
 }
 ```
@@ -39,9 +40,11 @@ int main() {
     builder.build_logger_formatter("[%d{%H:%M:%S}][%c][%p] %m%n");
     builder.build_wait_time(std::chrono::milliseconds(50));
     builder.build_logger_sink<zlog::FileSink>("app.log");
-    builder.build_global();
+    auto logger = builder.build();
+    zlog::LoggerManager::get_instance().add_logger(logger);
 
     zlog::get_logger("app")->ZLOG_INFO("server started on port={}", 8080);
+    logger->close();
     return 0;
 }
 ```
@@ -61,12 +64,13 @@ target_link_libraries(zlog_demo PRIVATE zlog::zlog)
 源码树内开发可以直接链接 `zlog` target。
 
 原来的 `LocalLoggerBuilder` / `GlobalLoggerBuilder` 已合并为 `LoggerBuilder`：
-局部构建使用 `build()`，构建并注册使用 `build_global()`；同名注册仍保留已有日志器。
+构建使用 `build()`，需要全局查询时显式调用 `LoggerManager::add_logger()`。
+`build_global()` 已删除；注册空指针或重名日志器会抛出 `std::invalid_argument`。
 `SinkFactory::create<T>()` 改为 `std::make_shared<T>()`，单独的格式项类改由
 `Formatter` 的格式规则表达。公开类型和内部布局有变化，依赖方需要迁移并重新编译。
 
 `ModuleLogger` 及其依赖初始化回调已删除，调用方使用 `LoggerBuilder` 显式构建，
-需要全局注册时调用 `build_global()`。`LoggerManager::upsert_logger()` 已删除，
+需要全局注册时调用 `LoggerManager::add_logger()`。`LoggerManager::upsert_logger()` 已删除，
 注册表只保留添加和查询接口，不再支持替换日志器。
 
 本轮按架构评审完成接口边界与所有权调整。使用 `zlog/zlog.h` 的代码仍可通过
@@ -90,9 +94,40 @@ Logger 和 Builder 复制并持有名称；修改或销毁调用方的名称字�
 
 Buffer、AsyncLooper 和 Spinlock 移入 `zlog::detail` 与私有源码目录，不再安装
 对应头文件；NonCopyable 已删除，类型通过删除复制操作表达约束。依赖旧内部
-类型或旧 ABI 的调用方需要迁移并重新编译。当前 `build_global()` 重名时仍返回
-新建实例，注册表保留已有实例。实施范围、验证和后续阶段见
+类型或旧 ABI 的调用方需要迁移并重新编译。本轮新增虚函数和成员布局，
+共享库版本已升为 2.0.0（SONAME 为 `libzlog.so.2`）。实施范围和验证见
 [重构实施记录](docs/refactoring-report.md)。
+
+## 刷新、关闭与错误
+
+同步和异步日志器都提供公开的 `flush()` 和 `close()`。同步 `flush()` 刷新所有
+sink；异步 `flush()` 等待本次请求前已入队的记录输出完成，再刷新所有 sink。
+刷新把用户态缓冲交给操作系统，不等于 `fsync` 的断电持久性保证。
+
+`close()` 停止接收新日志，异步模式会排空队列、刷新并等待工作线程结束，
+然后释放该 logger 持有的 sink。重复关闭无操作；关闭后写入抛出异常。
+共享 sink 由引用计数管理，关闭一个 logger 不会关闭其他 logger 持有的 sink。
+内置 sink 自身加锁；自定义 sink 若被多个 logger 共用，也须同步 `log()` 和 `flush()`。
+sink 回调中重入同一 logger 会抛出异常，避免锁等待或队列自阻塞。
+
+打开、写入和刷新失败会报告异常。多 sink 输出会尝试所有 sink，再报告首个错误；
+异步后台失败不会阻止后续记录和其他 sink 的输出，首个后台错误由 `flush()` 或
+`close()` 重抛。关闭即使报告错误也完成清理。析构不抛出，未显式关闭时的错误
+会输出到标准错误，因此需要处理错误的调用方应显式调用 `close()`。
+
+`RollBySizeSink(basename, max_size, auto_flush = false, max_files = 10)` 默认保留
+至多 10 个匹配的滚动文件（含当前文件），启动时也清理旧文件；保留数量可配置，
+大小与数量必须大于零。超过 `max_size` 的单条序列化日志会被拒绝并报错，
+不会拆分或写入超限文件。异步模式也按单条记录轮转。相同 basename 应由一个
+共享 sink 管理，避免多个独立 sink 的保留策略互相影响。
+
+异步 safe/unsafe 的单缓冲容量分别为 2 MiB / 512 MiB；每条记录的长度头也计入
+容量，单条超限会立即报错，容量不足时等待消费者。异步等待时间必须为正数。
+时间格式化继续按线程、秒缓存，缓存同时校验格式串，避免不同格式混用结果。
+
+正文和序列化缓冲区也继续通过 `thread_local` 复用容量。普通调用独占借用缓存，
+结束后只清空内容；缓冲区已经被外层调用占用时，嵌套日志才使用临时缓冲区，
+异常退出也会归还占用标记。LogMessage 保持局部对象，借用当前调用的正文。
 
 ## 项目架构
 
@@ -124,11 +159,11 @@ zlog/
 
 - `Logger`：同步/异步 logger 的抽象基类，负责等级过滤、fmt 格式化和消息序列化。
 - `SyncLogger`：调用线程内直接落地日志，适合简单场景或需要在调用线程完成 sink 输出的路径。
-- `AsyncLogger`：将序列化后的日志写入 `AsyncLooper`，由后台线程批量落地。
+- `AsyncLogger`：将序列化后的日志写入 `AsyncLooper`，由后台线程批量收取、逐条落地。
 - `zlog::detail::AsyncLooper`：内部生产者/消费者实现，由 AsyncLogger 独占；safe 使用固定容量，unsafe 允许扩容，两种模式达到容量上限时均等待可用空间。
 - `Formatter`：以格式项值保存规则，统一解析和执行 `%d`、`%t`、`%c`、`%f`、`%l`、`%p`、`%T`、`%m`、`%n` 等格式项。
 - `LogSink`：日志落地抽象，内置 `StdOutSink`、`FileSink`、`RollBySizeSink`。
-- `LoggerBuilder`：用 builder 方式组装 logger 类型、名称、等级、格式、sink 和异步参数；`build()` 仅构建，`build_global()` 构建并注册。
+- `LoggerBuilder`：用 builder 方式组装 logger 类型、名称、等级、格式、sink 和异步参数；`build()` 构建，注册由调用方显式完成。
 - `LoggerManager`：全局 logger 注册表，提供 root logger 和命名 logger 查询。
 
 ## 依赖
@@ -236,6 +271,7 @@ ctest --test-dir build/debug -R '^zlog\.integration\.' --output-on-failure
 - LoggerBuilder 局部构建、全局注册以及 LoggerManager 添加/查询
 - AsyncLooper safe/unsafe 模式、flush 阈值、stop 和析构
 - 多 sink、滚动文件、多线程同步/异步写入、端到端日志内容校验
+- 重入、共享 sink、公开刷新与关闭、后台异常、严格滚动大小和文件保留数量
 
 ## 覆盖率
 
@@ -264,7 +300,9 @@ coverage/run_coverage.sh --no-test
 
 ## 性能
 
-`zlog_performance` 支持同步、异步或两者对比，输出总消息数、耗时、吞吐和平均延迟。
+`zlog_performance` 支持同步、异步或两者对比，输出总消息数、含刷新耗时、吞吐和
+吞吐倒数（不代表单条调用延迟）。同步和异步使用相同的 `auto_flush = false`，
+计时结束前等待全部已接收日志输出及刷新。
 
 ```bash
 cmake --preset perf
