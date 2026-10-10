@@ -47,8 +47,20 @@ target_link_libraries(zmalloc_demo PRIVATE zmalloc::override)
 指针，显式 `zmalloc(0)` 仍返回空指针。替换目标也提供对齐分配和
 `malloc_usable_size`，在 glibc 下支持释放、调整和查询外部 glibc 分配块。
 
-Linux 构建使用 `initial-exec` TLS，替换目标应随进程启动链接；运行后的动态
-加载场景未作保证。
+Linux 构建使用 `initial-exec` TLS，模块及替换目标应随进程启动链接；运行后的
+动态加载场景未作保证。内联接口和 PageCache 布局参与调用方编译，升级本模块
+时应同步重新编译消费目标，避免旧目标与新版共享库混用。共享库 ABI 已升级
+为 2，旧的 `libzmalloc.so.1` 调用方需重新链接到 `libzmalloc.so.2`。
+
+PageCache 对超过 1 MiB、不超过 8 MiB 的空闲大块按精确页数复用，总缓存预算
+为 16 MiB，超预算驱逐最早归还的块；超过 8 MiB 的块释放时直接解除映射。
+
+自动回收默认关闭，可在构建时指定 `-DZLYNX_ZMALLOC_AUTO_RELEASE=ON` 启用；
+显式 `release_memory()` 始终可用。启用后，完全空闲且尚未建议回收的页达到
+32 MiB 时，每累计归还 8 MiB 页触发一次
+自动 `MADV_DONTNEED`，单轮最多检查 32 个 Span、建议回收 8 MiB。触发点在
+页归还路径，没有后台线程；停止分配/释放后不会继续回收。自动回收保留虚拟
+映射，不清理其他线程的缓存，后续重新触页可能产生缺页开销。
 
 批量释放后，可显式归还完全空闲页的物理内存：
 
