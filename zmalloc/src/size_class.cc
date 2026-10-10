@@ -65,10 +65,16 @@ size_t SizeClass::num_move_size(size_t size) {
     // 用“目标传输字节数”来决定每次批量对象个数。
     constexpr size_t kMinObjects = 2;
 
-    size_t num = size <= 512
-                     ? 4096 / size
-                     : std::min<size_t>(32,
-                                        SIZE_CLASS_TRANSFER_BYTES / size);
+    size_t num;
+    if (size == 4 * 1024) {
+        // 4KiB 的四批缓存可容纳 256 个对象，仍不超过线程的 1MiB 软预算。
+        // 减少同规格批量负载到中心层的往返，其余大小类保持原策略。
+        num = 64;
+    } else {
+        num = size <= 512
+                  ? 4096 / size
+                  : std::min<size_t>(32, SIZE_CLASS_TRANSFER_BYTES / size);
+    }
     if (num < kMinObjects) {
         num = kMinObjects;
     }

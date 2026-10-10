@@ -87,7 +87,7 @@ TEST_F(SizeClassIndexTest, LargeSizesIndex) {
 }
 
 TEST_F(SizeClassIndexTest, NumMoveSize) {
-    // 小对象保持原批量；较大对象目标 64KiB、最多 32 个。
+    // 小对象保持原批量；4KiB 单独使用 64 个，其余较大对象目标 64KiB、最多 32 个。
     // 小对象 (8字节): 4096/8 = 512，但上限 128
     EXPECT_EQ(SizeClass::num_move_size(8), 128);
     // 大对象上限低
@@ -167,7 +167,7 @@ TEST_F(SizeClassIndexTest, NumMoveSizeLarge) {
     // 大对象批量少
     EXPECT_EQ(SizeClass::num_move_size(1024), 32);
     EXPECT_EQ(SizeClass::num_move_size(2048), 32);
-    EXPECT_EQ(SizeClass::num_move_size(4096), 16);
+    EXPECT_EQ(SizeClass::num_move_size(4096), 64);
 }
 
 TEST_F(SizeClassIndexTest, NumMoveSizeMinBound) {
@@ -241,8 +241,24 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Values(std::make_tuple(8u, 128u), std::make_tuple(24u, 128u),
                       std::make_tuple(80u, 51u), std::make_tuple(144u, 28u),
                       std::make_tuple(1008u, 32u), std::make_tuple(1152u, 32u),
-                      std::make_tuple(4096u, 16u),
+                      std::make_tuple(4096u, 64u),
                       std::make_tuple(73728u, 2u)));
+
+TEST_F(SizeClassConsistencyTest, FourKiBLookupHasRoomForWholeBatch) {
+    // 请求先对齐到大小类；相邻大小类仍使用原来的批量与 Span 页数。
+    for (size_t size = 3969; size <= 4096; ++size) {
+        const auto &e = SizeClass::lookup(size);
+        EXPECT_EQ(e.align_size, 4096u);
+        EXPECT_EQ(e.index, SizeClass::index(4096));
+        EXPECT_EQ(e.num_move, 64u);
+        EXPECT_EQ(e.num_pages, 32u);
+        EXPECT_GE(e.num_pages * PAGE_SIZE, e.num_move * e.align_size);
+    }
+    EXPECT_EQ(SizeClass::lookup(3968).num_move, 16u);
+    EXPECT_EQ(SizeClass::lookup(3968).num_pages, 8u);
+    EXPECT_EQ(SizeClass::lookup(4097).num_move, 15u);
+    EXPECT_EQ(SizeClass::lookup(4097).num_pages, 8u);
+}
 
 TEST_F(SizeClassIndexTest, NumMovePageRoundsUpToFitWholeBatch) {
     EXPECT_EQ(SizeClass::num_move_size(5000), 13u);

@@ -8,6 +8,9 @@
 #undef private
 #include <gtest/gtest.h>
 
+#include "zmalloc/internal/size_class.h"
+
+#include <algorithm>
 #include <atomic>
 #include <thread>
 #include <tuple>
@@ -68,6 +71,25 @@ static void InsertRemoveExactManager(TransferCache &manager, size_t index,
     for (size_t i = 0; i < n; ++i) {
         EXPECT_EQ(out[i], in[i]);
     }
+}
+
+TEST_F(TransferCacheTest, ManagerFitsOneBatchAndBoundsOtherClasses) {
+    auto &manager = TransferCache::get_instance();
+    for (size_t size = 1; size <= MAX_BYTES;) {
+        const auto &e = SizeClass::lookup(size);
+        const size_t expected =
+            e.align_size == 4096
+                ? 64
+                : std::min<size_t>(TransferCacheEntry::kMaxCacheSlots,
+                                   std::max<size_t>(2, TRANSFER_CACHE_BUDGET /
+                                                          e.align_size));
+        const auto &entry = manager.get_entry(e.index);
+        EXPECT_EQ(entry.capacity_, expected) << e.align_size;
+        EXPECT_GE(entry.capacity_, e.num_move) << e.align_size;
+        size = e.align_size + 1;
+    }
+    const auto &e = SizeClass::lookup(4096);
+    InsertRemoveExactManager(manager, e.index, e.num_move, 0x1000u);
 }
 
 // 基本插入和获取测试

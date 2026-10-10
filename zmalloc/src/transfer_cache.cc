@@ -19,13 +19,14 @@ namespace zmalloc {
 constexpr size_t TransferCacheEntry::kMaxCacheSlots;
 
 TransferCache::TransferCache() {
-    // 每规格最多保留 64KiB（大对象至少两个），避免 2048 个大对象常驻。
+    // 每规格以 64KiB 为目标，至少容纳一批，避免批量回收反复落到中心层。
     for (size_t size = 1; size <= MAX_BYTES;) {
         const auto &e = SizeClass::lookup(size);
         entries_[e.index].capacity_ =
             std::min<size_t>(TransferCacheEntry::kMaxCacheSlots,
                              std::max<size_t>(
-                                 2, TRANSFER_CACHE_BUDGET / e.align_size));
+                                 e.num_move,
+                                 TRANSFER_CACHE_BUDGET / e.align_size));
         size = e.align_size + 1;
     }
 }

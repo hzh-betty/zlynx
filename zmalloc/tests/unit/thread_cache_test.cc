@@ -282,6 +282,50 @@ TEST_F(ThreadCacheTest, MixedSizeBudgetTriggersScavenging) {
     EXPECT_EQ(tc->cached_bytes(), 0u);
 }
 
+TEST_F(ThreadCacheTest, FourKiBBatchesRespectBudgetAndPreserveLiveSpan) {
+    constexpr size_t size = 4096;
+    const auto &e = zmalloc::SizeClass::lookup(size);
+    DrainTransfer(size);
+    auto *live = static_cast<unsigned char *>(tc->allocate(size));
+    auto *span = zmalloc::PageCache::get_instance().map_object_to_span(live);
+    live[0] = 0x5a;
+    live[size - 1] = 0xa5;
+
+    // 覆盖小于、等于及超过四批上限的工作集，反复触发补货和超限回收。
+    for (size_t count : {64u, 256u, 512u}) {
+        std::vector<void *> objects(count);
+        for (size_t round = 0; round < 100; ++round) {
+            std::unordered_set<void *> unique;
+            for (void *&ptr : objects) {
+                ptr = tc->allocate(size);
+                ASSERT_NE(ptr, nullptr);
+                ASSERT_NE(ptr, live);
+                ASSERT_TRUE(unique.insert(ptr).second);
+                auto *bytes = static_cast<unsigned char *>(ptr);
+                bytes[0] = 0x3c;
+                bytes[size - 1] = 0xc3;
+            }
+            for (void *ptr : objects) {
+                auto *bytes = static_cast<unsigned char *>(ptr);
+                EXPECT_EQ(bytes[0], 0x3c);
+                EXPECT_EQ(bytes[size - 1], 0xc3);
+                tc->deallocate(ptr, size);
+            }
+            EXPECT_LE(tc->free_lists_[e.index].max_size(), 4u * e.num_move);
+            EXPECT_LE(tc->cached_bytes(), zmalloc::ThreadCache::kCacheBudget);
+            EXPECT_EQ(live[0], 0x5a);
+            EXPECT_EQ(live[size - 1], 0xa5);
+        }
+        tc->cleanup();
+        DrainTransfer(size);
+        EXPECT_EQ(tc->cached_bytes(), 0u);
+        EXPECT_EQ(span->use_count, 1u);
+        EXPECT_EQ(live[0], 0x5a);
+        EXPECT_EQ(live[size - 1], 0xa5);
+    }
+    tc->deallocate(live, size);
+}
+
 TEST_F(ThreadCacheTest, ProducerConsumerCapacityShrinks) {
     const auto &e = zmalloc::SizeClass::lookup(64);
     std::vector<void *> objects;
@@ -366,19 +410,23 @@ TEST_F(ThreadCacheTest, TransferCacheReusesPartialBatchAndFullCacheFallsBack) {
     for (void *p : objects) {
         tc->deallocate(p, size);
     }
-    // 64KiB 容量只能接收 16 个，其余批次必须安全回退中央层。
+    // 传输容量仅容纳一批，超出容量的对象必须安全回退中央层。
     tc->release_batch(e.index, tc->free_lists_[e.index].size());
     auto &transfer = zmalloc::TransferCache::get_instance();
     EXPECT_TRUE(transfer.get_entry(e.index).full());
     const size_t available = transfer.get_entry(e.index).size();
-    ASSERT_EQ(available, 16u);
+    ASSERT_EQ(available, e.num_move);
+    // 取走一个存活对象，确保消费者请求一整批时仍正确处理不足一批的命中。
+    void *held = nullptr;
+    ASSERT_EQ(transfer.remove_range(e.index, &held, 1), 1u);
     zmalloc::ThreadCache consumer;
     consumer.free_lists_[e.index].max_size() = e.num_move;
     void *first = consumer.allocate(size);
     EXPECT_EQ(expected.count(first), 1u);
-    EXPECT_EQ(consumer.free_lists_[e.index].size(), available - 1);
+    EXPECT_EQ(consumer.free_lists_[e.index].size(), available - 2);
     EXPECT_TRUE(transfer.get_entry(e.index).empty());
     consumer.deallocate(first, size);
+    consumer.deallocate(held, size);
     consumer.cleanup();
     EXPECT_EQ(consumer.cached_bytes(), 0u);
     DrainTransfer(size);

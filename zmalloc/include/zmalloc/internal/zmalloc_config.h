@@ -52,7 +52,7 @@ static constexpr size_t CENTRAL_RELEASE_GROUPS = 128;
 static constexpr size_t THREAD_CACHE_BUDGET = 1024 * 1024;
 static constexpr unsigned THREAD_CACHE_MAX_OVERAGES = 3;
 
-// TransferCache 每个大小类的物理槽位上限和驻留字节预算。
+// TransferCache 每个大小类的物理槽位上限和目标字节预算（至少一批）。
 static constexpr size_t TRANSFER_CACHE_SLOTS = 2048;
 static constexpr size_t TRANSFER_CACHE_BUDGET = 64 * 1024;
 
