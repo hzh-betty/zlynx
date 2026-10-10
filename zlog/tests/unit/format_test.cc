@@ -312,6 +312,38 @@ TEST_F(FormatTest, FormatterUnknownPatternItemThrows) {
     EXPECT_THROW(Formatter("%x"), std::invalid_argument);
 }
 
+TEST_F(FormatTest, FormatterPreservesTrailingLiteralsAndPercent) {
+    // 普通文本在解析结束时也必须保存。
+    for (const auto &pattern : {std::string("literal"), std::string("[%m] END"),
+                               std::string("%m%%")}) {
+        Formatter formatter(pattern);
+        fmt::memory_buffer buffer;
+        formatter.format(buffer, *msg);
+        const std::string result(buffer.data(), buffer.size());
+        if (pattern == "literal") {
+            EXPECT_EQ(result, "literal");
+        } else if (pattern == "[%m] END") {
+            EXPECT_EQ(result, "[test message] END");
+        } else {
+            EXPECT_EQ(result, "test message%");
+        }
+    }
+}
+
+TEST_F(FormatTest, TimeCacheSeparatesFormatsAndFormattersWithinOneSecond) {
+    msg->curtime_ = 1700000000;
+    Formatter year("%d{%Y}"), month("%d{%m}"), both("%d{%Y}|%d{%m}");
+    for (int i = 0; i < 3; ++i) {
+        fmt::memory_buffer first, second, combined;
+        year.format(first, *msg);
+        month.format(second, *msg);
+        both.format(combined, *msg);
+        EXPECT_EQ(std::string(first.data(), first.size()), "2023");
+        EXPECT_EQ(std::string(second.data(), second.size()), "11");
+        EXPECT_EQ(std::string(combined.data(), combined.size()), "2023|11");
+    }
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

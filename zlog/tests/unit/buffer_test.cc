@@ -192,7 +192,7 @@ TEST_F(BufferTest, ResizeBelowThreshold) {
     std::vector<char> data(origCap + 1, 'X');
     buf.push(data.data(), data.size());
 
-    // 新容量 = 原容量*2 + len
+    // 新容量至少翻倍，并确保足够容纳全部已有数据与新数据
     EXPECT_GE(buf.capacity(), origCap * 2);
 }
 
@@ -207,7 +207,7 @@ TEST_F(BufferTest, ResizeAboveThreshold) {
     std::vector<char> moreData(buf.writable_size() + 100, 'B');
     buf.push(moreData.data(), moreData.size());
 
-    // 新容量 = 原容量 + INCREMENT + len
+    // 超过阈值后至少增加一个增量，同时满足本次写入
     EXPECT_GE(buf.capacity(), capBeforeSecond + kIncrementBufferSize);
 }
 
@@ -339,17 +339,25 @@ TEST_F(BufferTest, CanAccommodateWhenResizeIsNeeded) {
 }
 
 TEST_F(BufferTest, CanAccommodateReturnsFalseWhenBeyondMax) {
-    const size_t len = kMaxBufferSize;
+    const size_t len = kMaxBufferSize + 1;
     EXPECT_FALSE(buf.can_accommodate(len));
 }
 
+TEST_F(BufferTest, ExactMaximumFitsAndOverflowIsRejectedBeforeCopying) {
+    EXPECT_TRUE(buf.can_accommodate(kMaxBufferSize));
+    EXPECT_EQ(buf.calculate_new_size(kMaxBufferSize), kMaxBufferSize);
+    EXPECT_THROW(buf.push("x", static_cast<size_t>(-1)), std::length_error);
+    EXPECT_TRUE(buf.empty());
+    EXPECT_EQ(buf.capacity(), kDefaultBufferSize);
+}
 
-TEST_F(BufferTest, EnsureEnoughSizeCappedBranchReturnsWithoutRealloc) {
+
+TEST_F(BufferTest, EnsureEnoughSizeRejectsBeyondMaxWithoutChangingState) {
     const size_t old_cap = kMaxBufferSize - 10;
     buf.capacity_ = old_cap;
     buf.writer_idx_ = old_cap;
 
-    buf.ensure_enough_size(20);
+    EXPECT_THROW(buf.ensure_enough_size(20), std::length_error);
 
     EXPECT_EQ(buf.capacity_, old_cap);
     EXPECT_EQ(buf.writer_idx_, old_cap);

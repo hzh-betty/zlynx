@@ -10,6 +10,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
 #include <stdexcept>
 
 namespace zlog {
@@ -52,6 +53,12 @@ Buffer::~Buffer() {
 }
 
 void Buffer::push(const char *data, size_t len) {
+    if (len == 0) {
+        return;
+    }
+    if (!data) {
+        throw std::invalid_argument("null async buffer data");
+    }
     ensure_enough_size(len);
     // 使用编译器内建函数进行更高效的内存拷贝
     std::memcpy(data_ + writer_idx_, data, len);
@@ -59,6 +66,8 @@ void Buffer::push(const char *data, size_t len) {
 }
 
 const char *Buffer::begin() const { return data_; }
+
+void Buffer::reserve(size_t len) { ensure_enough_size(len); }
 
 size_t Buffer::writable_size() const { return (capacity_ - writer_idx_); }
 
@@ -76,36 +85,23 @@ void Buffer::swap(Buffer &buffer) noexcept {
 bool Buffer::empty() const { return writer_idx_ == 0; }
 
 bool Buffer::can_accommodate(size_t len) const {
-    if (len <= writable_size()) {
-        return true;
-    }
-    // 计算扩容后的大小
-    size_t new_size = calculate_new_size(len);
-    return new_size <= kMaxBufferSize;
+    return writer_idx_ <= kMaxBufferSize && len <= kMaxBufferSize - writer_idx_;
 }
 
 size_t Buffer::calculate_new_size(size_t len) const {
-    size_t new_size = 0;
-    if (capacity_ < kThresholdBufferSize) {
-        new_size = capacity_ * 2 + len;
-    } else {
-        new_size = capacity_ + kIncrementBufferSize + len;
-    }
-    return new_size;
+    const size_t growth = capacity_ < kThresholdBufferSize
+                              ? capacity_ : kIncrementBufferSize;
+    const size_t preferred = capacity_ + std::min(growth, kMaxBufferSize - capacity_);
+    return std::max(preferred, writer_idx_ + len);
 }
 
 void Buffer::ensure_enough_size(size_t len) {
+    if (!can_accommodate(len)) {
+        throw std::length_error("async buffer capacity exceeded");
+    }
     if (len <= writable_size())
         return;
     size_t new_size = calculate_new_size(len);
-
-    if (new_size > kMaxBufferSize) {
-        new_size = kMaxBufferSize;
-        if (new_size <= capacity_ ||
-            (new_size - capacity_) + writable_size() < len) {
-            return; // 无法扩容，保持原状
-        }
-    }
 
     char *new_data = static_cast<char *>(realloc(data_, new_size));
     if (!new_data) {

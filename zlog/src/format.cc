@@ -27,21 +27,29 @@ void append_string(fmt::memory_buffer &buffer, const char *text) {
 
 void append_time(fmt::memory_buffer &buffer, const LogMessage &msg,
                  const std::string &time_format) {
-    // 保留原有的线程本地秒级缓存语义。
+    // 拆解后的时间按秒复用，文本缓存同时校验格式，避免跨 Formatter 污染。
+    thread_local bool initialized = false;
     thread_local time_t last_second = 0;
-    thread_local char cached_time_str[64];
+    thread_local struct tm cached_tm{};
+    thread_local std::string cached_format;
+    thread_local char cached_text[64];
     thread_local size_t cached_len = 0;
-
-    if (last_second != msg.curtime_) {
-        struct tm lt{};
-        localtime_r(&msg.curtime_, &lt);
-        cached_len = strftime(cached_time_str, sizeof(cached_time_str),
-                              time_format.c_str(), &lt);
+    const bool second_changed = !initialized || last_second != msg.curtime_;
+    if (second_changed) {
+        if (!localtime_r(&msg.curtime_, &cached_tm)) {
+            throw std::runtime_error("cannot convert log timestamp");
+        }
+        initialized = true;
         last_second = msg.curtime_;
+    }
+    if (second_changed || cached_format != time_format) {
+        cached_format = time_format;
+        cached_len = strftime(cached_text, sizeof(cached_text),
+                              time_format.c_str(), &cached_tm);
     }
 
     if (cached_len > 0) {
-        buffer.append(cached_time_str, cached_time_str + cached_len);
+        buffer.append(cached_text, cached_text + cached_len);
     } else {
         append_string(buffer, "InvalidTime");
     }
@@ -159,6 +167,10 @@ bool Formatter::parse_pattern() {
 
         key.clear();
         val.clear();
+    }
+
+    if (!val.empty()) {
+        fmt_order.emplace_back("", val);
     }
 
     // 7. 保存格式化项

@@ -51,6 +51,9 @@ class alignas(64) Buffer {
      */
     void push(const char *data, size_t len);
 
+    /** @brief 为一次完整写入预留空间，失败时不改变已有数据。 */
+    void reserve(size_t len);
+
     /**
      * @brief 返回可读数据的起始位置
      * @return 可读数据的指针
