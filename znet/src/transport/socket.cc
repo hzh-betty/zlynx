@@ -58,7 +58,7 @@ Result<Socket> Socket::create(int family, SocketKind kind) {
     const int fd = ::socket(family, type | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
     if (fd < 0)
         return io_error("create socket", errno);
-    return adopt(fd);
+    return from_descriptor(zco::io::Descriptor(fd), family, kind);
 }
 
 Result<Socket> Socket::adopt(int fd) {
@@ -79,10 +79,15 @@ Result<Socket> Socket::adopt(int fd) {
         ::fcntl(fd, F_SETFL, status | O_NONBLOCK) < 0 ||
         ::fcntl(fd, F_SETFD, flags | FD_CLOEXEC) < 0)
         return io_error("configure socket", errno);
-    Socket socket(std::move(descriptor), family,
-                  type == SOCK_STREAM ? SocketKind::stream
-                                      : SocketKind::datagram);
-    if (type == SOCK_STREAM && family != AF_UNIX) {
+    return from_descriptor(std::move(descriptor), family,
+                           type == SOCK_STREAM ? SocketKind::stream
+                                               : SocketKind::datagram);
+}
+
+Result<Socket> Socket::from_descriptor(zco::io::Descriptor descriptor,
+                                       int family, SocketKind kind) {
+    Socket socket(std::move(descriptor), family, kind);
+    if (kind == SocketKind::stream && family != AF_UNIX) {
         auto configured = socket.set_option(IPPROTO_TCP, TCP_NODELAY, 1);
         if (!configured)
             return configured.error();
@@ -118,7 +123,8 @@ Result<Socket> Socket::accept(zco::Deadline deadline) {
         });
     if (!accepted)
         return accepted.error();
-    return adopt(static_cast<int>(accepted.value()));
+    return from_descriptor(zco::io::Descriptor(static_cast<int>(accepted.value())),
+                           family_, kind_);
 }
 
 Result<void> Socket::connect(const Endpoint &endpoint, zco::Deadline deadline) {

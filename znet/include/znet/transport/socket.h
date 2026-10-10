@@ -69,6 +69,9 @@ class Socket {
     Socket(zco::io::Descriptor descriptor, int family, SocketKind kind)
         : descriptor_(std::move(descriptor)), family_(family), kind_(kind) {}
 
+    // Callers provide validated metadata and NONBLOCK/CLOEXEC descriptors.
+    static Result<Socket> from_descriptor(zco::io::Descriptor descriptor,
+                                          int family, SocketKind kind);
     Result<Endpoint> endpoint(bool remote) const;
     zco::io::Descriptor descriptor_;
     int family_;

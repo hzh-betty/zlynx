@@ -2,9 +2,45 @@
 #include <fcntl.h>
 #include <gtest/gtest.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 
 using namespace znet;
 using namespace std::chrono_literals;
+
+namespace {
+void expect_socket_options(const Socket &socket, int family, SocketKind kind) {
+    const int fd = socket.native_handle();
+    ASSERT_GE(fd, 0);
+    EXPECT_NE(::fcntl(fd, F_GETFL) & O_NONBLOCK, 0);
+    EXPECT_NE(::fcntl(fd, F_GETFD) & FD_CLOEXEC, 0);
+    EXPECT_EQ(socket.option<int>(SOL_SOCKET, SO_DOMAIN).value(), family);
+    EXPECT_EQ(socket.option<int>(SOL_SOCKET, SO_TYPE).value(),
+              kind == SocketKind::stream ? SOCK_STREAM : SOCK_DGRAM);
+    if (kind == SocketKind::stream && family != AF_UNIX)
+        EXPECT_EQ(socket.option<int>(IPPROTO_TCP, TCP_NODELAY).value(), 1);
+}
+} // namespace
+
+TEST(SocketTest, InternalCreationAndExternalAdoptionKeepSocketConfiguration) {
+    for (int family : {AF_INET, AF_INET6, AF_UNIX}) {
+        for (auto kind : {SocketKind::stream, SocketKind::datagram}) {
+            auto created = Socket::create(family, kind);
+            ASSERT_TRUE(created);
+            expect_socket_options(created.value(), family, kind);
+            const int type = kind == SocketKind::stream ? SOCK_STREAM : SOCK_DGRAM;
+            int fd = ::socket(family, type, 0);
+            ASSERT_GE(fd, 0);
+            // External fds still need validation and flag configuration.
+            auto adopted = Socket::adopt(fd);
+            ASSERT_TRUE(adopted);
+            expect_socket_options(adopted.value(), family, kind);
+        }
+    }
+    int unsupported = ::socket(AF_UNIX, SOCK_SEQPACKET, 0);
+    ASSERT_GE(unsupported, 0);
+    EXPECT_FALSE(Socket::adopt(unsupported));
+    EXPECT_EQ(::fcntl(unsupported, F_GETFD), -1);
+}
 
 TEST(SocketTest, CreationAdoptionAndMoveKeepUniqueNonblockingOwnership) {
     auto socket = Socket::create(AF_INET, SocketKind::stream);
@@ -44,6 +80,7 @@ TEST(SocketTest, StreamConnectAcceptAndEndpointQueriesWorkForBothIpFamilies) {
         auto accept = runtime.spawn([&] {
             auto accepted = listener.value().accept(zco::Deadline::after(1s));
             ASSERT_TRUE(accepted);
+            expect_socket_options(accepted.value(), family, SocketKind::stream);
             char bytes[4]{};
             auto received =
                 accepted.value().read_some(bytes, 4, zco::Deadline::after(1s));
@@ -132,6 +169,7 @@ TEST(SocketTest, UnixAbstractStreamAndDatagramAddressesRoundTrip) {
                 auto accepted =
                     listener.value().accept(zco::Deadline::after(1s));
                 ASSERT_TRUE(accepted);
+                expect_socket_options(accepted.value(), AF_UNIX, SocketKind::stream);
                 EXPECT_TRUE(client.value().write_some(
                     "unix", 4, zco::Deadline::after(1s)));
                 EXPECT_EQ(accepted.value()
