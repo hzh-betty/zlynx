@@ -67,7 +67,7 @@ void AsyncLooper::push(const char *data, size_t len) {
     pro_buf_.reserve(needed);
     pro_buf_.push(reinterpret_cast<const char *>(&len), kRecordHeaderSize);
     pro_buf_.push(data, len);
-    ++accepted_;
+    ++flush_state_.accepted;
     const bool notify = previous_size < kFlushBufferSize &&
                         pro_buf_.readable_size() >= kFlushBufferSize;
     lock.unlock();
@@ -84,10 +84,12 @@ void AsyncLooper::flush() {
     std::lock_guard<std::mutex> operation(stop_mutex_);
     std::unique_lock<std::mutex> lock(mutex_);
     if (!stop_) {
-        const uint64_t request = ++flush_requested_;
-        flush_target_ = accepted_;
+        const uint64_t request = ++flush_state_.flush_requested;
+        flush_state_.flush_target = flush_state_.accepted;
         cond_con_.notify_one();
-        cond_done_.wait(lock, [&] { return flush_completed_ >= request; });
+        cond_done_.wait(lock, [&] {
+            return flush_state_.flush_completed >= request;
+        });
     }
     if (callback_exception_) {
         std::rethrow_exception(callback_exception_);
@@ -132,7 +134,8 @@ void AsyncLooper::thread_entry() {
         {
             std::unique_lock<std::mutex> lock(mutex_);
             cond_con_.wait_for(lock, milliseco_, [&] {
-                return stop_ || flush_requested_ != flush_completed_ ||
+                return stop_ ||
+                       flush_state_.flush_requested != flush_state_.flush_completed ||
                        pro_buf_.readable_size() >= kFlushBufferSize;
             });
             con_buf_.swap(pro_buf_);
@@ -160,12 +163,12 @@ void AsyncLooper::thread_entry() {
         bool flushing = false;
         {
             std::unique_lock<std::mutex> lock(mutex_);
-            completed_ += records;
-            if (completed_ >= flush_target_) {
-                request = flush_requested_;
+            flush_state_.completed += records;
+            if (flush_state_.completed >= flush_state_.flush_target) {
+                request = flush_state_.flush_requested;
             }
             stopping = stop_ && pro_buf_.empty();
-            flushing = request != flush_completed_ || stopping;
+            flushing = request != flush_state_.flush_completed || stopping;
         }
         if (flushing) {
             try {
@@ -177,7 +180,7 @@ void AsyncLooper::thread_entry() {
             }
             {
                 std::unique_lock<std::mutex> lock(mutex_);
-                flush_completed_ = request;
+                flush_state_.flush_completed = request;
             }
             cond_done_.notify_all();
         }

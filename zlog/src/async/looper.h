@@ -63,6 +63,15 @@ class AsyncLooper {
     ~AsyncLooper() noexcept;
 
   private:
+    // 接收、输出和刷新请求分别计数，所有字段由队列锁保护。
+    struct FlushState {
+        uint64_t accepted = 0;        // 已接收的记录数
+        uint64_t completed = 0;       // 已处理的记录数
+        uint64_t flush_target = 0;    // 当前刷新请求的记录完成目标
+        uint64_t flush_requested = 0; // 已发起的刷新请求编号
+        uint64_t flush_completed = 0; // 已完成的刷新请求编号
+    };
+
     /** @brief 工作线程入口，交换缓冲区、逐条处理消费数据并记录完成状态。 */
     void thread_entry();
     void record_exception(std::exception_ptr exception);
@@ -82,12 +91,7 @@ class AsyncLooper {
     FlushFunctor flush_callback_; // sink 刷新回调
     std::chrono::milliseconds milliseco_; // 小批量日志的最大等待时间
     std::exception_ptr callback_exception_; // 保留首个后台异常
-    // 接收、输出和刷新请求分别计数，flush 只等待自己的完成条件。
-    uint64_t accepted_ = 0;
-    uint64_t completed_ = 0;
-    uint64_t flush_target_ = 0;
-    uint64_t flush_requested_ = 0;
-    uint64_t flush_completed_ = 0;
+    FlushState flush_state_; // flush 只等待自己的完成条件
 };
 } // namespace detail
 } // namespace zlog
