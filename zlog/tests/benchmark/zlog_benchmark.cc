@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstring>
 #include <iomanip>
 #include <iostream>
 #include <memory>
@@ -77,10 +78,10 @@ struct BenchmarkResult {
 std::vector<BenchmarkResult> g_results;
 
 // 固定时长测试（3秒）
-template <typename LogFunc>
+template <typename LogFunc, typename FinishFunc>
 BenchmarkResult run_timed_benchmark(const std::string &logger_type,
                                     int thread_count, size_t message_size,
-                                    LogFunc log_func) {
+                                    LogFunc log_func, FinishFunc finish_func) {
     const auto test_duration = std::chrono::seconds(3);
     std::atomic<size_t> total_messages{0};
     std::atomic<bool> stop_flag{false};
@@ -109,6 +110,8 @@ BenchmarkResult run_timed_benchmark(const std::string &logger_type,
         t.join();
     }
 
+    // 完成已接收日志并刷新后才结束计时，异步队列排空也计入耗时。
+    finish_func();
     auto end_time = std::chrono::steady_clock::now();
     double duration =
         std::chrono::duration<double>(end_time - start_time).count();
@@ -142,9 +145,10 @@ void test_zlog_sync(int thread_count, size_t message_size) {
         "Zlog-Sync", thread_count, message_size, [&](int thread_id) {
             (void)thread_id;
             logger->log_impl(zlog::LogLevel::value::INFO, "", 0, msg.c_str());
-        });
+        }, [&] { logger->flush(); });
 
     g_results.push_back(result);
+    logger->close();
     cleanup_log_dir();
     std::this_thread::sleep_for(std::chrono::seconds(1));
 }
@@ -169,11 +173,11 @@ void test_zlog_async_safe(int thread_count, size_t message_size) {
         "Zlog-Async-Safe", thread_count, message_size, [&](int thread_id) {
             (void)thread_id;
             logger->log_impl(zlog::LogLevel::value::INFO, "", 0, msg.c_str());
-        });
+        }, [&] { logger->flush(); });
 
     g_results.push_back(result);
+    logger->close();
     logger.reset();
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
     cleanup_log_dir();
     std::this_thread::sleep_for(std::chrono::seconds(1));
 }
@@ -198,11 +202,11 @@ void test_zlog_async_unsafe(int thread_count, size_t message_size) {
         "Zlog-Async-Unsafe", thread_count, message_size, [&](int thread_id) {
             (void)thread_id;
             logger->log_impl(zlog::LogLevel::value::INFO, "", 0, msg.c_str());
-        });
+        }, [&] { logger->flush(); });
 
     g_results.push_back(result);
+    logger->close();
     logger.reset();
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
     cleanup_log_dir();
     std::this_thread::sleep_for(std::chrono::seconds(1));
 }
@@ -227,7 +231,7 @@ void test_spdlog_sync(int thread_count, size_t message_size) {
                                       [&](int thread_id) {
                                           (void)thread_id;
                                           logger->info(msg);
-                                      });
+                                      }, [&] { logger->flush(); });
 
     g_results.push_back(result);
     spdlog::drop_all();
@@ -239,18 +243,13 @@ void test_spdlog_sync(int thread_count, size_t message_size) {
 void test_spdlog_async(int thread_count, size_t message_size) {
     prepare_log_dir();
 
-    static std::once_flag pool_flag;
-    std::call_once(pool_flag, []() { spdlog::init_thread_pool(8192, 1); });
-
-    // 所有线程共用一个 logger
-    std::shared_ptr<spdlog::logger> logger;
-    try {
-        logger = spdlog::basic_logger_mt<spdlog::async_factory>(
-            "bench_spd_async", "bench_logs/spdlog_async.log", true);
-        logger->set_pattern("%v");
-    } catch (...) {
-        logger = spdlog::get("bench_spd_async");
-    }
+    // 每次测试独占线程池，销毁线程池可确定队列已排空，避免用固定等待猜测完成。
+    auto pool = std::make_shared<spdlog::details::thread_pool>(8192, 1);
+    auto sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(
+        "bench_logs/spdlog_async.log", true);
+    auto logger = std::make_shared<spdlog::async_logger>(
+        "bench_spd_async", sink, pool, spdlog::async_overflow_policy::block);
+    logger->set_pattern("%v");
 
     std::string msg = make_string(message_size);
 
@@ -258,11 +257,13 @@ void test_spdlog_async(int thread_count, size_t message_size) {
                                       message_size, [&](int thread_id) {
                                           (void)thread_id;
                                           logger->info(msg);
+                                      }, [&] {
+                                          logger->flush();
+                                          pool.reset(); // 发送终止消息并 join，包含之前的刷新请求。
                                       });
 
     g_results.push_back(result);
     spdlog::drop_all();
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
     cleanup_log_dir();
     std::this_thread::sleep_for(std::chrono::seconds(1));
 }
@@ -283,10 +284,12 @@ void test_glog(int thread_count, size_t message_size) {
     std::string msg = make_string(message_size);
 
     auto result = run_timed_benchmark("Glog-Sync", thread_count, message_size,
-                                      [&](int thread_id) { LOG(INFO) << msg; });
+                                      [&](int thread_id) {
+                                          (void)thread_id;
+                                          LOG(INFO) << msg;
+                                      }, [] { google::FlushLogFiles(google::INFO); });
 
     g_results.push_back(result);
-    google::FlushLogFiles(google::INFO);
     cleanup_log_dir();
     std::this_thread::sleep_for(std::chrono::seconds(1));
 }

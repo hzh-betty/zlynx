@@ -44,8 +44,8 @@ struct Config {
 struct Stats {
     std::atomic<long long> totalCount;
     std::atomic<long long> successCount;
-    std::chrono::high_resolution_clock::time_point startTime;
-    std::chrono::high_resolution_clock::time_point endTime;
+    std::chrono::steady_clock::time_point startTime;
+    std::chrono::steady_clock::time_point endTime;
 
     Stats() : totalCount(0), successCount(0) {}
 };
@@ -89,14 +89,10 @@ void printConfig(const Config &cfg) {
 
 // 打印统计结果
 void printStats(const std::string &name, const Stats &stats, int msgSize) {
-    long long duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-                             stats.endTime - stats.startTime)
-                             .count();
-
-    double seconds = duration / 1000.0;
-    double throughputMsg = stats.successCount.load() / seconds;
-    double throughputKB =
-        (stats.successCount.load() * msgSize) / seconds / 1024.0;
+    double seconds = std::chrono::duration<double>(
+                         stats.endTime - stats.startTime).count();
+    double throughputMsg = seconds > 0 ? stats.successCount.load() / seconds : 0;
+    double throughputKB = throughputMsg * msgSize / 1024.0;
     double throughputMB = throughputKB / 1024.0;
 
     std::cout << "\n--- " << name << " Results ---\n";
@@ -115,8 +111,10 @@ void printStats(const std::string &name, const Stats &stats, int msgSize) {
     }
     std::cout << "\n";
 
-    std::cout << "Latency (avg):  " << std::fixed << std::setprecision(3)
-              << (1000000.0 / throughputMsg) << " us/msg\n";
+    // 吞吐倒数不是单条调用延迟，多线程情况下不能把它作为平均延迟。
+    std::cout << "Time/message:   " << std::fixed << std::setprecision(3)
+              << (throughputMsg > 0 ? 1000000.0 / throughputMsg : 0)
+              << " us/msg (throughput reciprocal)\n";
 }
 
 // 同步日志基准测试
@@ -126,12 +124,12 @@ void runSyncBenchmark(const Config &cfg) {
     ensureDir(cfg.outputDir);
     std::string logFile = cfg.outputDir + "/sync_bench.log";
 
-    // 创建同步日志器 (同步模式需要autoFlush=true保证持久性)
+    // 同步和异步都关闭逐条刷新，计时结束前显式刷新以统一比较条件。
     Formatter::ptr formatter =
         std::make_shared<Formatter>("[%d{%H:%M:%S}][%t][%p] %m%n");
     std::vector<LogSink::ptr> sinks;
     sinks.push_back(
-        std::make_shared<FileSink>(logFile, true)); // autoFlush=true
+        std::make_shared<FileSink>(logFile, false)); // autoFlush=false
 
     std::shared_ptr<SyncLogger> logger = std::make_shared<SyncLogger>(
         "sync_bench", LogLevel::value::INFO, formatter, sinks);
@@ -141,15 +139,17 @@ void runSyncBenchmark(const Config &cfg) {
     std::atomic<bool> running(true);
 
     // 启动
-    stats.startTime = std::chrono::high_resolution_clock::now();
+    stats.startTime = std::chrono::steady_clock::now();
 
     std::vector<std::thread> threads;
     long long countPerThread = cfg.count / cfg.threads;
 
     for (int t = 0; t < cfg.threads; t++) {
+        const long long threadCount = countPerThread + (t < cfg.count % cfg.threads);
         threads.push_back(std::thread([&logger, &msg, &stats, &running,
-                                       countPerThread]() {
-            for (long long i = 0; i < countPerThread && running.load(); i++) {
+                                       threadCount, &cfg]() {
+            for (long long i = 0; running.load() &&
+                 (cfg.duration > 0 || i < threadCount); i++) {
                 logger->log_impl(LogLevel::value::INFO, __FILE__, __LINE__,
                                  msg.c_str());
                 stats.successCount++;
@@ -167,7 +167,8 @@ void runSyncBenchmark(const Config &cfg) {
         threads[i].join();
     }
 
-    stats.endTime = std::chrono::high_resolution_clock::now();
+    logger->flush();
+    stats.endTime = std::chrono::steady_clock::now();
     printStats("Sync Logger", stats, cfg.msgSize);
 }
 
@@ -200,15 +201,17 @@ void runAsyncBenchmark(const Config &cfg, AsyncType asyncType) {
         std::atomic<bool> running(true);
 
         // 启动
-        stats.startTime = std::chrono::high_resolution_clock::now();
+        stats.startTime = std::chrono::steady_clock::now();
 
         std::vector<std::thread> threads;
         long long countPerThread = cfg.count / cfg.threads;
 
         for (int t = 0; t < cfg.threads; t++) {
+            const long long threadCount = countPerThread + (t < cfg.count % cfg.threads);
             threads.push_back(std::thread(
-                [&logger, &msg, &stats, &running, countPerThread]() {
-                    for (long long i = 0; i < countPerThread && running.load();
+                [&logger, &msg, &stats, &running, threadCount, &cfg]() {
+                    for (long long i = 0; running.load() &&
+                         (cfg.duration > 0 || i < threadCount);
                          i++) {
                         logger->log_impl(LogLevel::value::INFO, __FILE__,
                                          __LINE__, msg.c_str());
@@ -227,11 +230,9 @@ void runAsyncBenchmark(const Config &cfg, AsyncType asyncType) {
             threads[i].join();
         }
 
-        stats.endTime = std::chrono::high_resolution_clock::now();
-
-        // 等待异步日志刷新完成
-        std::cout << "Waiting for async flush...\n";
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        // 把队列排空和 sink 刷新纳入计时，避免只测到入队吞吐。
+        logger->flush();
+        stats.endTime = std::chrono::steady_clock::now();
     }
 
     printStats("Async Logger (" + typeName + ")", stats, cfg.msgSize);
