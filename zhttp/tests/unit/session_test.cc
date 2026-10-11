@@ -1,3 +1,4 @@
+#include "../support/manual_clock.h"
 #include "../support/request_builder.h"
 #include <gtest/gtest.h>
 #include <thread>
@@ -130,6 +131,7 @@ TEST_F(SessionTest, ExistingSessionSettingSameValue_DoesNotTriggerSetCookie) {
 }
 
 TEST(SessionCoreTest, SessionMutationFlagsHandleNoopAndEraseClearPaths) {
+    zhttp::test::ManualClock clock;
     Session session("sid", true);
     EXPECT_EQ(session.get("missing", "default"), "default");
     EXPECT_TRUE(session.is_new());
@@ -181,16 +183,42 @@ TEST(SessionManagerCoreTest, HandlesLoadCreateSaveDestroyAndExpiration) {
     manager.destroy(session->id());
     EXPECT_EQ(manager.load(session->id()), nullptr);
 
+    zhttp::test::ManualClock clock;
     auto expiring = manager.create();
     ASSERT_NE(expiring, nullptr);
     expiring->set("x", "y");
     manager.save(*expiring);
-    std::this_thread::sleep_for(std::chrono::milliseconds(1200));
+    clock.advance(std::chrono::seconds(1));
     EXPECT_EQ(manager.load(expiring->id()), nullptr);
 }
 
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
+TEST(SessionCoreTest, SuccessfulLoadSlidesExpiryAndExactExpiryIsRejected) {
+    zhttp::test::ManualClock clock;
+    SessionManager manager({std::chrono::seconds(10), 1});
+    auto session = manager.create();
+    clock.advance(std::chrono::seconds(9));
+    ASSERT_NE(manager.load(session->id()), nullptr);
+    clock.advance(std::chrono::seconds(9));
+    ASSERT_NE(manager.load(session->id()), nullptr);
+    clock.advance(std::chrono::seconds(10));
+    EXPECT_EQ(manager.load(session->id()), nullptr);
+}
 
-    return RUN_ALL_TESTS();
+TEST(SessionCoreTest, LoadedSnapshotsAreIndependentUntilSaved) {
+    zhttp::test::ManualClock clock;
+    SessionManager manager;
+    auto session = manager.create();
+    session->set("key", "original");
+    manager.save(*session);
+    auto first = manager.load(session->id());
+    auto second = manager.load(session->id());
+    ASSERT_NE(first, nullptr);
+    ASSERT_NE(second, nullptr);
+    EXPECT_NE(first, second);
+    first->set("key", "changed");
+    EXPECT_EQ(second->get("key"), "original");
+    EXPECT_EQ(manager.load(session->id())->get("key"), "original");
+    manager.save(*first);
+    EXPECT_EQ(manager.load(session->id())->get("key"), "changed");
+    EXPECT_EQ(second->get("key"), "original");
 }

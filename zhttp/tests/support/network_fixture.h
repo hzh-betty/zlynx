@@ -53,31 +53,4 @@ class TestWebSocketParser {
 };
 } // namespace zhttp
 
-namespace zhttp {
-inline bool build_websocket_handshake_response(
-    const std::shared_ptr<const HttpRequest> &request, std::string *output,
-    std::string *error, const std::string &selected = "") {
-    if (!output) {
-        if (error)
-            *error = "Response output is null";
-        return false;
-    }
-    if (!error)
-        return false;
-    HttpResponse response;
-    std::string negotiated;
-    if (!prepare_websocket_handshake(request, {}, response, negotiated, *error))
-        return false;
-    if (!selected.empty()) {
-        if (!HttpHeaders::valid(selected, "")) {
-            *error = "Invalid selected subprotocol";
-            return false;
-        }
-        response.header("Sec-WebSocket-Protocol", selected);
-    }
-    *output = ResponseEncoder::serialize(response);
-    return true;
-}
-} // namespace zhttp
-
 #endif

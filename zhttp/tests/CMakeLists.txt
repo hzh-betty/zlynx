@@ -55,14 +55,34 @@ if(BUILD_TESTING)
         http_server_builder_test
         socket_reader_test
     )
+    # These two executables wrap steady_clock calls in an isolated static copy
+    # of the real core, avoiding interposition and duplicate shared-library RTTI.
+    set(clock_core_sources)
+    foreach(source IN LISTS ZHTTP_CORE_SOURCES)
+        list(APPEND clock_core_sources "${CMAKE_CURRENT_SOURCE_DIR}/../${source}")
+    endforeach()
+    add_library(zhttp_clock_test_core STATIC EXCLUDE_FROM_ALL ${clock_core_sources})
+    target_include_directories(zhttp_clock_test_core PUBLIC ../include PRIVATE ../src)
+    target_link_libraries(zhttp_clock_test_core PUBLIC nlohmann_json::nlohmann_json
+        PRIVATE ZLIB::ZLIB ${BROTLI_ENC_LIBRARY} zlynx_coverage_options)
+    zlynx_apply_common_options(zhttp_clock_test_core)
+
     foreach(test_name ${ZHTTP_UNIT_TESTS})
-        if(test_name IN_LIST ZHTTP_NETWORK_UNIT_TESTS)
+        if(test_name STREQUAL "session_test" OR test_name STREQUAL "timeout_middleware_test")
+            set(test_library zhttp_clock_test_core)
+        elseif(test_name IN_LIST ZHTTP_NETWORK_UNIT_TESTS)
             set(test_library zhttp)
         else()
             set(test_library zhttp_core)
         endif()
         zlynx_add_gtest(${test_name} unit/${test_name}.cc zhttp unit ${test_library})
         target_include_directories(${test_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+    endforeach()
+
+    # Wrap libstdc++ steady_clock only in these isolated test executables.
+    foreach(clock_test session_test timeout_middleware_test)
+        target_sources(${clock_test} PRIVATE support/manual_clock.cc)
+        target_link_options(${clock_test} PRIVATE "LINKER:--wrap=_ZNSt6chrono3_V212steady_clock3nowEv")
     endforeach()
 
     target_link_libraries(logging_test PRIVATE ${ZHTTP_ZLOG_TARGET})

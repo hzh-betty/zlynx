@@ -101,53 +101,55 @@ TEST(WebSocketHandshakeTest, HandshakeValidationWorksWithoutErrorBuffer) {
 TEST(WebSocketHandshakeTest, BuildsSwitchingProtocolsResponse) {
     auto request = make_valid_websocket_request();
     request->set_header("Connection", "keep-alive, Upgrade");
-
-    std::string response;
-    std::string error;
-    const bool ok =
-        build_websocket_handshake_response(request, &response, &error);
-
-    EXPECT_TRUE(ok);
+    HttpResponse response;
+    std::string selected, error;
+    ASSERT_TRUE(
+        prepare_websocket_handshake(request, {}, response, selected, error));
     EXPECT_TRUE(error.empty());
-    EXPECT_NE(response.find("HTTP/1.1 101 Switching Protocols"),
-              std::string::npos)
-        << response;
-    EXPECT_NE(response.find("Upgrade: websocket"), std::string::npos)
-        << response;
-    EXPECT_NE(response.find("Connection: Upgrade"), std::string::npos)
-        << response;
-    EXPECT_NE(
-        response.find("Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo="),
-        std::string::npos)
-        << response;
+    EXPECT_TRUE(selected.empty());
+    EXPECT_EQ(response.status_code(), HttpStatus::SWITCHING_PROTOCOLS);
+    EXPECT_EQ(response.headers().get("Upgrade"), "websocket");
+    EXPECT_TRUE(response.is_keep_alive());
+    EXPECT_NE(ResponseEncoder::serialize(response).find("Connection: Upgrade"),
+              std::string::npos);
+    EXPECT_EQ(response.headers().get("Sec-WebSocket-Accept"),
+              "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
 }
 
-TEST(WebSocketHandshakeTest, BuildResponseRejectsNullOutputOrInvalidProtocol) {
+TEST(WebSocketHandshakeTest,
+     PrepareRejectsNullRequestAndInvalidServerProtocol) {
+    HttpResponse response;
+    std::string selected, error;
+    EXPECT_FALSE(
+        prepare_websocket_handshake(nullptr, {}, response, selected, error));
+    EXPECT_EQ(response.status_code(), HttpStatus::BAD_REQUEST);
+    EXPECT_FALSE(response.is_keep_alive());
+    EXPECT_FALSE(error.empty());
     auto request = make_valid_websocket_request();
-    std::string error;
-    EXPECT_FALSE(build_websocket_handshake_response(request, nullptr, &error));
-    EXPECT_NE(error.find("null"), std::string::npos);
-
-    std::string response;
-    EXPECT_FALSE(build_websocket_handshake_response(request, &response, &error,
-                                                    "invalid protocol"));
-    EXPECT_NE(error.find("Invalid selected subprotocol"), std::string::npos);
+    request->set_header("Sec-WebSocket-Protocol", "chat");
+    WebSocketOptions options;
+    options.subprotocols = {"invalid protocol"};
+    EXPECT_FALSE(prepare_websocket_handshake(request, options, response,
+                                             selected, error));
+    EXPECT_EQ(response.status_code(), HttpStatus::BAD_REQUEST);
+    EXPECT_FALSE(response.is_keep_alive());
+    EXPECT_FALSE(error.empty());
+    EXPECT_TRUE(selected.empty());
 }
 
 TEST(WebSocketHandshakeTest, BuildsResponseWithNegotiatedSubprotocol) {
     auto request = make_valid_websocket_request();
     request->set_header("Sec-WebSocket-Protocol", "chat, superchat");
-
-    std::string response;
-    std::string error;
-    const bool ok = build_websocket_handshake_response(request, &response,
-                                                       &error, "superchat");
-
-    EXPECT_TRUE(ok);
+    WebSocketOptions options;
+    options.subprotocols = {"superchat", "chat"};
+    HttpResponse response;
+    std::string selected, error;
+    ASSERT_TRUE(prepare_websocket_handshake(request, options, response,
+                                            selected, error));
     EXPECT_TRUE(error.empty());
-    EXPECT_NE(response.find("Sec-WebSocket-Protocol: superchat"),
-              std::string::npos)
-        << response;
+    EXPECT_EQ(selected, "superchat");
+    EXPECT_EQ(response.headers().get("Sec-WebSocket-Protocol"), selected);
+    EXPECT_EQ(response.status_code(), HttpStatus::SWITCHING_PROTOCOLS);
 }
 
 TEST(WebSocketHandshakeTest, NegotiatesSubprotocolByServerPriority) {
@@ -501,10 +503,4 @@ TEST(WebSocketHandshakeTest, SessionPingFailureAndCloseNotificationAreHandled) {
         session.on_closed();
         EXPECT_EQ(close_count, 1);
     }
-}
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-
-    return RUN_ALL_TESTS();
 }

@@ -49,7 +49,7 @@ class TestContext : public HttpContext {
     }
     const HttpHeaders &headers() const { return request().headers(); }
     size_t content_length() const { return request().content_length(); }
-    void parse_query_params() {}
+
     Params query_params() const {
         Params result;
         parse_urlencoded_params(query(), result);

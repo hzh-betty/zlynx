@@ -60,7 +60,6 @@ TEST(HttpRequestTest, PathParams) {
 TEST(HttpRequestTest, ParseQueryParams) {
     TestContext req;
     req.set_query("name=John&age=30&city=Beijing");
-    req.parse_query_params();
 
     EXPECT_EQ(req.query_param("name"), "John");
     EXPECT_EQ(req.query_param("age"), "30");
@@ -70,7 +69,6 @@ TEST(HttpRequestTest, ParseQueryParams) {
 TEST(HttpRequestTest, ParseQueryParamsWithUrlEncoding) {
     TestContext req;
     req.set_query("name=John%20Doe&msg=Hello+World");
-    req.parse_query_params();
 
     EXPECT_EQ(req.query_param("name"), "John Doe");
     EXPECT_EQ(req.query_param("msg"), "Hello World");
@@ -79,7 +77,6 @@ TEST(HttpRequestTest, ParseQueryParamsWithUrlEncoding) {
 TEST(HttpRequestTest, ParseQueryParamsHandlesEmptySegmentsAndClearsOnReparse) {
     TestContext req;
     req.set_query("a=1&&flag&k=&encoded=%2B+");
-    req.parse_query_params();
 
     EXPECT_EQ(req.query_param("a"), "1");
     EXPECT_EQ(req.query_param("flag"), "");
@@ -87,7 +84,6 @@ TEST(HttpRequestTest, ParseQueryParamsHandlesEmptySegmentsAndClearsOnReparse) {
     EXPECT_EQ(req.query_param("encoded"), "+ ");
 
     req.set_query("");
-    req.parse_query_params();
     EXPECT_EQ(req.query_param("a", "none"), "none");
 }
 
@@ -272,7 +268,6 @@ TEST(HttpRequestTest, QueryAndFormUseTheSameUrlencodedParameterSemantics) {
           "binary=%00%01&trailing=yes&"}) {
         TestContext request;
         request.set_query(text);
-        request.parse_query_params();
         request.set_header(
             "Content-Type",
             " Application/X-WWW-Form-Urlencoded ; charset=UTF-8");
@@ -280,10 +275,4 @@ TEST(HttpRequestTest, QueryAndFormUseTheSameUrlencodedParameterSemantics) {
         ASSERT_TRUE(request.parse_form_urlencoded());
         EXPECT_EQ(request.query_params(), request.form_params());
     }
-}
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-
-    return RUN_ALL_TESTS();
 }

@@ -1,3 +1,4 @@
+#include "../support/manual_clock.h"
 #include "../support/request_builder.h"
 #include "zhttp/middleware/timeout_middleware.h"
 
@@ -10,6 +11,7 @@ using namespace zhttp;
 using namespace zhttp::mid;
 
 TEST(TimeoutMiddlewareTest, OverrideResponseWhenTimeoutExceeded) {
+    zhttp::test::ManualClock clock;
     TimeoutMiddleware::Options options;
     options.timeout_ms = 10;
     TimeoutMiddleware middleware(options);
@@ -20,7 +22,7 @@ TEST(TimeoutMiddlewareTest, OverrideResponseWhenTimeoutExceeded) {
 
     request->response() = std::move(response);
     ASSERT_TRUE(middleware.before(*request));
-    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    clock.advance(std::chrono::milliseconds(30));
     middleware.after(*request);
     response = std::move(request->response());
 
@@ -29,6 +31,7 @@ TEST(TimeoutMiddlewareTest, OverrideResponseWhenTimeoutExceeded) {
 }
 
 TEST(TimeoutMiddlewareTest, KeepResponseWhenWithinTimeout) {
+    zhttp::test::ManualClock clock;
     TimeoutMiddleware::Options options;
     options.timeout_ms = 100;
     TimeoutMiddleware middleware(options);
@@ -39,7 +42,7 @@ TEST(TimeoutMiddlewareTest, KeepResponseWhenWithinTimeout) {
 
     request->response() = std::move(response);
     ASSERT_TRUE(middleware.before(*request));
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    clock.advance(std::chrono::milliseconds(5));
     middleware.after(*request);
     response = std::move(request->response());
 
@@ -48,6 +51,7 @@ TEST(TimeoutMiddlewareTest, KeepResponseWhenWithinTimeout) {
 }
 
 TEST(TimeoutMiddlewareTest, KeepExistingErrorByDefault) {
+    zhttp::test::ManualClock clock;
     TimeoutMiddleware::Options options;
     options.timeout_ms = 10;
     TimeoutMiddleware middleware(options);
@@ -58,7 +62,7 @@ TEST(TimeoutMiddlewareTest, KeepExistingErrorByDefault) {
 
     request->response() = std::move(response);
     ASSERT_TRUE(middleware.before(*request));
-    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    clock.advance(std::chrono::milliseconds(30));
     middleware.after(*request);
     response = std::move(request->response());
 
@@ -67,6 +71,7 @@ TEST(TimeoutMiddlewareTest, KeepExistingErrorByDefault) {
 }
 
 TEST(TimeoutMiddlewareTest, CustomTimeoutHandlerWorks) {
+    zhttp::test::ManualClock clock;
     TimeoutMiddleware::Options options;
     options.timeout_ms = 10;
     options.timeout_handler = [](HttpContext &context,
@@ -84,7 +89,7 @@ TEST(TimeoutMiddlewareTest, CustomTimeoutHandlerWorks) {
 
     request->response() = std::move(response);
     ASSERT_TRUE(middleware.before(*request));
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    clock.advance(std::chrono::milliseconds(20));
     middleware.after(*request);
     response = std::move(request->response());
 
@@ -93,6 +98,7 @@ TEST(TimeoutMiddlewareTest, CustomTimeoutHandlerWorks) {
 }
 
 TEST(TimeoutMiddlewareTest, AfterConsumesStartOnceAndAllowsContextReuse) {
+    zhttp::test::ManualClock clock;
     TimeoutMiddleware::Options options;
     options.timeout_ms = 1;
     int calls = 0;
@@ -104,24 +110,25 @@ TEST(TimeoutMiddlewareTest, AfterConsumesStartOnceAndAllowsContextReuse) {
     middleware.after(context);
     EXPECT_EQ(calls, 0);
     ASSERT_TRUE(middleware.before(context));
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    clock.advance(std::chrono::milliseconds(5));
     middleware.after(context);
     middleware.after(context);
     EXPECT_EQ(calls, 1);
     ASSERT_TRUE(middleware.before(context));
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    clock.advance(std::chrono::milliseconds(5));
     middleware.after(context);
     EXPECT_EQ(calls, 2);
 }
 
 TEST(TimeoutMiddlewareTest, SharedInstanceSeparatesOverlappingContexts) {
+    zhttp::test::ManualClock clock;
     TimeoutMiddleware::Options options;
     options.timeout_ms = 100;
     TimeoutMiddleware middleware(options);
     auto request = std::make_shared<HttpRequest>();
     HttpContext first(request), second(request);
     ASSERT_TRUE(middleware.before(first));
-    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    clock.advance(std::chrono::milliseconds(150));
     ASSERT_TRUE(middleware.before(second));
     middleware.after(first);
     middleware.after(second);
@@ -130,11 +137,17 @@ TEST(TimeoutMiddlewareTest, SharedInstanceSeparatesOverlappingContexts) {
 }
 
 TEST(TimeoutMiddlewareTest, SameInstanceCanBeRegisteredGloballyAndForAPath) {
+    zhttp::test::ManualClock clock;
     class DelayAfter : public Middleware {
       public:
+        explicit DelayAfter(zhttp::test::ManualClock &clock) : clock_(clock) {}
+
         void after(HttpContext &) override {
-            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            clock_.advance(std::chrono::milliseconds(30));
         }
+
+      private:
+        zhttp::test::ManualClock &clock_;
     };
     TimeoutMiddleware::Options options;
     options.timeout_ms = 10;
@@ -142,7 +155,7 @@ TEST(TimeoutMiddlewareTest, SameInstanceCanBeRegisteredGloballyAndForAPath) {
     HttpApplication pipeline;
     auto &router = pipeline.router();
     pipeline.use(middleware);
-    pipeline.use(std::make_shared<DelayAfter>());
+    pipeline.use(std::make_shared<DelayAfter>(clock));
     pipeline.use("/", middleware);
     router.get("/", [](HttpContext &context) { context.response().text("ok"); });
     auto request = std::make_shared<HttpRequest>();
@@ -152,8 +165,38 @@ TEST(TimeoutMiddlewareTest, SameInstanceCanBeRegisteredGloballyAndForAPath) {
     EXPECT_EQ(context.response().status_code(), HttpStatus::GATEWAY_TIMEOUT);
 }
 
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
+TEST(TimeoutMiddlewareTest, ExactBoundaryIsAllowedAndNextMillisecondTimesOut) {
+    zhttp::test::ManualClock clock;
+    TimeoutMiddleware::Options options;
+    options.timeout_ms = 100;
+    TimeoutMiddleware middleware(options);
+    TestContext exact, exceeded;
+    ASSERT_TRUE(middleware.before(exact));
+    ASSERT_TRUE(middleware.before(exceeded));
+    clock.advance(std::chrono::milliseconds(100));
+    middleware.after(exact);
+    EXPECT_EQ(exact.response().status_code(), HttpStatus::OK);
+    clock.advance(std::chrono::milliseconds(1));
+    middleware.after(exceeded);
+    EXPECT_EQ(exceeded.response().status_code(), HttpStatus::GATEWAY_TIMEOUT);
+}
 
-    return RUN_ALL_TESTS();
+TEST(TimeoutMiddlewareTest, ZeroDisablesTimeoutAndOverrideCanReplaceErrors) {
+    zhttp::test::ManualClock clock;
+    TimeoutMiddleware::Options options;
+    options.timeout_ms = 0;
+    TimeoutMiddleware disabled(options);
+    TestContext context;
+    context.response().status(HttpStatus::BAD_REQUEST).text("bad");
+    ASSERT_TRUE(disabled.before(context));
+    clock.advance(std::chrono::hours(1));
+    disabled.after(context);
+    EXPECT_EQ(context.response().body_content(), "bad");
+    options.timeout_ms = 10;
+    options.override_non_error_only = false;
+    TimeoutMiddleware overriding(options);
+    ASSERT_TRUE(overriding.before(context));
+    clock.advance(std::chrono::milliseconds(11));
+    overriding.after(context);
+    EXPECT_EQ(context.response().status_code(), HttpStatus::GATEWAY_TIMEOUT);
 }
