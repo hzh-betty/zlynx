@@ -1,8 +1,6 @@
 cmake_minimum_required(VERSION 3.18)
 
-find_package(GTest REQUIRED)
 find_package(Threads REQUIRED)
-find_library(BROTLI_DEC_LIBRARY NAMES brotlidec REQUIRED)
 
 # 单元测试显式列表便于对个别目标附加额外依赖或串行属性。
 set(ZHTTP_UNIT_TESTS
@@ -41,6 +39,9 @@ set(ZHTTP_UNIT_TESTS
 )
 
 if(BUILD_TESTING)
+    find_package(GTest REQUIRED)
+    find_library(BROTLI_DEC_LIBRARY NAMES brotlidec REQUIRED)
+
     set(ZHTTP_NETWORK_UNIT_TESTS
         http_parser_test
         http_response_writer_test

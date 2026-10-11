@@ -11,11 +11,11 @@ include(CTest)
 
 function(zlynx_add_gtest target_name source_file module_name test_kind library_target)
     add_executable(${target_name} ${source_file})
+    target_compile_features(${target_name} PRIVATE cxx_std_17)
     target_link_libraries(${target_name}
         PRIVATE
             ${library_target}
-            GTest::gtest
-            GTest::gmock
+            GTest::gtest_main
             Threads::Threads
             zlynx_coverage_options
     )
@@ -29,7 +29,18 @@ function(zlynx_add_gtest target_name source_file module_name test_kind library_t
 endfunction()
 
 function(zlynx_add_module_test_targets module_name)
+    # CTest 条目沿用 module.kind.target 命名，也包含独立冷启动等自定义测试。
+    get_property(test_names DIRECTORY PROPERTY TESTS)
+    set(unit_targets)
+    set(integration_targets)
+    foreach(test_name IN LISTS test_names)
+        if(test_name MATCHES "^${module_name}\\.(unit|integration)\\.(.+)$")
+            list(APPEND ${CMAKE_MATCH_1}_targets ${CMAKE_MATCH_2})
+        endif()
+    endforeach()
+
     add_custom_target(${module_name}_test
+        DEPENDS ${unit_targets} ${integration_targets}
         COMMAND ${CMAKE_CTEST_COMMAND}
                 -R "^${module_name}\\."
                 --output-on-failure
@@ -38,6 +49,7 @@ function(zlynx_add_module_test_targets module_name)
     )
 
     add_custom_target(${module_name}_test_unit
+        DEPENDS ${unit_targets}
         COMMAND ${CMAKE_CTEST_COMMAND}
                 -R "^${module_name}\\.unit\\."
                 --output-on-failure
@@ -47,6 +59,7 @@ function(zlynx_add_module_test_targets module_name)
     )
 
     add_custom_target(${module_name}_test_integration
+        DEPENDS ${integration_targets}
         COMMAND ${CMAKE_CTEST_COMMAND}
                 -R "^${module_name}\\.integration\\."
                 --output-on-failure

@@ -1,15 +1,16 @@
 cmake_minimum_required(VERSION 3.18)
 
-find_package(GTest QUIET)
 find_package(Threads REQUIRED)
 
-if(NOT GTest_FOUND)
-    message(STATUS "zmalloc tests disabled: GTest was not found")
-    return()
+if(BUILD_TESTING)
+    find_package(GTest QUIET)
+    if(NOT GTest_FOUND)
+        message(STATUS "zmalloc tests disabled: GTest was not found")
+    endif()
 endif()
 
 # unit/integration 是常规验证目标，会注册进 CTest；benchmark/performance 单独构建。
-if(BUILD_TESTING)
+if(BUILD_TESTING AND GTest_FOUND)
     # allocator 相关测试需要明确列出，避免 override 测试误链接到普通 zmalloc 目标。
     set(ZMALLOC_UNIT_TESTS
         size_class_test
@@ -71,6 +72,16 @@ if(BUILD_TESTING)
         LABELS "integration;total"
         TIMEOUT 30
     )
+
+    # ASan owns malloc/free, so replacement-entry contracts require the normal
+    # build. Keep the incompatibility visible in CTest rather than reporting a
+    # successful sanitizer check of a different allocator.
+    if("${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_DEBUG} ${CMAKE_CXX_FLAGS_RELEASE} ${CMAKE_CXX_FLAGS_RELWITHDEBINFO} ${CMAKE_CXX_FLAGS_MINSIZEREL}" MATCHES "-fsanitize=[^ ]*address")
+        foreach(test_target ${ZMALLOC_OVERRIDE_TEST_TARGETS})
+            set_tests_properties(zmalloc.unit.${test_target} PROPERTIES DISABLED TRUE)
+        endforeach()
+        message(STATUS "ASan: allocator replacement tests are disabled; verify them in an unsanitized build")
+    endif()
 
     zlynx_add_module_test_targets(zmalloc)
 endif()
