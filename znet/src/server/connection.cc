@@ -1,16 +1,9 @@
 #include "znet/server/connection.h"
 #include "zco/coroutine.h"
+#include <mutex>
 
 namespace znet {
 namespace {
-// Coroutine mutex ownership must survive exceptions without holding an OS
-// thread's mutex while IO suspends.
-struct Unlock {
-    zco::Mutex &mutex;
-
-    ~Unlock() { mutex.unlock(); }
-};
-
 Transfer failed(std::errc code, const char *operation) {
     return {0, make_error(ErrorKind::runtime, code, operation), false};
 }
@@ -51,7 +44,7 @@ Result<void> Connection::start(zco::Deadline deadline) {
         if (!locked)
             return {0, runtime_error("start connection", locked.error()),
                     false};
-        Unlock unlock{reads_};
+        std::lock_guard<zco::Mutex> unlock(reads_, std::adopt_lock);
         if (state() == State::open || state() == State::peer_closed)
             return {};
         if (state() == State::closed)
@@ -93,7 +86,7 @@ Transfer Connection::read(ByteBuffer &input, size_t limit,
         auto locked = reads_.lock(deadline);
         if (!locked)
             return {0, runtime_error("read lock", locked.error()), false};
-        Unlock unlock{reads_};
+        std::lock_guard<zco::Mutex> unlock(reads_, std::adopt_lock);
         if (state() == State::peer_closed)
             return {0, {}, true};
         if (state() != State::open)
@@ -125,7 +118,7 @@ Transfer Connection::send(std::string_view bytes,
         auto locked = writes_.lock(deadline);
         if (!locked)
             return {0, runtime_error("write lock", locked.error()), false};
-        Unlock unlock{writes_};
+        std::lock_guard<zco::Mutex> unlock(writes_, std::adopt_lock);
         if (!connected())
             return failed(std::errc::bad_file_descriptor, "send connection");
         Transfer total;
@@ -175,7 +168,7 @@ Result<void> Connection::shutdown() {
             (void)close();
             return {0, runtime_error("shutdown lock", locked.error()), false};
         }
-        Unlock unlock{writes_};
+        std::lock_guard<zco::Mutex> unlock(writes_, std::adopt_lock);
         if (state() == State::closed)
             return {};
         Result<void> finished;

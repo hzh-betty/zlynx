@@ -11,7 +11,6 @@
 
 #include <cstdint>
 #include <fstream>
-#include <sstream>
 #include <sys/stat.h>
 #include <vector>
 
@@ -98,14 +97,7 @@ bool static_path::sanitize_relative_path(const std::string &raw,
         return false;
     }
 
-    std::ostringstream oss;
-    for (size_t i = 0; i < segments.size(); ++i) {
-        if (i > 0) {
-            oss << '/';
-        }
-        oss << segments[i];
-    }
-    out = oss.str();
+    out = join_string(segments, "/");
     return true;
 }
 

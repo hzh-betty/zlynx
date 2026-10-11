@@ -1,13 +1,11 @@
 #include "runtime/logging.h"
+#include "zhttp/http_common.h"
 #include "zlog/logger.h"
-#include <algorithm>
-#include <cctype>
+#include <string_view>
 namespace zhttp::detail {
 namespace {
-zlog::LogLevel::value parse_level(std::string level) {
-    std::transform(level.begin(), level.end(), level.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
+zlog::LogLevel::value parse_level(std::string_view value) {
+    const std::string level = to_lower(value);
     using Level = zlog::LogLevel::value;
     if (level == "debug") return Level::DEBUG;
     if (level == "warning" || level == "warn") return Level::WARNING;

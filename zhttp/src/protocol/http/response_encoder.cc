@@ -1,14 +1,16 @@
 #include "protocol/http/response_encoder.h"
-#include <cstdio>
+#include <charconv>
+#include <limits>
 #include <stdexcept>
 namespace zhttp {
 
 std::string ResponseEncoder::chunk(const char *data, std::size_t size) {
     if (!size)
         return "";
-    char line[32];
-    const int n = std::snprintf(line, sizeof(line), "%zx", size);
-    std::string frame(line, static_cast<size_t>(n));
+    // 每四个值位最多占一个十六进制字符；to_chars 不写末尾 NUL。
+    char line[(std::numeric_limits<std::size_t>::digits + 3) / 4];
+    const auto result = std::to_chars(line, line + sizeof(line), size, 16);
+    std::string frame(line, result.ptr);
     frame.append(kCRLF);
     frame.append(data, size);
     frame.append(kCRLF);

@@ -3,8 +3,23 @@
 #include "zhttp/http_response.h"
 
 #include <gtest/gtest.h>
+#include <sstream>
 
 using namespace zhttp;
+
+TEST(HttpResponseTest, ChunkFramesUseLowercaseHexAndPreserveBinaryPayloads) {
+    EXPECT_TRUE(ResponseEncoder::chunk(nullptr, 0).empty());
+    for (size_t size : {size_t{1}, size_t{15}, size_t{16}, size_t{255},
+                        size_t{256}, size_t{4096}}) {
+        SCOPED_TRACE(size);
+        std::string payload(size, 'x');
+        payload[size / 2] = '\0';
+        std::ostringstream hex;
+        hex << std::hex << size;
+        EXPECT_EQ(ResponseEncoder::chunk(payload.data(), payload.size()),
+                  hex.str() + "\r\n" + payload + "\r\n");
+    }
+}
 
 TEST(HttpResponseTest, DefaultValues) {
     HttpResponse resp;

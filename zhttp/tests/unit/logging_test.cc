@@ -23,6 +23,23 @@ TEST(LoggingTest, IndependentErrorReceiversKeepTheirOwnLevelsAndSinks) {
     EXPECT_FALSE(first->bytes.empty());
     EXPECT_TRUE(second->bytes.empty());
 }
+
+TEST(LoggingTest, LevelsRemainCaseInsensitiveAndUnknownDefaultsToInfo) {
+    const auto failure = znet::make_error(
+        znet::ErrorKind::io, std::errc::io_error, "session");
+    for (const char *level : {"WARNING", "WaRn", "DEBUG", "unknown"}) {
+        SCOPED_TRACE(level);
+        auto sink = std::make_shared<MemorySink>();
+        zhttp::detail::network_error_logger(level, sink)(failure);
+        EXPECT_FALSE(sink->bytes.empty());
+    }
+    for (const char *level : {"eRrOr", "FATAL", "OFF"}) {
+        SCOPED_TRACE(level);
+        auto sink = std::make_shared<MemorySink>();
+        zhttp::detail::network_error_logger(level, sink)(failure);
+        EXPECT_TRUE(sink->bytes.empty());
+    }
+}
 }
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

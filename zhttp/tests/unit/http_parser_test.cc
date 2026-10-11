@@ -3,6 +3,8 @@
 #include "znet/byte_buffer.h"
 
 #include <gtest/gtest.h>
+#include <limits>
+#include <sstream>
 #include <vector>
 
 using namespace zhttp;
@@ -14,6 +16,44 @@ class HttpRequestParserTest : public ::testing::Test {
     std::unique_ptr<HttpRequestParser> parser_;
     znet::ByteBuffer buffer_;
 };
+
+TEST_F(HttpRequestParserTest, ChunkSizesRequireCompleteUnsignedHexNumbers) {
+    std::ostringstream maximum;
+    maximum << std::hex << std::numeric_limits<size_t>::max();
+    for (const std::string &size :
+         {std::string(""), std::string("+a"), std::string("-1"),
+          std::string("0x1"), std::string("1g"), std::string(" 1"),
+          std::string("1 "), maximum.str() + "0"}) {
+        SCOPED_TRACE(size);
+        parser_->reset();
+        buffer_.retrieve_all();
+        buffer_.append("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n" +
+                       size + "\r\n");
+        EXPECT_EQ(parse_request(*parser_, &buffer_), ParseResult::ERROR);
+        EXPECT_EQ(parser_->error_status(), HttpStatus::BAD_REQUEST);
+        EXPECT_EQ(parser_->error(), "Invalid chunk size");
+    }
+
+    parser_->reset();
+    buffer_.retrieve_all();
+    buffer_.append("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n" +
+                   maximum.str() + "\r\n");
+    EXPECT_EQ(parse_request(*parser_, &buffer_), ParseResult::ERROR);
+    EXPECT_EQ(parser_->error_status(), HttpStatus::PAYLOAD_TOO_LARGE);
+}
+
+TEST_F(HttpRequestParserTest, ChunkSizesAcceptCaseLeadingZerosAndExtensions) {
+    for (const char *size : {"a", "A", "000a", "000A;name=value"}) {
+        SCOPED_TRACE(size);
+        parser_->reset();
+        buffer_.retrieve_all();
+        buffer_.append(std::string("POST / HTTP/1.1\r\nTransfer-Encoding: ") +
+                       "chunked\r\n\r\n" + size +
+                       "\r\n0123456789\r\n0\r\n\r\n");
+        ASSERT_EQ(parse_request(*parser_, &buffer_), ParseResult::COMPLETE);
+        EXPECT_EQ(parser_->request()->body(), "0123456789");
+    }
+}
 
 TEST_F(HttpRequestParserTest, ParseSimpleGetRequest) {
     const char *request = "GET /index.html HTTP/1.1\r\n"

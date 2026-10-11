@@ -1,4 +1,5 @@
 #include "protocol/websocket/websocket_handshake.h"
+#include "zhttp/http_headers.h"
 #include "zhttp/http_response.h"
 #include <openssl/evp.h>
 #include <openssl/sha.h>
@@ -6,51 +7,6 @@ namespace zhttp {
 namespace {
 
 constexpr char kWebSocketAcceptGuid[] = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-
-bool is_http_token_char(const unsigned char ch) {
-    if (ch <= 0x1F || ch >= 0x7F) {
-        return false;
-    }
-
-    switch (ch) {
-    case '(':
-    case ')':
-    case '<':
-    case '>':
-    case '@':
-    case ',':
-    case ';':
-    case ':':
-    case '\\':
-    case '"':
-    case '/':
-    case '[':
-    case ']':
-    case '?':
-    case '=':
-    case '{':
-    case '}':
-    case ' ':
-    case '\t':
-        return false;
-    default:
-        return true;
-    }
-}
-
-bool is_valid_subprotocol_token(const std::string &token) {
-    if (token.empty()) {
-        return false;
-    }
-
-    for (const unsigned char ch : token) {
-        if (!is_http_token_char(ch)) {
-            return false;
-        }
-    }
-
-    return true;
-}
 
 bool parse_subprotocol_header(const std::string &header_value,
                               std::vector<std::string> *protocols,
@@ -70,7 +26,7 @@ bool parse_subprotocol_header(const std::string &header_value,
     const auto tokens = split_string(header_value, ',');
     for (std::string token : tokens) {
         trim(token);
-        if (!is_valid_subprotocol_token(token)) {
+        if (!HttpHeaders::valid(token, "")) {
             *error = "Invalid Sec-WebSocket-Protocol token";
             return false;
         }
@@ -192,7 +148,7 @@ bool negotiate_websocket_subprotocol(
 
     // 服务器按自身优先级选择第一个命中的子协议，保持行为可预测。
     for (const std::string &server_protocol : options.subprotocols) {
-        if (!is_valid_subprotocol_token(server_protocol)) {
+        if (!HttpHeaders::valid(server_protocol, "")) {
             *error = "Invalid server WebSocket subprotocol configuration";
             return false;
         }

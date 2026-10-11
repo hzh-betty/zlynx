@@ -3,6 +3,8 @@
 #include "static_files/range.h"
 
 #include <gtest/gtest.h>
+#include <cerrno>
+#include <limits>
 
 namespace zhttp {
 namespace {
@@ -107,6 +109,69 @@ TEST(RangeParseTest, ReturnsNotSatisfiableForSemanticErrors) {
     request->set_header("Range", "bytes=0-1");
     EXPECT_EQ(parse_range_request(*request, 0, "").state,
               RangeParseState::NOT_SATISFIABLE);
+}
+
+TEST(RangeParseTest, RejectsPartialNumbersSignsAndOverflow) {
+    auto request = make_request();
+    const std::string overflow =
+        std::to_string(std::numeric_limits<unsigned long long>::max()) + "0";
+    for (const std::string &token :
+         {std::string("+1"), std::string("1x"), std::string("0x1"),
+          std::string("1 2"), std::string("1\x80", 2), overflow}) {
+        SCOPED_TRACE(token);
+        request->set_header("Range", "bytes=" + token + "-5");
+        EXPECT_EQ(parse_range_request(*request, 10, "").state,
+                  RangeParseState::INVALID);
+        request->set_header("Range", "bytes=0-" + token);
+        EXPECT_EQ(parse_range_request(*request, 10, "").state,
+                  RangeParseState::INVALID);
+        request->set_header("Range", "bytes=-" + token);
+        EXPECT_EQ(parse_range_request(*request, 10, "").state,
+                  RangeParseState::NOT_SATISFIABLE);
+    }
+}
+
+TEST(RangeParseTest, PreservesLeadingZerosWhitespaceAndMaximumInteger) {
+    auto request = make_request();
+    request->set_header("Range", "bytes= 0002 - 0005 ");
+    const auto parsed = parse_range_request(*request, 10, "");
+    ASSERT_EQ(parsed.state, RangeParseState::SATISFIABLE);
+    EXPECT_EQ(parsed.start, 2u);
+    EXPECT_EQ(parsed.end, 5u);
+
+    const auto maximum = std::numeric_limits<unsigned long long>::max();
+    request->set_header("Range", "bytes=0-" + std::to_string(maximum));
+    const auto maximum_end = parse_range_request(*request, 10, "");
+    ASSERT_EQ(maximum_end.state, RangeParseState::SATISFIABLE);
+    EXPECT_EQ(maximum_end.end, 9u);
+    request->set_header("Range", "bytes=-" + std::to_string(maximum));
+    const auto maximum_suffix = parse_range_request(*request, 10, "");
+    ASSERT_EQ(maximum_suffix.state, RangeParseState::SATISFIABLE);
+    EXPECT_EQ(maximum_suffix.start, 0u);
+}
+
+TEST(RangeParseTest, PreservesExistingErrnoBehavior) {
+    struct Case {
+        std::string token;
+        RangeParseState state;
+        int error;
+    };
+    const std::string overflow =
+        std::to_string(std::numeric_limits<unsigned long long>::max()) + "0";
+    auto request = make_request();
+    for (const auto &entry :
+         {Case{"2", RangeParseState::SATISFIABLE, EDOM},
+          Case{"1x", RangeParseState::INVALID, EDOM},
+          Case{overflow, RangeParseState::INVALID, ERANGE},
+          Case{overflow + "x", RangeParseState::INVALID, EDOM}}) {
+        SCOPED_TRACE(entry.token);
+        request->set_header("Range", "bytes=" + entry.token + "-5");
+        errno = EDOM;
+        const auto parsed = parse_range_request(*request, 10, "");
+        const int error = errno;
+        EXPECT_EQ(parsed.state, entry.state);
+        EXPECT_EQ(error, entry.error);
+    }
 }
 
 } // namespace

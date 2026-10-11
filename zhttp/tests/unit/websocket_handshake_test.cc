@@ -165,6 +165,35 @@ TEST(WebSocketHandshakeTest, NegotiatesSubprotocolByServerPriority) {
     EXPECT_TRUE(error.empty());
 }
 
+TEST(WebSocketHandshakeTest, SubprotocolTokensUseTheHttpTokenAlphabet) {
+    const std::string alphabet =
+        "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+        "!#$%&'*+-.^_`|~";
+    auto request = make_valid_websocket_request();
+    request->set_header("Sec-WebSocket-Protocol", "chat");
+    WebSocketOptions options;
+    std::string selected, error;
+    for (unsigned int byte = 0; byte <= 255; ++byte) {
+        SCOPED_TRACE(byte);
+        const std::string token =
+            "a" + std::string(1, static_cast<char>(byte)) + "b";
+        const bool valid =
+            alphabet.find(static_cast<char>(byte)) != std::string::npos;
+        options.subprotocols = {token};
+        EXPECT_FALSE(negotiate_websocket_subprotocol(
+            request, options, &selected, &error));
+        EXPECT_EQ(error, valid ? "No compatible Sec-WebSocket-Protocol"
+                              : "Invalid server WebSocket subprotocol configuration");
+        if (valid) {
+            request->set_header("Sec-WebSocket-Protocol", token);
+            ASSERT_TRUE(negotiate_websocket_subprotocol(
+                request, options, &selected, &error));
+            EXPECT_EQ(selected, token);
+            request->set_header("Sec-WebSocket-Protocol", "chat");
+        }
+    }
+}
+
 TEST(WebSocketHandshakeTest, SubprotocolNegotiationValidatesErrorPaths) {
     WebSocketOptions options;
     options.subprotocols = {"chat"};

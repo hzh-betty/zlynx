@@ -95,13 +95,7 @@ bool CompressionMiddleware::compress_with_gzip(const std::string &input,
     // deflateInit2 参数说明：
     // - windowBits = 15 + 16：输出 gzip 封装（而非 raw/zlib 封装）；
     // - level 使用配置值并限制在 1~9 范围。
-    int level = options_.gzip_level;
-    if (level < 1) {
-        level = 1;
-    }
-    if (level > 9) {
-        level = 9;
-    }
+    const int level = std::clamp(options_.gzip_level, 1, 9);
 
     z_stream stream;
     // 这里使用显式字段初始化，便于和 zlib 文档参数一一对应。
@@ -145,13 +139,7 @@ bool CompressionMiddleware::compress_with_brotli(const std::string &input,
         return true;
     }
 
-    int quality = options_.brotli_quality;
-    if (quality < 0) {
-        quality = 0;
-    }
-    if (quality > 11) {
-        quality = 11;
-    }
+    const int quality = std::clamp(options_.brotli_quality, 0, 11);
 
     size_t compressed_size = BrotliEncoderMaxCompressedSize(input.size());
     if (compressed_size == 0) {

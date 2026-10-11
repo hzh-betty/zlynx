@@ -108,6 +108,21 @@ TEST(ConnectionTest, ZeroProgressDoesNotLoopOrReportSuccess) {
     EXPECT_FALSE(connection.connected());
 }
 
+TEST(ConnectionTest, WriteExceptionReleasesGateBeforeClosedRetry) {
+    zco::Runtime runtime(zco::RuntimeOptions{1});
+    auto script = std::make_shared<Script>();
+    script->write = [](const void *, size_t, zco::Deadline) -> Transfer {
+        throw std::runtime_error("write failed");
+    };
+    Connection connection(std::make_unique<ScriptedStream>(script),
+                          runtime.executor(0));
+    ASSERT_TRUE(connection.start());
+    EXPECT_THROW((void)connection.send("x"), std::runtime_error);
+    EXPECT_EQ(connection.state(), Connection::State::closed);
+    const auto retry = connection.send("x", 50ms);
+    EXPECT_EQ(retry.error.code, std::errc::bad_file_descriptor);
+}
+
 TEST(ConnectionTest, ReadAppendsProgressAndUsesEarlierApplicationDeadline) {
     zco::Runtime runtime(zco::RuntimeOptions{1});
     auto script = std::make_shared<Script>();

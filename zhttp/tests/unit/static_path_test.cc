@@ -53,6 +53,21 @@ TEST(StaticPathTest, StaticPathsSanitizeAndJoin) {
     EXPECT_EQ(static_path::join_path("/base", ""), "/base");
 }
 
+TEST(StaticPathTest, SanitizingPreservesEmptyBinaryAndAliasedOutput) {
+    std::string out = "previous";
+    for (const char *path : {"", "/", "//./"}) {
+        ASSERT_TRUE(static_path::sanitize_relative_path(path, out));
+        EXPECT_TRUE(out.empty());
+    }
+    ASSERT_TRUE(static_path::sanitize_relative_path("a%00/b", out));
+    EXPECT_EQ(out, std::string("a\0/b", 4));
+    out = "/a//b";
+    ASSERT_TRUE(static_path::sanitize_relative_path(out, out));
+    EXPECT_EQ(out, "a/b");
+    EXPECT_FALSE(static_path::sanitize_relative_path("a/../b", out));
+    EXPECT_EQ(out, "a/b");
+}
+
 } // namespace
 } // namespace zhttp
 

@@ -9,8 +9,8 @@
 
 #include "zhttp/http_common.h"
 
-#include <algorithm>
-#include <cctype>
+#include <cerrno>
+#include <charconv>
 
 namespace zhttp {
 
@@ -22,18 +22,20 @@ bool parse_size_token(const std::string &token, size_t &value) {
     // 1) 仅接受十进制无符号整数（不接受 +/-、空白、非数字）；
     // 2) 越界/格式异常统一返回 false，不向上抛异常。
     // 目的：让上层 Range 分支只关注“合法/非法”，不处理异常细节。
-    if (token.empty()) {
+    unsigned long long parsed = 0;
+    const auto end = token.data() + token.size();
+    const auto result = std::from_chars(token.data(), end, parsed);
+    if (result.ptr != end) {
         return false;
     }
-    if (!std::all_of(token.begin(), token.end(),
-                     [](unsigned char c) { return std::isdigit(c) != 0; })) {
+    // 保留 stoull 的纯数字溢出副作用；尾随非法字符不会改变 errno。
+    if (result.ec == std::errc::result_out_of_range) {
+        errno = ERANGE;
+    }
+    if (result.ec != std::errc{}) {
         return false;
     }
-    try {
-        value = static_cast<size_t>(std::stoull(token));
-    } catch (...) {
-        return false;
-    }
+    value = static_cast<size_t>(parsed);
     return true;
 }
 

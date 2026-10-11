@@ -7,6 +7,7 @@
 
 #include "zhttp/middleware/auth_middleware.h"
 
+#include <algorithm>
 #include <unordered_set>
 
 #include "zhttp/http_common.h"
@@ -176,27 +177,19 @@ bool RoleAuthorizationMiddleware::has_authorization(
     // 先放入集合去重，后续匹配统一走 O(1) 查询。
     std::unordered_set<std::string> role_set;
     role_set.reserve(roles.size());
-    for (const auto &role : roles) {
-        role_set.insert(role);
-    }
+    role_set.insert(roles.begin(), roles.end());
+    const auto has_role = [&](const std::string &role) {
+        return role_set.find(role) != role_set.end();
+    };
 
     // require_all=true：必须包含全部 required roles，任一缺失即失败。
     if (options_.require_all) {
-        for (const auto &required : required_roles_) {
-            if (role_set.find(required) == role_set.end()) {
-                return false;
-            }
-        }
-        return true;
+        return std::all_of(required_roles_.begin(), required_roles_.end(),
+                           has_role);
     }
 
     // require_all=false：命中任一 required role 即通过，全部未命中才失败。
-    for (const auto &required : required_roles_) {
-        if (role_set.find(required) != role_set.end()) {
-            return true;
-        }
-    }
-    return false;
+    return std::any_of(required_roles_.begin(), required_roles_.end(), has_role);
 }
 
 std::string
