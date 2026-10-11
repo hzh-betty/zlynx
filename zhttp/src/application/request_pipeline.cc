@@ -72,6 +72,8 @@ void RequestPipeline::use_group(const std::string &prefix,
 std::vector<mid::Middleware::ptr>
 RequestPipeline::collect_group_middlewares(const std::string &path) const {
     std::vector<mid::Middleware::ptr> middlewares;
+    if (group_middlewares_.empty())
+        return middlewares;
     std::string normalized_path = path;
 
     // 请求路径同样做尾随 / 归一化，和注册侧保持一致。
@@ -158,16 +160,16 @@ bool RequestPipeline::execute(HttpContext &context, const Router &router) const 
     auto match = router.match(context.path(), context.method());
     context.set_path_params(std::move(match.params));
     // 配置列表共享只读；本次请求的选择顺序与执行状态保持局部所有权。
-    std::vector<mid::Middleware::ptr> middlewares;
-    for (const auto &mw : global_middlewares_)
-        middlewares.push_back(mw);
-    if (match.found)
-        for (const auto &mw : collect_group_middlewares(context.path()))
-            middlewares.push_back(mw);
+    auto groups = match.found ? collect_group_middlewares(context.path())
+                              : std::vector<mid::Middleware::ptr>{};
     auto it = route_middlewares_.find(context.path());
+    std::vector<mid::Middleware::ptr> middlewares;
+    middlewares.reserve(global_middlewares_.size() + groups.size() +
+                        (it == route_middlewares_.end() ? 0 : it->second.size()));
+    middlewares.insert(middlewares.end(), global_middlewares_.begin(), global_middlewares_.end());
+    middlewares.insert(middlewares.end(), groups.begin(), groups.end());
     if (it != route_middlewares_.end())
-        for (const auto &mw : it->second)
-            middlewares.push_back(mw);
+        middlewares.insert(middlewares.end(), it->second.begin(), it->second.end());
     // 异常路径先清除原响应和升级意图；自定义处理器若再次失败则回退到普通 500。
     auto error = [&](std::exception_ptr exception) {
         context.reset_result();
