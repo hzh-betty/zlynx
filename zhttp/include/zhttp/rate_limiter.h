@@ -1,5 +1,6 @@
 #ifndef ZHTTP_RATE_LIMITER_H_
 #define ZHTTP_RATE_LIMITER_H_
+#include <array>
 #include <chrono>
 #include <deque>
 #include <functional>
@@ -139,8 +140,6 @@ class TokenBucketRateLimiter : public RateLimiter {
     // 返回一个时间单位对应的秒数，用于计算令牌补充速率。
     std::chrono::duration<double> unitDuration() const;
 
-    size_t prune_locked(TimePoint time);
-    TimePoint next_cleanup_{};
     size_t capacity_;
     TimeUnit unit_;
     NowFunc now_func_;
@@ -151,9 +150,13 @@ class TokenBucketRateLimiter : public RateLimiter {
         bool initialized = false;
     };
 
-    // buckets_ 可能被多个请求并发访问，因此用互斥锁保护。
-    mutable std::mutex mutex_;
-    std::unordered_map<std::string, Bucket> buckets_;
+    struct alignas(64) Shard {
+        mutable std::mutex mutex;
+        std::unordered_map<std::string, Bucket> buckets;
+        TimePoint next_cleanup{};
+    };
+    size_t prune_locked(Shard &shard, TimePoint time);
+    mutable std::array<Shard, 16> shards_;
 };
 
 /**
@@ -202,11 +205,13 @@ class FixedWindowRateLimiter final : public RateLimiter {
         bool initialized = false;
     };
 
-    // states_ 可能被多个请求并发访问，因此用互斥锁保护。
-    mutable std::mutex mutex_;
-    mutable std::unordered_map<std::string, State> states_;
-    size_t prune_locked(TimePoint time);
-    TimePoint next_cleanup_{};
+    struct alignas(64) Shard {
+        mutable std::mutex mutex;
+        std::unordered_map<std::string, State> states;
+        TimePoint next_cleanup{};
+    };
+    size_t prune_locked(Shard &shard, TimePoint time);
+    mutable std::array<Shard, 16> shards_;
     size_t capacity_;
     TimeUnit unit_;
     NowFunc now_func_;
@@ -252,12 +257,14 @@ class SlidingWindowRateLimiter final : public RateLimiter {
     Milliseconds retryAfter(const std::string &key) const override;
 
   private:
-    // queues_ 可能被多个请求并发访问，因此用互斥锁保护。
-    mutable std::mutex mutex_;
-    // 每个 key 对应一个时间点队列，仅保留窗口范围内的请求时间。
-    mutable std::unordered_map<std::string, std::deque<TimePoint>> queues_;
-    size_t prune_locked(TimePoint time);
-    TimePoint next_cleanup_{};
+    struct alignas(64) Shard {
+        mutable std::mutex mutex;
+        // 每个 key 对应一个时间点队列，仅保留窗口范围内的请求时间。
+        std::unordered_map<std::string, std::deque<TimePoint>> queues;
+        TimePoint next_cleanup{};
+    };
+    size_t prune_locked(Shard &shard, TimePoint time);
+    mutable std::array<Shard, 16> shards_;
     size_t capacity_;
     TimeUnit unit_;
     NowFunc now_func_;

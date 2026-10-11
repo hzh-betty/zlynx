@@ -41,12 +41,13 @@ bool FixedWindowRateLimiter::isAllowed(const std::string &key) {
     const auto t = now_func_();
     const auto win = unit_to_ms(unit_);
 
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (t >= next_cleanup_) {
-        prune_locked(t);
-        next_cleanup_ = t + win;
+    auto &shard = shards_[std::hash<std::string>{}(key) % shards_.size()];
+    std::lock_guard<std::mutex> lock(shard.mutex);
+    if (t >= shard.next_cleanup) {
+        prune_locked(shard, t);
+        shard.next_cleanup = t + win;
     }
-    auto &s = states_[key];
+    auto &s = shard.states[key];
 
     if (!s.initialized) {
         s.initialized = true;
@@ -72,9 +73,10 @@ FixedWindowRateLimiter::retryAfter(const std::string &key) const {
     const auto t = now_func_();
     const auto win = unit_to_ms(unit_);
 
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = states_.find(key);
-    if (it == states_.end() || !it->second.initialized) {
+    auto &shard = shards_[std::hash<std::string>{}(key) % shards_.size()];
+    std::lock_guard<std::mutex> lock(shard.mutex);
+    auto it = shard.states.find(key);
+    if (it == shard.states.end() || !it->second.initialized) {
         return std::chrono::milliseconds(0);
     }
 
@@ -102,12 +104,13 @@ bool SlidingWindowRateLimiter::isAllowed(const std::string &key) {
     const auto t = now_func_();
     const auto win = unit_to_ms(unit_);
 
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (t >= next_cleanup_) {
-        prune_locked(t);
-        next_cleanup_ = t + win;
+    auto &shard = shards_[std::hash<std::string>{}(key) % shards_.size()];
+    std::lock_guard<std::mutex> lock(shard.mutex);
+    if (t >= shard.next_cleanup) {
+        prune_locked(shard, t);
+        shard.next_cleanup = t + win;
     }
-    auto &q = queues_[key];
+    auto &q = shard.queues[key];
 
     // 通过不断弹出队首，移除已滑出窗口的旧请求。
     while (!q.empty()) {
@@ -133,9 +136,10 @@ SlidingWindowRateLimiter::retryAfter(const std::string &key) const {
     const auto t = now_func_();
     const auto win = unit_to_ms(unit_);
 
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = queues_.find(key);
-    if (it == queues_.end() || it->second.empty()) {
+    auto &shard = shards_[std::hash<std::string>{}(key) % shards_.size()];
+    std::lock_guard<std::mutex> lock(shard.mutex);
+    auto it = shard.queues.find(key);
+    if (it == shard.queues.end() || it->second.empty()) {
         return std::chrono::milliseconds(0);
     }
 
@@ -191,12 +195,13 @@ bool TokenBucketRateLimiter::isAllowed(const std::string &key) {
     bool allowed = false;
 
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (t >= next_cleanup_) {
-            prune_locked(t);
-            next_cleanup_ = t + unit_to_ms(unit_);
+        auto &shard = shards_[std::hash<std::string>{}(key) % shards_.size()];
+        std::lock_guard<std::mutex> lock(shard.mutex);
+        if (t >= shard.next_cleanup) {
+            prune_locked(shard, t);
+            shard.next_cleanup = t + unit_to_ms(unit_);
         }
-        Bucket &b = buckets_[key];
+        Bucket &b = shard.buckets[key];
 
         if (!b.initialized) {
             // 首次访问时桶是满的，允许容量范围内的瞬时突发。
@@ -231,9 +236,10 @@ TokenBucketRateLimiter::retryAfter(const std::string &key) const {
     const double cap = static_cast<double>(capacity_);
     const double rate = cap / unitDuration().count();
 
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = buckets_.find(key);
-    if (it == buckets_.end() || !it->second.initialized) {
+    auto &shard = shards_[std::hash<std::string>{}(key) % shards_.size()];
+    std::lock_guard<std::mutex> lock(shard.mutex);
+    auto it = shard.buckets.find(key);
+    if (it == shard.buckets.end() || !it->second.initialized) {
         return std::chrono::milliseconds(0);
     }
 
@@ -257,32 +263,32 @@ TokenBucketRateLimiter::retryAfter(const std::string &key) const {
 }
 
 
-size_t FixedWindowRateLimiter::prune_locked(TimePoint time) {
+size_t FixedWindowRateLimiter::prune_locked(Shard &shard, TimePoint time) {
     size_t removed = 0;
-    for (auto it = states_.begin(); it != states_.end();) {
+    for (auto it = shard.states.begin(); it != shard.states.end();) {
         if (time - it->second.window_start >= unit_to_ms(unit_)) {
-            it = states_.erase(it);
+            it = shard.states.erase(it);
             ++removed;
         } else ++it;
     }
     return removed;
 }
-size_t SlidingWindowRateLimiter::prune_locked(TimePoint time) {
+size_t SlidingWindowRateLimiter::prune_locked(Shard &shard, TimePoint time) {
     size_t removed = 0;
-    for (auto it = queues_.begin(); it != queues_.end();) {
+    for (auto it = shard.queues.begin(); it != shard.queues.end();) {
         if (it->second.empty() || time - it->second.back() >= unit_to_ms(unit_)) {
-            it = queues_.erase(it);
+            it = shard.queues.erase(it);
             ++removed;
         } else ++it;
     }
     return removed;
 }
-size_t TokenBucketRateLimiter::prune_locked(TimePoint time) {
+size_t TokenBucketRateLimiter::prune_locked(Shard &shard, TimePoint time) {
     size_t removed = 0;
-    for (auto it = buckets_.begin(); it != buckets_.end();) {
+    for (auto it = shard.buckets.begin(); it != shard.buckets.end();) {
         // 一个完整补充周期后必然已恢复为满桶，删掉等同下一次创建满桶。
         if (time - it->second.last >= unit_to_ms(unit_)) {
-            it = buckets_.erase(it);
+            it = shard.buckets.erase(it);
             ++removed;
         } else ++it;
     }
@@ -290,17 +296,29 @@ size_t TokenBucketRateLimiter::prune_locked(TimePoint time) {
 }
 size_t FixedWindowRateLimiter::prune_expired() {
     const auto time = now_func_();
-    std::lock_guard<std::mutex> lock(mutex_);
-    return prune_locked(time);
+    size_t removed = 0;
+    for (auto &shard : shards_) {
+        std::lock_guard<std::mutex> lock(shard.mutex);
+        removed += prune_locked(shard, time);
+    }
+    return removed;
 }
 size_t SlidingWindowRateLimiter::prune_expired() {
     const auto time = now_func_();
-    std::lock_guard<std::mutex> lock(mutex_);
-    return prune_locked(time);
+    size_t removed = 0;
+    for (auto &shard : shards_) {
+        std::lock_guard<std::mutex> lock(shard.mutex);
+        removed += prune_locked(shard, time);
+    }
+    return removed;
 }
 size_t TokenBucketRateLimiter::prune_expired() {
     const auto time = now();
-    std::lock_guard<std::mutex> lock(mutex_);
-    return prune_locked(time);
+    size_t removed = 0;
+    for (auto &shard : shards_) {
+        std::lock_guard<std::mutex> lock(shard.mutex);
+        removed += prune_locked(shard, time);
+    }
+    return removed;
 }
 } // namespace zhttp::mid
