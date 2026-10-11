@@ -80,9 +80,3 @@ TEST(SecurityMiddlewareTest, CanDisableSingleHeader) {
     ASSERT_NE(response.headers().find("X-Frame-Options"),
               response.headers().end());
 }
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-
-    return RUN_ALL_TESTS();
-}

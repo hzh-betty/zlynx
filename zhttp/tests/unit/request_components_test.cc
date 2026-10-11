@@ -149,9 +149,3 @@ TEST(RequestComponentsTest, ReadonlyContextOwnsMutableDerivedCaches) {
     EXPECT_EQ(second.form_param("key"), "value");
     EXPECT_EQ(second.form_params().size(), 1u);
 }
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-
-    return RUN_ALL_TESTS();
-}

@@ -270,12 +270,6 @@ TEST_F(RateLimiterTest, MiddlewareWorksWithDefaultLimiterAndKeyResolver) {
     EXPECT_TRUE(run_middleware(middleware, req, resp));
 }
 
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-
-    return RUN_ALL_TESTS();
-}
-
 TEST_F(RateLimiterTest, ExpiryReclaimsKeysWithoutResettingActiveQuotas) {
     for (auto type : {RateLimiter::Type::FIXED_WINDOW, RateLimiter::Type::SLIDING_WINDOW,
                       RateLimiter::Type::TOKEN_BUCKET}) {

@@ -182,8 +182,3 @@ TEST_F(HttpResponseWriterTest, StreamFailurePreservesPartialProgress) {
     EXPECT_EQ(received, bytes.substr(0, received.size()));
 }
 } // namespace
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
-}

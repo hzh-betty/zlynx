@@ -242,9 +242,3 @@ TEST(CorsMiddlewareTest, PreflightWithoutReqHeadersKeepsAllowHeadersUnset) {
     EXPECT_EQ(resp.status_code(), HttpStatus::NO_CONTENT);
     EXPECT_EQ(resp.headers().count("Access-Control-Allow-Headers"), 0U);
 }
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-
-    return RUN_ALL_TESTS();
-}

@@ -83,9 +83,3 @@ TEST(RequestBodyMiddlewareTest, AllowInvalidJsonWhenConfigured) {
     EXPECT_EQ(request->json(), nullptr);
     EXPECT_FALSE(request->json_error().empty());
 }
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-
-    return RUN_ALL_TESTS();
-}

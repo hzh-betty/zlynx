@@ -622,9 +622,3 @@ TEST_F(RouterTest, PathMiddlewareRunsForNotFoundWhenPathMatches) {
     EXPECT_TRUE(after_called);
     EXPECT_EQ(response.status_code(), HttpStatus::NOT_FOUND);
 }
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-
-    return RUN_ALL_TESTS();
-}

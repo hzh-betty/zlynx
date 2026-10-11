@@ -633,9 +633,3 @@ TEST_F(StaticFileMiddlewareTest,
     EXPECT_EQ(revalidated.status_code(), HttpStatus::NOT_MODIFIED);
     EXPECT_EQ(revalidated.headers().at("Vary"), "Origin, Accept-Encoding");
 }
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-
-    return RUN_ALL_TESTS();
-}

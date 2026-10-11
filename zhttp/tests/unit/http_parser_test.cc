@@ -626,9 +626,3 @@ TEST(HttpRequestParserContractTest, FieldsOwnBytesAcrossBufferReuseAndReset) {
     EXPECT_EQ(owned->trailers().get_view("X-Trailer"), trailer);
     EXPECT_EQ(owned->body(), "abc");
 }
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-
-    return RUN_ALL_TESTS();
-}

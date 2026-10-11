@@ -335,9 +335,3 @@ TEST(ServerConfigTest, StackModeHelpersCoverKnownAndFallbackValues) {
     EXPECT_EQ(zhttp::stack_mode_to_string(zco::StackModel::kIndependent),
               "independent");
 }
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-
-    return RUN_ALL_TESTS();
-}

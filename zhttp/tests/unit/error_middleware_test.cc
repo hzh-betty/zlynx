@@ -216,9 +216,3 @@ TEST(ErrorMiddlewareTest,
     EXPECT_EQ(json.at("message").get<std::string>(), "\xef\xbf\xbd");
     EXPECT_EQ(json.at("path").get<std::string>(), "/\xef\xbf\xbd");
 }
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-
-    return RUN_ALL_TESTS();
-}

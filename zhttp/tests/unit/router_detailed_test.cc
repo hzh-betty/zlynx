@@ -500,9 +500,3 @@ TEST_F(RouterDetailedTest, ManyRoutes) {
     EXPECT_TRUE(found);
     EXPECT_EQ(response.status_code(), HttpStatus::OK);
 }
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-
-    return RUN_ALL_TESTS();
-}

@@ -171,9 +171,3 @@ TEST(RadixTreeViewTest, RegexPrefixAndOptionalCapturesRetainOwnership) {
     EXPECT_EQ(match.params.at("name"), std::string(128, 'u'));
     EXPECT_EQ(match.params.at("number"), "");
 }
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-
-    return RUN_ALL_TESTS();
-}

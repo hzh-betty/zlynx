@@ -64,11 +64,6 @@ TEST(RouterOwnershipTest, SharedDynamicTopologyKeepsEachRoutesParameterNames) {
               (HttpRequest::Params{{"account", "42"}, {"file", "a/b"}}));
 }
 
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
-}
-
 TEST(RouterOwnershipTest, RegexRoutesKeepParameterNamesPerMethod) {
     Router router;
     router.add_regex_route(HttpMethod::GET, "/files/(.*)", {"path"}, [](HttpContext &) {});
