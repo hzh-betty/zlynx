@@ -72,16 +72,19 @@ void HttpProtocolHandler::on_data(
                        "CONNECT tunneling is unsupported");
             return;
         }
-        ConnectionInfo info;
-        info.tls = conn->encrypted();
-        auto remote = conn->remote_endpoint();
-        if (remote)
-            info.remote_address = remote.value().to_string();
-        auto local = conn->local_endpoint();
-        if (local)
-            info.local_address = local.value().to_string();
+        if (!connection_info_ready_) {
+            connection_info_.tls = conn->encrypted();
+            auto remote = conn->remote_endpoint();
+            if (remote)
+                connection_info_.remote_address = remote.value().to_string();
+            auto local = conn->local_endpoint();
+            if (local)
+                connection_info_.local_address = local.value().to_string();
+            // 处理器独占一个已建立连接；查询失败保留空地址，不从请求头推断。
+            connection_info_ready_ = true;
+        }
         // 请求上下文在本次同步处理内完成，无需跨回调共享其生命周期。
-        HttpContext context(parser_.request(), std::move(info));
+        HttpContext context(parser_.request(), connection_info_);
         context.response().header("Server", name_);
         try {
             application_.handle(context);
@@ -121,7 +124,7 @@ void HttpProtocolHandler::on_data(
         }
         WriteResult written = WriteResult::Failed;
         try {
-            written = HttpResponseWriter::send(conn, context,
+            written = HttpResponseWriter::send(conn, context, plan,
                                                static_cast<bool>(candidate));
         } catch (...) {
         }

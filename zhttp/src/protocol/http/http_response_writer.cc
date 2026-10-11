@@ -26,10 +26,18 @@ static bool send_all_or_fail(const std::shared_ptr<znet::Connection> &conn,
 WriteResult HttpResponseWriter::send(
     const std::shared_ptr<znet::Connection> &conn, HttpContext &context,
     bool upgrade) {
+    if (context.response().committed())
+        throw std::logic_error("Response already committed");
+    return send(conn, context,
+                ResponseEncoder::plan(context.request().request_line(), context.response(), upgrade),
+                upgrade);
+}
+WriteResult HttpResponseWriter::send(
+    const std::shared_ptr<znet::Connection> &conn, HttpContext &context,
+    const ResponsePlan &p, bool upgrade) {
     auto &response = context.response();
     if (response.committed())
         throw std::logic_error("Response already committed");
-    auto p = ResponseEncoder::plan(context.request().request_line(), response, upgrade);
     const auto &body = response.body_source();
     if (body.kind() == HttpBody::Kind::File) {
         const auto *file = body.file_resource();
@@ -39,13 +47,17 @@ WriteResult HttpResponseWriter::send(
             file->size > static_cast<std::uint64_t>(st.st_size) - file->offset)
             throw std::runtime_error("Response file changed before commit");
     }
-    const auto header_bytes =
-        ResponseEncoder::headers(context.request().request_line(), response, upgrade);
+    auto header_bytes = ResponseEncoder::headers(response, p, upgrade);
+    const bool combined = p.send_body && !p.chunked &&
+                          body.kind() == HttpBody::Kind::Memory &&
+                          body.content().size() <= 4096 && header_bytes.size() <= 64 * 1024 - body.content().size();
+    if (combined)
+        header_bytes.append(body.content());
     // 文件范围与头部在提交前校验；提交后只允许发送或失败，不能改写响应。
     response.commit();
     if (!send_all_or_fail(conn, header_bytes.data(), header_bytes.size()))
         return WriteResult::Failed;
-    if (!p.send_body)
+    if (!p.send_body || combined)
         return WriteResult::Completed;
     if (body.kind() == HttpBody::Kind::Stream) {
         char buffer[8192];

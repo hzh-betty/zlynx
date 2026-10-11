@@ -11,6 +11,7 @@ struct ResponsePlan {
 namespace ResponseEncoder {
 ResponsePlan plan(const HttpRequestLine &request, const HttpResponse &response, bool upgrade = false);
 std::string headers(const HttpRequestLine &request, const HttpResponse &response, bool upgrade = false);
+std::string headers(const HttpResponse &response, const ResponsePlan &plan, bool upgrade = false);
 std::string chunk(const char *data, size_t size);
 std::string serialize(const HttpResponse &response, bool include_body = true,
                       HttpMethod method = HttpMethod::GET);

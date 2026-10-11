@@ -4,6 +4,7 @@
 #include "protocol/http/http_request_parser.h"
 #include "protocol/protocol_handler.h"
 #include "zhttp/request_limits.h"
+#include "zhttp/http_context.h"
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -35,6 +36,8 @@ class HttpProtocolHandler : public ProtocolHandler {
     std::string name_;
     Switch switch_protocol_;
     bool receiving_ = false, closed_ = false;
+    bool connection_info_ready_ = false;
+    ConnectionInfo connection_info_;
 };
 } // namespace zhttp
 

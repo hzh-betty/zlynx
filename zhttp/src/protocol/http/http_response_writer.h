@@ -6,6 +6,7 @@ namespace znet {
 class Connection;
 }
 namespace zhttp {
+struct ResponsePlan;
 enum class WriteResult { Completed, Failed };
 /** 在连接处理流程中提交响应并同步发送内存、文件或流正文。 */
 namespace HttpResponseWriter {
@@ -21,6 +22,9 @@ namespace HttpResponseWriter {
  */
 WriteResult send(const std::shared_ptr<znet::Connection> &connection,
                  HttpContext &context, bool upgrade = false);
+// 内部调用者可复用针对当前响应计算的计划；计划计算后不能再修改响应。
+WriteResult send(const std::shared_ptr<znet::Connection> &connection,
+                 HttpContext &context, const ResponsePlan &plan, bool upgrade = false);
 } // namespace HttpResponseWriter
 } // namespace zhttp
 

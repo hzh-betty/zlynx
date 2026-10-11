@@ -46,23 +46,36 @@ ResponsePlan ResponseEncoder::plan(const HttpRequestLine &request,
 std::string ResponseEncoder::headers(const HttpRequestLine &request,
                                         const HttpResponse &response,
                                         bool upgrade) {
-    auto p = plan(request, response, upgrade);
+    return headers(response, plan(request, response, upgrade), upgrade);
+}
+std::string ResponseEncoder::headers(const HttpResponse &response,
+                                    const ResponsePlan &p, bool upgrade) {
     const auto code = response.status_line().status_code;
-    std::string out = std::string(version_to_string(response.version())) + " " +
-                      std::to_string(code) + " " +
-                      status_to_string(response.status_code()) + "\r\n";
+    std::string out;
+    size_t capacity = 128;
+    for (const auto &h : response.headers())
+        capacity += h.first.size() + h.second.size() + 4;
+    for (const auto &cookie : response.set_cookies())
+        capacity += cookie.size() + 13;
+    out.reserve(capacity);
+    out.append(version_to_string(response.version()));
+    out.push_back(' ');
+    out.append(std::to_string(code));
+    out.push_back(' ');
+    out.append(status_to_string(response.status_code()));
+    out.append("\r\n");
     // 正文边界和连接头由写出计划统一生成，忽略业务层设置的同名字段。
     for (const auto &h : response.headers()) {
         if (HttpHeaders::equal_name(h.first, "Content-Length") ||
             HttpHeaders::equal_name(h.first, "Transfer-Encoding") ||
             HttpHeaders::equal_name(h.first, "Connection"))
             continue;
-        out += h.first + ": " + h.second + "\r\n";
+        out.append(h.first).append(": ").append(h.second).append("\r\n");
     }
     for (const auto &cookie : response.set_cookies()) {
         if (!HttpHeaders::valid("Set-Cookie", cookie))
             throw std::invalid_argument("Invalid cookie field");
-        out += "Set-Cookie: " + cookie + "\r\n";
+        out.append("Set-Cookie: ").append(cookie).append("\r\n");
     }
     if (code == 205)
         out += "Content-Length: 0\r\n";
@@ -70,16 +83,15 @@ std::string ResponseEncoder::headers(const HttpRequestLine &request,
         out += "Transfer-Encoding: chunked\r\n";
     else if (code >= 200 && code != 204 && code != 304 &&
              p.length != HttpBody::UnknownLength)
-        out += "Content-Length: " + std::to_string(p.length) + "\r\n";
+        out.append("Content-Length: ").append(std::to_string(p.length)).append("\r\n");
     // A 304 with an explicitly supplied representation is permitted length
     // metadata.
     else if (code == 304 &&
              response.body_source().kind() != HttpBody::Kind::Empty &&
              p.length != HttpBody::UnknownLength)
-        out += "Content-Length: " + std::to_string(p.length) + "\r\n";
+        out.append("Content-Length: ").append(std::to_string(p.length)).append("\r\n");
     out += upgrade ? "Connection: Upgrade\r\n"
-                   : "Connection: " +
-                         std::string(p.close ? "close" : "keep-alive") + "\r\n";
+                   : p.close ? "Connection: close\r\n" : "Connection: keep-alive\r\n";
     out += "\r\n";
     return out;
 }
@@ -89,11 +101,10 @@ std::string ResponseEncoder::serialize(const HttpResponse &response,
     HttpRequestLine request;
     request.method = method;
     request.version = response.version();
-    std::string out =
-        headers(request, response,
-                response.status_code() == HttpStatus::SWITCHING_PROTOCOLS);
     auto p = plan(request, response,
                   response.status_code() == HttpStatus::SWITCHING_PROTOCOLS);
+    std::string out = headers(response, p,
+                             response.status_code() == HttpStatus::SWITCHING_PROTOCOLS);
     if (include_body && p.send_body &&
         response.body_source().kind() == HttpBody::Kind::Memory) {
         out += p.chunked ? chunk(response.body_content().data(),

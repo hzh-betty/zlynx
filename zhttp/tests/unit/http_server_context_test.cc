@@ -37,6 +37,133 @@ struct SocketPair {
     znet::Connection::ptr connection;
     int peer;
 };
+struct RecordingStream : znet::ByteStream {
+    std::string wire;
+    size_t writes = 0, max_write = std::numeric_limits<size_t>::max();
+    size_t fail_after = std::numeric_limits<size_t>::max();
+    mutable int local_queries = 0, remote_queries = 0;
+    bool missing_endpoints = false, tls = false;
+    znet::Result<void> start(zco::Deadline) override { return {}; }
+    znet::Transfer read_some(void *, size_t, zco::Deadline) override { return {}; }
+    znet::Transfer write_some(const void *data, size_t size, zco::Deadline) override {
+        ++writes;
+        if (wire.size() >= fail_after)
+            return {}; // 无进展：Connection::send 必须关闭连接并返回失败。
+        const auto count = std::min({size, max_write, fail_after - wire.size()});
+        wire.append(static_cast<const char *>(data), count);
+        return {count, {}, false};
+    }
+    znet::Result<void> shutdown_write(zco::Deadline) override { return {}; }
+    znet::Result<void> close() override { return {}; }
+    znet::Result<znet::Endpoint> local_endpoint() const override {
+        ++local_queries;
+        return znet::Endpoint::ipv4(missing_endpoints ? "invalid" : "127.0.0.1", 8080);
+    }
+    znet::Result<znet::Endpoint> remote_endpoint() const override {
+        ++remote_queries;
+        return znet::Endpoint::ipv4(missing_endpoints ? "invalid" : "127.0.0.2", 9000);
+    }
+    int native_handle() const override { return -1; }
+    bool encrypted() const override { return tls; }
+};
+struct RecordingConnection {
+    zco::Runtime runtime{zco::RuntimeOptions{1}};
+    RecordingStream *stream;
+    znet::Connection::ptr connection;
+    RecordingConnection() {
+        auto transport = std::make_unique<RecordingStream>();
+        stream = transport.get();
+        connection = std::make_shared<znet::Connection>(std::move(transport), runtime.executor(0));
+        connection->start().value();
+    }
+};
+TEST(HttpProtocolTest, ConnectionMetadataIsOwnedAndQueriedOnceAcrossRequests) {
+    for (bool missing : {false, true}) {
+        RecordingConnection pair;
+        pair.stream->missing_endpoints = missing;
+        pair.stream->tls = true;
+        HttpApplication application;
+        std::vector<ConnectionInfo> snapshots;
+        application.router().get("/", [&](HttpContext &context) {
+            snapshots.push_back(context.connection_info());
+            context.response().text("OK");
+        });
+        HttpProtocolHandler handler(application, {}, 30000, "test", {});
+        znet::ByteBuffer buffer;
+        for (int i = 0; i < 3; ++i) {
+            buffer.append("GET / HTTP/1.1\r\nHost: test\r\n\r\n");
+            handler.on_data(pair.connection, buffer);
+        }
+        handler.on_closed();
+        ASSERT_EQ(snapshots.size(), 3U);
+        EXPECT_EQ(pair.stream->local_queries, 1);
+        EXPECT_EQ(pair.stream->remote_queries, 1);
+        for (const auto &snapshot : snapshots) {
+            EXPECT_TRUE(snapshot.tls);
+            EXPECT_EQ(snapshot.remote_address, missing ? "" : "127.0.0.2:9000");
+            EXPECT_EQ(snapshot.local_address, missing ? "" : "127.0.0.1:8080");
+        }
+    }
+}
+TEST(HttpWriterTest, CombinesOnlySmallUnchunkedMemoryBodies) {
+    for (size_t size : {0U, 2U, 4096U, 4097U}) {
+        RecordingConnection pair;
+        HttpContext context(std::make_shared<HttpRequest>());
+        context.response().body(std::string(size, 'x'));
+        const auto expected = ResponseEncoder::serialize(context.response());
+        EXPECT_EQ(HttpResponseWriter::send(pair.connection, context), WriteResult::Completed);
+        EXPECT_EQ(pair.stream->wire, expected);
+        EXPECT_EQ(pair.stream->writes, size <= 4096 ? 1U : 2U);
+    }
+    for (int code : {200, 204, 205, 304, 101}) {
+        RecordingConnection pair;
+        auto request = std::make_shared<HttpRequest>();
+        request->set_method(code == 200 ? HttpMethod::HEAD : HttpMethod::GET);
+        HttpContext context(request);
+        context.response().status(code).body("hidden");
+        const auto expected = ResponseEncoder::serialize(context.response(), true, request->method());
+        EXPECT_EQ(HttpResponseWriter::send(pair.connection, context, code == 101), WriteResult::Completed);
+        EXPECT_EQ(pair.stream->wire, expected);
+        EXPECT_EQ(pair.stream->writes, 1U);
+        EXPECT_EQ(pair.stream->wire.find("\r\n\r\nhidden"), std::string::npos);
+    }
+}
+TEST(HttpWriterTest, CombinedBufferSurvivesPartialWritesAndReportsFailure) {
+    for (bool fail : {false, true}) {
+        RecordingConnection pair;
+        pair.stream->max_write = 7;
+        if (fail) pair.stream->fail_after = 23;
+        HttpContext context(std::make_shared<HttpRequest>());
+        context.response().text("OK");
+        const auto expected = ResponseEncoder::serialize(context.response());
+        EXPECT_EQ(HttpResponseWriter::send(pair.connection, context),
+                  fail ? WriteResult::Failed : WriteResult::Completed);
+        EXPECT_TRUE(context.response().committed());
+        EXPECT_EQ(pair.stream->wire, fail ? expected.substr(0, 23) : expected);
+        EXPECT_EQ(pair.connection->connected(), !fail);
+    }
+}
+TEST(HttpProtocolTest, PartialCombinedWriteFailsCompletionAndClosesPipeline) {
+    RecordingConnection pair;
+    pair.stream->max_write = 7;
+    pair.stream->fail_after = 23;
+    HttpApplication application;
+    int calls = 0, failures = 0;
+    application.router().get("/", [&](HttpContext &context) {
+        ++calls;
+        context.on_complete([&](CompletionResult result) {
+            if (result == CompletionResult::Failed) ++failures;
+        });
+        context.response().text("OK");
+    });
+    HttpProtocolHandler handler(application, {}, 30000, "test", {});
+    znet::ByteBuffer buffer;
+    buffer.append("GET / HTTP/1.1\r\nHost: test\r\n\r\nGET / HTTP/1.1\r\nHost: test\r\n\r\n");
+    handler.on_data(pair.connection, buffer);
+    EXPECT_EQ(calls, 1);
+    EXPECT_EQ(failures, 1);
+    EXPECT_FALSE(pair.connection->connected());
+}
 TEST(HttpServerContextTest, TimeoutSettersClampAndInvalidTlsIsRejected) {
     HttpServer server(znet::Endpoint::ipv4("127.0.0.1", 0).value(), zco::RuntimeOptions{1});
     server.set_recv_timeout(std::numeric_limits<uint64_t>::max());

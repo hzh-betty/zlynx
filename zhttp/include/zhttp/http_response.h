@@ -10,9 +10,11 @@
 namespace znet { class Connection; }
 namespace zhttp {
 class HttpContext;
+struct ResponsePlan;
 enum class WriteResult;
 namespace HttpResponseWriter {
 WriteResult send(const std::shared_ptr<znet::Connection> &, HttpContext &, bool);
+WriteResult send(const std::shared_ptr<znet::Connection> &, HttpContext &, const ResponsePlan &, bool);
 }
 // 状态行保留整数状态码，容纳常用枚举以外的合法 HTTP 状态。
 /** 响应状态行；整数状态码允许表达常用枚举之外的 HTTP 状态。 */
@@ -195,6 +197,8 @@ class HttpResponse {
   private:
     friend WriteResult HttpResponseWriter::send(const std::shared_ptr<znet::Connection> &,
                                                 HttpContext &, bool);
+    friend WriteResult HttpResponseWriter::send(const std::shared_ptr<znet::Connection> &,
+                                                HttpContext &, const ResponsePlan &, bool);
     void commit() { committed_ = true; }
     void check_mutable() const;
     static std::string build_set_cookie_value(const std::string &name,
