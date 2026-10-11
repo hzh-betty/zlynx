@@ -1,5 +1,6 @@
 #include "static_files/static_resource_store.h"
 #include "static_files/path.h"
+#include <algorithm>
 #include <fstream>
 #include <sstream>
 #include "zhttp/http_common.h"
@@ -63,11 +64,15 @@ StaticResourceStore::StaticResourceStore(std::string root, std::string index, bo
         now_ = Clock::now;
 }
 void StaticResourceStore::prune_locked(Clock::time_point now) {
+    if (now <= earliest_expiry_)
+        return;
+    earliest_expiry_ = Clock::time_point::max();
     for (auto it = cache_.begin(); it != cache_.end();) {
         if (now > it->second.expires) {
             cached_bytes_ -= it->second.resource->size;
             it = cache_.erase(it);
         } else {
+            earliest_expiry_ = std::min(earliest_expiry_, it->second.expires);
             ++it;
         }
     }
@@ -106,27 +111,35 @@ void StaticResourceStore::remember(std::shared_ptr<const StaticResource> resourc
     }
     cached_bytes_ += resource->size;
     const auto path = resource->path;
-    cache_.emplace(path, CacheEntry{std::move(resource), now + policy_.ttl});
+    const auto expires = now + policy_.ttl;
+    cache_.emplace(path, CacheEntry{std::move(resource), expires});
+    // 覆盖或淘汰可留下偏早的下界；最多多扫描一次，不能漏掉过期条目。
+    earliest_expiry_ = std::min(earliest_expiry_, expires);
 }
 ResourceLookup StaticResourceStore::lookup(const std::string &relative, bool trailing_slash,
                                            const std::vector<std::string> &encodings, ReadMode mode) {
-    clear_expired();
     std::string disk_path = static_path::join_path(root_, relative);
     if (is_directory(disk_path)) {
-        if (!implicit_index_)
+        if (!implicit_index_) {
+            clear_expired();
             return {ResourceLookup::State::Forbidden, {}};
+        }
         disk_path = static_path::join_path(disk_path, index_);
     } else if ((relative.empty() || trailing_slash) && implicit_index_) {
         disk_path = static_path::join_path(disk_path, index_);
     }
+    if (encodings.empty())
+        clear_expired();
     for (const auto &encoding : encodings) {
         const std::string candidate = disk_path + (encoding.empty() ? "" : encoding == "br" ? ".br" : ".gz");
         if (policy_.enabled && policy_.ttl.count() > 0) {
             std::shared_ptr<const StaticResource> cached;
             {
+                const auto now = now_();
                 std::lock_guard<std::mutex> lock(mutex_);
+                prune_locked(now);
                 auto it = cache_.find(candidate);
-                if (it != cache_.end())
+                if (it != cache_.end() && now <= it->second.expires)
                     cached = it->second.resource;
             }
             if (cached)

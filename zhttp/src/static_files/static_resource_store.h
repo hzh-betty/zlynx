@@ -53,6 +53,7 @@ class StaticResourceStore {
     mutable std::mutex mutex_;
     std::unordered_map<std::string, CacheEntry> cache_;
     size_t cached_bytes_ = 0;
+    Clock::time_point earliest_expiry_ = Clock::time_point::max();
 };
 }
 #endif
