@@ -124,6 +124,7 @@ class PageCache : public NonCopyable {
     std::mutex &page_mtx() { return page_mtx_; }
 
   private:
+    friend struct CacheTestAccess;
     static_assert(alignof(Span) >= 2, "Span must reserve a low bit for tagging");
     static constexpr uintptr_t kCachedObjectTag = 1;
 

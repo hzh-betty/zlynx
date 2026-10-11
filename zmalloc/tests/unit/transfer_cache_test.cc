@@ -3,9 +3,7 @@
  * @brief TransferCache 单元测试
  */
 
-#define private public
 #include "zmalloc/internal/transfer_cache.h"
-#undef private
 #include <gtest/gtest.h>
 
 #include "zmalloc/internal/size_class.h"
@@ -19,21 +17,17 @@
 namespace zmalloc {
 namespace {
 
-class TransferCacheTest : public ::testing::Test {
-  protected:
-    void SetUp() override {}
-    void TearDown() override {}
-};
 class TransferCacheEntryExactParamTest
-    : public TransferCacheTest, public ::testing::WithParamInterface<size_t> {};
+    : public ::testing::TestWithParam<size_t> {};
+
 class TransferCacheEntryPartialParamTest
-    : public TransferCacheTest,
-      public ::testing::WithParamInterface<std::tuple<size_t, size_t>> {};
+    : public ::testing::TestWithParam<std::tuple<size_t, size_t>> {};
+
 class TransferCacheEntryEmptyParamTest
-    : public TransferCacheTest, public ::testing::WithParamInterface<size_t> {};
+    : public ::testing::TestWithParam<size_t> {};
+
 class TransferCacheManagerExactParamTest
-    : public TransferCacheTest,
-      public ::testing::WithParamInterface<std::tuple<size_t, size_t>> {};
+    : public ::testing::TestWithParam<std::tuple<size_t, size_t>> {};
 
 static void FillUniquePtrs(void **out, size_t n, uintptr_t base) {
     for (size_t i = 0; i < n; ++i) {
@@ -73,7 +67,7 @@ static void InsertRemoveExactManager(TransferCache &manager, size_t index,
     }
 }
 
-TEST_F(TransferCacheTest, ManagerFitsOneBatchAndBoundsOtherClasses) {
+TEST(TransferCacheTest, ManagerFitsOneBatchAndBoundsOtherClasses) {
     auto &manager = TransferCache::get_instance();
     for (size_t size = 1; size <= MAX_BYTES;) {
         const auto &e = SizeClass::lookup(size);
@@ -83,9 +77,19 @@ TEST_F(TransferCacheTest, ManagerFitsOneBatchAndBoundsOtherClasses) {
                 : std::min<size_t>(TransferCacheEntry::kMaxCacheSlots,
                                    std::max<size_t>(2, TRANSFER_CACHE_BUDGET /
                                                           e.align_size));
-        const auto &entry = manager.get_entry(e.index);
-        EXPECT_EQ(entry.capacity_, expected) << e.align_size;
-        EXPECT_GE(entry.capacity_, e.num_move) << e.align_size;
+        auto &entry = manager.get_entry(e.index);
+        void *objects[TransferCacheEntry::kMaxCacheSlots + 1];
+        FillUniquePtrs(objects, TransferCacheEntry::kMaxCacheSlots + 1,
+                       0x1000u);
+        ASSERT_TRUE(entry.empty()) << e.align_size;
+        const size_t inserted = entry.insert_range(objects, expected + 1);
+        EXPECT_EQ(inserted, expected) << e.align_size;
+        EXPECT_TRUE(entry.full()) << e.align_size;
+        EXPECT_GE(inserted, e.num_move) << e.align_size;
+        EXPECT_EQ(
+            entry.remove_range(objects, TransferCacheEntry::kMaxCacheSlots),
+            inserted);
+        EXPECT_TRUE(entry.empty());
         size = e.align_size + 1;
     }
     const auto &e = SizeClass::lookup(4096);
@@ -93,7 +97,7 @@ TEST_F(TransferCacheTest, ManagerFitsOneBatchAndBoundsOtherClasses) {
 }
 
 // 基本插入和获取测试
-TEST_F(TransferCacheTest, BoundedCapacityPreservesFifoAcrossPhysicalWrap) {
+TEST(TransferCacheTest, BoundedCapacityPreservesFifoAcrossPhysicalWrap) {
     TransferCacheEntry cache(3);
     for (uintptr_t round = 0; round < 2048; ++round) {
         void *input[5];
@@ -114,7 +118,7 @@ TEST_F(TransferCacheTest, BoundedCapacityPreservesFifoAcrossPhysicalWrap) {
     }
 }
 
-TEST_F(TransferCacheTest, BasicInsertRemove) {
+TEST(TransferCacheTest, BasicInsertRemove) {
     TransferCacheEntry cache;
 
     void *objs[10];
@@ -140,7 +144,7 @@ TEST_F(TransferCacheTest, BasicInsertRemove) {
 }
 
 // 空缓存测试
-TEST_F(TransferCacheTest, EmptyCache) {
+TEST(TransferCacheTest, EmptyCache) {
     TransferCacheEntry cache;
     EXPECT_TRUE(cache.empty());
     EXPECT_EQ(cache.size(), 0u);
@@ -151,7 +155,7 @@ TEST_F(TransferCacheTest, EmptyCache) {
 }
 
 // 部分获取测试
-TEST_F(TransferCacheTest, PartialRemove) {
+TEST(TransferCacheTest, PartialRemove) {
     TransferCacheEntry cache;
 
     void *objs[20];
@@ -169,7 +173,7 @@ TEST_F(TransferCacheTest, PartialRemove) {
 }
 
 // 多次插入获取测试
-TEST_F(TransferCacheTest, MultipleInsertRemove) {
+TEST(TransferCacheTest, MultipleInsertRemove) {
     TransferCacheEntry cache;
 
     for (int round = 0; round < 10; ++round) {
@@ -189,7 +193,7 @@ TEST_F(TransferCacheTest, MultipleInsertRemove) {
 }
 
 // TransferCache 管理器测试
-TEST_F(TransferCacheTest, ManagerBasic) {
+TEST(TransferCacheTest, ManagerBasic) {
     TransferCache &manager = TransferCache::get_instance();
 
     void *objs[10];
@@ -207,7 +211,7 @@ TEST_F(TransferCacheTest, ManagerBasic) {
 }
 
 // 不同 size class 独立测试
-TEST_F(TransferCacheTest, IndependentSizeClasses) {
+TEST(TransferCacheTest, IndependentSizeClasses) {
     TransferCache &manager = TransferCache::get_instance();
 
     void *objs1[5];
@@ -236,7 +240,7 @@ TEST_F(TransferCacheTest, IndependentSizeClasses) {
 }
 
 // 缓存满时插入测试
-TEST_F(TransferCacheTest, FullCacheInsert) {
+TEST(TransferCacheTest, FullCacheInsert) {
     TransferCacheEntry cache;
     constexpr size_t kMaxSlots = TransferCacheEntry::kMaxCacheSlots;
 
@@ -261,7 +265,7 @@ TEST_F(TransferCacheTest, FullCacheInsert) {
 }
 
 // 环形缓冲区正确性测试
-TEST_F(TransferCacheTest, RingBufferCorrectness) {
+TEST(TransferCacheTest, RingBufferCorrectness) {
     TransferCacheEntry cache;
 
     // 多轮插入和取出，验证环形缓冲区工作正常
@@ -286,7 +290,7 @@ TEST_F(TransferCacheTest, RingBufferCorrectness) {
 }
 
 // 边界条件：请求比缓存中少
-TEST_F(TransferCacheTest, RequestLessThanAvailable) {
+TEST(TransferCacheTest, RequestLessThanAvailable) {
     TransferCacheEntry cache;
 
     void *objs[100];
@@ -303,7 +307,7 @@ TEST_F(TransferCacheTest, RequestLessThanAvailable) {
 }
 
 // 边界条件：请求比缓存中多
-TEST_F(TransferCacheTest, RequestMoreThanAvailable) {
+TEST(TransferCacheTest, RequestMoreThanAvailable) {
     TransferCacheEntry cache;
 
     void *objs[5];
@@ -320,7 +324,7 @@ TEST_F(TransferCacheTest, RequestMoreThanAvailable) {
 }
 
 // 并发插入测试
-TEST_F(TransferCacheTest, ConcurrentInsert) {
+TEST(TransferCacheTest, ConcurrentInsert) {
     TransferCacheEntry cache;
     constexpr int kThreads = 4;
     constexpr int kOpsPerThread = 100;
@@ -348,7 +352,7 @@ TEST_F(TransferCacheTest, ConcurrentInsert) {
 }
 
 // 并发插入和取出测试
-TEST_F(TransferCacheTest, ConcurrentInsertRemove) {
+TEST(TransferCacheTest, ConcurrentInsertRemove) {
     TransferCacheEntry cache;
     constexpr int kThreads = 4;
     constexpr int kOpsPerThread = 100;
@@ -383,7 +387,7 @@ TEST_F(TransferCacheTest, ConcurrentInsertRemove) {
     EXPECT_EQ(cache.size(), total_inserted.load() - total_removed.load());
 }
 
-TEST_F(TransferCacheTest, InsertRemoveZeroCountNoop) {
+TEST(TransferCacheTest, InsertRemoveZeroCountNoop) {
     TransferCacheEntry cache;
     void *dummy[1] = {reinterpret_cast<void *>(0x1)};
     EXPECT_EQ(cache.insert_range(dummy, 0), 0u);
@@ -391,52 +395,43 @@ TEST_F(TransferCacheTest, InsertRemoveZeroCountNoop) {
     EXPECT_TRUE(cache.empty());
 }
 
-TEST_F(TransferCacheTest, InsertRangeWrapAroundCopiesBothSegments) {
+TEST(TransferCacheTest, InsertRangeWrapAroundCopiesBothSegments) {
     TransferCacheEntry cache;
-    cache.head_ = TransferCacheEntry::kMaxCacheSlots - 2;
-    cache.tail_ = 0;
-    cache.count_.store(0, std::memory_order_relaxed);
-
-    void *objs[4];
-    FillUniquePtrs(objs, 4, 0x4000u);
-    size_t inserted = cache.insert_range(objs, 4);
-    ASSERT_EQ(inserted, 4u);
+    std::vector<void *> padding(TransferCacheEntry::kMaxCacheSlots - 2);
+    FillUniquePtrs(padding.data(), padding.size(), 0x1000u);
+    ASSERT_EQ(cache.insert_range(padding.data(), padding.size()),
+              padding.size());
+    ASSERT_EQ(cache.remove_range(padding.data(), padding.size()),
+              padding.size());
+    void *input[4];
+    FillUniquePtrs(input, 4, 0x2000u);
+    ASSERT_EQ(cache.insert_range(input, 4), 4u);
     EXPECT_EQ(cache.size(), 4u);
-    EXPECT_EQ(cache.slots_[TransferCacheEntry::kMaxCacheSlots - 2], objs[0]);
-    EXPECT_EQ(cache.slots_[TransferCacheEntry::kMaxCacheSlots - 1], objs[1]);
-    EXPECT_EQ(cache.slots_[0], objs[2]);
-    EXPECT_EQ(cache.slots_[1], objs[3]);
-}
-
-TEST_F(TransferCacheTest, RemoveRangeWrapAroundCopiesBothSegments) {
-    TransferCacheEntry cache;
-    cache.head_ = 2;
-    cache.tail_ = TransferCacheEntry::kMaxCacheSlots - 2;
-    cache.count_.store(4, std::memory_order_relaxed);
-
-    void *objs[4];
-    FillUniquePtrs(objs, 4, 0x5000u);
-    cache.slots_[TransferCacheEntry::kMaxCacheSlots - 2] = objs[0];
-    cache.slots_[TransferCacheEntry::kMaxCacheSlots - 1] = objs[1];
-    cache.slots_[0] = objs[2];
-    cache.slots_[1] = objs[3];
-
-    void *out[4] = {nullptr, nullptr, nullptr, nullptr};
-    size_t removed = cache.remove_range(out, 4);
-    ASSERT_EQ(removed, 4u);
+    void *output[4]{};
+    ASSERT_EQ(cache.remove_range(output, 4), 4u);
     EXPECT_TRUE(cache.empty());
-    for (size_t i = 0; i < 4; ++i) {
-        EXPECT_EQ(out[i], objs[i]);
-    }
+    for (size_t i = 0; i < 4; ++i)
+        EXPECT_EQ(output[i], input[i]);
 }
 
-
-
-
-
-
-
-
+TEST(TransferCacheTest, RemoveRangeWrapAroundCopiesBothSegments) {
+    TransferCacheEntry cache;
+    std::vector<void *> padding(TransferCacheEntry::kMaxCacheSlots - 2);
+    FillUniquePtrs(padding.data(), padding.size(), 0x1000u);
+    ASSERT_EQ(cache.insert_range(padding.data(), padding.size()),
+              padding.size());
+    ASSERT_EQ(cache.remove_range(padding.data(), padding.size()),
+              padding.size());
+    void *input[4];
+    FillUniquePtrs(input, 4, 0x2000u);
+    ASSERT_EQ(cache.insert_range(input, 4), 4u);
+    EXPECT_EQ(cache.size(), 4u);
+    void *output[4]{};
+    ASSERT_EQ(cache.remove_range(output, 4), 4u);
+    EXPECT_TRUE(cache.empty());
+    for (size_t i = 0; i < 4; ++i)
+        EXPECT_EQ(output[i], input[i]);
+}
 
 TEST_P(TransferCacheEntryExactParamTest, InsertRemoveExactCount) {
     const size_t n = GetParam();
@@ -506,8 +501,3 @@ INSTANTIATE_TEST_SUITE_P(
 
 } // namespace
 } // namespace zmalloc
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
-}

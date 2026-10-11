@@ -445,8 +445,3 @@ TEST_F(FreeListTest, PopBatchPartialKeepsRemainingChain) {
 
 } // namespace
 } // namespace zmalloc
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
-}

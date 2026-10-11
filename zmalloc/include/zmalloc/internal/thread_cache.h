@@ -71,6 +71,7 @@ class ThreadCache : public NonCopyable {
     size_t cached_bytes() const { return cached_bytes_; }
 
   private:
+    friend struct CacheTestAccess;
     /** @brief 从共享缓存补充一批对象，并返回其中一个供当前请求使用。 */
     void *fetch_from_central_cache(const SizeClassLookup &e);
     /** @brief 将单个对象直接归还中心缓存，供缓存关闭后的释放路径使用。 */

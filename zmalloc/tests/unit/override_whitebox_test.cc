@@ -10,16 +10,13 @@
 #include "zmalloc/internal/zmalloc_config.h"
 #include "zmalloc/zmalloc.h"
 
-
-class OverrideWhiteboxTest : public ::testing::Test {};
-
 // 白盒引入实现文件，覆盖 bootstrap/internal helper 与 wrapper 分支。
 #include "../../src/override.cc"
 
 namespace zmalloc {
 namespace internal {
 
-TEST_F(OverrideWhiteboxTest, BootstrapAllocateFreeRoundTrip) {
+TEST(OverrideWhiteboxTest, BootstrapAllocateFreeRoundTrip) {
     void *p = bootstrap_allocate(32);
     ASSERT_NE(p, nullptr);
     EXPECT_TRUE(is_bootstrap_pointer(p));
@@ -30,7 +27,7 @@ TEST_F(OverrideWhiteboxTest, BootstrapAllocateFreeRoundTrip) {
     EXPECT_FALSE(is_bootstrap_pointer(p));
 }
 
-TEST_F(OverrideWhiteboxTest, BootstrapOperationsWhilePageLockIsHeld) {
+TEST(OverrideWhiteboxTest, BootstrapOperationsWhilePageLockIsHeld) {
     PageCache &pc = PageCache::get_instance();
     std::lock_guard<std::mutex> lock(pc.page_mtx());
     AllocatorCallGuard guard;
@@ -57,7 +54,7 @@ TEST_F(OverrideWhiteboxTest, BootstrapOperationsWhilePageLockIsHeld) {
     deallocate_bytes(aligned);
 }
 
-TEST_F(OverrideWhiteboxTest, BootstrapReallocatePaths) {
+TEST(OverrideWhiteboxTest, BootstrapReallocatePaths) {
     unsigned char *p =
         static_cast<unsigned char *>(bootstrap_reallocate(nullptr, 8));
     ASSERT_NE(p, nullptr);
@@ -75,7 +72,7 @@ TEST_F(OverrideWhiteboxTest, BootstrapReallocatePaths) {
     EXPECT_EQ(bootstrap_reallocate(grown, 0), nullptr);
 }
 
-TEST_F(OverrideWhiteboxTest, BootstrapNullAndUnknownPointerPaths) {
+TEST(OverrideWhiteboxTest, BootstrapNullAndUnknownPointerPaths) {
     EXPECT_EQ(bootstrap_allocate(0), nullptr);
     EXPECT_EQ(bootstrap_size(nullptr), 0u);
     EXPECT_FALSE(is_bootstrap_pointer(nullptr));
@@ -87,7 +84,7 @@ TEST_F(OverrideWhiteboxTest, BootstrapNullAndUnknownPointerPaths) {
     EXPECT_EQ(bootstrap_size(&stack_value), 0u);
 }
 
-TEST_F(OverrideWhiteboxTest, BootstrapRejectsOverflowWithoutThrowing) {
+TEST(OverrideWhiteboxTest, BootstrapRejectsOverflowWithoutThrowing) {
     const size_t huge = std::numeric_limits<size_t>::max();
     EXPECT_EQ(bootstrap_mapping_pages(huge), 0u);
     EXPECT_EQ(bootstrap_mapping_pages(huge - 16), 0u);
@@ -105,7 +102,7 @@ TEST_F(OverrideWhiteboxTest, BootstrapRejectsOverflowWithoutThrowing) {
     bootstrap_free(ptr);
 }
 
-TEST_F(OverrideWhiteboxTest, BootstrapAlignedPointerSurvivesReadyTransition) {
+TEST(OverrideWhiteboxTest, BootstrapAlignedPointerSurvivesReadyTransition) {
     allocator_ready().store(false, std::memory_order_release);
     tls_initializing_allocator = true;
     void *ptr = aligned_allocate_bytes(96, 65536);
@@ -120,7 +117,7 @@ TEST_F(OverrideWhiteboxTest, BootstrapAlignedPointerSurvivesReadyTransition) {
     EXPECT_FALSE(is_bootstrap_pointer(raw));
 }
 
-TEST_F(OverrideWhiteboxTest, BootstrapAlignedReallocateWhileInitializing) {
+TEST(OverrideWhiteboxTest, BootstrapAlignedReallocateWhileInitializing) {
     allocator_ready().store(false, std::memory_order_release);
     tls_initializing_allocator = true;
     auto *ptr = static_cast<unsigned char *>(aligned_allocate_bytes(32, 65536));
@@ -147,7 +144,7 @@ TEST_F(OverrideWhiteboxTest, BootstrapAlignedReallocateWhileInitializing) {
     deallocate_bytes(next);
 }
 
-TEST_F(OverrideWhiteboxTest, BootstrapContainsAddressTraversesList) {
+TEST(OverrideWhiteboxTest, BootstrapContainsAddressTraversesList) {
     void *p1 = bootstrap_allocate(32);
     void *p2 = bootstrap_allocate(32);
     ASSERT_NE(p1, nullptr);
@@ -162,7 +159,7 @@ TEST_F(OverrideWhiteboxTest, BootstrapContainsAddressTraversesList) {
     bootstrap_free(p2);
 }
 
-TEST_F(OverrideWhiteboxTest, AllocateBytesAndAlignedValidation) {
+TEST(OverrideWhiteboxTest, AllocateBytesAndAlignedValidation) {
     void *zero = allocate_bytes(0);
     ASSERT_NE(zero, nullptr);
     deallocate_bytes(zero);
@@ -179,7 +176,7 @@ TEST_F(OverrideWhiteboxTest, AllocateBytesAndAlignedValidation) {
     deallocate_bytes(small_align);
 }
 
-TEST_F(OverrideWhiteboxTest, AllocateBytesBootstrapPathWhenInitializing) {
+TEST(OverrideWhiteboxTest, AllocateBytesBootstrapPathWhenInitializing) {
     allocator_ready().store(false, std::memory_order_release);
     tls_initializing_allocator = true;
     void *p = allocate_bytes(24);
@@ -190,7 +187,7 @@ TEST_F(OverrideWhiteboxTest, AllocateBytesBootstrapPathWhenInitializing) {
     deallocate_bytes(p);
 }
 
-TEST_F(OverrideWhiteboxTest, ManagedReallocateAcrossLargeCacheBoundary) {
+TEST(OverrideWhiteboxTest, ManagedReallocateAcrossLargeCacheBoundary) {
     for (size_t initial : {size_t{64}, size_t{2 * 1024 * 1024}}) {
         auto *ptr = static_cast<unsigned char *>(allocate_bytes(initial));
         ASSERT_NE(ptr, nullptr);
@@ -210,7 +207,7 @@ TEST_F(OverrideWhiteboxTest, ManagedReallocateAcrossLargeCacheBoundary) {
     }
 }
 
-TEST_F(OverrideWhiteboxTest, ManagedSpanChecks) {
+TEST(OverrideWhiteboxTest, ManagedSpanChecks) {
     void *p = zmalloc(64);
     ASSERT_NE(p, nullptr);
     Span *span = managed_span(p);
@@ -223,7 +220,7 @@ TEST_F(OverrideWhiteboxTest, ManagedSpanChecks) {
     zfree(p);
 }
 
-TEST_F(OverrideWhiteboxTest, ManagedSpanLargeAndNotInUsePaths) {
+TEST(OverrideWhiteboxTest, ManagedSpanLargeAndNotInUsePaths) {
     void *large = zmalloc(MAX_BYTES + 4096);
     ASSERT_NE(large, nullptr);
 
@@ -244,7 +241,7 @@ TEST_F(OverrideWhiteboxTest, ManagedSpanLargeAndNotInUsePaths) {
     zfree(large);
 }
 
-TEST_F(OverrideWhiteboxTest, UnwrapAlignedPointerSuccessAndFailure) {
+TEST(OverrideWhiteboxTest, UnwrapAlignedPointerSuccessAndFailure) {
     void *aligned = aligned_allocate_bytes(80, 128);
     ASSERT_NE(aligned, nullptr);
 
@@ -260,7 +257,7 @@ TEST_F(OverrideWhiteboxTest, UnwrapAlignedPointerSuccessAndFailure) {
     deallocate_bytes(aligned);
 }
 
-TEST_F(OverrideWhiteboxTest, UnwrapAlignedPointerEdgeFailures) {
+TEST(OverrideWhiteboxTest, UnwrapAlignedPointerEdgeFailures) {
     EXPECT_FALSE(unwrap_aligned_pointer(nullptr, nullptr, nullptr));
     EXPECT_FALSE(
         unwrap_aligned_pointer(reinterpret_cast<void *>(8), nullptr, nullptr));
@@ -286,7 +283,7 @@ TEST_F(OverrideWhiteboxTest, UnwrapAlignedPointerEdgeFailures) {
     deallocate_bytes(raw);
 }
 
-TEST_F(OverrideWhiteboxTest, ReallocateBytesCoversAlignedPointerBranch) {
+TEST(OverrideWhiteboxTest, ReallocateBytesCoversAlignedPointerBranch) {
     unsigned char *aligned =
         static_cast<unsigned char *>(aligned_allocate_bytes(32, 128));
     ASSERT_NE(aligned, nullptr);
@@ -303,7 +300,7 @@ TEST_F(OverrideWhiteboxTest, ReallocateBytesCoversAlignedPointerBranch) {
     deallocate_bytes(next);
 }
 
-TEST_F(OverrideWhiteboxTest, ReallocateBytesNullAndBootstrapPaths) {
+TEST(OverrideWhiteboxTest, ReallocateBytesNullAndBootstrapPaths) {
     void *p = reallocate_bytes(nullptr, 48);
     ASSERT_NE(p, nullptr);
     deallocate_bytes(p);
@@ -316,7 +313,7 @@ TEST_F(OverrideWhiteboxTest, ReallocateBytesNullAndBootstrapPaths) {
     deallocate_bytes(resized);
 }
 
-TEST_F(OverrideWhiteboxTest, ShouldUseBootstrapAllocatorStateSwitches) {
+TEST(OverrideWhiteboxTest, ShouldUseBootstrapAllocatorStateSwitches) {
     allocator_ready().store(false, std::memory_order_release);
     EXPECT_TRUE(should_use_bootstrap_allocator());
 
@@ -335,7 +332,8 @@ TEST_F(OverrideWhiteboxTest, ShouldUseBootstrapAllocatorStateSwitches) {
     ensure_allocator_ready();
 }
 
-TEST_F(OverrideWhiteboxTest, WrapperFunctionsCfreeMemalignPvallocAndDeleteVariants) {
+TEST(OverrideWhiteboxTest,
+     WrapperFunctionsCfreeMemalignPvallocAndDeleteVariants) {
     void *p1 = memalign(64, 33);
     ASSERT_NE(p1, nullptr);
     cfree(p1);
@@ -381,7 +379,7 @@ TEST_F(OverrideWhiteboxTest, WrapperFunctionsCfreeMemalignPvallocAndDeleteVarian
     operator delete[](d3, std::nothrow);
 }
 
-TEST_F(OverrideWhiteboxTest, IsPowerOfTwoChecks) {
+TEST(OverrideWhiteboxTest, IsPowerOfTwoChecks) {
     EXPECT_FALSE(is_power_of_two(0));
     EXPECT_TRUE(is_power_of_two(1));
     EXPECT_TRUE(is_power_of_two(64));
@@ -390,8 +388,3 @@ TEST_F(OverrideWhiteboxTest, IsPowerOfTwoChecks) {
 
 } // namespace internal
 } // namespace zmalloc
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
-}

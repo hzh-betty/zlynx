@@ -1,3 +1,4 @@
+#include <stdexcept>
 /**
  * @file object_pool_test.cc
  * @brief ObjectPool 单元测试
@@ -11,15 +12,6 @@
 
 namespace zmalloc {
 namespace {
-
-
-
-
-class ObjectPoolIndependentTest : public ::testing::Test {};
-
-class ObjectPoolLargeTest : public ::testing::Test {};
-
-class ObjectPoolSmallTest : public ::testing::Test {};
 
 struct TestObject {
     int value;
@@ -63,10 +55,26 @@ TEST_F(ObjectPoolTest, ConstructorCalled) {
 }
 
 TEST_F(ObjectPoolTest, DestructorCalled) {
-    TestObject *obj = pool_.allocate();
-    obj->value = 100;
-    pool_.deallocate(obj);
-    // 析构后 value 应该被重置为 0（但内存可能被复用）
+    struct Counted {
+        int *counter = nullptr;
+
+        ~Counted() {
+            if (counter)
+                ++*counter;
+        }
+    };
+
+    int destroyed = 0;
+    ObjectPool<Counted> pool;
+    auto *first = pool.allocate();
+    first->counter = &destroyed;
+    pool.deallocate(first);
+    EXPECT_EQ(destroyed, 1);
+    auto *second = pool.allocate();
+    EXPECT_EQ(second, first);
+    second->counter = &destroyed;
+    pool.deallocate(second);
+    EXPECT_EQ(destroyed, 2);
 }
 
 TEST_F(ObjectPoolTest, ReuseFreedObjects) {
@@ -102,7 +110,7 @@ struct SmallObject {
     char c;
 };
 
-TEST_F(ObjectPoolSmallTest, SmallObjectHandling) {
+TEST(ObjectPoolSmallTest, SmallObjectHandling) {
     ObjectPool<SmallObject> pool;
     SmallObject *obj = pool.allocate();
     EXPECT_NE(obj, nullptr);
@@ -116,7 +124,7 @@ struct LargeObject {
     LargeObject() : value(999) { std::memset(data, 0, sizeof(data)); }
 };
 
-TEST_F(ObjectPoolLargeTest, LargeObjectHandling) {
+TEST(ObjectPoolLargeTest, LargeObjectHandling) {
     ObjectPool<LargeObject> pool;
     LargeObject *obj = pool.allocate();
     EXPECT_NE(obj, nullptr);
@@ -203,7 +211,7 @@ TEST_F(ObjectPoolTest, MassAllocationNoFail) {
 }
 
 // 不同池子独立性
-TEST_F(ObjectPoolIndependentTest, PoolsAreIndependent) {
+TEST(ObjectPoolIndependentTest, PoolsAreIndependent) {
     ObjectPool<TestObject> pool1;
     ObjectPool<TestObject> pool2;
 
@@ -351,7 +359,49 @@ INSTANTIATE_TEST_SUITE_P(LifoCounts, ObjectPoolLargeCountParamTest,
 } // namespace
 } // namespace zmalloc
 
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
+TEST(ObjectPoolContractTest, OverAlignedObjectsRemainAlignedAfterReuse) {
+    struct alignas(256) Aligned {
+        char bytes[256]{};
+    };
+
+    zmalloc::ObjectPool<Aligned> pool;
+    auto *first = pool.allocate();
+    auto *second = pool.allocate();
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(first) % alignof(Aligned), 0u);
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(second) % alignof(Aligned), 0u);
+    pool.deallocate(first);
+    auto *reused = pool.allocate();
+    EXPECT_EQ(reused, first);
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(reused) % alignof(Aligned), 0u);
+    pool.deallocate(reused);
+    pool.deallocate(second);
+}
+
+namespace {
+thread_local bool fail_pool_constructor = false;
+
+struct ThrowingPoolObject {
+    uintptr_t value = 42;
+
+    ThrowingPoolObject() {
+        if (fail_pool_constructor)
+            throw std::runtime_error("constructor");
+    }
+};
+} // namespace
+
+TEST(ObjectPoolContractTest, ConstructorFailureLeavesPoolUsable) {
+    zmalloc::ObjectPool<ThrowingPoolObject> pool;
+    fail_pool_constructor = true;
+    EXPECT_THROW(pool.allocate(), std::runtime_error);
+    fail_pool_constructor = false;
+    auto *first = pool.allocate();
+    EXPECT_EQ(first->value, 42u);
+    pool.deallocate(first);
+    fail_pool_constructor = true;
+    EXPECT_THROW(pool.allocate(), std::runtime_error);
+    fail_pool_constructor = false;
+    auto *next = pool.allocate();
+    EXPECT_EQ(next->value, 42u);
+    pool.deallocate(next);
 }

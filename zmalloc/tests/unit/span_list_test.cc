@@ -74,8 +74,3 @@ TEST(SpanListTest, ConcurrentConstructionUsesIndependentStorage) {
     }
     EXPECT_TRUE(valid.load(std::memory_order_relaxed));
 }
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
-}

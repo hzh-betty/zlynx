@@ -15,7 +15,6 @@
 namespace zmalloc {
 namespace {
 
-class ConcurrentAllocTest : public ::testing::Test {};
 class ConcurrentAllocFreeParamTest
     : public ::testing::TestWithParam<std::tuple<int, int, size_t>> {};
 class ConcurrentMixedParamTest
@@ -70,7 +69,7 @@ static void RunConcurrentMixedSizes(int thread_count, int iters,
 }
 
 // 多线程同时分配释放
-TEST_F(ConcurrentAllocTest, MultiThreadBasic) {
+TEST(ConcurrentAllocTest, MultiThreadBasic) {
     constexpr int kThreadCount = 4;
     constexpr int kAllocsPerThread = 1000;
     constexpr size_t kAllocSize = 64;
@@ -103,7 +102,7 @@ TEST_F(ConcurrentAllocTest, MultiThreadBasic) {
 }
 
 // 多线程不同大小分配
-TEST_F(ConcurrentAllocTest, MultiThreadVariousSizes) {
+TEST(ConcurrentAllocTest, MultiThreadVariousSizes) {
     constexpr int kThreadCount = 4;
     constexpr int kAllocsPerThread = 500;
 
@@ -133,7 +132,7 @@ TEST_F(ConcurrentAllocTest, MultiThreadVariousSizes) {
 }
 
 // 生产者消费者模式
-TEST_F(ConcurrentAllocTest, ProducerConsumer) {
+TEST(ConcurrentAllocTest, ProducerConsumer) {
     constexpr int kItemCount = 1000;
     std::vector<void *> shared_ptrs(kItemCount, nullptr);
     std::atomic<int> produced{0};
@@ -174,7 +173,7 @@ TEST_F(ConcurrentAllocTest, ProducerConsumer) {
 }
 
 // 大对象多线程分配
-TEST_F(ConcurrentAllocTest, MultiThreadLargeAlloc) {
+TEST(ConcurrentAllocTest, MultiThreadLargeAlloc) {
     constexpr int kThreadCount = 2;
     constexpr int kAllocsPerThread = 10;
 
@@ -201,7 +200,7 @@ TEST_F(ConcurrentAllocTest, MultiThreadLargeAlloc) {
 }
 
 // 压力测试
-TEST_F(ConcurrentAllocTest, StressTest) {
+TEST(ConcurrentAllocTest, StressTest) {
     constexpr int kThreadCount = 8;
     constexpr int kIterations = 100;
 
@@ -229,7 +228,7 @@ TEST_F(ConcurrentAllocTest, StressTest) {
 }
 
 // 高并发小对象分配
-TEST_F(ConcurrentAllocTest, HighConcurrencySmallAlloc) {
+TEST(ConcurrentAllocTest, HighConcurrencySmallAlloc) {
     constexpr int kThreadCount = 16;
     constexpr int kAllocsPerThread = 500;
 
@@ -257,7 +256,7 @@ TEST_F(ConcurrentAllocTest, HighConcurrencySmallAlloc) {
 }
 
 // 交错分配释放
-TEST_F(ConcurrentAllocTest, InterleavedAllocFree) {
+TEST(ConcurrentAllocTest, InterleavedAllocFree) {
     constexpr int kThreadCount = 4;
     constexpr int kIterations = 200;
 
@@ -282,7 +281,7 @@ TEST_F(ConcurrentAllocTest, InterleavedAllocFree) {
 }
 
 // 不同线程分配不同大小
-TEST_F(ConcurrentAllocTest, DifferentSizesPerThread) {
+TEST(ConcurrentAllocTest, DifferentSizesPerThread) {
     constexpr int kThreadCount = 8;
 
     auto worker = [](size_t size) {
@@ -306,7 +305,7 @@ TEST_F(ConcurrentAllocTest, DifferentSizesPerThread) {
 }
 
 // 混合大小并发分配
-TEST_F(ConcurrentAllocTest, MixedSizesConcurrent) {
+TEST(ConcurrentAllocTest, MixedSizesConcurrent) {
     constexpr int kThreadCount = 4;
     constexpr int kIterations = 50;
 
@@ -336,7 +335,7 @@ TEST_F(ConcurrentAllocTest, MixedSizesConcurrent) {
 }
 
 // 长时间运行测试
-TEST_F(ConcurrentAllocTest, LongRunning) {
+TEST(ConcurrentAllocTest, LongRunning) {
     constexpr int kThreadCount = 2;
     constexpr int kIterations = 500;
 
@@ -362,7 +361,7 @@ TEST_F(ConcurrentAllocTest, LongRunning) {
 }
 
 // 批量分配后批量释放
-TEST_F(ConcurrentAllocTest, BatchAllocBatchFree) {
+TEST(ConcurrentAllocTest, BatchAllocBatchFree) {
     constexpr int kThreadCount = 4;
 
     auto worker = []() {
@@ -389,7 +388,7 @@ TEST_F(ConcurrentAllocTest, BatchAllocBatchFree) {
 }
 
 // 大对象并发分配
-TEST_F(ConcurrentAllocTest, LargeObjectConcurrent) {
+TEST(ConcurrentAllocTest, LargeObjectConcurrent) {
     constexpr int kThreadCount = 4;
 
     auto worker = []() {
@@ -411,7 +410,7 @@ TEST_F(ConcurrentAllocTest, LargeObjectConcurrent) {
 }
 
 // 超大对象并发分配 (> MAX_BYTES)
-TEST_F(ConcurrentAllocTest, HugeObjectConcurrent) {
+TEST(ConcurrentAllocTest, HugeObjectConcurrent) {
     constexpr int kThreadCount = 2;
 
     auto worker = []() {
@@ -433,7 +432,7 @@ TEST_F(ConcurrentAllocTest, HugeObjectConcurrent) {
 }
 
 // 快速分配释放
-TEST_F(ConcurrentAllocTest, RapidAllocFree) {
+TEST(ConcurrentAllocTest, RapidAllocFree) {
     constexpr int kThreadCount = 8;
     constexpr int kIterations = 1000;
 
@@ -454,7 +453,7 @@ TEST_F(ConcurrentAllocTest, RapidAllocFree) {
 }
 
 // 数据完整性并发测试
-TEST_F(ConcurrentAllocTest, DataIntegrityConcurrent) {
+TEST(ConcurrentAllocTest, DataIntegrityConcurrent) {
     constexpr int kThreadCount = 4;
 
     auto worker = [](int thread_id) {
@@ -485,7 +484,7 @@ TEST_F(ConcurrentAllocTest, DataIntegrityConcurrent) {
 }
 
 // 多生产者单消费者
-TEST_F(ConcurrentAllocTest, MultiProducerSingleConsumer) {
+TEST(ConcurrentAllocTest, MultiProducerSingleConsumer) {
     constexpr int kProducers = 4;
     constexpr int kItemsPerProducer = 100;
 
@@ -532,7 +531,7 @@ TEST_F(ConcurrentAllocTest, MultiProducerSingleConsumer) {
 }
 
 // 边界大小并发分配
-TEST_F(ConcurrentAllocTest, BoundarySizesConcurrent) {
+TEST(ConcurrentAllocTest, BoundarySizesConcurrent) {
     constexpr int kIterations = 50;
 
     auto worker = [](size_t size) {
@@ -600,7 +599,7 @@ INSTANTIATE_TEST_SUITE_P(Concurrency, ConcurrentMixedParamTest,
                                            std::make_tuple(4, 100)));
 
 // 并发 zfree(nullptr)（确保不会崩溃）
-TEST_F(ConcurrentAllocTest, ConcurrentNullptrFreeNoCrash) {
+TEST(ConcurrentAllocTest, ConcurrentNullptrFreeNoCrash) {
     constexpr int kThreadCount = 8;
     constexpr int kIters = 10000;
     std::vector<std::thread> threads;
@@ -619,8 +618,3 @@ TEST_F(ConcurrentAllocTest, ConcurrentNullptrFreeNoCrash) {
 
 } // namespace
 } // namespace zmalloc
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
-}

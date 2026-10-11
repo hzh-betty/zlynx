@@ -84,6 +84,7 @@ class CentralCache : public NonCopyable {
     void release_list_to_spans(void *start, size_t index);
 
   private:
+    friend struct CacheTestAccess;
     CentralCache() = default;
 
   private:

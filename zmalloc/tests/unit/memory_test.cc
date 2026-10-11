@@ -3,7 +3,9 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
+#include <cstdint>
 #include <cstring>
+#include <memory>
 #include <thread>
 #include <vector>
 
@@ -12,6 +14,8 @@
 #include "zmalloc/internal/transfer_cache.h"
 
 namespace {
+
+using ManagedMemory = std::unique_ptr<unsigned char, decltype(&zmalloc::zfree)>;
 
 class MemoryTest : public ::testing::Test {
   protected:
@@ -74,30 +78,89 @@ TEST_F(MemoryTest, FullReleaseDrainsCachesAndCanBeRepeatedAfterReuse) {
     EXPECT_EQ(zmalloc::release_memory(), 0u);
 }
 
-TEST_F(MemoryTest, ReleaseKeepsLiveSmallAndMediumObjectsAndAccountsDirectMappings) {
-    auto *small = static_cast<unsigned char *>(zmalloc::zmalloc(64));
-    auto *medium = static_cast<unsigned char *>(zmalloc::zmalloc(512 * 1024));
-    std::memset(small, 0x5a, 64);
-    std::memset(medium, 0xa5, 512 * 1024);
-    const auto before = zmalloc::memory_stats();
-    void *large = zmalloc::zmalloc(2 * 1024 * 1024);
-    EXPECT_EQ(zmalloc::memory_stats().page_cache_mapped_bytes,
-              before.page_cache_mapped_bytes + 2 * 1024 * 1024);
+TEST_F(MemoryTest, ReleaseKeepsLiveSmallAndMediumObjects) {
+    ManagedMemory small(static_cast<unsigned char *>(zmalloc::zmalloc(64)),
+                        &zmalloc::zfree);
+    ManagedMemory medium(
+        static_cast<unsigned char *>(zmalloc::zmalloc(512 * 1024)),
+        &zmalloc::zfree);
+    std::memset(small.get(), 0x5a, 64);
+    std::memset(medium.get(), 0xa5, 512 * 1024);
     zmalloc::release_memory();
-    for (size_t i = 0; i < 64; ++i) EXPECT_EQ(small[i], 0x5a);
-    EXPECT_EQ(std::memcmp(medium, std::vector<unsigned char>(512 * 1024, 0xa5).data(),
-                          512 * 1024), 0);
-    zmalloc::zfree(large);
+    for (size_t i = 0; i < 64; ++i)
+        EXPECT_EQ(small.get()[i], 0x5a);
+    EXPECT_EQ(std::memcmp(medium.get(),
+                          std::vector<unsigned char>(512 * 1024, 0xa5).data(),
+                          512 * 1024),
+              0);
+    auto &pc = zmalloc::PageCache::get_instance();
+    EXPECT_NE(pc.try_map_cached_object_to_span(small.get()), nullptr);
+    EXPECT_NE(pc.try_map_cached_object_to_span(medium.get()), nullptr);
+    small.reset();
+    medium.reset();
+    EXPECT_GT(zmalloc::release_memory(), 0u);
+    const auto after = zmalloc::memory_stats();
+    EXPECT_EQ(after.thread_cache_bytes, 0u);
+    EXPECT_EQ(after.transfer_cache_bytes, 0u);
+    EXPECT_EQ(after.page_cache_free_bytes, after.page_cache_released_bytes);
+}
+
+TEST_F(MemoryTest, UncachedLargeAllocationAccountsNewMappingAndUnmapping) {
+    // 超过单块缓存上限，确保每轮都实际新增映射，不依赖全局缓存为空。
+    const size_t size =
+        (zmalloc::LARGE_CACHE_MAX_PAGES + 1) * zmalloc::PAGE_SIZE;
+    const auto before = zmalloc::memory_stats();
+    ManagedMemory large(static_cast<unsigned char *>(zmalloc::zmalloc(size)),
+                        &zmalloc::zfree);
+    EXPECT_EQ(zmalloc::memory_stats().page_cache_mapped_bytes,
+              before.page_cache_mapped_bytes + size);
+    zmalloc::release_memory();
+    EXPECT_EQ(zmalloc::memory_stats().page_cache_mapped_bytes,
+              before.page_cache_mapped_bytes + size);
+    large.reset();
+    const auto after = zmalloc::memory_stats();
+    EXPECT_EQ(after.page_cache_mapped_bytes, before.page_cache_mapped_bytes);
+    EXPECT_EQ(after.page_cache_free_bytes, before.page_cache_free_bytes);
+}
+
+TEST_F(MemoryTest, CachedLargeAllocationReusesMappingAfterRelease) {
+    const size_t size = 2 * 1024 * 1024;
+    // 先取得并归还一个已知尺寸的块，建立确定的复用前置条件。
+    ManagedMemory large(static_cast<unsigned char *>(zmalloc::zmalloc(size)),
+                        &zmalloc::zfree);
+    const auto address = reinterpret_cast<uintptr_t>(large.get());
+    const auto allocated = zmalloc::memory_stats();
+    large.reset();
     const auto cached = zmalloc::memory_stats();
     EXPECT_EQ(cached.page_cache_mapped_bytes,
-              before.page_cache_mapped_bytes + 2 * 1024 * 1024);
-    EXPECT_GE(cached.page_cache_free_bytes, 2u * 1024 * 1024);
-    auto &pc = zmalloc::PageCache::get_instance();
-    EXPECT_NE(pc.try_map_cached_object_to_span(small), nullptr);
-    EXPECT_NE(pc.try_map_cached_object_to_span(medium), nullptr);
-    zmalloc::zfree(small);
-    zmalloc::zfree(medium);
-    EXPECT_GT(zmalloc::release_memory(), 0u);
+              allocated.page_cache_mapped_bytes);
+    EXPECT_EQ(cached.page_cache_free_bytes,
+              allocated.page_cache_free_bytes + size);
+
+    const size_t released = zmalloc::release_memory();
+    const auto before_reuse = zmalloc::memory_stats();
+    EXPECT_EQ(before_reuse.total_released_bytes - cached.total_released_bytes,
+              released);
+    EXPECT_EQ(before_reuse.page_cache_mapped_bytes,
+              cached.page_cache_mapped_bytes);
+    EXPECT_EQ(before_reuse.page_cache_free_bytes,
+              before_reuse.page_cache_released_bytes);
+    EXPECT_EQ(zmalloc::release_memory(), 0u);
+
+    large.reset(static_cast<unsigned char *>(zmalloc::zmalloc(size)));
+    const auto reused = zmalloc::memory_stats();
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(large.get()), address);
+    EXPECT_EQ(reused.page_cache_mapped_bytes,
+              before_reuse.page_cache_mapped_bytes);
+    EXPECT_EQ(reused.page_cache_free_bytes + size,
+              before_reuse.page_cache_free_bytes);
+    EXPECT_EQ(reused.page_cache_released_bytes + size,
+              before_reuse.page_cache_released_bytes);
+    std::memset(large.get(), 0x5a, size);
+    zmalloc::release_memory();
+    EXPECT_EQ(std::memcmp(large.get(),
+                          std::vector<unsigned char>(size, 0x5a).data(), size),
+              0);
 }
 
 TEST_F(MemoryTest, ReleaseDoesNotAccessAnotherThreadsLocalCache) {
@@ -173,8 +236,3 @@ TEST_F(MemoryTest, ConcurrentReleasePreservesActiveObjects) {
 }
 
 } // namespace
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
-}

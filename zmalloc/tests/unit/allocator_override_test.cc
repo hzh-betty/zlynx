@@ -1,5 +1,6 @@
 #include "zmalloc/internal/page_cache.h"
 #include "zmalloc/zmalloc.h"
+#include <memory>
 
 #include <cstddef>
 #include <cstdint>
@@ -19,10 +20,7 @@
 namespace zmalloc {
 namespace {
 
-
-class AllocatorOverrideTest : public ::testing::Test {};
-
-TEST_F(AllocatorOverrideTest, ExplicitReleaseKeepsMallocAndAlignedBlocksUsable) {
+TEST(AllocatorOverrideTest, ExplicitReleaseKeepsMallocAndAlignedBlocksUsable) {
     auto *small = static_cast<unsigned char *>(std::malloc(64));
     auto *medium = static_cast<unsigned char *>(std::malloc(512 * 1024));
     void *aligned = nullptr;
@@ -47,7 +45,7 @@ TEST_F(AllocatorOverrideTest, ExplicitReleaseKeepsMallocAndAlignedBlocksUsable) 
     release_memory();
 }
 
-TEST_F(AllocatorOverrideTest, MallocWorksAfterThreadCacheShutdown) {
+TEST(AllocatorOverrideTest, MallocWorksAfterThreadCacheShutdown) {
     bool finished = false;
     std::thread worker([&] {
         void *live = std::malloc(65);
@@ -65,7 +63,7 @@ TEST_F(AllocatorOverrideTest, MallocWorksAfterThreadCacheShutdown) {
     EXPECT_TRUE(finished);
 }
 
-TEST_F(AllocatorOverrideTest, PthreadDestructorRunsAfterCacheCleanup) {
+TEST(AllocatorOverrideTest, PthreadDestructorRunsAfterCacheCleanup) {
     struct ExitState {
         bool finished = false;
         void *live = nullptr;
@@ -99,18 +97,17 @@ TEST_F(AllocatorOverrideTest, PthreadDestructorRunsAfterCacheCleanup) {
 extern "C" void *__libc_malloc(size_t size) noexcept;
 #endif
 
-TEST_F(AllocatorOverrideTest, MallocPointersAreTrackedByPageCache) {
+TEST(AllocatorOverrideTest, MallocPointersAreTrackedByPageCache) {
     void *ptr = std::malloc(64);
     ASSERT_NE(ptr, nullptr);
 
+    std::unique_ptr<void, decltype(&std::free)> allocation(ptr, &std::free);
     Span *span = PageCache::get_instance().map_object_to_span(ptr);
-    EXPECT_NE(span, nullptr);
+    ASSERT_NE(span, nullptr);
     EXPECT_GE(span->obj_size, 64u);
-
-    std::free(ptr);
 }
 
-TEST_F(AllocatorOverrideTest, MallocMeetsMaxAlignTAlignment) {
+TEST(AllocatorOverrideTest, MallocMeetsMaxAlignTAlignment) {
     void *ptr = std::malloc(1);
     ASSERT_NE(ptr, nullptr);
 
@@ -119,7 +116,7 @@ TEST_F(AllocatorOverrideTest, MallocMeetsMaxAlignTAlignment) {
     std::free(ptr);
 }
 
-TEST_F(AllocatorOverrideTest, CallocZeroInitializesMemory) {
+TEST(AllocatorOverrideTest, CallocZeroInitializesMemory) {
     auto *ptr =
         static_cast<unsigned char *>(std::calloc(32, sizeof(unsigned char)));
     ASSERT_NE(ptr, nullptr);
@@ -134,7 +131,7 @@ TEST_F(AllocatorOverrideTest, CallocZeroInitializesMemory) {
     std::free(ptr);
 }
 
-TEST_F(AllocatorOverrideTest, ReallocPreservesPrefixWhenGrowing) {
+TEST(AllocatorOverrideTest, ReallocPreservesPrefixWhenGrowing) {
     auto *ptr = static_cast<unsigned char *>(std::malloc(32));
     ASSERT_NE(ptr, nullptr);
     for (size_t i = 0; i < 32; ++i) {
@@ -153,7 +150,7 @@ TEST_F(AllocatorOverrideTest, ReallocPreservesPrefixWhenGrowing) {
     std::free(grown);
 }
 
-TEST_F(AllocatorOverrideTest, ReallocPreservesPrefixWhenShrinking) {
+TEST(AllocatorOverrideTest, ReallocPreservesPrefixWhenShrinking) {
     auto *ptr = static_cast<unsigned char *>(std::malloc(128));
     ASSERT_NE(ptr, nullptr);
     for (size_t i = 0; i < 128; ++i) {
@@ -172,7 +169,7 @@ TEST_F(AllocatorOverrideTest, ReallocPreservesPrefixWhenShrinking) {
     std::free(shrunk);
 }
 
-TEST_F(AllocatorOverrideTest, ReallocNullptrBehavesLikeMalloc) {
+TEST(AllocatorOverrideTest, ReallocNullptrBehavesLikeMalloc) {
     void *ptr = std::realloc(nullptr, 96);
     ASSERT_NE(ptr, nullptr);
 
@@ -183,14 +180,14 @@ TEST_F(AllocatorOverrideTest, ReallocNullptrBehavesLikeMalloc) {
     std::free(ptr);
 }
 
-TEST_F(AllocatorOverrideTest, ReallocZeroFreesAllocationAndReturnsNull) {
+TEST(AllocatorOverrideTest, ReallocZeroFreesAllocationAndReturnsNull) {
     void *ptr = std::malloc(64);
     ASSERT_NE(ptr, nullptr);
 
     EXPECT_EQ(std::realloc(ptr, 0), nullptr);
 }
 
-TEST_F(AllocatorOverrideTest, OperatorNewIsTrackedByPageCache) {
+TEST(AllocatorOverrideTest, OperatorNewIsTrackedByPageCache) {
     auto *ptr = new unsigned char[48];
     ASSERT_NE(ptr, nullptr);
 
@@ -201,7 +198,7 @@ TEST_F(AllocatorOverrideTest, OperatorNewIsTrackedByPageCache) {
     delete[] ptr;
 }
 
-TEST_F(AllocatorOverrideTest, NothrowNewReturnsManagedPointer) {
+TEST(AllocatorOverrideTest, NothrowNewReturnsManagedPointer) {
     auto *ptr = new (std::nothrow) unsigned char[80];
     ASSERT_NE(ptr, nullptr);
 
@@ -212,7 +209,7 @@ TEST_F(AllocatorOverrideTest, NothrowNewReturnsManagedPointer) {
     delete[] ptr;
 }
 
-TEST_F(AllocatorOverrideTest, AlignedAllocReturnsAlignedTrackedPointer) {
+TEST(AllocatorOverrideTest, AlignedAllocReturnsAlignedTrackedPointer) {
     void *ptr = ::aligned_alloc(64, 256);
     ASSERT_NE(ptr, nullptr);
 
@@ -224,7 +221,7 @@ TEST_F(AllocatorOverrideTest, AlignedAllocReturnsAlignedTrackedPointer) {
     std::free(ptr);
 }
 
-TEST_F(AllocatorOverrideTest, PosixMemalignReturnsAlignedTrackedPointer) {
+TEST(AllocatorOverrideTest, PosixMemalignReturnsAlignedTrackedPointer) {
     void *ptr = nullptr;
     ASSERT_EQ(::posix_memalign(&ptr, 128, 96), 0);
     ASSERT_NE(ptr, nullptr);
@@ -238,14 +235,14 @@ TEST_F(AllocatorOverrideTest, PosixMemalignReturnsAlignedTrackedPointer) {
     std::free(ptr);
 }
 
-TEST_F(AllocatorOverrideTest, PosixMemalignRejectsInvalidAlignment) {
+TEST(AllocatorOverrideTest, PosixMemalignRejectsInvalidAlignment) {
     void *ptr = reinterpret_cast<void *>(0x1);
 
     EXPECT_EQ(::posix_memalign(&ptr, 24, 96), EINVAL);
     EXPECT_EQ(ptr, reinterpret_cast<void *>(0x1));
 }
 
-TEST_F(AllocatorOverrideTest, ZeroSizeAllocationsRemainFreeable) {
+TEST(AllocatorOverrideTest, ZeroSizeAllocationsRemainFreeable) {
     void *pointers[] = {std::malloc(0), std::calloc(0, 16),
                         std::realloc(nullptr, 0), ::pvalloc(0)};
     for (void *ptr : pointers) {
@@ -254,7 +251,7 @@ TEST_F(AllocatorOverrideTest, ZeroSizeAllocationsRemainFreeable) {
     }
 }
 
-TEST_F(AllocatorOverrideTest, OverflowReturnsEnomemAndPreservesReallocInput) {
+TEST(AllocatorOverrideTest, OverflowReturnsEnomemAndPreservesReallocInput) {
     volatile size_t huge = std::numeric_limits<size_t>::max();
     errno = 0;
     EXPECT_EQ(std::malloc(huge), nullptr);
@@ -280,7 +277,7 @@ TEST_F(AllocatorOverrideTest, OverflowReturnsEnomemAndPreservesReallocInput) {
 }
 
 #if __SIZEOF_POINTER__ == 8
-TEST_F(AllocatorOverrideTest, MmapFailureDoesNotTerminateOrLeavePageLockHeld) {
+TEST(AllocatorOverrideTest, MmapFailureDoesNotTerminateOrLeavePageLockHeld) {
     volatile size_t huge = size_t(1) << 62;
     errno = 0;
     EXPECT_EQ(std::malloc(huge), nullptr);
@@ -301,7 +298,7 @@ TEST_F(AllocatorOverrideTest, MmapFailureDoesNotTerminateOrLeavePageLockHeld) {
 }
 #endif
 
-TEST_F(AllocatorOverrideTest, PosixMemalignFailurePreservesPointerAndErrno) {
+TEST(AllocatorOverrideTest, PosixMemalignFailurePreservesPointerAndErrno) {
     void *ptr = reinterpret_cast<void *>(0x1234);
     volatile size_t huge = std::numeric_limits<size_t>::max();
     errno = EBUSY;
@@ -310,7 +307,7 @@ TEST_F(AllocatorOverrideTest, PosixMemalignFailurePreservesPointerAndErrno) {
     EXPECT_EQ(errno, EBUSY);
 }
 
-TEST_F(AllocatorOverrideTest, FreePreservesErrno) {
+TEST(AllocatorOverrideTest, FreePreservesErrno) {
     void *ptr = std::malloc(2 * 1024 * 1024);
     ASSERT_NE(ptr, nullptr);
     errno = EBUSY;
@@ -320,7 +317,7 @@ TEST_F(AllocatorOverrideTest, FreePreservesErrno) {
     EXPECT_EQ(errno, EBUSY);
 }
 
-TEST_F(AllocatorOverrideTest, UsableSizeSupportsManagedAndAlignedAllocations) {
+TEST(AllocatorOverrideTest, UsableSizeSupportsManagedAndAlignedAllocations) {
     EXPECT_EQ(::malloc_usable_size(nullptr), 0u);
     for (size_t size : {size_t(1), size_t(63), size_t(2 * 1024 * 1024)}) {
         void *ptr = std::malloc(size);
@@ -334,7 +331,7 @@ TEST_F(AllocatorOverrideTest, UsableSizeSupportsManagedAndAlignedAllocations) {
     std::free(ptr);
 }
 
-TEST_F(AllocatorOverrideTest, ReallocWithinSizeClassRetainsPointerAndContents) {
+TEST(AllocatorOverrideTest, ReallocWithinSizeClassRetainsPointerAndContents) {
     auto *ptr = static_cast<unsigned char *>(std::malloc(63));
     ASSERT_NE(ptr, nullptr);
     std::memset(ptr, 0x5a, 63);
@@ -348,7 +345,8 @@ TEST_F(AllocatorOverrideTest, ReallocWithinSizeClassRetainsPointerAndContents) {
     std::free(next);
 }
 
-TEST_F(AllocatorOverrideTest, LargeAlignmentSupportsFreeReallocAndMappingCleanup) {
+TEST(AllocatorOverrideTest,
+     LargeAlignmentSupportsFreeReallocAndMappingCleanup) {
     constexpr size_t size = 2 * 1024 * 1024;
     constexpr size_t alignment = 65536;
     for (size_t i = 0; i < 8; ++i) {
@@ -375,7 +373,7 @@ TEST_F(AllocatorOverrideTest, LargeAlignmentSupportsFreeReallocAndMappingCleanup
     }
 }
 
-TEST_F(AllocatorOverrideTest, VallocReturnsPageAlignedPointer) {
+TEST(AllocatorOverrideTest, VallocReturnsPageAlignedPointer) {
     void *ptr = ::valloc(33);
     ASSERT_NE(ptr, nullptr);
 
@@ -388,21 +386,21 @@ TEST_F(AllocatorOverrideTest, VallocReturnsPageAlignedPointer) {
 }
 
 #if defined(__GLIBC__)
-TEST_F(AllocatorOverrideTest, UsableSizeSupportsForeignLibcAllocation) {
+TEST(AllocatorOverrideTest, UsableSizeSupportsForeignLibcAllocation) {
     void *ptr = __libc_malloc(96);
     ASSERT_NE(ptr, nullptr);
     EXPECT_GE(::malloc_usable_size(ptr), 96u);
     std::free(ptr);
 }
 
-TEST_F(AllocatorOverrideTest, FreeHandlesForeignLibcAllocation) {
+TEST(AllocatorOverrideTest, FreeHandlesForeignLibcAllocation) {
     void *ptr = __libc_malloc(96);
     ASSERT_NE(ptr, nullptr);
 
     std::free(ptr);
 }
 
-TEST_F(AllocatorOverrideTest, ReallocHandlesForeignLibcAllocation) {
+TEST(AllocatorOverrideTest, ReallocHandlesForeignLibcAllocation) {
     auto *ptr = static_cast<unsigned char *>(__libc_malloc(32));
     ASSERT_NE(ptr, nullptr);
     for (size_t i = 0; i < 32; ++i) {
@@ -421,7 +419,7 @@ TEST_F(AllocatorOverrideTest, ReallocHandlesForeignLibcAllocation) {
 #endif
 
 #if defined(__cpp_aligned_new)
-TEST_F(AllocatorOverrideTest, StandardAlignedNewDeleteVariants) {
+TEST(AllocatorOverrideTest, StandardAlignedNewDeleteVariants) {
     const auto alignment = std::align_val_t(128);
     void *single = ::operator new(48, alignment);
     ASSERT_NE(single, nullptr);
@@ -444,7 +442,7 @@ TEST_F(AllocatorOverrideTest, StandardAlignedNewDeleteVariants) {
     ::operator delete(small, small_alignment);
 }
 
-TEST_F(AllocatorOverrideTest, OverAlignedObjectsAndArraysUseStandardDelete) {
+TEST(AllocatorOverrideTest, OverAlignedObjectsAndArraysUseStandardDelete) {
     struct alignas(128) Value { int number = 42; };
     auto *value = new Value;
     EXPECT_EQ(reinterpret_cast<uintptr_t>(value) % 128, 0u);
@@ -459,8 +457,3 @@ TEST_F(AllocatorOverrideTest, OverAlignedObjectsAndArraysUseStandardDelete) {
 
 } // namespace
 } // namespace zmalloc
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
-}

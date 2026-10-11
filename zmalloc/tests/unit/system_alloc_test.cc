@@ -16,24 +16,21 @@
 namespace zmalloc {
 namespace {
 
-
-class SystemAllocTest : public ::testing::Test {};
-
-TEST_F(SystemAllocTest, AllocateAndFreeSinglePage) {
+TEST(SystemAllocTest, AllocateAndFreeSinglePage) {
     void *p = system_alloc(1);
     ASSERT_NE(p, nullptr);
     EXPECT_EQ(reinterpret_cast<uintptr_t>(p) % PAGE_SIZE, 0u);
     system_free(p, 1);
 }
 
-TEST_F(SystemAllocTest, AllocateAndFreeMultiplePages) {
+TEST(SystemAllocTest, AllocateAndFreeMultiplePages) {
     void *p = system_alloc(8);
     ASSERT_NE(p, nullptr);
     EXPECT_EQ(reinterpret_cast<uintptr_t>(p) % PAGE_SIZE, 0u);
     system_free(p, 8);
 }
 
-TEST_F(SystemAllocTest, RepeatedAllocationsRemainAligned) {
+TEST(SystemAllocTest, RepeatedAllocationsRemainAligned) {
     void *p1 = system_alloc(2);
     void *p2 = system_alloc(3);
     ASSERT_NE(p1, nullptr);
@@ -44,21 +41,21 @@ TEST_F(SystemAllocTest, RepeatedAllocationsRemainAligned) {
     system_free(p2, 3);
 }
 
-TEST_F(SystemAllocTest, RejectsOverflowBeforeMapping) {
+TEST(SystemAllocTest, RejectsOverflowBeforeMapping) {
     EXPECT_THROW(system_alloc(std::numeric_limits<size_t>::max()),
                  std::bad_alloc);
     EXPECT_THROW(system_alloc(std::numeric_limits<size_t>::max() / PAGE_SIZE),
                  std::bad_alloc);
 }
 
-TEST_F(SystemAllocTest, UnmappableRequestThrowsBadAlloc) {
+TEST(SystemAllocTest, UnmappableRequestThrowsBadAlloc) {
     // 可通过溢出检查，但几乎覆盖整个 size_t 地址空间，内核必须拒绝映射。
     const size_t pages =
         (std::numeric_limits<size_t>::max() - PAGE_SIZE) / PAGE_SIZE;
     EXPECT_THROW(system_alloc(pages), std::bad_alloc);
 }
 
-TEST_F(SystemAllocTest, TrimmedMappingsRemainDisjointAndWritable) {
+TEST(SystemAllocTest, TrimmedMappingsRemainDisjointAndWritable) {
     std::vector<unsigned char *> blocks;
     for (size_t i = 1; i <= 64; ++i) {
         auto *p = static_cast<unsigned char *>(system_alloc(i));
@@ -74,11 +71,11 @@ TEST_F(SystemAllocTest, TrimmedMappingsRemainDisjointAndWritable) {
     }
 }
 
-TEST_F(SystemAllocTest, ZeroPagesThrowsBadAlloc) {
+TEST(SystemAllocTest, ZeroPagesThrowsBadAlloc) {
     EXPECT_THROW(system_alloc(0), std::bad_alloc);
 }
 
-TEST_F(SystemAllocTest, NothrowEntryReportsFailureAndRemainsUsable) {
+TEST(SystemAllocTest, NothrowEntryReportsFailureAndRemainsUsable) {
     errno = 0;
     EXPECT_EQ(system_alloc_nothrow(0), nullptr);
     EXPECT_EQ(errno, ENOMEM);
@@ -96,7 +93,7 @@ TEST_F(SystemAllocTest, NothrowEntryReportsFailureAndRemainsUsable) {
     system_free(ptr, 1);
 }
 
-TEST_F(SystemAllocTest, ReleaseDiscardsPhysicalPagesAndKeepsAddressWritable) {
+TEST(SystemAllocTest, ReleaseDiscardsPhysicalPagesAndKeepsAddressWritable) {
     auto *ptr = static_cast<unsigned char *>(system_alloc(2));
     std::memset(ptr, 0x5a, 2 * PAGE_SIZE);
     const size_t os_page = static_cast<size_t>(sysconf(_SC_PAGESIZE));
@@ -115,7 +112,7 @@ TEST_F(SystemAllocTest, ReleaseDiscardsPhysicalPagesAndKeepsAddressWritable) {
     system_free(ptr, 2);
 }
 
-TEST_F(SystemAllocTest, ReleaseRejectsInvalidRanges) {
+TEST(SystemAllocTest, ReleaseRejectsInvalidRanges) {
     void *ptr = system_alloc(1);
     EXPECT_FALSE(system_release(nullptr, 1));
     EXPECT_FALSE(system_release(ptr, 0));
@@ -131,8 +128,3 @@ TEST_F(SystemAllocTest, ReleaseRejectsInvalidRanges) {
 
 } // namespace
 } // namespace zmalloc
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
-}
