@@ -1,4 +1,5 @@
 #include "../support/network_fixture.h"
+#include "../support/signal_server.h"
 #include "zhttp/http_server_builder.h"
 #include "zhttp/middleware/middleware.h"
 #include "zhttp/router/route_handler.h"
@@ -65,33 +66,6 @@ class MarkerMiddleware : public mid::Middleware {
     bool *after_called_;
 };
 
-uint16_t find_free_port() {
-    const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) {
-        return 0;
-    }
-
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    addr.sin_port = 0;
-
-    if (::bind(fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) != 0) {
-        ::close(fd);
-        return 0;
-    }
-
-    socklen_t len = sizeof(addr);
-    if (::getsockname(fd, reinterpret_cast<sockaddr *>(&addr), &len) != 0) {
-        ::close(fd);
-        return 0;
-    }
-
-    const uint16_t port = ntohs(addr.sin_port);
-    ::close(fd);
-    return port;
-}
-
 TestContext::ptr make_request(HttpMethod method, const std::string &path) {
     auto request = std::make_shared<TestContext>();
     request->set_method(method);
@@ -101,8 +75,7 @@ TestContext::ptr make_request(HttpMethod method, const std::string &path) {
 }
 
 TEST(HttpServerBuilderTest, BuildConfiguresRoutesMiddlewareAndHandlers) {
-    const uint16_t port = find_free_port();
-    ASSERT_NE(port, 0);
+    constexpr uint16_t port = 8080;
 
     bool before_called = false;
     bool after_called = false;
@@ -229,8 +202,7 @@ TEST(HttpServerBuilderTest, BuildThrowsForInvalidConfigAndLookupFailure) {
 }
 
 TEST(HttpServerBuilderTest, BuildThrowsWhenSslInitializationFails) {
-    const uint16_t port = find_free_port();
-    ASSERT_NE(port, 0);
+    constexpr uint16_t port = 8080;
 
     HttpServerBuilder builder;
     builder.listen("127.0.0.1", port)
@@ -242,26 +214,13 @@ TEST(HttpServerBuilderTest, BuildThrowsWhenSslInitializationFails) {
 }
 
 TEST(HttpServerBuilderTest, RunStopsGracefullyAfterSignalInForegroundMode) {
-    const uint16_t port = find_free_port();
-    ASSERT_NE(port, 0);
-
-    HttpServerBuilder builder;
-    builder.listen("127.0.0.1", port)
-        .threads(1)
-        .daemon(false)
-        .log_level("error")
-        .get("/ok", [](HttpContext &context) {
-            auto &resp = context.response();
-            resp.status(HttpStatus::OK).text("ok");
-        });
-
-    std::thread stopper([] {
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
-        std::raise(SIGINT);
-    });
-
-    EXPECT_NO_THROW(builder.run());
-    stopper.join();
+    auto server = test::start_signal_server();
+    EXPECT_NE(server.response.find("200 OK"), std::string::npos);
+    ASSERT_EQ(::kill(server.child->pid(), SIGINT), 0);
+    ASSERT_TRUE(
+        server.child->wait(zco::Deadline::after(std::chrono::seconds(2))));
+    ASSERT_TRUE(WIFEXITED(server.child->status()));
+    EXPECT_EQ(WEXITSTATUS(server.child->status()), 0);
 }
 
 TEST(HttpServerBuilderTest, RunThrowsWhenBuildFails) {
@@ -274,7 +233,10 @@ TEST(HttpServerBuilderTest, RunThrowsWhenBuildFails) {
 } // namespace zhttp
 
 int main(int argc, char **argv) {
+    zhttp::test::test_executable = argv[0];
+    if (zhttp::test::is_signal_helper(argc, argv))
+        return zhttp::test::run_signal_server(
+            static_cast<uint16_t>(std::strtoul(argv[2], nullptr, 10)));
     ::testing::InitGoogleTest(&argc, argv);
-
     return RUN_ALL_TESTS();
 }

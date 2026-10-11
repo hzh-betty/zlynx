@@ -1,10 +1,11 @@
-#include "protocol/http/response_encoder.h"
 #include "../support/network_fixture.h"
+#include "../support/temp_file.h"
 #include "protocol/http/http_protocol_handler.h"
-#include "znet/transport/socket.h"
+#include "protocol/http/response_encoder.h"
 #include "znet/server/tcp_server.h"
-#include <limits>
+#include "znet/transport/socket.h"
 #include <filesystem>
+#include <limits>
 #include <sys/socket.h>
 #include <unistd.h>
 using namespace zhttp;
@@ -14,28 +15,32 @@ struct SocketPair {
         int fds[2];
         if (::socketpair(AF_UNIX, SOCK_STREAM, 0, fds) != 0)
             throw std::runtime_error("socketpair");
+        try {
+            peer = zco::io::Descriptor(fds[1]);
+        } catch (...) {
+            ::close(fds[0]);
+            throw;
+        }
         connection = std::make_shared<znet::Connection>(
             std::move(znet::make_tcp_stream(std::move(znet::Socket::adopt(fds[0])).value())).value(),
             runtime.executor(0), timeout);
         connection->start().value();
-        peer = fds[1];
     }
-    ~SocketPair() {
-        (void)connection->close();
-        ::close(peer);
-    }
+
+    ~SocketPair() { (void)connection->close(); }
     std::string read() {
         std::string bytes;
         char data[8192];
         ssize_t n;
-        while ((n = ::recv(peer, data, sizeof(data), MSG_DONTWAIT)) > 0)
+        while ((n = ::recv(peer.native_handle(), data, sizeof(data),
+                           MSG_DONTWAIT)) > 0)
             bytes.append(data, n);
         return bytes;
     }
 
     zco::Runtime runtime;
     znet::Connection::ptr connection;
-    int peer;
+    zco::io::Descriptor peer;
 };
 struct RecordingStream : znet::ByteStream {
     std::string wire;
@@ -308,8 +313,9 @@ TEST(HttpWriterTest,
 } // namespace
 
 TEST(HttpWriterTest, FileOwnsResourceAndIsCheckedBeforeCommit) {
-    char path[] = "/tmp/zhttp-body-XXXXXX";
-    const int fd = ::mkstemp(path);
+    test::TempFile file;
+    const auto &path = file.path;
+    const int fd = file.descriptor.native_handle();
     ASSERT_GE(fd, 0);
     ASSERT_EQ(::write(fd, "abcdef", 6), 6);
     SocketPair pair;
@@ -317,22 +323,23 @@ TEST(HttpWriterTest, FileOwnsResourceAndIsCheckedBeforeCommit) {
     request->set_method(HttpMethod::GET);
     HttpContext context(request);
     context.response().body(HttpBody::file(path, 2, 3));
-    ::unlink(path);
-    ::close(fd);
+    ::unlink(path.c_str());
+    file.descriptor.close().value();
     EXPECT_EQ(HttpResponseWriter::send(pair.connection, context),
               WriteResult::Completed);
     const auto wire = pair.read();
     EXPECT_NE(wire.find("Content-Length: 3\r\n"), std::string::npos);
     EXPECT_EQ(wire.substr(wire.find("\r\n\r\n") + 4), "cde");
-    char truncated[] = "/tmp/zhttp-body-XXXXXX";
-    const int second = ::mkstemp(truncated);
+    test::TempFile other;
+    const auto &truncated = other.path;
+    const int second = other.descriptor.native_handle();
     ASSERT_GE(second, 0);
     ASSERT_EQ(::write(second, "abc", 3), 3);
     HttpContext invalid(request);
     invalid.response().body(HttpBody::file(truncated));
     ASSERT_EQ(::ftruncate(second, 0), 0);
-    ::unlink(truncated);
-    ::close(second);
+    ::unlink(truncated.c_str());
+    other.descriptor.close().value();
     EXPECT_THROW(HttpResponseWriter::send(pair.connection, invalid), std::runtime_error);
     EXPECT_FALSE(invalid.response().committed());
     EXPECT_TRUE(pair.read().empty());
@@ -377,12 +384,6 @@ TEST(RouterMatchTest, ReturnsStablePatternWithoutExecutingBusinessCode) {
               "^/files/(.*)$");
     router.freeze();
     EXPECT_THROW(router.get("/late", [](HttpContext &) {}), std::logic_error);
-}
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-
-    return RUN_ALL_TESTS();
 }
 
 namespace {

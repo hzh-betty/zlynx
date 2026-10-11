@@ -1,148 +1,17 @@
 #include "../support/network_fixture.h"
-#include "zhttp/http_server_builder.h"
+#include "../support/server_fixture.h"
 #include "zhttp/websocket/websocket_handler.h"
 
-#include <arpa/inet.h>
-#include <cerrno>
+#include <atomic>
 #include <chrono>
-#include <cstring>
+#include <cstdint>
+#include <future>
 #include <gtest/gtest.h>
-#include <netinet/in.h>
-#include <poll.h>
-#include <sys/socket.h>
-#include <thread>
-#include <unistd.h>
 
 namespace zhttp {
 namespace {
 
-class ScopedServer {
-  public:
-    explicit ScopedServer(std::shared_ptr<HttpServer> server)
-        : server_(std::move(server)) {}
-
-    ~ScopedServer() {
-        if (server_) {
-            server_->stop();
-        }
-    }
-
-  private:
-    std::shared_ptr<HttpServer> server_;
-};
-
-uint16_t find_free_port() {
-    const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) {
-        return 0;
-    }
-
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    addr.sin_port = 0;
-
-    if (::bind(fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) != 0) {
-        ::close(fd);
-        return 0;
-    }
-
-    socklen_t len = sizeof(addr);
-    if (::getsockname(fd, reinterpret_cast<sockaddr *>(&addr), &len) != 0) {
-        ::close(fd);
-        return 0;
-    }
-
-    const uint16_t port = ntohs(addr.sin_port);
-    ::close(fd);
-    return port;
-}
-
-int connect_with_retry(uint16_t port, int retry_count, int retry_delay_ms) {
-    for (int attempt = 0; attempt < retry_count; ++attempt) {
-        const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
-        if (fd < 0) {
-            return -1;
-        }
-
-        sockaddr_in addr{};
-        addr.sin_family = AF_INET;
-        addr.sin_port = htons(port);
-        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-
-        if (::connect(fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) ==
-            0) {
-            return fd;
-        }
-
-        ::close(fd);
-        std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay_ms));
-    }
-
-    return -1;
-}
-
-bool send_all(int fd, const std::string &data) {
-    size_t sent = 0;
-    while (sent < data.size()) {
-        const ssize_t n = ::send(fd, data.data() + sent, data.size() - sent, 0);
-        if (n <= 0) {
-            return false;
-        }
-        sent += static_cast<size_t>(n);
-    }
-    return true;
-}
-
-std::string recv_once_with_timeout(int fd, int timeout_ms) {
-    pollfd pfd{};
-    pfd.fd = fd;
-    pfd.events = POLLIN | POLLHUP;
-
-    if (::poll(&pfd, 1, timeout_ms) <= 0) {
-        return "";
-    }
-
-    char buffer[2048];
-    const ssize_t n = ::recv(fd, buffer, sizeof(buffer), 0);
-    if (n <= 0) {
-        return "";
-    }
-    return std::string(buffer, static_cast<size_t>(n));
-}
-
-std::string recv_until_closed_with_timeout(int fd, int timeout_ms) {
-    // 错误响应由头部与正文分批写出，TCP 不保证一次 recv 收齐。
-    // 两个握手拒绝场景都要求关闭连接，累计读取到 EOF，并共用总时限。
-    const auto deadline = std::chrono::steady_clock::now() +
-                          std::chrono::milliseconds(timeout_ms);
-    std::string response;
-    while (true) {
-        const auto remaining = deadline - std::chrono::steady_clock::now();
-        if (remaining <= std::chrono::steady_clock::duration::zero())
-            break;
-        const auto wait_ms =
-            std::chrono::duration_cast<std::chrono::milliseconds>(remaining)
-                .count() + 1;
-        pollfd ready{fd, POLLIN | POLLHUP, 0};
-        const int result = ::poll(&ready, 1, static_cast<int>(wait_ms));
-        if (result < 0 && errno == EINTR)
-            continue;
-        if (result <= 0)
-            break;
-        char buffer[2048];
-        const auto count = ::recv(fd, buffer, sizeof(buffer), 0);
-        if (count < 0 && errno == EINTR)
-            continue;
-        if (count <= 0) {
-            EXPECT_EQ(count, 0) << "读取错误响应时连接异常";
-            return response;
-        }
-        response.append(buffer, static_cast<size_t>(count));
-    }
-    ADD_FAILURE() << "错误响应未在总时限内关闭连接";
-    return response;
-}
+using namespace zhttp::test;
 
 std::string build_masked_client_frame(WebSocketOpcode opcode,
                                       const std::string &payload,
@@ -153,7 +22,15 @@ std::string build_masked_client_frame(WebSocketOpcode opcode,
     frame.push_back(static_cast<char>(first));
 
     const uint8_t mask_key[4] = {0x12, 0x34, 0x56, 0x78};
-    frame.push_back(static_cast<char>(0x80 | payload.size()));
+    if (payload.size() < 126) {
+        frame.push_back(static_cast<char>(0x80 | payload.size()));
+    } else {
+        const size_t length_bytes = payload.size() <= 0xffff ? 2 : 8;
+        frame.push_back(static_cast<char>(length_bytes == 2 ? 0xfe : 0xff));
+        for (size_t i = length_bytes; i > 0; --i)
+            frame.push_back(static_cast<char>(
+                static_cast<uint64_t>(payload.size()) >> ((i - 1) * 8)));
+    }
     frame.append(reinterpret_cast<const char *>(mask_key), sizeof(mask_key));
     for (size_t i = 0; i < payload.size(); ++i) {
         frame.push_back(static_cast<char>(payload[i] ^ mask_key[i % 4]));
@@ -165,34 +42,31 @@ std::string build_masked_client_frame(WebSocketOpcode opcode,
 } // namespace
 
 TEST(WebSocketServerIntegrationTest, UpgradesAndEchoesTextFrame) {
-    const uint16_t port = find_free_port();
-    ASSERT_NE(port, 0);
 
-    HttpServerBuilder builder;
-    builder.listen("127.0.0.1", port)
-        .threads(1)
-        .log_level("error")
-        .websocket("/ws",
-                   WebSocketCallbacks{
-                       {},
-                       [](const WebSocketConnection::ptr &conn,
-                          std::string &&message, WebSocketMessageType type) {
-                           if (type == WebSocketMessageType::kText) {
-                               conn->send_text(message);
-                           }
-                       },
-                       {},
-                       {}},
-                   WebSocketOptions{kDefaultWebSocketMaxMessageSize,
-                                    {"superchat", "chat"}});
+    auto server = make_server();
+    register_websocket(
+        *server, "/ws",
+        WebSocketCallbacks{{},
+                           [](const WebSocketConnection::ptr &conn,
+                              std::string &&message,
+                              WebSocketMessageType type) {
+                               if (type == WebSocketMessageType::kText) {
+                                   conn->send_text(message);
+                               }
+                           },
+                           {},
+                           {}},
+        WebSocketOptions{kDefaultWebSocketMaxMessageSize,
+                         {"superchat", "chat"}});
 
-    auto server = builder.build();
     ASSERT_TRUE(server);
     ScopedServer guard(server);
     ASSERT_TRUE(server->start());
 
-    const int client_fd = connect_with_retry(port, 20, 25);
-    ASSERT_GE(client_fd, 0);
+    auto client = connect_to(*server);
+    ASSERT_TRUE(client) << client.error().message();
+    const int client_fd = client.value().native_handle();
+    SocketReader reader(client_fd, 1);
 
     const std::string handshake_request =
         "GET /ws HTTP/1.1\r\n"
@@ -206,7 +80,8 @@ TEST(WebSocketServerIntegrationTest, UpgradesAndEchoesTextFrame) {
 
     ASSERT_TRUE(send_all(client_fd, handshake_request));
     const std::string handshake_response =
-        recv_once_with_timeout(client_fd, 1000);
+        reader.until("\r\n\r\n", zco::Deadline::after(std::chrono::seconds(1)))
+            .value();
     ASSERT_NE(handshake_response.find("101 Switching Protocols"),
               std::string::npos)
         << handshake_response;
@@ -217,32 +92,46 @@ TEST(WebSocketServerIntegrationTest, UpgradesAndEchoesTextFrame) {
     ASSERT_TRUE(send_all(
         client_fd, build_masked_client_frame(WebSocketOpcode::kText, "hello")));
 
-    const std::string ws_response = recv_once_with_timeout(client_fd, 1000);
+    const std::string ws_response =
+        recv_websocket_frame(reader,
+                             zco::Deadline::after(std::chrono::seconds(1)))
+            .value();
     ASSERT_GE(ws_response.size(), 2u);
     EXPECT_EQ(static_cast<uint8_t>(ws_response[0]), 0x81);
     EXPECT_EQ(static_cast<uint8_t>(ws_response[1]), 0x05);
     EXPECT_EQ(ws_response.substr(2), "hello");
 
-    ::close(client_fd);
+    for (const size_t size : {size_t{126}, size_t{65536}}) {
+        SCOPED_TRACE(size);
+        const std::string payload(size, 'x');
+        ASSERT_TRUE(send_all(client_fd, build_masked_client_frame(
+                                            WebSocketOpcode::kText, payload)));
+        const auto echoed =
+            recv_websocket_frame(reader,
+                                 zco::Deadline::after(std::chrono::seconds(3)))
+                .value();
+        const std::string header =
+            size == 126
+                ? std::string("\x81\x7e\x00\x7e", 4)
+                : std::string("\x81\x7f\x00\x00\x00\x00\x00\x01\x00\x00", 10);
+        EXPECT_EQ(echoed, header + payload);
+    }
 }
 
 TEST(WebSocketServerIntegrationTest, RejectsUnsupportedWebSocketVersion) {
-    const uint16_t port = find_free_port();
-    ASSERT_NE(port, 0);
 
-    HttpServerBuilder builder;
-    builder.listen("127.0.0.1", port)
-        .threads(1)
-        .log_level("error")
-        .websocket("/ws", WebSocketCallbacks{}, WebSocketOptions{});
+    auto server = make_server();
+    register_websocket(*server, "/ws", WebSocketCallbacks{},
+                       WebSocketOptions{});
 
-    auto server = builder.build();
     ASSERT_TRUE(server);
     ScopedServer guard(server);
     ASSERT_TRUE(server->start());
 
-    const int client_fd = connect_with_retry(port, 20, 25);
-    ASSERT_GE(client_fd, 0);
+    auto client = connect_to(*server);
+    ASSERT_TRUE(client) << client.error().message();
+    const int client_fd = client.value().native_handle();
+    SocketReader reader(client_fd, 1);
 
     const std::string handshake_request =
         "GET /ws HTTP/1.1\r\n"
@@ -254,33 +143,29 @@ TEST(WebSocketServerIntegrationTest, RejectsUnsupportedWebSocketVersion) {
         "\r\n";
 
     ASSERT_TRUE(send_all(client_fd, handshake_request));
-    const std::string response = recv_until_closed_with_timeout(client_fd, 1000);
+    const std::string response =
+        reader.until_closed(zco::Deadline::after(std::chrono::seconds(1)))
+            .value();
     EXPECT_NE(response.find("400 Bad Request"), std::string::npos) << response;
     EXPECT_NE(response.find("Sec-WebSocket-Version: 13"), std::string::npos)
         << response;
-
-    ::close(client_fd);
 }
 
 TEST(WebSocketServerIntegrationTest, RejectsIncompatibleSubprotocolRequest) {
-    const uint16_t port = find_free_port();
-    ASSERT_NE(port, 0);
 
-    HttpServerBuilder builder;
-    builder.listen("127.0.0.1", port)
-        .threads(1)
-        .log_level("error")
-        .websocket(
-            "/ws", WebSocketCallbacks{},
-            WebSocketOptions{kDefaultWebSocketMaxMessageSize, {"superchat"}});
+    auto server = make_server();
+    register_websocket(
+        *server, "/ws", WebSocketCallbacks{},
+        WebSocketOptions{kDefaultWebSocketMaxMessageSize, {"superchat"}});
 
-    auto server = builder.build();
     ASSERT_TRUE(server);
     ScopedServer guard(server);
     ASSERT_TRUE(server->start());
 
-    const int client_fd = connect_with_retry(port, 20, 25);
-    ASSERT_GE(client_fd, 0);
+    auto client = connect_to(*server);
+    ASSERT_TRUE(client) << client.error().message();
+    const int client_fd = client.value().native_handle();
+    SocketReader reader(client_fd, 1);
 
     const std::string handshake_request =
         "GET /ws HTTP/1.1\r\n"
@@ -293,32 +178,29 @@ TEST(WebSocketServerIntegrationTest, RejectsIncompatibleSubprotocolRequest) {
         "\r\n";
 
     ASSERT_TRUE(send_all(client_fd, handshake_request));
-    const std::string response = recv_until_closed_with_timeout(client_fd, 1000);
+    const std::string response =
+        reader.until_closed(zco::Deadline::after(std::chrono::seconds(1)))
+            .value();
     EXPECT_NE(response.find("400 Bad Request"), std::string::npos) << response;
     EXPECT_NE(response.find("No compatible Sec-WebSocket-Protocol"),
               std::string::npos)
         << response;
-
-    ::close(client_fd);
 }
 
 TEST(WebSocketServerIntegrationTest, RespondsWithPongAndCloseFrame) {
-    const uint16_t port = find_free_port();
-    ASSERT_NE(port, 0);
 
-    HttpServerBuilder builder;
-    builder.listen("127.0.0.1", port)
-        .threads(1)
-        .log_level("error")
-        .websocket("/ws", WebSocketCallbacks{}, WebSocketOptions{});
+    auto server = make_server();
+    register_websocket(*server, "/ws", WebSocketCallbacks{},
+                       WebSocketOptions{});
 
-    auto server = builder.build();
     ASSERT_TRUE(server);
     ScopedServer guard(server);
     ASSERT_TRUE(server->start());
 
-    const int client_fd = connect_with_retry(port, 20, 25);
-    ASSERT_GE(client_fd, 0);
+    auto client = connect_to(*server);
+    ASSERT_TRUE(client) << client.error().message();
+    const int client_fd = client.value().native_handle();
+    SocketReader reader(client_fd, 1);
 
     const std::string handshake_request =
         "GET /ws HTTP/1.1\r\n"
@@ -331,14 +213,18 @@ TEST(WebSocketServerIntegrationTest, RespondsWithPongAndCloseFrame) {
 
     ASSERT_TRUE(send_all(client_fd, handshake_request));
     const std::string handshake_response =
-        recv_once_with_timeout(client_fd, 1000);
+        reader.until("\r\n\r\n", zco::Deadline::after(std::chrono::seconds(1)))
+            .value();
     ASSERT_NE(handshake_response.find("101 Switching Protocols"),
               std::string::npos)
         << handshake_response;
 
     ASSERT_TRUE(send_all(
         client_fd, build_masked_client_frame(WebSocketOpcode::kPing, "hb")));
-    const std::string pong_response = recv_once_with_timeout(client_fd, 1000);
+    const std::string pong_response =
+        recv_websocket_frame(reader,
+                             zco::Deadline::after(std::chrono::seconds(1)))
+            .value();
     ASSERT_GE(pong_response.size(), 4u);
     EXPECT_EQ(static_cast<uint8_t>(pong_response[0]), 0x8A);
     EXPECT_EQ(static_cast<uint8_t>(pong_response[1]), 0x02);
@@ -352,11 +238,11 @@ TEST(WebSocketServerIntegrationTest, RespondsWithPongAndCloseFrame) {
         send_all(client_fd, build_masked_client_frame(WebSocketOpcode::kClose,
                                                       close_payload)));
 
-    const std::string close_response = recv_once_with_timeout(client_fd, 1000);
-    ASSERT_GE(close_response.size(), 2u);
-    EXPECT_EQ(static_cast<uint8_t>(close_response[0] & 0x0F), 0x08);
-
-    ::close(client_fd);
+    const std::string close_response =
+        recv_websocket_frame(reader,
+                             zco::Deadline::after(std::chrono::seconds(1)))
+            .value();
+    EXPECT_EQ(close_response, std::string("\x88\x05", 2) + close_payload);
 }
 
 TEST(WebSocketServerIntegrationTest,
@@ -369,24 +255,19 @@ TEST(WebSocketServerIntegrationTest,
                 .set_cookie("session", "value");
         }
     };
-    const auto port = find_free_port();
-    ASSERT_NE(port, 0);
+
     std::atomic<int> completed{0}, opened{0}, stream_completed{0};
-    HttpServerBuilder builder;
-    builder.listen("127.0.0.1", port)
-        .threads(1)
-        .log_level("error")
-        .use(std::make_shared<Decorate>())
-        .get(
-            "/stream",
-            [&](HttpContext &context) {
-                context.on_complete([&](CompletionResult result) {
-                    EXPECT_EQ(result, CompletionResult::Completed);
-                    ++stream_completed;
-                });
-                context.response().stream([](char *, size_t) { return 0U; });
-            })
-        .get("/ws", [&](HttpContext &context) {
+    auto server = make_server();
+    server->use(std::make_shared<Decorate>());
+    server->router().get("/stream", [&](HttpContext &context) {
+        context.on_complete([&](CompletionResult result) {
+            EXPECT_EQ(result, CompletionResult::Completed);
+            ++stream_completed;
+        });
+        context.response().stream([](char *, size_t) { return 0U; });
+    });
+    server->router().get(
+        "/ws", [&](HttpContext &context) {
             context.on_complete([&](CompletionResult result) {
                 EXPECT_EQ(result, CompletionResult::Upgraded);
                 ++completed;
@@ -407,11 +288,12 @@ TEST(WebSocketServerIntegrationTest,
                 };
             context.upgrade_to_websocket(std::move(callbacks));
         });
-    auto server = builder.build();
     ScopedServer guard(server);
     ASSERT_TRUE(server->start());
-    int fd = connect_with_retry(port, 20, 25);
-    ASSERT_GE(fd, 0);
+    auto client = connect_to(*server);
+    ASSERT_TRUE(client) << client.error().message();
+    const int fd = client.value().native_handle();
+    SocketReader reader(fd, 1);
     std::string input =
         "GET /stream HTTP/1.1\r\nHost: test\r\n\r\nGET /ws HTTP/1.1\r\nHost: "
         "test\r\nConnection: Upgrade\r\nUpgrade: "
@@ -421,12 +303,11 @@ TEST(WebSocketServerIntegrationTest,
              build_masked_client_frame(WebSocketOpcode::kPing, "p") +
              build_masked_client_frame(WebSocketOpcode::kContinuation, "lo");
     ASSERT_TRUE(send_all(fd, input));
-    std::string output;
-    while (output.find(std::string("\x81\x05hello", 7)) == std::string::npos) {
-        auto bytes = recv_once_with_timeout(fd, 1000);
-        ASSERT_FALSE(bytes.empty()) << output;
-        output += bytes;
-    }
+    const auto deadline = zco::Deadline::after(std::chrono::seconds(1));
+    std::string output = reader.until("0\r\n\r\n", deadline).value();
+    output += reader.until("\r\n\r\n", deadline).value();
+    output += recv_websocket_frame(reader, deadline).value();
+    output += recv_websocket_frame(reader, deadline).value();
     const auto upgrade_start =
         output.find("0\r\n\r\nHTTP/1.1 101 Switching Protocols");
     ASSERT_NE(upgrade_start, std::string::npos);
@@ -439,11 +320,8 @@ TEST(WebSocketServerIntegrationTest,
               std::string("\x8a\x01p\x81\x05hello", 10));
     EXPECT_EQ(completed.load(), 1);
     EXPECT_EQ(opened.load(), 1);
-    ::close(fd);
 }
 TEST(WebSocketServerIntegrationTest, LocalCloseWaitsForPeerWithBoundedTimeout) {
-    const auto port = find_free_port();
-    ASSERT_NE(port, 0);
     std::atomic<int> closed{0};
     WebSocketCallbacks callbacks;
     callbacks.on_open = [](const WebSocketConnection::ptr &connection,
@@ -461,32 +339,22 @@ TEST(WebSocketServerIntegrationTest, LocalCloseWaitsForPeerWithBoundedTimeout) {
     };
     WebSocketOptions options;
     options.close_timeout_ms = 40;
-    HttpServerBuilder builder;
-    builder.listen("127.0.0.1", port)
-        .threads(1)
-        .log_level("error")
-        .websocket("/ws", std::move(callbacks), options);
-    auto server = builder.build();
+    auto server = make_server();
+    register_websocket(*server, "/ws", std::move(callbacks), options);
     ScopedServer guard(server);
     ASSERT_TRUE(server->start());
-    int fd = connect_with_retry(port, 20, 25);
-    ASSERT_GE(fd, 0);
+    auto client = connect_to(*server);
+    ASSERT_TRUE(client) << client.error().message();
+    const int fd = client.value().native_handle();
+    SocketReader reader(fd, 1);
     ASSERT_TRUE(send_all(
         fd, "GET /ws HTTP/1.1\r\nHost: test\r\nConnection: Upgrade\r\nUpgrade: "
             "websocket\r\nSec-WebSocket-Key: "
             "dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n"));
-    std::string output;
     const auto begin = std::chrono::steady_clock::now();
-    while (true) {
-        pollfd ready{fd, POLLIN | POLLHUP, 0};
-        ASSERT_GT(::poll(&ready, 1, 1000), 0);
-        char buffer[2048];
-        const auto count = ::recv(fd, buffer, sizeof(buffer), 0);
-        ASSERT_GE(count, 0);
-        if (!count)
-            break;
-        output.append(buffer, count);
-    }
+    const auto output =
+        reader.until_closed(zco::Deadline::after(std::chrono::seconds(1)))
+            .value();
     EXPECT_LT(std::chrono::duration_cast<std::chrono::milliseconds>(
                   std::chrono::steady_clock::now() - begin)
                   .count(),
@@ -498,13 +366,46 @@ TEST(WebSocketServerIntegrationTest, LocalCloseWaitsForPeerWithBoundedTimeout) {
               std::string::npos);
     server->stop();
     EXPECT_EQ(closed.load(), 1);
-    ::close(fd);
+}
+
+TEST(WebSocketServerIntegrationTest,
+     ClientCloseDuringPartialFrameNotifiesOnceWithoutDeliveringMessage) {
+    std::promise<void> close_notification;
+    auto closed = close_notification.get_future();
+    std::atomic<int> close_count{0}, messages{0};
+    WebSocketCallbacks callbacks;
+    callbacks.on_message = [&](const WebSocketConnection::ptr &, std::string &&,
+                               WebSocketMessageType) { ++messages; };
+    callbacks.on_close = [&](const WebSocketConnection::ptr &connection,
+                             uint16_t, const std::string &) {
+        EXPECT_EQ(connection->state(), WebSocketConnection::State::Closed);
+        if (++close_count == 1)
+            close_notification.set_value();
+    };
+    auto server = make_server();
+    register_websocket(*server, "/ws", std::move(callbacks));
+    ScopedServer guard(server);
+    ASSERT_TRUE(server->start());
+    auto client = connect_to(*server);
+    ASSERT_TRUE(client) << client.error().message();
+    SocketReader reader(client.value().native_handle(), 1);
+    ASSERT_TRUE(send_all(
+        client.value().native_handle(),
+        "GET /ws HTTP/1.1\r\nHost: test\r\nConnection: Upgrade\r\nUpgrade: "
+        "websocket\r\nSec-WebSocket-Key: "
+        "dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n"));
+    const auto handshake =
+        reader.until("\r\n\r\n", zco::Deadline::after(std::chrono::seconds(1)))
+            .value();
+    ASSERT_NE(handshake.find("101 Switching Protocols"), std::string::npos);
+    ASSERT_TRUE(send_all(client.value().native_handle(),
+                         std::string("\x81\x85\x12\x34", 4)));
+    ASSERT_TRUE(client.value().close());
+    ASSERT_EQ(closed.wait_for(std::chrono::seconds(1)),
+              std::future_status::ready);
+    server->stop();
+    EXPECT_EQ(close_count.load(), 1);
+    EXPECT_EQ(messages.load(), 0);
 }
 
 } // namespace zhttp
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-
-    return RUN_ALL_TESTS();
-}

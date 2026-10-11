@@ -1,26 +1,29 @@
 #include "../support/network_fixture.h"
+#include "../support/server_fixture.h"
+#include "../support/signal_server.h"
 #include "zhttp/http_server.h"
 #include "zhttp/http_server_builder.h"
 
-#include <arpa/inet.h>
 #include <atomic>
 #include <chrono>
 #include <csignal>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <gtest/gtest.h>
-#include <netinet/in.h>
 #include <openssl/ssl.h>
 #include <poll.h>
+#include <spawn.h>
 #include <sys/socket.h>
-#include <thread>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <utility>
 #include <vector>
 
 using namespace zhttp;
 using namespace zhttp::mid;
+using namespace zhttp::test;
 
 namespace {
 
@@ -84,13 +87,16 @@ std::string write_temp_pem_file(const char *template_path,
         return "";
     }
 
+    zco::io::Descriptor file(fd);
     const std::string path(buffer.data());
     std::ofstream output(path, std::ios::binary);
     output << pem_content;
     output.close();
-    ::close(fd);
-
-    return output.good() ? path : "";
+    if (!output.good()) {
+        std::remove(path.c_str());
+        return "";
+    }
+    return path;
 }
 
 class ScopedTlsPemFiles {
@@ -118,107 +124,25 @@ class ScopedTlsPemFiles {
     std::string key_path_;
 };
 
-class ScopedServer {
-  public:
-    explicit ScopedServer(std::shared_ptr<HttpServer> server)
-        : server_(std::move(server)) {}
-
-    ~ScopedServer() {
-        if (server_) {
-            server_->stop();
-        }
+template <class Operation>
+int tls_call(SSL *ssl, zco::Deadline deadline, Operation operation) {
+    for (;;) {
+        if (deadline.expired(zco::Deadline::Clock::now()))
+            throw std::system_error(std::make_error_code(std::errc::timed_out));
+        const int result = operation();
+        if (result > 0)
+            return result;
+        const int error = SSL_get_error(ssl, result);
+        if (error == SSL_ERROR_ZERO_RETURN)
+            return 0;
+        if (error != SSL_ERROR_WANT_READ && error != SSL_ERROR_WANT_WRITE)
+            throw std::runtime_error("TLS client error " +
+                                     std::to_string(error));
+        if (auto failed = wait_ready(
+                SSL_get_fd(ssl),
+                error == SSL_ERROR_WANT_READ ? POLLIN : POLLOUT, deadline))
+            throw std::system_error(failed);
     }
-
-  private:
-    std::shared_ptr<HttpServer> server_;
-};
-
-uint16_t find_free_port() {
-    const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) {
-        return 0;
-    }
-
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    addr.sin_port = 0;
-
-    if (::bind(fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) != 0) {
-        ::close(fd);
-        return 0;
-    }
-
-    socklen_t len = sizeof(addr);
-    if (::getsockname(fd, reinterpret_cast<sockaddr *>(&addr), &len) != 0) {
-        ::close(fd);
-        return 0;
-    }
-
-    const uint16_t port = ntohs(addr.sin_port);
-    ::close(fd);
-    return port;
-}
-
-int connect_with_retry(uint16_t port, int retry_count, int retry_delay_ms) {
-    for (int attempt = 0; attempt < retry_count; ++attempt) {
-        const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
-        if (fd < 0) {
-            return -1;
-        }
-
-        sockaddr_in addr{};
-        addr.sin_family = AF_INET;
-        addr.sin_port = htons(port);
-        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-
-        if (::connect(fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) ==
-            0) {
-            return fd;
-        }
-
-        ::close(fd);
-        std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay_ms));
-    }
-
-    return -1;
-}
-
-bool send_all(int fd, const std::string &data) {
-    size_t sent = 0;
-    while (sent < data.size()) {
-        const ssize_t n = ::send(fd, data.data() + sent, data.size() - sent, 0);
-        if (n <= 0) {
-            return false;
-        }
-        sent += static_cast<size_t>(n);
-    }
-    return true;
-}
-
-std::string recv_until_close(int fd, int timeout_ms) {
-    std::string response;
-    char buffer[1024];
-
-    while (true) {
-        pollfd pfd{};
-        pfd.fd = fd;
-        pfd.events = POLLIN | POLLHUP;
-
-        const int rc = ::poll(&pfd, 1, timeout_ms);
-        if (rc <= 0) {
-            break;
-        }
-
-        const ssize_t n = ::recv(fd, buffer, sizeof(buffer), 0);
-        if (n <= 0) {
-            break;
-        }
-
-        response.append(buffer, static_cast<size_t>(n));
-    }
-
-    return response;
 }
 
 } // namespace
@@ -311,25 +235,20 @@ TEST(HttpServerIntegrationTest, NotFoundRoute) {
 }
 
 TEST(HttpServerIntegrationTest, KeepsParserStateAcrossSplitPackets) {
-    const uint16_t port = find_free_port();
-    ASSERT_NE(port, 0);
 
-    HttpServerBuilder builder;
-    builder.listen("127.0.0.1", port)
-        .threads(1)
-        .log_level("error")
-        .get("/split", [](HttpContext &context) {
-            auto &resp = context.response();
-            resp.status(HttpStatus::OK).text("split-ok");
-        });
+    auto server = make_server();
+    server->router().get("/split", [](HttpContext &context) {
+        auto &resp = context.response();
+        resp.status(HttpStatus::OK).text("split-ok");
+    });
 
-    auto server = builder.build();
     ASSERT_TRUE(server);
     ScopedServer guard(server);
     ASSERT_TRUE(server->start());
 
-    const int client_fd = connect_with_retry(port, 20, 25);
-    ASSERT_GE(client_fd, 0);
+    auto client = connect_to(*server);
+    ASSERT_TRUE(client) << client.error().message();
+    const int client_fd = client.value().native_handle();
 
     const std::string first_chunk = "GET /split HTTP/1.1\r\n"
                                     "Host: localhost\r\n"
@@ -337,37 +256,32 @@ TEST(HttpServerIntegrationTest, KeepsParserStateAcrossSplitPackets) {
     const std::string second_chunk = "\r\n\r\n";
 
     ASSERT_TRUE(send_all(client_fd, first_chunk));
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    pollfd partial{client_fd, POLLIN, 0};
+    EXPECT_EQ(::poll(&partial, 1, 50), 0) << "未完整的请求不应产生响应";
     ASSERT_TRUE(send_all(client_fd, second_chunk));
 
     const std::string response = recv_until_close(client_fd, 1000);
-    ::close(client_fd);
 
     EXPECT_NE(response.find("HTTP/1.1 200 OK"), std::string::npos) << response;
     EXPECT_NE(response.find("split-ok"), std::string::npos) << response;
 }
 
 TEST(HttpServerIntegrationTest, HandlesChunkedRequestBodyEndToEnd) {
-    const uint16_t port = find_free_port();
-    ASSERT_NE(port, 0);
 
-    HttpServerBuilder builder;
-    builder.listen("127.0.0.1", port)
-        .threads(1)
-        .log_level("error")
-        .post("/upload", [](HttpContext &context) {
-            auto *req = &context;
-            auto &resp = context.response();
-            resp.status(HttpStatus::OK).text(req->body());
-        });
+    auto server = make_server();
+    server->router().post("/upload", [](HttpContext &context) {
+        auto *req = &context;
+        auto &resp = context.response();
+        resp.status(HttpStatus::OK).text(req->body());
+    });
 
-    auto server = builder.build();
     ASSERT_TRUE(server);
     ScopedServer guard(server);
     ASSERT_TRUE(server->start());
 
-    const int client_fd = connect_with_retry(port, 20, 25);
-    ASSERT_GE(client_fd, 0);
+    auto client = connect_to(*server);
+    ASSERT_TRUE(client) << client.error().message();
+    const int client_fd = client.value().native_handle();
 
     // 请求体由两个 chunk 组成：4=Wiki、5=pedia，最后用 0 块结束。
     const std::string request = "POST /upload HTTP/1.1\r\n"
@@ -384,7 +298,6 @@ TEST(HttpServerIntegrationTest, HandlesChunkedRequestBodyEndToEnd) {
 
     ASSERT_TRUE(send_all(client_fd, request));
     const std::string response = recv_until_close(client_fd, 1000);
-    ::close(client_fd);
 
     // 服务端会先把 chunk 合并成完整 body，再由业务逻辑回显。
     EXPECT_NE(response.find("HTTP/1.1 200 OK"), std::string::npos) << response;
@@ -393,14 +306,10 @@ TEST(HttpServerIntegrationTest, HandlesChunkedRequestBodyEndToEnd) {
 }
 
 TEST(HttpServerIntegrationTest, SendsExplicitChunkedResponseBody) {
-    const uint16_t port = find_free_port();
-    ASSERT_NE(port, 0);
 
-    HttpServerBuilder builder;
-    builder.listen("127.0.0.1", port)
-        .threads(1)
-        .log_level("error")
-        .get("/chunked-static", [](HttpContext &context) {
+    auto server = make_server();
+    server->router().get(
+        "/chunked-static", [](HttpContext &context) {
             auto &resp = context.response();
             resp.status(HttpStatus::OK)
                 .content_type("text/plain")
@@ -408,13 +317,13 @@ TEST(HttpServerIntegrationTest, SendsExplicitChunkedResponseBody) {
                 .enable_chunked();
         });
 
-    auto server = builder.build();
     ASSERT_TRUE(server);
     ScopedServer guard(server);
     ASSERT_TRUE(server->start());
 
-    const int client_fd = connect_with_retry(port, 20, 25);
-    ASSERT_GE(client_fd, 0);
+    auto client = connect_to(*server);
+    ASSERT_TRUE(client) << client.error().message();
+    const int client_fd = client.value().native_handle();
 
     const std::string request = "GET /chunked-static HTTP/1.1\r\n"
                                 "Host: localhost\r\n"
@@ -423,7 +332,6 @@ TEST(HttpServerIntegrationTest, SendsExplicitChunkedResponseBody) {
 
     ASSERT_TRUE(send_all(client_fd, request));
     const std::string response = recv_until_close(client_fd, 1000);
-    ::close(client_fd);
 
     // 显式 enable_chunked 后，body 应按 chunk 帧输出且不再附带 Content-Length。
     EXPECT_NE(response.find("HTTP/1.1 200 OK"), std::string::npos) << response;
@@ -436,14 +344,10 @@ TEST(HttpServerIntegrationTest, SendsExplicitChunkedResponseBody) {
 }
 
 TEST(HttpServerIntegrationTest, SendsChunkedStreamResponse) {
-    const uint16_t port = find_free_port();
-    ASSERT_NE(port, 0);
 
-    HttpServerBuilder builder;
-    builder.listen("127.0.0.1", port)
-        .threads(1)
-        .log_level("error")
-        .get("/chunked-stream", [](HttpContext &context) {
+    auto server = make_server();
+    server->router().get(
+        "/chunked-stream", [](HttpContext &context) {
             auto &resp = context.response();
             resp.status(HttpStatus::OK)
                 .content_type("text/plain")
@@ -465,13 +369,13 @@ TEST(HttpServerIntegrationTest, SendsChunkedStreamResponse) {
                 });
         });
 
-    auto server = builder.build();
     ASSERT_TRUE(server);
     ScopedServer guard(server);
     ASSERT_TRUE(server->start());
 
-    const int client_fd = connect_with_retry(port, 20, 25);
-    ASSERT_GE(client_fd, 0);
+    auto client = connect_to(*server);
+    ASSERT_TRUE(client) << client.error().message();
+    const int client_fd = client.value().native_handle();
 
     const std::string request = "GET /chunked-stream HTTP/1.1\r\n"
                                 "Host: localhost\r\n"
@@ -480,7 +384,6 @@ TEST(HttpServerIntegrationTest, SendsChunkedStreamResponse) {
 
     ASSERT_TRUE(send_all(client_fd, request));
     const std::string response = recv_until_close(client_fd, 1000);
-    ::close(client_fd);
 
     EXPECT_NE(response.find("HTTP/1.1 200 OK"), std::string::npos) << response;
     EXPECT_NE(response.find("Transfer-Encoding: chunked"), std::string::npos)
@@ -491,51 +394,29 @@ TEST(HttpServerIntegrationTest, SendsChunkedStreamResponse) {
         << response;
 }
 
-int bind_and_listen_port(uint16_t port) {
-    const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) {
-        return -1;
-    }
-
-    int reuse = 1;
-    ::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
-
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
-    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-
-    if (::bind(fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) != 0) {
-        ::close(fd);
-        return -1;
-    }
-    if (::listen(fd, 16) != 0) {
-        ::close(fd);
-        return -1;
-    }
-    return fd;
+znet::Socket bind_and_listen_port() {
+    auto listener =
+        znet::Socket::create(AF_INET, znet::SocketKind::stream).value();
+    listener.bind(znet::Endpoint::ipv4("127.0.0.1", 0).value()).value();
+    listener.listen().value();
+    return listener;
 }
 
 TEST(HttpServerIntegrationTest, ReturnsBadRequestForMalformedHttpRequest) {
-    const uint16_t port = find_free_port();
-    ASSERT_NE(port, 0);
 
-    HttpServerBuilder builder;
-    builder.listen("127.0.0.1", port)
-        .threads(1)
-        .log_level("error")
-        .get("/ok", [](HttpContext &context) {
-            auto &resp = context.response();
-            resp.status(HttpStatus::OK).text("ok");
-        });
+    auto server = make_server();
+    server->router().get("/ok", [](HttpContext &context) {
+        auto &resp = context.response();
+        resp.status(HttpStatus::OK).text("ok");
+    });
 
-    auto server = builder.build();
     ASSERT_TRUE(server);
     ScopedServer guard(server);
     ASSERT_TRUE(server->start());
 
-    const int client_fd = connect_with_retry(port, 20, 25);
-    ASSERT_GE(client_fd, 0);
+    auto client = connect_to(*server);
+    ASSERT_TRUE(client) << client.error().message();
+    const int client_fd = client.value().native_handle();
 
     // Host 头缺少 ':'，应触发解析错误并返回 400。
     const std::string malformed = "GET /ok HTTP/1.1\r\n"
@@ -545,34 +426,26 @@ TEST(HttpServerIntegrationTest, ReturnsBadRequestForMalformedHttpRequest) {
 
     ASSERT_TRUE(send_all(client_fd, malformed));
     const std::string response = recv_until_close(client_fd, 1000);
-    ::close(client_fd);
 
     EXPECT_NE(response.find("400 Bad Request"), std::string::npos) << response;
     EXPECT_NE(response.find("Bad Request"), std::string::npos) << response;
 }
 
 TEST(HttpServerIntegrationTest, DoesNotUseChunkedForNoContentStatus) {
-    const uint16_t port = find_free_port();
-    ASSERT_NE(port, 0);
 
-    HttpServerBuilder builder;
-    builder.listen("127.0.0.1", port)
-        .threads(1)
-        .log_level("error")
-        .get("/no-content", [](HttpContext &context) {
-            auto &resp = context.response();
-            resp.status(HttpStatus::NO_CONTENT)
-                .body("ignored")
-                .enable_chunked();
-        });
+    auto server = make_server();
+    server->router().get("/no-content", [](HttpContext &context) {
+        auto &resp = context.response();
+        resp.status(HttpStatus::NO_CONTENT).body("ignored").enable_chunked();
+    });
 
-    auto server = builder.build();
     ASSERT_TRUE(server);
     ScopedServer guard(server);
     ASSERT_TRUE(server->start());
 
-    const int client_fd = connect_with_retry(port, 20, 25);
-    ASSERT_GE(client_fd, 0);
+    auto client = connect_to(*server);
+    ASSERT_TRUE(client) << client.error().message();
+    const int client_fd = client.value().native_handle();
 
     const std::string request = "GET /no-content HTTP/1.1\r\n"
                                 "Host: localhost\r\n"
@@ -580,7 +453,6 @@ TEST(HttpServerIntegrationTest, DoesNotUseChunkedForNoContentStatus) {
                                 "\r\n";
     ASSERT_TRUE(send_all(client_fd, request));
     const std::string response = recv_until_close(client_fd, 1000);
-    ::close(client_fd);
 
     EXPECT_NE(response.find("204 No Content"), std::string::npos) << response;
     EXPECT_EQ(response.find("Transfer-Encoding: chunked"), std::string::npos)
@@ -588,39 +460,40 @@ TEST(HttpServerIntegrationTest, DoesNotUseChunkedForNoContentStatus) {
 }
 
 TEST(HttpServerIntegrationTest, HttpsRoundTripWithRealTlsHandshake) {
-    const uint16_t port = find_free_port();
-    ASSERT_NE(port, 0);
 
     ScopedTlsPemFiles pem_files;
     ASSERT_FALSE(pem_files.cert_path().empty());
     ASSERT_FALSE(pem_files.key_path().empty());
 
-    HttpServerBuilder builder;
-    builder.listen("127.0.0.1", port)
-        .threads(1)
-        .log_level("error")
-        .enable_https(pem_files.cert_path(), pem_files.key_path())
-        .get("/secure", [](HttpContext &context) {
-            auto &resp = context.response();
-            resp.status(HttpStatus::OK).text("secure-ok");
-        });
+    auto server = make_server();
+    ASSERT_TRUE(server->set_ssl_certificate(pem_files.cert_path(),
+                                            pem_files.key_path()));
+    server->router().get("/secure", [](HttpContext &context) {
+        auto &resp = context.response();
+        resp.status(HttpStatus::OK).text("secure-ok");
+    });
 
-    auto server = builder.build();
     ASSERT_TRUE(server);
     ScopedServer guard(server);
     ASSERT_TRUE(server->start());
 
-    const int client_fd = connect_with_retry(port, 20, 25);
-    ASSERT_GE(client_fd, 0);
+    auto client = connect_to(*server);
+    ASSERT_TRUE(client) << client.error().message();
+    const int client_fd = client.value().native_handle();
 
-    SSL_CTX *ssl_ctx = SSL_CTX_new(TLS_client_method());
+    std::unique_ptr<SSL_CTX, decltype(&SSL_CTX_free)> ssl_ctx(
+        SSL_CTX_new(TLS_client_method()), SSL_CTX_free);
     ASSERT_NE(ssl_ctx, nullptr);
-    SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_NONE, nullptr);
+    SSL_CTX_set_verify(ssl_ctx.get(), SSL_VERIFY_NONE, nullptr);
 
-    SSL *ssl = SSL_new(ssl_ctx);
+    std::unique_ptr<SSL, decltype(&SSL_free)> ssl(SSL_new(ssl_ctx.get()),
+                                                  SSL_free);
     ASSERT_NE(ssl, nullptr);
-    ASSERT_EQ(SSL_set_fd(ssl, client_fd), 1);
-    ASSERT_EQ(SSL_connect(ssl), 1);
+    ASSERT_EQ(SSL_set_fd(ssl.get(), client_fd), 1);
+    const auto deadline = zco::Deadline::after(std::chrono::seconds(2));
+    ASSERT_EQ(
+        tls_call(ssl.get(), deadline, [&] { return SSL_connect(ssl.get()); }),
+        1);
 
     const std::string request = "GET /secure HTTP/1.1\r\n"
                                 "Host: localhost\r\n"
@@ -628,8 +501,10 @@ TEST(HttpServerIntegrationTest, HttpsRoundTripWithRealTlsHandshake) {
 
     size_t sent = 0;
     while (sent < request.size()) {
-        const int n = SSL_write(ssl, request.data() + sent,
-                                static_cast<int>(request.size() - sent));
+        const int n = tls_call(ssl.get(), deadline, [&] {
+            return SSL_write(ssl.get(), request.data() + sent,
+                             static_cast<int>(request.size() - sent));
+        });
         ASSERT_GT(n, 0);
         sent += static_cast<size_t>(n);
     }
@@ -637,89 +512,36 @@ TEST(HttpServerIntegrationTest, HttpsRoundTripWithRealTlsHandshake) {
     std::string response;
     char read_buffer[1024];
     while (true) {
-        const int n = SSL_read(ssl, read_buffer, sizeof(read_buffer));
-        if (n > 0) {
-            response.append(read_buffer, static_cast<size_t>(n));
-            continue;
-        }
-
-        const int ssl_error = SSL_get_error(ssl, n);
-        if (ssl_error == SSL_ERROR_ZERO_RETURN) {
+        const int n = tls_call(ssl.get(), deadline, [&] {
+            return SSL_read(ssl.get(), read_buffer, sizeof(read_buffer));
+        });
+        if (!n)
             break;
-        }
-        ASSERT_NE(ssl_error, SSL_ERROR_SSL);
-        ASSERT_NE(ssl_error, SSL_ERROR_SYSCALL);
-        if (ssl_error == SSL_ERROR_WANT_READ ||
-            ssl_error == SSL_ERROR_WANT_WRITE) {
-            continue;
-        }
-        break;
+        response.append(read_buffer, static_cast<size_t>(n));
     }
-
-    SSL_shutdown(ssl);
-    SSL_free(ssl);
-    SSL_CTX_free(ssl_ctx);
-    ::close(client_fd);
+    SSL_shutdown(ssl.get());
 
     EXPECT_NE(response.find("HTTP/1.1 200 OK"), std::string::npos) << response;
     EXPECT_NE(response.find("secure-ok"), std::string::npos) << response;
 }
 
 TEST(HttpServerIntegrationTest, RunServesHttpAndStopsOnSignal) {
-    const uint16_t port = find_free_port();
-    ASSERT_NE(port, 0);
-
-    HttpServerBuilder builder;
-    builder.listen("127.0.0.1", port)
-        .threads(1)
-        .log_level("error")
-        .daemon(false)
-        .get("/secure", [](HttpContext &context) {
-            auto &resp = context.response();
-            resp.status(HttpStatus::OK).text("secure");
-        });
-
-    std::atomic<bool> stopped{false};
-    std::string run_error;
-    std::thread server_thread([&] {
-        try {
-            builder.run();
-        } catch (const std::exception &ex) {
-            run_error = ex.what();
-        }
-        stopped.store(true, std::memory_order_release);
-    });
-
-    const int fd = connect_with_retry(port, 40, 25);
-    // 即使连接失败，也先停止并 join，避免析构仍可 join 的线程。
-    std::string response;
-    bool sent = false;
-    if (fd >= 0) {
-        sent = send_all(fd, "GET /secure HTTP/1.1\r\n"
-                            "Host: localhost\r\n"
-                            "Connection: close\r\n\r\n");
-        response = recv_until_close(fd, 1000);
-        ::close(fd);
-    }
-
-    ::raise(SIGINT);
-    server_thread.join();
-    EXPECT_TRUE(stopped.load(std::memory_order_acquire));
-    EXPECT_TRUE(run_error.empty()) << run_error;
-    ASSERT_GE(fd, 0);
-    EXPECT_TRUE(sent);
-    EXPECT_NE(response.find("200 OK"), std::string::npos) << response;
-    EXPECT_NE(response.find("secure"), std::string::npos) << response;
-    EXPECT_EQ(response.find("Location:"), std::string::npos) << response;
+    auto server = start_signal_server();
+    EXPECT_NE(server.response.find("200 OK"), std::string::npos)
+        << server.response;
+    EXPECT_EQ(server.response.find("Location:"), std::string::npos);
+    ASSERT_EQ(::kill(server.child->pid(), SIGINT), 0);
+    ASSERT_TRUE(
+        server.child->wait(zco::Deadline::after(std::chrono::seconds(2))));
+    ASSERT_TRUE(WIFEXITED(server.child->status()));
+    EXPECT_EQ(WEXITSTATUS(server.child->status()), 0);
 }
 
 TEST(HttpServerIntegrationTest,
      RunFailsWhenHttpsPortAlreadyInUse) {
-    const uint16_t https_port = find_free_port();
+    auto occupied_https = bind_and_listen_port();
+    const uint16_t https_port = occupied_https.local_endpoint().value().port();
     ASSERT_NE(https_port, 0);
-
-    const int occupied_https_fd = bind_and_listen_port(https_port);
-    ASSERT_GE(occupied_https_fd, 0);
 
     ScopedTlsPemFiles pem_files;
     ASSERT_FALSE(pem_files.cert_path().empty());
@@ -733,17 +555,12 @@ TEST(HttpServerIntegrationTest,
         .enable_https(pem_files.cert_path(), pem_files.key_path());
 
     EXPECT_THROW(builder.run(), std::runtime_error);
-    ::close(occupied_https_fd);
 }
 
 TEST(HttpServerIntegrationTest, HandlesStreamErrorPaths) {
-    const uint16_t port = find_free_port();
-    ASSERT_NE(port, 0);
 
-    HttpServerBuilder builder;
-    builder.listen("127.0.0.1", port)
-        .threads(1)
-        .log_level("error")
+    auto server = make_server();
+    server->router()
         .get("/chunked-stream-throw",
              [](HttpContext &context) {
                  auto &resp = context.response();
@@ -752,28 +569,28 @@ TEST(HttpServerIntegrationTest, HandlesStreamErrorPaths) {
                      .stream([](char *, size_t) -> size_t {
                          throw std::runtime_error("stream boom");
                      });
-             })
-        .get("/chunked-stream-oversize", [](HttpContext &context) {
+             });
+    server->router().get(
+        "/chunked-stream-oversize", [](HttpContext &context) {
             auto &resp = context.response();
             resp.status(HttpStatus::OK)
                 .content_type("text/plain")
                 .stream([](char *, size_t size) -> size_t { return size + 1; });
         });
 
-    auto server = builder.build();
     ASSERT_TRUE(server);
     ScopedServer guard(server);
     ASSERT_TRUE(server->start());
 
     {
-        const int client_fd = connect_with_retry(port, 20, 25);
-        ASSERT_GE(client_fd, 0);
+        auto client = connect_to(*server);
+        ASSERT_TRUE(client) << client.error().message();
+        const int client_fd = client.value().native_handle();
         const std::string request = "GET /chunked-stream-throw HTTP/1.1\r\n"
                                     "Host: localhost\r\n"
                                     "Connection: close\r\n\r\n";
         ASSERT_TRUE(send_all(client_fd, request));
         const std::string response = recv_until_close(client_fd, 1000);
-        ::close(client_fd);
         EXPECT_NE(response.find("HTTP/1.1 200 OK"), std::string::npos)
             << response;
         EXPECT_NE(response.find("Transfer-Encoding: chunked"),
@@ -783,14 +600,14 @@ TEST(HttpServerIntegrationTest, HandlesStreamErrorPaths) {
     }
 
     {
-        const int client_fd = connect_with_retry(port, 20, 25);
-        ASSERT_GE(client_fd, 0);
+        auto client = connect_to(*server);
+        ASSERT_TRUE(client) << client.error().message();
+        const int client_fd = client.value().native_handle();
         const std::string request = "GET /chunked-stream-oversize HTTP/1.1\r\n"
                                     "Host: localhost\r\n"
                                     "Connection: close\r\n\r\n";
         ASSERT_TRUE(send_all(client_fd, request));
         const std::string response = recv_until_close(client_fd, 1000);
-        ::close(client_fd);
         EXPECT_NE(response.find("HTTP/1.1 200 OK"), std::string::npos)
             << response;
         EXPECT_NE(response.find("Transfer-Encoding: chunked"),
@@ -801,37 +618,30 @@ TEST(HttpServerIntegrationTest, HandlesStreamErrorPaths) {
 }
 
 TEST(HttpServerIntegrationTest, RejectsOversizedBodyBeforeBodyIsSent) {
-    const uint16_t port = find_free_port();
-    ASSERT_NE(port, 0);
-    auto server = std::make_shared<HttpServer>(
-        znet::Endpoint::ipv4("127.0.0.1", port).value(),
-        zco::RuntimeOptions{2});
+    auto server = make_server(2);
     ScopedServer cleanup(server);
     RequestLimits limits;
     limits.max_body_bytes = 4;
     server->set_request_limits(limits);
     ASSERT_TRUE(server->start());
-    const int fd = connect_with_retry(port, 20, 5);
-    ASSERT_GE(fd, 0);
+    auto client = connect_to(*server);
+    ASSERT_TRUE(client) << client.error().message();
+    const int fd = client.value().native_handle();
     EXPECT_TRUE(send_all(fd, "POST / HTTP/1.1\r\nContent-Length: 5\r\n\r\n"));
     const std::string response = recv_until_close(fd, 1000);
-    ::close(fd);
     EXPECT_NE(response.find("413"), std::string::npos);
 }
 
 TEST(HttpServerIntegrationTest,
      RequestDeadlineClosesSilentPartialRequestWithInfiniteReadTimeout) {
-    const uint16_t port = find_free_port();
-    ASSERT_NE(port, 0);
-    auto server = std::make_shared<HttpServer>(
-        znet::Endpoint::ipv4("127.0.0.1", port).value(),
-        zco::RuntimeOptions{2});
+    auto server = make_server(2);
     ScopedServer cleanup(server);
     server->set_request_timeout(50);
     server->set_recv_timeout(0);
     ASSERT_TRUE(server->start());
-    const int fd = connect_with_retry(port, 20, 5);
-    ASSERT_GE(fd, 0);
+    auto client = connect_to(*server);
+    ASSERT_TRUE(client) << client.error().message();
+    const int fd = client.value().native_handle();
     EXPECT_TRUE(send_all(fd, "GET / HTTP/1.1\r\nX: "));
     pollfd pfd{fd, POLLIN | POLLHUP, 0};
     const int ready = ::poll(&pfd, 1, 2000);
@@ -840,41 +650,32 @@ TEST(HttpServerIntegrationTest,
         char byte;
         EXPECT_EQ(::recv(fd, &byte, 1, MSG_DONTWAIT), 0);
     }
-    ::close(fd);
 }
 
 TEST(HttpServerIntegrationTest, SlowFragmentsDoNotRenewRequestDeadline) {
-    const uint16_t port = find_free_port();
-    ASSERT_NE(port, 0);
-    auto server = std::make_shared<HttpServer>(
-        znet::Endpoint::ipv4("127.0.0.1", port).value(),
-        zco::RuntimeOptions{2});
+    auto server = make_server(2);
     ScopedServer cleanup(server);
     server->set_request_timeout(80);
     server->set_recv_timeout(0);
     ASSERT_TRUE(server->start());
-    const int fd = connect_with_retry(port, 20, 5);
-    ASSERT_GE(fd, 0);
+    auto client = connect_to(*server);
+    ASSERT_TRUE(client) << client.error().message();
+    const int fd = client.value().native_handle();
     EXPECT_TRUE(send_all(fd, "GET / HTTP/1.1\r\nX: "));
     bool closed = false;
     for (int i = 0; i < 50 && !closed; ++i) {
-        ::send(fd, "a", 1, MSG_NOSIGNAL);
+        ::send(fd, "a", 1, MSG_DONTWAIT | MSG_NOSIGNAL);
         pollfd pfd{fd, POLLIN | POLLHUP, 0};
         if (::poll(&pfd, 1, 10) > 0) {
             char byte;
             closed = ::recv(fd, &byte, 1, MSG_DONTWAIT) == 0;
         }
     }
-    ::close(fd);
     EXPECT_TRUE(closed);
 }
 
 TEST(HttpServerIntegrationTest, CompleteRequestClearsDeadlineForKeepAlive) {
-    const uint16_t port = find_free_port();
-    ASSERT_NE(port, 0);
-    auto server = std::make_shared<HttpServer>(
-        znet::Endpoint::ipv4("127.0.0.1", port).value(),
-        zco::RuntimeOptions{2});
+    auto server = make_server(2);
     ScopedServer cleanup(server);
     server->set_request_timeout(30);
     server->set_recv_timeout(0);
@@ -883,72 +684,66 @@ TEST(HttpServerIntegrationTest, CompleteRequestClearsDeadlineForKeepAlive) {
         response.text("ok");
     });
     ASSERT_TRUE(server->start());
-    const int fd = connect_with_retry(port, 20, 5);
-    ASSERT_GE(fd, 0);
+    auto client = connect_to(*server);
+    ASSERT_TRUE(client) << client.error().message();
+    const int fd = client.value().native_handle();
     EXPECT_TRUE(send_all(fd, "GET / HTTP/1.1\r\n\r\n"));
-    pollfd pfd{fd, POLLIN, 0};
-    EXPECT_GT(::poll(&pfd, 1, 1000), 0);
-    char data[4096];
-    EXPECT_GT(::recv(fd, data, sizeof(data), MSG_DONTWAIT), 0);
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    SocketReader reader(fd, 1);
+    const auto deadline = zco::Deadline::after(std::chrono::seconds(1));
+    const auto headers = reader.until("\r\n\r\n", deadline).value();
+    ASSERT_NE(headers.find("Content-Length: 2\r\n"), std::string::npos)
+        << headers;
+    EXPECT_EQ(reader.exact(2, deadline).value(), "ok");
+    pollfd idle{fd, POLLIN, 0};
+    EXPECT_EQ(::poll(&idle, 1, 100), 0) << "完整请求后的空闲连接应继续保持";
     const std::string request = "GET / HTTP/1.1\r\nConnection: close\r\n\r\n";
-    EXPECT_EQ(::send(fd, request.data(), request.size(), MSG_NOSIGNAL),
-              static_cast<ssize_t>(request.size()));
+    ASSERT_TRUE(send_all(fd, request));
     const std::string response = recv_until_close(fd, 1000);
-    ::close(fd);
     EXPECT_NE(response.find("200 OK"), std::string::npos);
 }
 
 TEST(HttpServerIntegrationTest,
      SynchronousStreamProcessesPipelinedRequestWithoutNewInput) {
-    const auto port = find_free_port();
-    ASSERT_NE(port, 0);
     std::atomic<int> completed{0};
-    HttpServerBuilder builder;
-    builder.listen("127.0.0.1", port)
-        .threads(1)
-        .log_level("error")
-        .get("/stream", [&](HttpContext &context) {
-            context.on_complete([&](CompletionResult result) {
-                EXPECT_EQ(result, CompletionResult::Completed);
-                ++completed;
-            });
-            context.response().stream([remaining = 1](char *buffer, size_t) mutable {
+    auto server = make_server();
+    server->router().get("/stream", [&](HttpContext &context) {
+        context.on_complete([&](CompletionResult result) {
+            EXPECT_EQ(result, CompletionResult::Completed);
+            ++completed;
+        });
+        context.response().stream(
+            [remaining = 1](char *buffer, size_t) mutable {
                 if (!remaining--)
                     return size_t{0};
                 std::memcpy(buffer, "data", 4);
                 return size_t{4};
             });
-        })
-        .get("/next", [&](HttpContext &context) {
-            EXPECT_EQ(completed.load(), 1);
-            context.response().text("next");
-        });
-    auto server = builder.build();
+    });
+    server->router().get("/next", [&](HttpContext &context) {
+        EXPECT_EQ(completed.load(), 1);
+        context.response().text("next");
+    });
     ScopedServer guard(server);
     ASSERT_TRUE(server->start());
-    const int fd = connect_with_retry(port, 20, 25);
-    ASSERT_GE(fd, 0);
+    auto client = connect_to(*server);
+    ASSERT_TRUE(client) << client.error().message();
+    const int fd = client.value().native_handle();
     ASSERT_TRUE(send_all(fd,
         "GET /stream HTTP/1.1\r\nHost: test\r\n\r\n"
         "GET /next HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n"));
     const auto response = recv_until_close(fd, 1000);
-    ::close(fd);
     EXPECT_NE(response.find("4\r\ndata\r\n0\r\n\r\nHTTP/1.1 200 OK"),
-              std::string::npos) << response;
+              std::string::npos)
+        << response;
     EXPECT_EQ(response.substr(response.size() - 4), "next");
     EXPECT_EQ(completed.load(), 1);
 }
 
 TEST(HttpServerIntegrationTest, LargePullStreamIsFullyDrained) {
-    const auto port = find_free_port();
-    ASSERT_NE(port, 0);
     const size_t blocks = 160, block_size = 8192;
-    HttpServerBuilder builder;
-    builder.listen("127.0.0.1", port)
-        .threads(1)
-        .log_level("error")
-        .get("/large", [=](HttpContext &context) {
+    auto server = make_server();
+    server->router().get(
+        "/large", [=](HttpContext &context) {
             context.response().stream(
                 [remaining = blocks](char *buffer,
                                      size_t size) mutable -> size_t {
@@ -959,15 +754,14 @@ TEST(HttpServerIntegrationTest, LargePullStreamIsFullyDrained) {
                     return size;
                 });
         });
-    auto server = builder.build();
     ScopedServer guard(server);
     ASSERT_TRUE(server->start());
-    const int fd = connect_with_retry(port, 20, 25);
-    ASSERT_GE(fd, 0);
+    auto client = connect_to(*server);
+    ASSERT_TRUE(client) << client.error().message();
+    const int fd = client.value().native_handle();
     ASSERT_TRUE(send_all(
         fd, "GET /large HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n"));
     const auto wire = recv_until_close(fd, 2000);
-    ::close(fd);
     const auto start = wire.find("\r\n\r\n");
     ASSERT_NE(start, std::string::npos);
     const std::string chunk =
@@ -981,6 +775,10 @@ TEST(HttpServerIntegrationTest, LargePullStreamIsFullyDrained) {
 }
 
 int main(int argc, char **argv) {
+    test_executable = argv[0];
+    if (is_signal_helper(argc, argv))
+        return run_signal_server(
+            static_cast<uint16_t>(std::strtoul(argv[2], nullptr, 10)));
     ::testing::InitGoogleTest(&argc, argv);
 
     return RUN_ALL_TESTS();

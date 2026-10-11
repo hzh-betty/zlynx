@@ -36,6 +36,7 @@ set(ZHTTP_UNIT_TESTS
     logging_test
     daemon_test
     http_server_builder_test
+    socket_reader_test
 )
 
 if(BUILD_TESTING)
@@ -52,7 +53,8 @@ if(BUILD_TESTING)
         logging_test
         daemon_test
         http_server_builder_test
-)
+        socket_reader_test
+    )
     foreach(test_name ${ZHTTP_UNIT_TESTS})
         if(test_name IN_LIST ZHTTP_NETWORK_UNIT_TESTS)
             set(test_library zhttp)
@@ -65,16 +67,6 @@ if(BUILD_TESTING)
 
     target_link_libraries(logging_test PRIVATE ${ZHTTP_ZLOG_TARGET})
     target_link_libraries(compression_middleware_test PRIVATE ZLIB::ZLIB ${BROTLI_DEC_LIBRARY})
-
-    foreach(test_name http_server_context_test daemon_test)
-        if(TARGET ${test_name})
-            # 这些测试涉及进程/运行时全局状态，串行执行更稳定。
-            set_tests_properties(zhttp.unit.${test_name} PROPERTIES
-                RUN_SERIAL TRUE
-                RESOURCE_LOCK zco_runtime
-            )
-        endif()
-    endforeach()
 
     set(ZHTTP_INTEGRATION_TESTS
         http_server_test

@@ -1,3 +1,5 @@
+#include "../support/process.h"
+#include "../support/temp_file.h"
 #include "zhttp/runtime/daemon.h"
 
 #include <gtest/gtest.h>
@@ -15,6 +17,7 @@
 
 namespace zhttp {
 namespace {
+std::string executable;
 
 bool wait_for_file_content(const std::string &path, std::string *content) {
     constexpr int kMaxRetry = 200;
@@ -140,23 +143,23 @@ TEST(DaemonTest, SignalHandlersAreRestoredWhenCallbackThrows) {
 }
 
 TEST(DaemonTest, DaemonModeRunsWorkerCallbackInSubprocess) {
-    char marker_template[] = "/tmp/zhttp-daemon-marker-XXXXXX";
-    const int marker_fd = ::mkstemp(marker_template);
-    ASSERT_GE(marker_fd, 0);
-    ::close(marker_fd);
+    test::TempFile temp;
+    const char *marker_template = temp.path.c_str();
+    temp.descriptor.close().value();
     ::unlink(marker_template);
 
     pid_t child = ::fork();
     ASSERT_GE(child, 0);
 
     if (child == 0) {
-        ::execl("/proc/self/exe", "/proc/self/exe", "--daemon-helper",
+        ::execl(executable.c_str(), executable.c_str(), "--daemon-helper",
                 marker_template, nullptr);
         _exit(127);
     }
 
-    int status = 0;
-    ASSERT_EQ(::waitpid(child, &status, 0), child);
+    test::ScopedChild process(child);
+    ASSERT_TRUE(process.wait(zco::Deadline::after(std::chrono::seconds(3))));
+    const int status = process.status();
     ASSERT_TRUE(WIFEXITED(status));
     ASSERT_EQ(WEXITSTATUS(status), 0);
 
@@ -168,22 +171,22 @@ TEST(DaemonTest, DaemonModeRunsWorkerCallbackInSubprocess) {
 }
 
 TEST(DaemonTest, DaemonModeCanBeStoppedBySignalWhileWaitingChild) {
-    char pid_template[] = "/tmp/zhttp-daemon-pid-XXXXXX";
-    const int pid_fd = ::mkstemp(pid_template);
-    ASSERT_GE(pid_fd, 0);
-    ::close(pid_fd);
+    test::TempFile temp;
+    const char *pid_template = temp.path.c_str();
+    temp.descriptor.close().value();
     ::unlink(pid_template);
 
     pid_t child = ::fork();
     ASSERT_GE(child, 0);
     if (child == 0) {
-        ::execl("/proc/self/exe", "/proc/self/exe", "--daemon-signal-helper",
-                pid_template, nullptr);
+        ::execl(executable.c_str(), executable.c_str(),
+                "--daemon-signal-helper", pid_template, nullptr);
         _exit(127);
     }
 
-    int status = 0;
-    ASSERT_EQ(::waitpid(child, &status, 0), child);
+    test::ScopedChild process(child);
+    ASSERT_TRUE(process.wait(zco::Deadline::after(std::chrono::seconds(3))));
+    const int status = process.status();
     ASSERT_TRUE(WIFEXITED(status));
     ASSERT_EQ(WEXITSTATUS(status), 0);
 
@@ -212,6 +215,7 @@ TEST(DaemonTest, DaemonModeCanBeStoppedBySignalWhileWaitingChild) {
 } // namespace zhttp
 
 int main(int argc, char **argv) {
+    zhttp::executable = argv[0];
     if (argc >= 3 && std::string(argv[1]) == "--daemon-helper") {
         return zhttp::run_daemon_helper_mode(argv[2]);
     }

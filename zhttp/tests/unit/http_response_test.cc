@@ -249,7 +249,7 @@ TEST(HttpResponseTest, UpgradeToWebSocketClearsStreamingStateAndBody) {
     options.max_message_size = 4096;
     context.upgrade_to_websocket(callbacks, options);
 
-    EXPECT_TRUE(context.upgrade() != nullptr);
+    ASSERT_NE(context.upgrade(), nullptr);
     EXPECT_EQ(resp.status_code(), HttpStatus::SWITCHING_PROTOCOLS);
     EXPECT_TRUE(resp.is_keep_alive());
     EXPECT_FALSE(resp.is_chunked_enabled());
@@ -291,10 +291,4 @@ TEST(HttpResponseTest, SerializeToAcceptsNullOutputPointer) {
     resp.status(HttpStatus::OK).body("ok");
     ResponseEncoder::serialize_to(resp, nullptr);
     SUCCEED();
-}
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-
-    return RUN_ALL_TESTS();
 }
