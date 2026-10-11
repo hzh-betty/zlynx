@@ -6,6 +6,7 @@
 #include <future>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <mutex>
 #include <thread>
 
 using namespace zlog;
@@ -38,30 +39,54 @@ class MockLogSink : public LogSink {
 class LoggerTest : public ::testing::Test {
   protected:
     void SetUp() override {
+        static size_t sequence = 0;
+        const auto *info =
+            ::testing::UnitTest::GetInstance()->current_test_info();
+        registeredName =
+            std::string(info->name()) + "_" + std::to_string(sequence++);
         formatter = std::make_shared<Formatter>();
-        mockSink = std::make_shared<MockLogSink>();
-        sinks.push_back(mockSink);
     }
 
+    void TearDown() override {
+        if (registeredLogger)
+            EXPECT_NO_THROW(registeredLogger->close());
+    }
+
+    std::string registeredName;
+    Logger::ptr registeredLogger;
     std::shared_ptr<Formatter> formatter;
     std::shared_ptr<MockLogSink> mockSink;
     std::vector<LogSink::ptr> sinks;
+
+    void use_mock() {
+        mockSink = std::make_shared<MockLogSink>();
+        sinks = {mockSink};
+        formatter = std::make_shared<Formatter>("%m");
+    }
 };
 
 TEST_F(LoggerTest, SyncLoggerLog) {
+    use_mock();
     SyncLogger logger("test_sync", LogLevel::value::DEBUG, formatter, sinks);
 
-    EXPECT_CALL(*mockSink, log(_, _)).Times(1);
+    EXPECT_CALL(*mockSink, log(_, 12))
+        .WillOnce([](const char *data, size_t length) {
+            EXPECT_EQ(std::string(data, length), "test message");
+        });
 
     logger.log_impl(LogLevel::value::INFO, __FILE__, __LINE__, "test message");
 }
 
 TEST_F(LoggerTest, AsyncLoggerLog) {
+    use_mock();
     // Create async logger with safe mode and 100ms timeout
     AsyncLogger logger("test_async", LogLevel::value::DEBUG, formatter, sinks,
                        AsyncType::ASYNC_SAFE, std::chrono::milliseconds(100));
 
-    EXPECT_CALL(*mockSink, log(_, _)).Times(1);
+    EXPECT_CALL(*mockSink, log(_, 18))
+        .WillOnce([](const char *data, size_t length) {
+            EXPECT_EQ(std::string(data, length), "async test message");
+        });
 
     logger.log_impl(LogLevel::value::INFO, __FILE__, __LINE__,
                     "async test message");
@@ -70,6 +95,7 @@ TEST_F(LoggerTest, AsyncLoggerLog) {
 }
 
 TEST_F(LoggerTest, LevelFilter) {
+    use_mock();
     SyncLogger logger("test_filter", LogLevel::value::WARNING, formatter,
                       sinks);
 
@@ -77,7 +103,10 @@ TEST_F(LoggerTest, LevelFilter) {
     logger.log_impl(LogLevel::value::INFO, __FILE__, __LINE__,
                     "should not be logged");
 
-    EXPECT_CALL(*mockSink, log(_, _)).Times(1);
+    EXPECT_CALL(*mockSink, log(_, 16))
+        .WillOnce([](const char *data, size_t length) {
+            EXPECT_EQ(std::string(data, length), "should be logged");
+        });
     logger.log_impl(LogLevel::value::ERROR, __FILE__, __LINE__,
                     "should be logged");
 }
@@ -127,13 +156,14 @@ TEST_F(LoggerTest, UninitializedLoggerThrowsWhenLogging) {
 
 TEST_F(LoggerTest, ExplicitRegistrationRejectsDuplicateNames) {
     LoggerBuilder builder;
-    builder.build_logger_name("global_duplicate_test");
+    builder.build_logger_name(registeredName);
     const auto first = builder.build();
     ASSERT_NE(first, nullptr);
+    registeredLogger = first;
     LoggerManager::get_instance().add_logger(first);
     const auto second = builder.build();
     EXPECT_THROW(LoggerManager::get_instance().add_logger(second), std::invalid_argument);
-    EXPECT_EQ(LoggerManager::get_instance().get_logger("global_duplicate_test"), first);
+    EXPECT_EQ(LoggerManager::get_instance().get_logger(registeredName), first);
 }
 
 TEST_F(LoggerTest, LocalBuilderDoesNotRegisterLogger) {
@@ -150,16 +180,17 @@ TEST_F(LoggerTest, RegistrationRejectsNullLogger) {
 
 TEST_F(LoggerTest, SameBuilderSupportsLocalConstructionThenGlobalRegistration) {
     LoggerBuilder builder;
-    builder.build_logger_name("local_then_global_test");
+    builder.build_logger_name(registeredName);
     const auto local = builder.build();
     ASSERT_NE(local, nullptr);
-    EXPECT_FALSE(LoggerManager::get_instance().get_logger("local_then_global_test"));
+    EXPECT_FALSE(LoggerManager::get_instance().get_logger(registeredName));
 
     const auto global = builder.build();
     ASSERT_NE(global, nullptr);
+    registeredLogger = global;
     LoggerManager::get_instance().add_logger(global);
     EXPECT_NE(local, global);
-    EXPECT_EQ(LoggerManager::get_instance().get_logger("local_then_global_test"), global);
+    EXPECT_EQ(LoggerManager::get_instance().get_logger(registeredName), global);
 }
 
 namespace {
@@ -310,7 +341,8 @@ TEST_F(LoggerTest, FlushWaitsForSinkWriteAndFlushCompletion) {
         std::unique_lock<std::mutex> lock(gate);
         entered = true;
         cv.notify_all();
-        cv.wait(lock, [&] { return release; });
+        EXPECT_TRUE(cv.wait_for(lock, std::chrono::seconds(3),
+                                [&] { return release; }));
     });
     const auto healthy = std::make_shared<RecordingSink>();
     AsyncLogger logger("barrier", LogLevel::value::INFO, formatter, {blocking, healthy},
@@ -319,7 +351,8 @@ TEST_F(LoggerTest, FlushWaitsForSinkWriteAndFlushCompletion) {
     auto completion = std::async(std::launch::async, [&] { logger.flush(); });
     {
         std::unique_lock<std::mutex> lock(gate);
-        cv.wait(lock, [&] { return entered; });
+        EXPECT_TRUE(cv.wait_for(lock, std::chrono::seconds(3),
+                                [&] { return entered; }));
     }
     EXPECT_EQ(completion.wait_for(std::chrono::milliseconds(10)), std::future_status::timeout);
     {
@@ -327,6 +360,8 @@ TEST_F(LoggerTest, FlushWaitsForSinkWriteAndFlushCompletion) {
         release = true;
     }
     cv.notify_all();
+    EXPECT_EQ(completion.wait_for(std::chrono::seconds(3)),
+              std::future_status::ready);
     completion.get();
     EXPECT_EQ(healthy->records.size(), 1u);
     EXPECT_EQ(healthy->flushes, 1);
@@ -400,7 +435,8 @@ TEST_F(LoggerTest, ConcurrentCloseDrainsEveryAcceptedRecordAndRejectsNewWrites) 
             }
         }
     });
-    start.wait();
+    EXPECT_EQ(start.wait_for(std::chrono::seconds(3)),
+              std::future_status::ready);
     std::thread closer([&] { logger.close(); });
     logger.close();
     writer.join();
@@ -409,9 +445,4 @@ TEST_F(LoggerTest, ConcurrentCloseDrainsEveryAcceptedRecordAndRejectsNewWrites) 
     for (int i = 0; i < accepted; ++i) EXPECT_EQ(sink->records[i], std::to_string(i));
     EXPECT_EQ(sink->flushes, 1);
     EXPECT_THROW(logger.info(__FILE__, __LINE__, "new"), std::runtime_error);
-}
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
 }

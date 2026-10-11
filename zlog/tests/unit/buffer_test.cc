@@ -1,6 +1,4 @@
-#define private public
 #include "async/buffer.h"
-#undef private
 #include <cstring>
 #include <gtest/gtest.h>
 #include <new>
@@ -12,8 +10,6 @@ using namespace zlog::detail;
 
 class BufferTest : public ::testing::Test {
   protected:
-    void SetUp() override {}
-    void TearDown() override {}
     Buffer buf;
 };
 
@@ -221,15 +217,16 @@ TEST_F(BufferTest, GrowthFromExactEightMiBBoundary) {
 }
 
 TEST_F(BufferTest, GrowthIsCappedAtMaximum) {
-    // 只检查容量计算，避免为边界测试实际分配 512 MiB。
-    buf.capacity_ = kMaxBufferSize * 2 / 3 + 1;
-    buf.writer_idx_ = buf.capacity_;
-    EXPECT_EQ(buf.calculate_new_size(1), kMaxBufferSize);
-    buf.capacity_ = kMaxBufferSize;
-    buf.writer_idx_ = kMaxBufferSize - 1;
-    EXPECT_EQ(buf.calculate_new_size(1), kMaxBufferSize);
-    EXPECT_TRUE(buf.can_accommodate(1));
-    EXPECT_FALSE(buf.can_accommodate(2));
+    const size_t near_max = kMaxBufferSize * 2 / 3 + 1;
+    buf.push("prefix", 6);
+    buf.reserve(near_max - buf.readable_size());
+    ASSERT_EQ(buf.capacity(), near_max);
+    buf.reserve(near_max + 1 - buf.readable_size());
+    EXPECT_EQ(buf.capacity(), kMaxBufferSize);
+    EXPECT_EQ(buf.writable_size(), kMaxBufferSize - 6);
+    EXPECT_EQ(std::string(buf.begin(), buf.readable_size()), "prefix");
+    EXPECT_TRUE(buf.can_accommodate(kMaxBufferSize - 6));
+    EXPECT_FALSE(buf.can_accommodate(kMaxBufferSize - 5));
 }
 
 TEST_F(BufferTest, CapacityInitial) {
@@ -355,37 +352,25 @@ TEST_F(BufferTest, CanAccommodateReturnsFalseWhenBeyondMax) {
 
 TEST_F(BufferTest, ExactMaximumFitsAndOverflowIsRejectedBeforeCopying) {
     EXPECT_TRUE(buf.can_accommodate(kMaxBufferSize));
-    EXPECT_EQ(buf.calculate_new_size(kMaxBufferSize), kMaxBufferSize);
     EXPECT_THROW(buf.push("x", static_cast<size_t>(-1)), std::length_error);
     EXPECT_TRUE(buf.empty());
     EXPECT_EQ(buf.capacity(), kDefaultBufferSize);
 }
 
-
-TEST_F(BufferTest, EnsureEnoughSizeRejectsBeyondMaxWithoutChangingState) {
-    const size_t old_cap = kMaxBufferSize - 10;
-    buf.capacity_ = old_cap;
-    buf.writer_idx_ = old_cap;
-
-    EXPECT_THROW(buf.ensure_enough_size(20), std::length_error);
-
-    EXPECT_EQ(buf.capacity_, old_cap);
-    EXPECT_EQ(buf.writer_idx_, old_cap);
+TEST_F(BufferTest, ReserveRejectsBeyondMaxWithoutChangingState) {
+    buf.push("existing", 8);
+    const size_t capacity = buf.capacity();
+    const char *data = buf.begin();
+    EXPECT_THROW(buf.reserve(kMaxBufferSize), std::length_error);
+    EXPECT_EQ(buf.capacity(), capacity);
+    EXPECT_EQ(buf.begin(), data);
+    EXPECT_EQ(std::string(buf.begin(), buf.readable_size()), "existing");
 }
 
-TEST_F(BufferTest, EnsureEnoughSizeCappedBranchReallocPath) {
-    buf.capacity_ = kMaxBufferSize - 100;
-    buf.writer_idx_ = buf.capacity_ - 50;
-
-    try {
-        buf.ensure_enough_size(120);
-        EXPECT_EQ(buf.capacity_, kMaxBufferSize);
-    } catch (const std::bad_alloc &) {
-        SUCCEED();
-    }
-}
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
+TEST_F(BufferTest, ReserveGrowsWithoutConsumingWritableSpace) {
+    buf.push("existing", 8);
+    buf.reserve(kThresholdBufferSize);
+    EXPECT_GE(buf.capacity(), kThresholdBufferSize + 8);
+    EXPECT_EQ(buf.writable_size(), buf.capacity() - 8);
+    EXPECT_EQ(std::string(buf.begin(), buf.readable_size()), "existing");
 }

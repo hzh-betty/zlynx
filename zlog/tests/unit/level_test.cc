@@ -4,37 +4,35 @@
 
 using namespace zlog;
 
-class LevelTest : public ::testing::Test {};
-
-TEST_F(LevelTest, ToStringDebug) {
+TEST(LevelTest, ToStringDebug) {
     EXPECT_EQ(LogLevel::to_string(LogLevel::value::DEBUG), "DEBUG");
 }
 
-TEST_F(LevelTest, ToStringInfo) {
+TEST(LevelTest, ToStringInfo) {
     EXPECT_EQ(LogLevel::to_string(LogLevel::value::INFO), "INFO");
 }
 
-TEST_F(LevelTest, ToStringWarning) {
+TEST(LevelTest, ToStringWarning) {
     EXPECT_EQ(LogLevel::to_string(LogLevel::value::WARNING), "WARNING");
 }
 
-TEST_F(LevelTest, ToStringError) {
+TEST(LevelTest, ToStringError) {
     EXPECT_EQ(LogLevel::to_string(LogLevel::value::ERROR), "ERROR");
 }
 
-TEST_F(LevelTest, ToStringFatal) {
+TEST(LevelTest, ToStringFatal) {
     EXPECT_EQ(LogLevel::to_string(LogLevel::value::FATAL), "FATAL");
 }
 
-TEST_F(LevelTest, ToStringUnknown) {
+TEST(LevelTest, ToStringUnknown) {
     EXPECT_EQ(LogLevel::to_string(LogLevel::value::UNKNOWN), "UNKNOWN");
 }
 
-TEST_F(LevelTest, ToStringOff) {
+TEST(LevelTest, ToStringOff) {
     EXPECT_EQ(LogLevel::to_string(LogLevel::value::OFF), "OFF");
 }
 
-TEST_F(LevelTest, ComparisonLessThan) {
+TEST(LevelTest, ComparisonLessThan) {
     EXPECT_TRUE(LogLevel::value::DEBUG < LogLevel::value::INFO);
     EXPECT_TRUE(LogLevel::value::INFO < LogLevel::value::WARNING);
     EXPECT_TRUE(LogLevel::value::WARNING < LogLevel::value::ERROR);
@@ -45,7 +43,7 @@ TEST_F(LevelTest, ComparisonLessThan) {
     EXPECT_FALSE(LogLevel::value::ERROR < LogLevel::value::INFO);
 }
 
-TEST_F(LevelTest, ComparisonLessEqual) {
+TEST(LevelTest, ComparisonLessEqual) {
     EXPECT_TRUE(LogLevel::value::DEBUG <= LogLevel::value::DEBUG);
     EXPECT_TRUE(LogLevel::value::DEBUG <= LogLevel::value::INFO);
     EXPECT_TRUE(LogLevel::value::INFO <= LogLevel::value::WARNING);
@@ -53,7 +51,7 @@ TEST_F(LevelTest, ComparisonLessEqual) {
     EXPECT_FALSE(LogLevel::value::WARNING <= LogLevel::value::INFO);
 }
 
-TEST_F(LevelTest, ComparisonGreaterThan) {
+TEST(LevelTest, ComparisonGreaterThan) {
     EXPECT_TRUE(LogLevel::value::INFO > LogLevel::value::DEBUG);
     EXPECT_TRUE(LogLevel::value::ERROR > LogLevel::value::WARNING);
     EXPECT_TRUE(LogLevel::value::FATAL > LogLevel::value::ERROR);
@@ -61,14 +59,14 @@ TEST_F(LevelTest, ComparisonGreaterThan) {
     EXPECT_FALSE(LogLevel::value::DEBUG > LogLevel::value::INFO);
 }
 
-TEST_F(LevelTest, ComparisonGreaterEqual) {
+TEST(LevelTest, ComparisonGreaterEqual) {
     EXPECT_TRUE(LogLevel::value::INFO >= LogLevel::value::INFO);
     EXPECT_TRUE(LogLevel::value::ERROR >= LogLevel::value::INFO);
 
     EXPECT_FALSE(LogLevel::value::DEBUG >= LogLevel::value::INFO);
 }
 
-TEST_F(LevelTest, LevelOrdering) {
+TEST(LevelTest, LevelOrdering) {
     std::vector<LogLevel::value> orderedLevels;
     orderedLevels.push_back(LogLevel::value::UNKNOWN);
     orderedLevels.push_back(LogLevel::value::DEBUG);
@@ -86,7 +84,7 @@ TEST_F(LevelTest, LevelOrdering) {
     }
 }
 
-TEST_F(LevelTest, EnumValues) {
+TEST(LevelTest, EnumValues) {
     EXPECT_EQ(static_cast<int>(LogLevel::value::UNKNOWN), 0);
     EXPECT_EQ(static_cast<int>(LogLevel::value::DEBUG), 1);
     EXPECT_EQ(static_cast<int>(LogLevel::value::INFO), 2);
@@ -94,9 +92,4 @@ TEST_F(LevelTest, EnumValues) {
     EXPECT_EQ(static_cast<int>(LogLevel::value::ERROR), 4);
     EXPECT_EQ(static_cast<int>(LogLevel::value::FATAL), 5);
     EXPECT_EQ(static_cast<int>(LogLevel::value::OFF), 6);
-}
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
 }

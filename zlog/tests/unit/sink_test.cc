@@ -1,5 +1,7 @@
-#include "zlog/sink.h"
+#include "../support/files.h"
 #include "zlog/logger.h"
+#include "zlog/sink.h"
+#include <algorithm>
 #include <cstdio>
 #include <dirent.h>
 #include <fstream>
@@ -7,11 +9,11 @@
 #include <gtest/gtest.h>
 #include <sstream>
 #include <sys/stat.h>
-#include <unistd.h>
-#include <algorithm>
 #include <thread>
+#include <unistd.h>
 
 using namespace zlog;
+using zlog::test::listDir;
 
 namespace {
 bool dirExists(const std::string &path) {
@@ -24,56 +26,11 @@ bool fileExists(const std::string &path) {
     return stat(path.c_str(), &st) == 0;
 }
 
-void createDir(const std::string &path) { mkdir(path.c_str(), 0755); }
-
-void removeDir(const std::string &path) {
-    DIR *dir = opendir(path.c_str());
-    if (dir) {
-        struct dirent *entry;
-        while ((entry = readdir(dir)) != NULL) {
-            std::string name = entry->d_name;
-            if (name != "." && name != "..") {
-                std::string fullPath = path + "/" + name;
-                struct stat st;
-                if (stat(fullPath.c_str(), &st) == 0) {
-                    if (S_ISDIR(st.st_mode)) {
-                        removeDir(fullPath);
-                    } else {
-                        unlink(fullPath.c_str());
-                    }
-                }
-            }
-        }
-        closedir(dir);
-    }
-    rmdir(path.c_str());
-}
-
-std::vector<std::string> listDir(const std::string &path) {
-    std::vector<std::string> files;
-    DIR *dir = opendir(path.c_str());
-    if (dir) {
-        struct dirent *entry;
-        while ((entry = readdir(dir)) != NULL) {
-            std::string name = entry->d_name;
-            if (name != "." && name != "..") {
-                files.push_back(name);
-            }
-        }
-        closedir(dir);
-    }
-    return files;
-}
 } // namespace
 
 class SinkTest : public ::testing::Test {
   protected:
-    void SetUp() override {
-        testDir = "test_logs";
-        createDir(testDir);
-    }
-
-    void TearDown() override { removeDir(testDir); }
+    void SetUp() override { testDir = directory.path(); }
 
     std::string readFile(const std::string &path) {
         std::ifstream ifs(path.c_str());
@@ -82,6 +39,7 @@ class SinkTest : public ::testing::Test {
         return ss.str();
     }
 
+    zlog::test::TempDirectory directory;
     std::string testDir;
 };
 
@@ -497,9 +455,4 @@ TEST_F(SinkTest, BufferedFailuresStillFlushOtherSinksAndCompleteClose) {
         EXPECT_NO_THROW(logger->close());
         EXPECT_THROW(logger->info(__FILE__, __LINE__, "closed"), std::runtime_error);
     }
-}
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
 }

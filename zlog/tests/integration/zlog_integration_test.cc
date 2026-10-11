@@ -1,3 +1,5 @@
+#include "../support/files.h"
+#include <gmock/gmock.h>
 /**
  * @brief zlog集成测试
  * 测试同步/异步日志器的完整工作流程
@@ -9,7 +11,6 @@
 #include <chrono>
 #include <dirent.h>
 #include <fstream>
-#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <regex>
 #include <sstream>
@@ -18,59 +19,26 @@
 #include <unistd.h>
 
 using namespace zlog;
+using zlog::test::listDir;
 
 // C++11兼容的文件操作辅助函数
-namespace {
-void createDir(const std::string &path) { mkdir(path.c_str(), 0755); }
-
-void removeDir(const std::string &path) {
-    DIR *dir = opendir(path.c_str());
-    if (dir) {
-        struct dirent *entry;
-        while ((entry = readdir(dir)) != NULL) {
-            std::string name = entry->d_name;
-            if (name != "." && name != "..") {
-                std::string fullPath = path + "/" + name;
-                struct stat st;
-                if (stat(fullPath.c_str(), &st) == 0) {
-                    if (S_ISDIR(st.st_mode)) {
-                        removeDir(fullPath);
-                    } else {
-                        unlink(fullPath.c_str());
-                    }
-                }
-            }
-        }
-        closedir(dir);
-    }
-    rmdir(path.c_str());
-}
-
-std::vector<std::string> listDir(const std::string &path) {
-    std::vector<std::string> files;
-    DIR *dir = opendir(path.c_str());
-    if (dir) {
-        struct dirent *entry;
-        while ((entry = readdir(dir)) != NULL) {
-            std::string name = entry->d_name;
-            if (name != "." && name != "..") {
-                files.push_back(name);
-            }
-        }
-        closedir(dir);
-    }
-    return files;
-}
-} // namespace
+namespace {} // namespace
 
 class ZlogIntegrationTest : public ::testing::Test {
   protected:
     void SetUp() override {
-        testDir = "integration_test_logs";
-        createDir(testDir);
+        static size_t sequence = 0;
+        const auto *info =
+            ::testing::UnitTest::GetInstance()->current_test_info();
+        registeredName =
+            std::string(info->name()) + "_" + std::to_string(sequence++);
+        testDir = directory.path();
     }
 
-    void TearDown() override { removeDir(testDir); }
+    void TearDown() override {
+        if (registeredLogger)
+            EXPECT_NO_THROW(registeredLogger->close());
+    }
 
     std::string readFile(const std::string &path) {
         std::ifstream ifs(path.c_str());
@@ -88,7 +56,10 @@ class ZlogIntegrationTest : public ::testing::Test {
         return count;
     }
 
+    zlog::test::TempDirectory directory;
     std::string testDir;
+    std::string registeredName;
+    Logger::ptr registeredLogger;
 };
 
 TEST_F(ZlogIntegrationTest, SyncLoggerEndToEnd) {
@@ -331,20 +302,21 @@ TEST_F(ZlogIntegrationTest, ExplicitLoggerRegistration) {
     std::string logFile = testDir + "/global.log";
 
     LoggerBuilder builder;
-    builder.build_logger_name("global_test");
+    builder.build_logger_name(registeredName);
     builder.build_logger_type(LoggerType::LOGGER_SYNC);
     builder.build_logger_level(LogLevel::value::DEBUG);
     builder.build_logger_formatter("%m%n");
     builder.build_logger_sink<FileSink>(logFile);
 
     Logger::ptr logger = builder.build();
-    LoggerManager::get_instance().add_logger(logger);
     ASSERT_NE(logger.get(), static_cast<Logger *>(NULL));
+    registeredLogger = logger;
+    LoggerManager::get_instance().add_logger(logger);
 
-    EXPECT_TRUE(LoggerManager::get_instance().get_logger("global_test"));
+    EXPECT_TRUE(LoggerManager::get_instance().get_logger(registeredName));
 
     Logger::ptr retrieved =
-        LoggerManager::get_instance().get_logger("global_test");
+        LoggerManager::get_instance().get_logger(registeredName);
     EXPECT_EQ(retrieved, logger);
 
     logger->log_impl(LogLevel::value::INFO, __FILE__, __LINE__,
@@ -367,16 +339,18 @@ TEST_F(ZlogIntegrationTest, GetLoggerByName) {
     std::string logFile = testDir + "/named.log";
 
     LoggerBuilder builder;
-    builder.build_logger_name("named_logger");
+    builder.build_logger_name(registeredName);
     builder.build_logger_type(LoggerType::LOGGER_SYNC);
     builder.build_logger_formatter("%m%n");
     builder.build_logger_sink<FileSink>(logFile);
     Logger::ptr logger = builder.build();
+    ASSERT_NE(logger, nullptr);
+    registeredLogger = logger;
     LoggerManager::get_instance().add_logger(logger);
 
-    logger = zlog::get_logger("named_logger");
+    logger = zlog::get_logger(registeredName);
     ASSERT_NE(logger.get(), static_cast<Logger *>(NULL));
-    EXPECT_EQ(logger->get_name(), "named_logger");
+    EXPECT_EQ(logger->get_name(), registeredName);
 }
 
 TEST_F(ZlogIntegrationTest, GetNonExistentLogger) {
@@ -509,9 +483,4 @@ TEST_F(ZlogIntegrationTest, StressTestAsync) {
 
     std::string content = readFile(logFile);
     EXPECT_EQ(countLines(content), count);
-}
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
 }

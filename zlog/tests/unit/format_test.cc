@@ -343,8 +343,3 @@ TEST_F(FormatTest, TimeCacheSeparatesFormatsAndFormattersWithinOneSecond) {
         EXPECT_EQ(std::string(combined.data(), combined.size()), "2023|11");
     }
 }
-
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
-}
