@@ -42,7 +42,7 @@ target_link_libraries(zmalloc PUBLIC Threads::Threads)
 target_compile_definitions(zmalloc PUBLIC
     ZMALLOC_AUTO_RELEASE_ENABLED=$<BOOL:${ZLYNX_ZMALLOC_AUTO_RELEASE}>
 )
-zlynx_apply_common_options(zmalloc)
+zlynx_apply_common_options(zmalloc CXX_STANDARD 11)
 
 # 安装后保持版本化 soname，并导出为 zmalloc::zmalloc。
 set_target_properties(zmalloc PROPERTIES
@@ -57,7 +57,7 @@ add_library(zmalloc_override STATIC src/override.cc)
 add_library(zmalloc::override ALIAS zmalloc_override)
 target_link_libraries(zmalloc_override PUBLIC zmalloc)
 target_link_libraries(zmalloc_override PRIVATE ${CMAKE_DL_LIBS})
-zlynx_apply_common_options(zmalloc_override)
+zlynx_apply_common_options(zmalloc_override CXX_STANDARD 11)
 set_target_properties(zmalloc_override PROPERTIES
     POSITION_INDEPENDENT_CODE ON
     EXPORT_NAME override

@@ -125,7 +125,7 @@ zmalloc/
 基础构建依赖：
 
 - CMake 3.18+
-- C++17 编译器，仓库 preset 默认使用 `clang++`
+- C++11 或更高标准的编译器，仓库 preset 默认使用 `clang++` 和 C++17
 - Ninja，使用 preset 时需要
 - Threads
 
@@ -137,6 +137,15 @@ zmalloc/
 - `perf`、`valgrind`、`callgrind_annotate`，可选性能分析工具
 
 ## 编译
+
+生产库与安装接口最低要求 C++11，允许使用更高标准编译。独立验证 C++11 构建：
+
+```bash
+cmake -S zmalloc -B build/zmalloc-cxx11 -DCMAKE_CXX_STANDARD=11 -DBUILD_TESTING=OFF
+cmake --build build/zmalloc-cxx11
+```
+
+测试使用的 GTest / GMock 可能要求更高的 C++ 标准，具体取决于所用版本。
 
 ```bash
 cmake --preset debug

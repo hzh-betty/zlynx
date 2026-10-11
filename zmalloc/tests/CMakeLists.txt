@@ -41,7 +41,7 @@ if(BUILD_TESTING)
         # 实际共享对象验证 ELF 替换及 TLS，复用公开接口测试。
         add_library(zmalloc_override_shared_test SHARED ../src/override.cc)
         target_link_libraries(zmalloc_override_shared_test PUBLIC zmalloc PRIVATE ${CMAKE_DL_LIBS})
-        zlynx_apply_common_options(zmalloc_override_shared_test)
+        zlynx_apply_common_options(zmalloc_override_shared_test CXX_STANDARD 11)
         if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
             target_compile_options(zmalloc_override_shared_test PRIVATE -ftls-model=initial-exec)
         endif()
