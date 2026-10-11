@@ -39,7 +39,7 @@ TEST(ConnectionIoTest, WaitingReadDoesNotBlockSendOnTheSameWorker) {
         EXPECT_EQ(read.bytes, 4u);
     });
     auto writer = pair.runtime.spawn([&] {
-        entered.wait().value();
+        entered.wait(zco::Deadline::after(1s)).value();
         EXPECT_TRUE(pair.local->send("out", 100ms));
         sent.signal();
     });
@@ -86,7 +86,7 @@ TEST(ConnectionIoTest,
         EXPECT_EQ(result.error.code, std::errc::bad_file_descriptor);
     });
     ASSERT_TRUE(reader);
-    entered.wait().value();
+    entered.wait(zco::Deadline::after(1s)).value();
     // A barrier on this worker runs only after the reader has parked.
     auto barrier = pair.runtime.executor(0).spawn([] {});
     ASSERT_TRUE(barrier);

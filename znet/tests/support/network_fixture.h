@@ -35,7 +35,12 @@ struct NetworkPair {
         int fds[2];
         if (::socketpair(AF_UNIX, SOCK_STREAM, 0, fds) != 0)
             throw std::runtime_error("socketpair");
-        peer.emplace(adopt(fds[1]));
+        try {
+            peer.emplace(adopt(fds[1]));
+        } catch (...) {
+            ::close(fds[0]);
+            throw;
+        }
         local = connection(adopt(fds[0]), runtime, timeout);
     }
 

@@ -11,14 +11,15 @@ if(BUILD_TESTING)
     foreach(test_src ${ZNET_UNIT_TESTS})
         get_filename_component(test_name ${test_src} NAME_WE)
         zlynx_add_gtest(${test_name} ${test_src} znet unit znet)
-        target_link_libraries(${test_name} PRIVATE GTest::gtest_main)
     endforeach()
 
     foreach(test_src ${ZNET_INTEGRATION_TESTS})
         get_filename_component(test_name ${test_src} NAME_WE)
         zlynx_add_gtest(${test_name} ${test_src} znet integration znet)
-        target_link_libraries(${test_name} PRIVATE GTest::gtest_main)
     endforeach()
+
+    find_program(ZNET_TEST_OPENSSL NAMES openssl REQUIRED)
+    target_compile_definitions(tls_stream_test PRIVATE ZNET_TEST_OPENSSL="${ZNET_TEST_OPENSSL}")
 
     # Only the TLS client integration test directly uses OpenSSL.
     target_link_libraries(tls_stream_test PRIVATE OpenSSL::SSL OpenSSL::Crypto)

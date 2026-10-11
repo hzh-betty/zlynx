@@ -140,7 +140,8 @@ TEST(TcpServerTest, StopWaitsForSuspendedCloseCallbackBeforeRetiringSession) {
         opened.signal();
         return SessionCallbacks{{}, [&](const Connection::ptr &) {
                                     closing.signal();
-                                    EXPECT_TRUE(release.wait());
+                                    EXPECT_TRUE(
+                                        release.wait(zco::Deadline::after(1s)));
                                     callback_done = true;
                                 }};
     });

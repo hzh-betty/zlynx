@@ -17,20 +17,30 @@ struct CertificateFiles {
         const char *directory = ::mkdtemp(pattern);
         if (!directory)
             throw std::runtime_error("mkdtemp");
-        path = directory;
-        cert = path + "/cert.pem";
-        key = path + "/key.pem";
-        const std::string command =
-            "openssl req -x509 -nodes -newkey rsa:2048 -days 1 "
-            "-subj '/CN=localhost' -keyout " +
-            key + " -out " + cert + " >/dev/null 2>&1";
-        if (std::system(command.c_str()) != 0) {
-            std::filesystem::remove_all(path);
-            throw std::runtime_error("openssl certificate generation failed");
+        try {
+            path = directory;
+            cert = path + "/cert.pem";
+            key = path + "/key.pem";
+            const std::string command =
+                std::string("\"") + ZNET_TEST_OPENSSL +
+                "\" req -x509 -nodes -newkey rsa:2048 -days 1 "
+                "-subj '/CN=localhost' -keyout " +
+                key + " -out " + cert + " >/dev/null 2>&1";
+            if (std::system(command.c_str()) != 0) {
+                throw std::runtime_error(
+                    "openssl certificate generation failed");
+            }
+        } catch (...) {
+            std::error_code error;
+            std::filesystem::remove_all(directory, error);
+            throw;
         }
     }
 
-    ~CertificateFiles() { std::filesystem::remove_all(path); }
+    ~CertificateFiles() {
+        std::error_code error;
+        std::filesystem::remove_all(path, error);
+    }
 
     std::string path, cert, key;
 };
@@ -38,17 +48,27 @@ struct CertificateFiles {
 struct TlsPair {
     explicit TlsPair(std::chrono::milliseconds timeout = {})
         : runtime(zco::RuntimeOptions{1}) {
-        CertificateFiles files;
+        static const CertificateFiles files;
         auto credentials = TlsCredentials::load(files.cert, files.key);
         if (!credentials)
             throw std::runtime_error(credentials.error().message());
         int fds[2];
         if (::socketpair(AF_UNIX, SOCK_STREAM, 0, fds) != 0)
             throw std::runtime_error("socketpair");
-        peer = fds[1];
+        try {
+            peer = zco::io::Descriptor(fds[1]);
+        } catch (...) {
+            ::close(fds[0]);
+            throw;
+        }
         timeval limit{2, 0};
-        ::setsockopt(peer, SOL_SOCKET, SO_RCVTIMEO, &limit, sizeof(limit));
-        ::setsockopt(peer, SOL_SOCKET, SO_SNDTIMEO, &limit, sizeof(limit));
+        if (::setsockopt(peer.native_handle(), SOL_SOCKET, SO_RCVTIMEO, &limit,
+                         sizeof(limit)) != 0 ||
+            ::setsockopt(peer.native_handle(), SOL_SOCKET, SO_SNDTIMEO, &limit,
+                         sizeof(limit)) != 0) {
+            ::close(fds[0]);
+            throw std::runtime_error("client socket timeouts");
+        }
         auto stream = credentials.value().make_stream(test::adopt(fds[0]));
         if (!stream)
             throw std::runtime_error(stream.error().message());
@@ -59,14 +79,13 @@ struct TlsPair {
             throw std::runtime_error("client TLS context");
         SSL_CTX_set_verify(client_context.get(), SSL_VERIFY_NONE, nullptr);
         client.reset(SSL_new(client_context.get()));
-        SSL_set_fd(client.get(), peer);
+        if (!client)
+            throw std::runtime_error("client TLS session");
+        if (SSL_set_fd(client.get(), peer.native_handle()) != 1)
+            throw std::runtime_error("client TLS socket");
     }
 
-    ~TlsPair() {
-        (void)server->close();
-        client.reset();
-        ::close(peer);
-    }
+    ~TlsPair() { (void)server->close(); }
 
     bool handshake() {
         bool started = false;
@@ -79,7 +98,7 @@ struct TlsPair {
 
     zco::Runtime runtime;
     Connection::ptr server;
-    int peer = -1;
+    zco::io::Descriptor peer;
     std::unique_ptr<SSL_CTX, decltype(&SSL_CTX_free)> client_context{
         nullptr, SSL_CTX_free};
     std::unique_ptr<SSL, decltype(&SSL_free)> client{nullptr, SSL_free};
@@ -124,7 +143,7 @@ TEST(TlsStreamTest, ParkedTlsReadDoesNotStallWriteOnItsWorker) {
         EXPECT_TRUE(pair.server->read(input, 4, zco::Deadline::after(1s)));
     });
     auto write = pair.runtime.spawn([&] {
-        entered.wait().value();
+        entered.wait(zco::Deadline::after(1s)).value();
         EXPECT_TRUE(pair.server->send("out", 100ms));
         written.signal();
     });
