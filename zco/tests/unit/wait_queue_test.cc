@@ -106,8 +106,7 @@ TEST(WaitQueue, CoroutineTimeoutStormAndSignalLeaveTheEventReusable) {
                                           wait_error(WaitOutcome::timeout));
                 ++returned;
             }));
-        while (entered != 2000)
-            std::this_thread::yield();
+        EXPECT_TRUE(test::wait_until([&] { return entered == 2000; }));
         event.signal();
         for (auto &task : tasks)
             EXPECT_TRUE(task.join(test::soon()));

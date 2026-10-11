@@ -63,13 +63,11 @@ TEST(TaskCompletion, FinishRacesFirstRegistrationAndConcurrentJoiners) {
         for (auto &thread : threads)
             thread = std::thread([&] {
                 ++ready;
-                while (!go)
-                    std::this_thread::yield();
+                EXPECT_TRUE(test::wait_until([&] { return go.load(); }));
                 if (handle.join(test::soon()))
                     ++joined;
             });
-        while (ready != 4)
-            std::this_thread::yield();
+        EXPECT_TRUE(test::wait_until([&] { return ready == 4; }));
         go = true;
         completion->finish(TaskStatus::succeeded);
         for (auto &thread : threads)
@@ -85,7 +83,7 @@ TEST(TaskCompletion, MultipleCoroutineJoinersObserveTheSameResult) {
         Runtime runtime(options);
         Event release;
         auto target = test::spawn(runtime.executor(0), [&] {
-            release.wait().value();
+            release.wait(test::soon()).value();
             throw std::runtime_error("task failure");
         });
         std::atomic<int> entered{0}, observed{0};
@@ -118,7 +116,8 @@ TEST(TaskCompletion, TimedOutJoinCanBeRetriedFromACoroutine) {
         options.stack_model = model;
         Runtime runtime(options);
         Event release;
-        auto target = test::spawn(runtime, [&] { release.wait().value(); });
+        auto target =
+            test::spawn(runtime, [&] { release.wait(test::soon()).value(); });
         auto joiner = test::spawn(runtime, [&] {
             auto timeout = target.join(test::ms(0));
             EXPECT_EQ(timeout.error(), wait_error(WaitOutcome::timeout));

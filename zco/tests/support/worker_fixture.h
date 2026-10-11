@@ -2,9 +2,29 @@
 #include "runtime/worker.h"
 #include "support/fake_reactor.h"
 #include "support/runtime_fixture.h"
+#include <memory>
+#include <mutex>
 
 namespace zco {
 namespace test {
+// Abort a partially started worker group before worker destructors join it.
+template <class Startup> class AbortStartup {
+  public:
+    explicit AbortStartup(std::shared_ptr<Startup> state)
+        : state_(std::move(state)) {}
+
+    ~AbortStartup() {
+        std::lock_guard<std::mutex> lock(state_->mutex);
+        if (!state_->launch) {
+            state_->abort = true;
+            state_->cv.notify_all();
+        }
+    }
+
+  private:
+    std::shared_ptr<Startup> state_;
+};
+
 class WorkerFixture {
   public:
     WorkerFixture()
@@ -14,9 +34,15 @@ class WorkerFixture {
         submission->workers.push_back(&worker);
         worker.set_peers(submission->workers);
         auto startup = std::make_shared<detail::Startup>();
+        AbortStartup abort_startup(startup);
         worker.start(startup);
         std::unique_lock<std::mutex> lock(startup->mutex);
-        startup->cv.wait(lock, [&] { return startup->ready == 1; });
+        if (!startup->cv.wait_for(lock, std::chrono::seconds(3),
+                                  [&] { return startup->ready == 1; })) {
+            startup->abort = true;
+            startup->cv.notify_all();
+            throw std::runtime_error("test worker startup timed out");
+        }
         submission->accepting = true;
         startup->launch = true;
         startup->cv.notify_all();

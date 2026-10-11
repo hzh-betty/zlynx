@@ -118,8 +118,7 @@ TEST(Runtime, ConcurrentSubmitAndStopHaveDefiniteResults) {
     std::atomic<bool> go{false};
     std::atomic<int> admitted{0};
     std::thread submitter([&] {
-        while (!go.load())
-            std::this_thread::yield();
+        EXPECT_TRUE(test::wait_until([&] { return go.load(); }));
         for (int i = 0; i < 2000; ++i) {
             auto result = executor.spawn([] { yield(); });
             if (result) {
@@ -132,8 +131,7 @@ TEST(Runtime, ConcurrentSubmitAndStopHaveDefiniteResults) {
         }
     });
     go = true;
-    while (admitted.load() < 10)
-        std::this_thread::yield();
+    EXPECT_TRUE(test::wait_until([&] { return admitted.load() >= 10; }));
     runtime.request_stop();
     submitter.join();
     runtime.join();

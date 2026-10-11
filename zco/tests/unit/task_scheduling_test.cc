@@ -103,8 +103,10 @@ TEST(Scheduling, YieldAllowsNewTasksToRun) {
     Runtime runtime(RuntimeOptions{1});
     std::atomic<bool> finished{false};
     auto first = test::spawn(runtime, [&] {
-        while (!finished)
+        const auto deadline = test::soon();
+        while (!finished && !deadline.expired(Deadline::Clock::now()))
             yield();
+        EXPECT_TRUE(finished);
     });
     auto second = test::spawn(runtime, [&] { finished = true; });
     EXPECT_TRUE(second.join(test::soon()));
@@ -180,11 +182,17 @@ TEST(Scheduling, PollFailureStopsAllWorkersAndRevokesTheirIoRegistrations) {
     first.set_peers(endpoint->workers);
     second.set_peers(endpoint->workers);
     auto startup = std::make_shared<detail::Startup>();
+    test::AbortStartup abort_startup(startup);
     first.start(startup);
     second.start(startup);
     {
         std::unique_lock<std::mutex> lock(startup->mutex);
-        startup->cv.wait(lock, [&] { return startup->ready == 2; });
+        if (!startup->cv.wait_for(lock, std::chrono::seconds(3),
+                                  [&] { return startup->ready == 2; })) {
+            startup->abort = true;
+            startup->cv.notify_all();
+            throw std::runtime_error("test worker startup timed out");
+        }
         endpoint->accepting = true;
         startup->launch = true;
         startup->cv.notify_all();
@@ -233,25 +241,33 @@ TEST(Scheduling, WorkerStealsOrdinaryTasksBeforeContextCreation) {
     first.set_peers(endpoint->workers);
     second.set_peers(endpoint->workers);
     auto startup = std::make_shared<detail::Startup>();
+    test::AbortStartup abort_startup(startup);
     first.start(startup);
     second.start(startup);
     {
         std::unique_lock<std::mutex> lock(startup->mutex);
-        startup->cv.wait(lock, [&] { return startup->ready == 2; });
+        if (!startup->cv.wait_for(lock, std::chrono::seconds(3),
+                                  [&] { return startup->ready == 2; })) {
+            startup->abort = true;
+            startup->cv.notify_all();
+            throw std::runtime_error("test worker startup timed out");
+        }
         endpoint->accepting = true;
         startup->launch = true;
         startup->cv.notify_all();
     }
-    std::promise<void> entered, release;
+    test::ReleasePromise entered, release;
     auto gate = release.get_future().share();
     auto blocker = detail::submit(
         endpoint,
-        [&] {
+        [&, gate] {
             entered.set_value();
-            gate.wait();
+            EXPECT_EQ(gate.wait_for(std::chrono::seconds(3)),
+                      std::future_status::ready);
         },
         0, true);
-    entered.get_future().wait();
+    ASSERT_EQ(entered.get_future().wait_for(std::chrono::seconds(3)),
+              std::future_status::ready);
     auto completion = std::make_shared<detail::Completion>(TaskId{900});
     first.push({[] { EXPECT_EQ(current_executor().index(), 1u); }, completion},
                false);
@@ -273,15 +289,23 @@ TEST(Scheduling, OrdinaryTasksUseAllWorkersUnderBlockingLoad) {
         RuntimeOptions options{8};
         options.stack_model = model;
         Runtime runtime(options);
-        std::promise<void> release;
+        test::ReleasePromise release;
         auto gate = release.get_future().share();
         std::atomic<int> started{0};
         std::vector<TaskHandle> tasks;
-        for (int i = 0; i < 8; ++i)
-            tasks.push_back(test::spawn(runtime, [&] {
+        for (int i = 0; i < 8; ++i) {
+            tasks.push_back(test::spawn(runtime, [&, gate] {
                 ++started;
-                gate.wait();
+                EXPECT_EQ(gate.wait_for(std::chrono::seconds(6)),
+                          std::future_status::ready);
             }));
+            // Observe admission before blocking the next worker; this removes
+            // submission timing from the worker utilization assertion.
+            if (!test::wait_until([&] { return started == i + 1; })) {
+                ADD_FAILURE() << "ordinary task did not reach an idle worker";
+                break;
+            }
+        }
         auto deadline = test::soon();
         while (started != 8 && !deadline.expired(Deadline::Clock::now()))
             std::this_thread::yield();
@@ -297,17 +321,17 @@ TEST(Scheduling, IdleWorkersRunTasksWhenBothSubmitCandidatesAreBlocked) {
         RuntimeOptions options{4};
         options.stack_model = model;
         Runtime runtime(options);
-        std::promise<void> release;
+        test::ReleasePromise release;
         auto gate = release.get_future().share();
         std::atomic<int> entered{0};
         std::vector<TaskHandle> blockers;
         for (size_t worker : {0u, 2u})
-            blockers.push_back(test::spawn(runtime.executor(worker), [&] {
+            blockers.push_back(test::spawn(runtime.executor(worker), [&, gate] {
                 ++entered;
-                gate.wait();
+                EXPECT_EQ(gate.wait_for(std::chrono::seconds(3)),
+                          std::future_status::ready);
             }));
-        while (entered != 2)
-            std::this_thread::yield();
+        EXPECT_TRUE(test::wait_until([&] { return entered == 2; }));
         auto stolen = test::spawn(runtime, [] {
             EXPECT_TRUE(current_executor().index() == 1 ||
                         current_executor().index() == 3);

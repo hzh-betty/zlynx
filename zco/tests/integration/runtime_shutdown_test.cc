@@ -56,13 +56,15 @@ TEST(Shutdown, AllInfiniteWaitsUnwindAndReleaseExecutionAndCaptures) {
 
 TEST(Shutdown, TasksNotYetExecutedAreCanceledAndReleaseCaptures) {
     Runtime runtime(RuntimeOptions{1});
-    std::promise<void> entered, release;
+    test::ReleasePromise entered, release;
     auto gate = release.get_future().share();
-    auto running = test::spawn(runtime.executor(0), [&] {
+    auto running = test::spawn(runtime.executor(0), [&, gate] {
         entered.set_value();
-        gate.wait();
+        EXPECT_EQ(gate.wait_for(std::chrono::seconds(3)),
+                  std::future_status::ready);
     });
-    entered.get_future().wait();
+    ASSERT_EQ(entered.get_future().wait_for(std::chrono::seconds(3)),
+              std::future_status::ready);
     auto capture = std::make_shared<int>(1);
     std::weak_ptr<int> weak = capture;
     auto pending = test::spawn(
