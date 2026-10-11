@@ -1,8 +1,11 @@
 #include "../support/network_fixture.h"
 #include "zco/sync/event.h"
 #include "znet/server/tcp_server.h"
+#include <algorithm>
 #include <gtest/gtest.h>
+#include <mutex>
 #include <thread>
+#include <vector>
 
 using namespace znet;
 using namespace std::chrono_literals;
@@ -214,6 +217,57 @@ TEST(TcpServerTest, DestructionInsideCallbackLeavesNoFacadeCapture) {
     runtime.request_stop();
     runtime.join();
     EXPECT_EQ(server, nullptr);
+}
+
+TEST(TcpServerTest, DestructionInsideOneSessionClosesAndReleasesOtherSessions) {
+    zco::Runtime runtime(zco::RuntimeOptions{2});
+    zco::Event opened(true), destroyed(true), closed(true);
+    std::mutex mutex;
+    std::vector<std::weak_ptr<Connection>> sessions;
+    std::atomic<int> closed_count{0};
+    std::unique_ptr<TcpServer> server;
+    server = std::make_unique<TcpServer>(
+        runtime, loopback(), [&](const Connection::ptr &connection) {
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                sessions.push_back(connection);
+                if (sessions.size() == 2)
+                    opened.signal();
+            }
+            return SessionCallbacks{
+                [&](const Connection::ptr &, ByteBuffer &input) {
+                    input.retrieve_all();
+                    server.reset();
+                    destroyed.signal();
+                },
+                [&](const Connection::ptr &) {
+                    if (++closed_count == 2)
+                        closed.signal();
+                }};
+        });
+    ASSERT_TRUE(server->start());
+    const auto endpoint = server->local_endpoint().value();
+    auto idle = test::connect_to(endpoint);
+    auto trigger = test::connect_to(endpoint);
+    ASSERT_TRUE(opened.wait(zco::Deadline::after(1s)));
+    ASSERT_EQ(::send(trigger.native_handle(), "x", 1, MSG_NOSIGNAL), 1);
+    EXPECT_TRUE(destroyed.wait(zco::Deadline::after(1s)));
+    EXPECT_TRUE(closed.wait(zco::Deadline::after(1s)));
+
+    const auto released = [&] {
+        std::lock_guard<std::mutex> lock(mutex);
+        return std::all_of(
+            sessions.begin(), sessions.end(),
+            [](const auto &session) { return session.expired(); });
+    };
+    const auto deadline = std::chrono::steady_clock::now() + 1s;
+    while (!released() && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    EXPECT_TRUE(released());
+    runtime.request_stop();
+    runtime.join();
+    EXPECT_EQ(server, nullptr);
+    EXPECT_EQ(closed_count, 2);
 }
 
 TEST(TcpServerTest, CallbackExceptionsAreReportedOnceAndStillCleanUp) {

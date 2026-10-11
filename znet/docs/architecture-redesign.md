@@ -94,7 +94,7 @@ TLS 调用与 fd 借用同时受保护，关闭后不会误操作已经复用的
 | Runtime | 应用创建并拥有，最后销毁；服务器仅借用 | 可以供多个服务器使用；引用不可空 |
 | TcpServer | 应用以栈或 unique_ptr 拥有；析构请求停止并收敛任务 | 无 shared_from_this 要求 |
 | 每次启动的运行实例 | 服务器与该次 accept/session 任务共享 | 真实共享寿命；新一轮启动不会复用旧状态 |
-| 会话登记项 | 运行实例的 map 按值唯一拥有，stop 转移到局部 map 后等待销毁 | 不使用 shared_ptr；只保存连接句柄和任务句柄 |
+| 会话登记项 | 运行实例内 SessionManager 的 map 按值唯一拥有，stop 转移到局部 map 后等待销毁 | 不使用 shared_ptr；只保存连接句柄和任务句柄 |
 | Socket/Descriptor | 值/RAII，传输唯一拥有 fd；移动转移所有权 | 不共享 Socket，不提供 raw close/reconnect 路径 |
 | ByteStream | Connection 的 unique_ptr | 必须非空；析构释放全部资源 |
 | Connection | 服务会话与实际异步使用者共享，协议使用 weak_ptr | shared_ptr 仅用于有独立寿命的连接句柄；不反向拥有服务器 |
@@ -107,6 +107,14 @@ stop 等待 accept 和全部会话结束。服务器在自己运行时的回调�
 任务保持到安全结束。Connection close 直接撤销 Descriptor，唤醒读/写/握手，不排入 IO 队列。
 Connection 普通线程调用通过显式注入的 executor 提交单次操作并 join；协程内直接执行。
 不保留 mailbox、inline actor 或 shared_from_this。读写各自互斥，关闭不等待互斥锁。
+
+服务器内部按职责组合，公共 API 不变：ServerRun 协调单次启动、失败回滚和整体停止；
+私有 Acceptor 拥有监听 Socket 与接入任务；SessionManager 封装传输创建、执行器选择、
+会话登记、任务提交、取消和回收；SessionRunner 仅驱动单连接的握手、读取和回调。
+回收循环是 SessionManager 的内部任务，不增加独立 Reaper 生命周期。会话表及其锁只由
+SessionManager 访问；整体停止标志仍属于 ServerRun，登记与提交在同一临界区检查它。
+异步任务保留所属 ServerRun，管理器借用的配置和执行器因而在任务退出前保持有效。
+Acceptor 和 SessionManager 的任务句柄分别由组件持有，ServerRun 统一安排启动与 join。
 
 ## 完整目标目录（znet）
 
@@ -137,7 +145,11 @@ znet/
 │   │   ├── tcp_stream.cc
 │   │   └── tls_stream.cc
 │   └── server/
+│       ├── acceptor.h / acceptor.cc
 │       ├── connection.cc
+│       ├── server_error.h
+│       ├── session_manager.h / session_manager.cc
+│       ├── session_runner.h / session_runner.cc
 │       └── tcp_server.cc
 └── tests/
     ├── CMakeLists.txt
@@ -198,7 +210,7 @@ HTTP 的驱动/关闭重入标志随旧回调模型删除；会话回调在同�
 
 ### 破坏性变化
 
-- API/类：删除地址多态、Acceptor、TcpConnection、TlsContext/TlsChannel、网络全局日志。
+- API/类：删除地址多态、旧公开 Acceptor、TcpConnection、TlsContext/TlsChannel、网络全局日志。
 - include/目录：按 endpoint、字节数据、transport、server 划分；旧 include 不再存在。
 - namespace：公共仍使用 znet；删除公开 znet::detail actor 及 NonCopyable。
 - 构造/ownership：地址按值；Socket 可移动不可复制；Connection 唯一拥有 ByteStream；

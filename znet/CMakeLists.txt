@@ -34,6 +34,9 @@ add_library(znet
     src/transport/tcp_stream.cc
     src/transport/tls_stream.cc
     src/server/connection.cc
+    src/server/acceptor.cc
+    src/server/session_manager.cc
+    src/server/session_runner.cc
     src/server/tcp_server.cc
 )
 add_library(znet::znet ALIAS znet)
