@@ -62,7 +62,7 @@ bool AuthenticationMiddleware::is_authenticated_by_bearer_token(
     }
 
     // Authorization 至少要包含前缀。
-    const std::string authorization = request.header("Authorization");
+    const auto authorization = request.header_view("Authorization");
     if (authorization.size() < options_.bearer_prefix.size()) {
         return false;
     }
@@ -74,8 +74,8 @@ bool AuthenticationMiddleware::is_authenticated_by_bearer_token(
     }
 
     // 裁剪 token 两端空白后再校验，兼容客户端额外空格。
-    std::string token = authorization.substr(options_.bearer_prefix.size());
-    trim(token);
+    const std::string token(
+        trim_view(authorization.substr(options_.bearer_prefix.size())));
     if (token.empty()) {
         return false;
     }

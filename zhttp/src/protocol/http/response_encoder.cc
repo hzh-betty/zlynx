@@ -39,8 +39,9 @@ ResponsePlan ResponseEncoder::plan(const HttpRequestLine &request,
     p.close =
         !response.is_keep_alive() ||
         (p.send_body && !p.chunked && p.length == HttpBody::UnknownLength);
-    for (const auto &value : response.headers().get_all("Connection"))
-        if (header_contains_token(value, "close"))
+    for (const auto &field : response.headers())
+        if (HttpHeaders::equal_name(field.first, "Connection") &&
+            header_contains_token(field.second, "close"))
             p.close = true;
     return p;
 }

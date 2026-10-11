@@ -1,4 +1,5 @@
 #include "../support/request_builder.h"
+#include "router/radix_tree.h"
 #include "zhttp/router/router.h"
 #include <gtest/gtest.h>
 
@@ -145,6 +146,30 @@ TEST(RegexPrefixBucketTest, ManyRegexRoutes) {
     zhttp::HttpResponse resp;
     EXPECT_TRUE(run_application(router, req, resp));
     EXPECT_EQ(req->path_param("id"), "12345");
+}
+
+TEST(RadixTreeViewTest, CapturedParametersOwnTheirBytes) {
+    zhttp::RadixTree tree;
+    tree.insert(zhttp::HttpMethod::GET, "/users/:id/files/*path",
+                [](zhttp::HttpContext &) {});
+    std::string path = "/users/" + std::string(128, 'u') + "/files//a///b/";
+    const auto match = tree.find(path, zhttp::HttpMethod::GET);
+    ASSERT_TRUE(match.found);
+    path.assign(path.size(), 'x');
+    EXPECT_EQ(match.params.at("id"), std::string(128, 'u'));
+    EXPECT_EQ(match.params.at("path"), "a/b");
+}
+
+TEST(RadixTreeViewTest, RegexPrefixAndOptionalCapturesRetainOwnership) {
+    zhttp::RadixTree tree;
+    tree.insert_regex(zhttp::HttpMethod::GET, "/long/prefix/users/([a-z]+)([0-9]+)?",
+                      {"name", "number"}, [](zhttp::HttpContext &) {});
+    std::string path = "/long/prefix/users/" + std::string(128, 'u');
+    const auto match = tree.find(path, zhttp::HttpMethod::GET);
+    ASSERT_TRUE(match.found);
+    path.assign(path.size(), 'x');
+    EXPECT_EQ(match.params.at("name"), std::string(128, 'u'));
+    EXPECT_EQ(match.params.at("number"), "");
 }
 
 int main(int argc, char **argv) {

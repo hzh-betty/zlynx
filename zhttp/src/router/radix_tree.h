@@ -43,16 +43,16 @@ class RadixTree {
         std::vector<std::unique_ptr<Node>> children;
         std::unordered_map<HttpMethod, Route> routes;
         std::vector<RegexRoute> regex_routes;
-        Node *child(NodeType type, const std::string &path = "") const;
-        Node *ensure_child(NodeType type, const std::string &path);
+        Node *child(NodeType type, std::string_view path = "") const;
+        Node *ensure_child(NodeType type, std::string_view path);
     };
-    static std::vector<std::string> split_path(const std::string &path);
+    static std::vector<std::string_view> split_path(std::string_view path);
     static std::string regex_prefix(const std::string &pattern);
-    static void assign_match(const Route &route, const std::vector<std::string> &values,
+    static void assign_match(const Route &route, const std::vector<std::string_view> &values,
                              RouteMatchContext &match, RouteMatchContext::MatchType type);
-    static bool match_dynamic(const Node &node, const std::vector<std::string> &segments,
+    static bool match_dynamic(const Node &node, const std::vector<std::string_view> &segments,
                               size_t index, HttpMethod method,
-                              std::vector<std::string> &values, RouteMatchContext &match);
+                              std::vector<std::string_view> &values, RouteMatchContext &match);
     Node root_;
 };
 } // namespace zhttp

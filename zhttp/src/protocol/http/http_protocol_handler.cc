@@ -52,7 +52,7 @@ void HttpProtocolHandler::on_data(
         }
         const auto result = parser_.parse(&buffer);
         if (result == ParseResult::HEADERS_READY) {
-            if (!parser_.request()->headers().get_all("Expect").empty()) {
+            if (parser_.request()->headers().count("Expect")) {
                 send_error(HttpStatus::EXPECTATION_FAILED,
                            "Unsupported Expect header");
                 return;

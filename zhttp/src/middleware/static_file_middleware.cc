@@ -186,7 +186,7 @@ bool StaticFileMiddleware::before(HttpContext &request) {
         return false;
     }
     auto selected = store_->lookup(relative, !raw.empty() && raw.back() == '/',
-        accepted_content_encodings(request.header("Accept-Encoding"), options_.br_static, options_.gzip_static),
+        accepted_content_encodings(request.header_view("Accept-Encoding"), options_.br_static, options_.gzip_static),
         request.method() == HttpMethod::HEAD ? detail::StaticResourceStore::ReadMode::Metadata
                                             : detail::StaticResourceStore::ReadMode::Content);
     using State = detail::ResourceLookup::State;

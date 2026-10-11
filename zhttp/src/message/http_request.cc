@@ -2,16 +2,15 @@
 #include <cstdlib>
 namespace zhttp {
 bool HttpRequest::is_keep_alive() const {
-    std::string connection;
-    for (const auto &v : headers_.get_all("Connection")) {
-        if (!connection.empty())
-            connection += ",";
-        connection += v;
+    bool keep_alive = false;
+    for (const auto &field : headers_) {
+        if (!HttpHeaders::equal_name(field.first, "Connection"))
+            continue;
+        if (header_contains_token(field.second, "close"))
+            return false;
+        keep_alive |= header_contains_token(field.second, "keep-alive");
     }
-    if (header_contains_token(connection, "close"))
-        return false;
-    return version() == HttpVersion::HTTP_1_1 ||
-           header_contains_token(connection, "keep-alive");
+    return version() == HttpVersion::HTTP_1_1 || keep_alive;
 }
 std::size_t HttpRequest::content_length() const {
     return static_cast<std::size_t>(

@@ -68,6 +68,10 @@ class HttpContext {
                        const std::string &fallback = "") const {
         return request().header(key, fallback);
     }
+    /** 借用首个头部值；缺失返回空视图，请求修改或销毁后视图可能失效。 */
+    std::string_view header_view(std::string_view key) const {
+        return request().header_view(key);
+    }
     /** 返回请求 Content-Type。 */
     std::string content_type() const { return request().content_type(); }
     /** 返回请求是否要求保持连接。 */
@@ -100,31 +104,34 @@ class HttpContext {
         session_ = std::move(session);
     }
     /** 依据 Content-Type 判断是否为 JSON。 */
-    bool is_json() const { return detail::ParsedRequestBody::is_json(content_type()); }
+    bool is_json() const {
+        return detail::ParsedRequestBody::is_json(header_view("Content-Type"));
+    }
     /** 解析并缓存 JSON；首次类型不符时视为无需解析，JSON 解析失败返回 false。 */
-    bool parse_json() { return parsed_.parse_json(content_type()); }
+    bool parse_json() { return parsed_.parse_json(header_view("Content-Type")); }
     /** 惰性获取 JSON 缓存；类型不符或解析失败返回 nullptr。 */
-    const Json *json() const { return parsed_.json(content_type()); }
+    const Json *json() const { return parsed_.json(header_view("Content-Type")); }
     /** 返回最近 JSON 解析错误文本。 */
     const std::string &json_error() const { return parsed_.json_error(); }
     /** 判断 Content-Type 是否为 URL 编码表单。 */
     bool is_form_urlencoded() const {
-        return detail::ParsedRequestBody::is_form_urlencoded(content_type());
+        return detail::ParsedRequestBody::is_form_urlencoded(
+            header_view("Content-Type"));
     }
     /** 解析并缓存 URL 编码表单；类型不符时视为无需解析并返回 true。 */
     bool parse_form_urlencoded() {
-        return parsed_.parse_form_urlencoded(content_type());
+        return parsed_.parse_form_urlencoded(header_view("Content-Type"));
     }
     /** 返回惰性解析后的表单缓存；重复键保留最后值。 */
     const Params &form_params() const {
-        return parsed_.form_params(content_type());
+        return parsed_.form_params(header_view("Content-Type"));
     }
     /** 返回表单参数；缺失时返回 fallback。 */
     std::string form_param(const std::string &key,
                            const std::string &fallback = "") const;
     /** 判断 Content-Type 是否为 multipart/form-data。 */
     bool is_multipart() const {
-        return detail::ParsedRequestBody::is_multipart(content_type());
+        return detail::ParsedRequestBody::is_multipart(header_view("Content-Type"));
     }
     /** 解析并缓存 multipart；失败返回 false，可读取 multipart_error()。 */
     bool parse_multipart();

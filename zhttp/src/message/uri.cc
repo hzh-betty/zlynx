@@ -7,8 +7,13 @@ bool hex(unsigned char c) {
     return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
            (c >= 'A' && c <= 'F');
 }
+bool query_key_matches(std::string_view encoded, std::string_view name) {
+    return encoded.find_first_of("%+") == std::string_view::npos
+               ? encoded == name
+               : url_decode(encoded) == name;
+}
 } // namespace
-bool Uri::valid_encoding(const std::string &value) {
+bool Uri::valid_encoding(std::string_view value) {
     for (size_t i = 0; i < value.size(); ++i) {
         const unsigned char c = value[i];
         if (c <= 32 || c == 127 || c == '#')
@@ -57,21 +62,38 @@ Uri::Uri(std::string target) : raw_(std::move(target)) {
                 throw std::invalid_argument("Invalid authority port");
     }
 }
-std::vector<std::string> Uri::query_values(const std::string &name) const {
+std::vector<std::string> Uri::query_values(std::string_view name) const {
     std::vector<std::string> values;
-    for (const auto &pair : split_string(query_, '&')) {
+    std::string_view remaining = query_;
+    while (!remaining.empty()) {
+        const auto amp = remaining.find('&');
+        const auto pair = remaining.substr(0, amp);
+        remaining = amp == std::string_view::npos ? std::string_view{}
+                                                   : remaining.substr(amp + 1);
         if (pair.empty())
             continue;
         auto eq = pair.find('=');
-        if (url_decode(pair.substr(0, eq)) == name)
+        if (query_key_matches(pair.substr(0, eq), name))
             values.push_back(
                 eq == std::string::npos ? "" : url_decode(pair.substr(eq + 1)));
     }
     return values;
 }
-std::string Uri::query_param(const std::string &name,
-                             const std::string &fallback) const {
-    auto values = query_values(name);
-    return values.empty() ? fallback : values.front();
+std::string Uri::query_param(std::string_view name,
+                             std::string_view fallback) const {
+    std::string_view remaining = query_;
+    while (!remaining.empty()) {
+        const auto amp = remaining.find('&');
+        const auto pair = remaining.substr(0, amp);
+        remaining = amp == std::string_view::npos ? std::string_view{}
+                                                   : remaining.substr(amp + 1);
+        if (pair.empty())
+            continue;
+        const auto eq = pair.find('=');
+        if (query_key_matches(pair.substr(0, eq), name))
+            return eq == std::string_view::npos ? ""
+                                               : url_decode(pair.substr(eq + 1));
+    }
+    return std::string(fallback);
 }
 } // namespace zhttp

@@ -62,10 +62,9 @@ class HttpResponse {
     /** 返回响应 HTTP 版本。 */
     HttpVersion version() const { return line_.version; }
     /** 替换全部同名字段，返回当前响应；非法字段抛出 std::invalid_argument。 */
-    HttpResponse &header(const std::string &key, const std::string &value);
+    HttpResponse &header(std::string_view key, std::string_view value);
     /** 追加字段并保留重复项，返回当前响应。 */
-    HttpResponse &append_header(const std::string &key,
-                                const std::string &value) {
+    HttpResponse &append_header(std::string_view key, std::string_view value) {
         check_mutable();
         headers_.append(key, value);
         return *this;
@@ -77,7 +76,7 @@ class HttpResponse {
     /** 返回独立保存的 Set-Cookie 值列表。 */
     const std::vector<std::string> &set_cookies() const { return set_cookies_; }
     /** 设置 Content-Type，返回当前响应。 */
-    HttpResponse &content_type(const std::string &type) {
+    HttpResponse &content_type(std::string_view type) {
         return header("Content-Type", type);
     }
     /** 接管内存正文，返回当前响应。 */
@@ -95,19 +94,19 @@ class HttpResponse {
     /** 返回只读正文数据源。 */
     const HttpBody &body_source() const { return body_; }
     /** 设置 JSON 内容类型及正文原文，不执行 JSON 序列化，返回当前响应。 */
-    HttpResponse &json(const std::string &bytes) {
+    HttpResponse &json(std::string bytes) {
         content_type("application/json; charset=utf-8");
-        return body(bytes);
+        return body(std::move(bytes));
     }
     /** 设置 UTF-8 HTML 内容类型及正文，返回当前响应。 */
-    HttpResponse &html(const std::string &bytes) {
+    HttpResponse &html(std::string bytes) {
         content_type("text/html; charset=utf-8");
-        return body(bytes);
+        return body(std::move(bytes));
     }
     /** 设置 UTF-8 纯文本内容类型及正文，返回当前响应。 */
-    HttpResponse &text(const std::string &bytes) {
+    HttpResponse &text(std::string bytes) {
         content_type("text/plain; charset=utf-8");
-        return body(bytes);
+        return body(std::move(bytes));
     }
     /**
      * 构造普通重定向响应并清空正文。

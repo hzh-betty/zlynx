@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <ctime>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace zhttp {
@@ -31,14 +32,14 @@ enum class HttpMethod {
 /** 返回方法的大写名称；未识别值返回 UNKNOWN。 */
 const char *method_to_string(HttpMethod method);
 /** 忽略大小写解析方法，未识别时返回 UNKNOWN。 */
-HttpMethod string_to_method(const std::string &str);
+HttpMethod string_to_method(std::string_view str);
 
 /** HTTP/1.x 版本与未识别标记。 */
 enum class HttpVersion { HTTP_1_0, HTTP_1_1, UNKNOWN };
 /** 返回 HTTP 版本文本，未识别值回退为 HTTP/1.1。 */
 const char *version_to_string(HttpVersion version);
 /** 解析 HTTP 版本文本，不支持时返回 UNKNOWN。 */
-HttpVersion string_to_version(const std::string &str);
+HttpVersion string_to_version(std::string_view str);
 
 /** 常用 HTTP 响应状态码。 */
 enum class HttpStatus {
@@ -119,22 +120,24 @@ bool is_body_allowed(HttpStatus status);
 /** 依据文件扩展名查找 MIME 类型，未知扩展名回退为 application/octet-stream。 */
 const char *get_mime_type(const std::string &extension);
 /** 返回转为小写的字符串副本。 */
-std::string to_lower(const std::string &str);
+std::string to_lower(std::string_view str);
 /** 原地移除字符串首尾空白。 */
 void trim(std::string &str);
+/** 借用去除首尾空白后的范围，不修改或复制原始字节。 */
+std::string_view trim_view(std::string_view str);
 /** 按逗号分隔并忽略大小写查询完整 token，忽略两端空白。 */
-bool header_contains_token(const std::string &header_value,
-                           const std::string &token);
+bool header_contains_token(std::string_view header_value,
+                           std::string_view token);
 /** 移除 MIME 参数与首尾空白，并转为小写。 */
-std::string normalize_mime_type(const std::string &content_type);
+std::string normalize_mime_type(std::string_view content_type);
 /** 按单字符分隔字符串并返回各片段。 */
-std::vector<std::string> split_string(const std::string &str, char delimiter);
+std::vector<std::string> split_string(std::string_view str, char delimiter);
 /** 用指定分隔串连接所有元素。 */
 std::string join_string(const std::vector<std::string> &values,
                         const std::string &delimiter);
 // Percent decoding, with '+' interpreted as a space for query/form values.
 /** 解码有效百分号序列，将 + 转为空格；无效百分号序列保持原样。 */
-std::string url_decode(const std::string &str);
+std::string url_decode(std::string_view str);
 
 // 按客户端权重排列可用编码；同权重优先 br，再 gzip，空串表示 identity。
 // 未显式声明的 identity 作为最后回退；空结果表示没有可接受的编码。
@@ -146,7 +149,7 @@ std::string url_decode(const std::string &str);
  * @param enable_gzip 是否允许 gzip。
  * @return 同权重优先 br 再 gzip；空串元素表示 identity，空列表表示无可接受编码。
  */
-std::vector<std::string> accepted_content_encodings(const std::string &header,
+std::vector<std::string> accepted_content_encodings(std::string_view header,
                                                     bool enable_br,
                                                     bool enable_gzip);
 

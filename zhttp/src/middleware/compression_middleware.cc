@@ -188,7 +188,7 @@ void CompressionMiddleware::after(HttpContext &request) {
         return;
     }
     const auto encodings =
-        accepted_content_encodings(request.header("Accept-Encoding"),
+        accepted_content_encodings(request.header_view("Accept-Encoding"),
                                    options_.enable_br, options_.enable_gzip);
     const bool identity_allowed =
         std::find(encodings.begin(), encodings.end(), "") != encodings.end();

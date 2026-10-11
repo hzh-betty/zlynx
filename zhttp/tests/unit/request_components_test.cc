@@ -60,6 +60,55 @@ TEST(ProtocolModelTest, HeadersPreserveOrderAndDuplicatesAndRejectInjection) {
     EXPECT_THROW(headers.append("Bad Name", "x"), std::invalid_argument);
     EXPECT_THROW(headers.set("X", "ok\r\nBad: header"), std::invalid_argument);
 }
+TEST(ProtocolModelTest, HeaderViewsDistinguishMissingAndEmptyAndInputsAreOwned) {
+    HttpHeaders headers;
+    EXPECT_FALSE(headers.get_view("Missing").has_value());
+    headers.append("Empty", "");
+    ASSERT_TRUE(headers.get_view("empty").has_value());
+    EXPECT_TRUE(headers.get_view("empty")->empty());
+
+    std::string name = "[X-Long-Header-Name]";
+    std::string value = "[" + std::string(256, 'v') + "]";
+    headers.append(std::string_view(name).substr(1, name.size() - 2),
+                   std::string_view(value).substr(1, value.size() - 2));
+    name.assign(name.size(), 'x');
+    value.assign(value.size(), 'x');
+    EXPECT_EQ(headers.get_view("x-long-header-name"), std::string(256, 'v'));
+    EXPECT_EQ(headers.count("X-Long-Header-Name"), 1u);
+}
+TEST(ProtocolModelTest, HeaderMutationsAcceptViewsIntoTheirOwnFields) {
+    HttpHeaders headers;
+    headers.append("X-Long-Header-Name", std::string(256, 'a'));
+    for (int i = 0; i < 64; ++i) {
+        const auto &first = *headers.begin();
+        headers.append(first.first, first.second);
+    }
+    EXPECT_EQ(headers.count("x-long-header-name"), 65u);
+    const auto &first = *headers.begin();
+    headers.set(first.first, first.second);
+    ASSERT_EQ(headers.size(), 1u);
+    EXPECT_EQ(headers.get("X-Long-Header-Name"), std::string(256, 'a'));
+
+    headers.append("Other-Long-Header", "kept");
+    headers.append("X-Long-Header-Name", "second");
+    headers.erase(headers.begin()->first);
+    ASSERT_EQ(headers.size(), 1u);
+    EXPECT_EQ(headers.begin()->first, "Other-Long-Header");
+    EXPECT_EQ(headers.begin()->second, "kept");
+}
+TEST(ProtocolModelTest, QueryLookupPreservesDecodingDuplicatesAndEmptyValues) {
+    Uri uri("/?a+b=one&a%20b=two&flag&empty=&binary=%00%ff&&=blank");
+    const std::string key = "[a b]";
+    const auto bounded_key = std::string_view(key).substr(1, 3);
+    EXPECT_EQ(uri.query_param(bounded_key), "one");
+    EXPECT_EQ(uri.query_values(bounded_key),
+              (std::vector<std::string>{"one", "two"}));
+    EXPECT_EQ(uri.query_param("flag", "fallback"), "");
+    EXPECT_EQ(uri.query_param("empty", "fallback"), "");
+    EXPECT_EQ(uri.query_param("missing", "fallback"), "fallback");
+    EXPECT_EQ(uri.query_param(""), "blank");
+    EXPECT_EQ(uri.query_param("binary"), std::string("\0\xff", 2));
+}
 TEST(ProtocolModelTest, BodyMovesResourcesAndModelIsNotImplicitlyCopied) {
     static_assert(!std::is_copy_constructible<HttpBody>::value,
                   "body resource cannot be copied");

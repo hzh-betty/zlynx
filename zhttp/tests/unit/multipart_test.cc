@@ -325,6 +325,31 @@ TEST_F(MultipartTest, AcceptsSingleLfAfterBoundaryLine) {
     EXPECT_EQ(mp->field("k"), "lf-ok");
 }
 
+TEST_F(MultipartTest, ParsedPartsOwnMetadataAndDataAfterRequestChanges) {
+    HttpRequest request;
+    const std::string name(128, 'n');
+    const std::string filename(128, 'f');
+    const std::string data(8192, 'd');
+    request.set_header("Content-Type", "multipart/form-data; boundary=\"owned\"");
+    request.set_body("--owned\r\nContent-Disposition: form-data; name=\"" + name +
+                     "\"; filename=\"" + filename + "\"\r\nContent-Type: "
+                     "application/octet-stream\r\n\r\n" + data +
+                     "\r\n--owned\r\nContent-Disposition: form-data; "
+                     "name=\"field\"\r\n\r\nvalue\r\n--owned--\r\n");
+    std::string error;
+    const auto parsed = MultipartFormData::parse(request, &error);
+    ASSERT_NE(parsed, nullptr) << error;
+    request.set_header("Content-Type", "text/plain");
+    request.set_body(std::string(16384, 'x'));
+    const auto *file = parsed->file(name);
+    ASSERT_NE(file, nullptr);
+    EXPECT_EQ(file->field_name, name);
+    EXPECT_EQ(file->filename, filename);
+    EXPECT_EQ(file->content_type, "application/octet-stream");
+    EXPECT_EQ(file->data, data);
+    EXPECT_EQ(parsed->field("field"), "value");
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
 

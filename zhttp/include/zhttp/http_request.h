@@ -54,6 +54,10 @@ class HttpRequest {
                        const std::string &fallback = "") const {
         return headers_.get(key, fallback);
     }
+    /** 借用首个头部值；缺失返回空视图，请求修改或销毁后视图可能失效。 */
+    std::string_view header_view(std::string_view key) const {
+        return headers_.get_view(key).value_or("");
+    }
     /** 返回指定查询键的首个解码值；缺失时返回 fallback。 */
     std::string query_param(const std::string &key,
                             const std::string &fallback = "") const {
@@ -81,7 +85,9 @@ class HttpRequest {
      * @param target 请求目标原文。
      * @throws std::invalid_argument 目标形式或编码非法。
      */
-    void set_target(const std::string &target) { line_.target = Uri(target); }
+    void set_target(std::string target) {
+        line_.target = Uri(std::move(target));
+    }
     /** 设置路径并保留现有查询串；目标非法时抛出 std::invalid_argument。 */
     void set_path(const std::string &path) {
         set_target(path + (query().empty() ? "" : "?" + query()));
@@ -91,15 +97,15 @@ class HttpRequest {
         set_target(path() + (query.empty() ? "" : "?" + query));
     }
     /** 替换全部同名头部；非法字段抛出 std::invalid_argument。 */
-    void set_header(const std::string &key, const std::string &value) {
+    void set_header(std::string_view key, std::string_view value) {
         headers_.set(key, value);
     }
     /** 追加头部并保留重复字段；非法字段抛出 std::invalid_argument。 */
-    void append_header(const std::string &key, const std::string &value) {
+    void append_header(std::string_view key, std::string_view value) {
         headers_.append(key, value);
     }
     /** 追加 trailer；非法字段抛出 std::invalid_argument。 */
-    void append_trailer(const std::string &key, const std::string &value) {
+    void append_trailer(std::string_view key, std::string_view value) {
         trailers_.append(key, value);
     }
     /** 接管内存正文字节串。 */

@@ -1,15 +1,15 @@
 #include "router/radix_tree.h"
 #include <algorithm>
-#include <sstream>
+#include <iterator>
 
 namespace zhttp {
-RadixTree::Node *RadixTree::Node::child(NodeType type, const std::string &path) const {
+RadixTree::Node *RadixTree::Node::child(NodeType type, std::string_view path) const {
     for (const auto &node : children)
         if (node->type == type && (type != NodeType::STATIC || node->path == path))
             return node.get();
     return nullptr;
 }
-RadixTree::Node *RadixTree::Node::ensure_child(NodeType type, const std::string &path) {
+RadixTree::Node *RadixTree::Node::ensure_child(NodeType type, std::string_view path) {
     if (auto *node = child(type, path))
         return node;
     auto node = std::make_unique<Node>();
@@ -19,13 +19,17 @@ RadixTree::Node *RadixTree::Node::ensure_child(NodeType type, const std::string 
     children.push_back(std::move(node));
     return result;
 }
-std::vector<std::string> RadixTree::split_path(const std::string &path) {
-    std::vector<std::string> segments;
-    std::istringstream input(path);
-    std::string segment;
-    while (std::getline(input, segment, '/'))
+std::vector<std::string_view> RadixTree::split_path(std::string_view path) {
+    std::vector<std::string_view> segments;
+    while (!path.empty()) {
+        const auto slash = path.find('/');
+        const auto segment = path.substr(0, slash);
         if (!segment.empty())
             segments.push_back(segment);
+        if (slash == std::string_view::npos)
+            break;
+        path.remove_prefix(slash + 1);
+    }
     return segments;
 }
 std::string RadixTree::regex_prefix(const std::string &pattern) {
@@ -44,7 +48,7 @@ void RadixTree::insert(HttpMethod method, const std::string &path, RouterCallbac
                         : segment.front() == '*' ? NodeType::CATCH_ALL
                                                  : NodeType::STATIC;
         if (type != NodeType::STATIC)
-            route.names.push_back(segment.substr(1));
+            route.names.emplace_back(segment.substr(1));
         node = node->ensure_child(type, segment);
     }
     node->routes[method] = std::move(route);
@@ -52,7 +56,8 @@ void RadixTree::insert(HttpMethod method, const std::string &path, RouterCallbac
 void RadixTree::insert_regex(HttpMethod method, const std::string &pattern,
                               const std::vector<std::string> &names, RouterCallback handler) {
     Node *node = &root_;
-    for (const auto &segment : split_path(regex_prefix(pattern)))
+    const auto prefix = regex_prefix(pattern);
+    for (const auto &segment : split_path(prefix))
         node = node->ensure_child(NodeType::STATIC, segment);
     for (auto &entry : node->regex_routes)
         if (entry.pattern == pattern) {
@@ -63,7 +68,7 @@ void RadixTree::insert_regex(HttpMethod method, const std::string &pattern,
     entry.routes[method] = Route{std::move(handler), pattern, names};
     node->regex_routes.push_back(std::move(entry));
 }
-void RadixTree::assign_match(const Route &route, const std::vector<std::string> &values,
+void RadixTree::assign_match(const Route &route, const std::vector<std::string_view> &values,
                              RouteMatchContext &match, RouteMatchContext::MatchType type) {
     match.found = true;
     match.handler = route.handler;
@@ -76,9 +81,9 @@ void RadixTree::assign_match(const Route &route, const std::vector<std::string> 
             match.params.emplace(route.names[i], values[i]);
     }
 }
-bool RadixTree::match_dynamic(const Node &node, const std::vector<std::string> &segments,
+bool RadixTree::match_dynamic(const Node &node, const std::vector<std::string_view> &segments,
                               size_t index, HttpMethod method,
-                              std::vector<std::string> &values, RouteMatchContext &match) {
+                              std::vector<std::string_view> &values, RouteMatchContext &match) {
     if (index == segments.size()) {
         auto it = node.routes.find(method);
         if (it == node.routes.end())
@@ -98,11 +103,14 @@ bool RadixTree::match_dynamic(const Node &node, const std::vector<std::string> &
     if (auto *child = node.child(NodeType::CATCH_ALL)) {
         auto it = child->routes.find(method);
         if (it != child->routes.end()) {
-            std::string remainder = segments[index];
-            for (size_t i = index + 1; i < segments.size(); ++i)
-                remainder += "/" + segments[i];
-            values.push_back(std::move(remainder));
+            std::string remainder(segments[index]);
+            for (size_t i = index + 1; i < segments.size(); ++i) {
+                remainder.push_back('/');
+                remainder.append(segments[i]);
+            }
+            values.push_back(remainder);
             assign_match(it->second, values, match, RouteMatchContext::MatchType::DYNAMIC);
+            values.pop_back();
             return true;
         }
     }
@@ -111,7 +119,7 @@ bool RadixTree::match_dynamic(const Node &node, const std::vector<std::string> &
 RouteMatchContext RadixTree::find(const std::string &path, HttpMethod method) const {
     RouteMatchContext match;
     const auto segments = split_path(path);
-    std::vector<std::string> values;
+    std::vector<std::string_view> values;
     if (match_dynamic(root_, segments, 0, method, values, match)) {
         match.match_type = RouteMatchContext::MatchType::DYNAMIC;
         return match;
@@ -131,7 +139,9 @@ RouteMatchContext RadixTree::find(const std::string &path, HttpMethod method) co
                 continue;
             values.clear();
             for (size_t i = 1; i < captures.size(); ++i)
-                values.push_back(captures[i].str());
+                values.emplace_back(
+                    path.data() + std::distance(path.cbegin(), captures[i].first),
+                    captures[i].length());
             assign_match(route->second, values, match, RouteMatchContext::MatchType::REGEX);
             match.match_type = RouteMatchContext::MatchType::REGEX;
             return match;

@@ -21,7 +21,7 @@ ParseResult HttpRequestParser::fail(HttpStatus status, const char *message) {
     state_ = ParseState::ERROR;
     return ParseResult::ERROR;
 }
-bool HttpRequestParser::parse_line(const std::string &line) {
+bool HttpRequestParser::parse_line(std::string_view line) {
     auto first = line.find(kSP), last = line.rfind(kSP);
     if (first == std::string::npos || first == last ||
         line.find(kSP, first + 1) != last)
@@ -34,7 +34,7 @@ bool HttpRequestParser::parse_line(const std::string &line) {
         request_->version() == HttpVersion::UNKNOWN)
         return false;
     try {
-        request_->set_target(line.substr(first + 1, last - first - 1));
+        request_->set_target(std::string(line.substr(first + 1, last - first - 1)));
     } catch (...) {
         return false;
     }
@@ -47,16 +47,18 @@ bool HttpRequestParser::parse_line(const std::string &line) {
     return true;
 }
 bool HttpRequestParser::finish_headers() {
-    const auto lengths = request_->headers().get_all("Content-Length");
-    const auto encodings = request_->headers().get_all("Transfer-Encoding");
+    const auto &headers = request_->headers();
+    const auto encodings = headers.count("Transfer-Encoding");
     // 正文边界必须唯一，拒绝 Content-Length 与 Transfer-Encoding 同时存在。
-    if (!encodings.empty() && !lengths.empty()) {
+    if (encodings && headers.count("Content-Length")) {
         fail(HttpStatus::BAD_REQUEST, "Content-Length with Transfer-Encoding");
         return false;
     }
-    if (!encodings.empty()) {
+    if (encodings) {
         if (request_->version() != HttpVersion::HTTP_1_1 ||
-            encodings.size() != 1 || to_lower(encodings.front()) != "chunked") {
+            encodings != 1 ||
+            !HttpHeaders::equal_name(request_->header_view("Transfer-Encoding"),
+                                     "chunked")) {
             fail(HttpStatus::BAD_REQUEST, "Unsupported Transfer-Encoding");
             return false;
         }
@@ -67,9 +69,13 @@ bool HttpRequestParser::finish_headers() {
     }
     // 重复或逗号合并的 Content-Length 必须完全一致；逐位累积时先检查正文上限。
     bool first = true;
-    for (const auto &field : lengths)
-        for (std::string text : split_string(field, ',')) {
-            trim(text);
+    for (const auto &field : headers) {
+        if (!HttpHeaders::equal_name(field.first, "Content-Length"))
+            continue;
+        std::string_view remaining = field.second;
+        while (true) {
+            const auto comma = remaining.find(',');
+            const auto text = trim_view(remaining.substr(0, comma));
             if (text.empty()) {
                 fail(HttpStatus::BAD_REQUEST, "Invalid Content-Length");
                 return false;
@@ -95,7 +101,11 @@ bool HttpRequestParser::finish_headers() {
             }
             content_length_ = length;
             first = false;
+            if (comma == std::string_view::npos)
+                break;
+            remaining.remove_prefix(comma + 1);
         }
+    }
     state_ = content_length_ ? ParseState::BODY : ParseState::COMPLETE;
     return true;
 }
@@ -147,7 +157,8 @@ ParseResult HttpRequestParser::parse(znet::ByteBuffer *buffer) {
         // 半行不消费，保留在 Buffer；字节限制已在上方检查，避免无限等待换行。
         if (!crlf)
             return ParseResult::NEED_MORE;
-        std::string line(buffer->peek(), crlf);
+        // retrieve 只调整读位置；本轮不写入 Buffer，离开前将字段复制到请求。
+        const std::string_view line(buffer->peek(), bytes - 2);
         buffer->retrieve(bytes);
         if (state_ == ParseState::REQUEST_LINE) {
             if (!parse_line(line))
@@ -171,7 +182,7 @@ ParseResult HttpRequestParser::parse(znet::ByteBuffer *buffer) {
         auto name = line.substr(0, colon), value = line.substr(colon + 1);
         if (!HttpHeaders::valid(name, value))
             return fail(HttpStatus::BAD_REQUEST, "Invalid header field");
-        trim(value);
+        value = trim_view(value);
         request_->append_header(name, value);
     }
 }

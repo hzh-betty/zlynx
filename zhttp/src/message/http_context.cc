@@ -9,7 +9,7 @@ require_request(std::shared_ptr<const HttpRequest> request) {
         throw std::invalid_argument("Missing HTTP request");
     return request;
 }
-static void parse_cookie_header(const std::string &cookie_header,
+static void parse_cookie_header(std::string_view cookie_header,
                                 HttpContext::Params &out) {
     // 每次解析前清空输出，避免重复调用时残留旧数据。
     out.clear();
@@ -21,22 +21,19 @@ static void parse_cookie_header(const std::string &cookie_header,
             end = cookie_header.size();
         }
 
-        std::string token = cookie_header.substr(pos, end - pos);
-        trim(token);
+        const auto token = trim_view(cookie_header.substr(pos, end - pos));
         if (!token.empty()) {
             // key=value 是最常见格式；某些场景下也可能只有 key。
             size_t eq = token.find('=');
             if (eq != std::string::npos) {
-                std::string key = token.substr(0, eq);
-                std::string value = token.substr(eq + 1);
-                trim(key);
-                trim(value);
+                const auto key = trim_view(token.substr(0, eq));
+                const auto value = trim_view(token.substr(eq + 1));
                 if (!key.empty()) {
-                    out[key] = value;
+                    out[std::string(key)] = std::string(value);
                 }
             } else {
                 // 没有等号时仍然保留这个标记，值置空。
-                out[token] = "";
+                out[std::string(token)] = "";
             }
         }
 
@@ -62,7 +59,7 @@ void HttpContext::invalidate_derived() {
 const HttpContext::Params &HttpContext::cookies() const {
     if (!cookies_parsed_) {
         cookies_parsed_ = true;
-        parse_cookie_header(header("Cookie"), cookies_);
+        parse_cookie_header(header_view("Cookie"), cookies_);
     }
     return cookies_;
 }
@@ -82,12 +79,12 @@ std::string HttpContext::form_param(const std::string &key,
     return it == form_params().end() ? fallback : it->second;
 }
 bool HttpContext::parse_multipart() {
-    return parsed_.parse_multipart(content_type(), [this](std::string *error) {
+    return parsed_.parse_multipart(header_view("Content-Type"), [this](std::string *error) {
         return MultipartFormData::parse(request(), error);
     });
 }
 const MultipartFormData *HttpContext::multipart() const {
-    return parsed_.multipart(content_type(), [this](std::string *error) {
+    return parsed_.multipart(header_view("Content-Type"), [this](std::string *error) {
         return MultipartFormData::parse(request(), error);
     });
 }

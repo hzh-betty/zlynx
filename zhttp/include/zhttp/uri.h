@@ -2,6 +2,7 @@
 #define ZHTTP_URI_H_
 
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 namespace zhttp {
@@ -26,12 +27,12 @@ class Uri {
     /** 返回请求目标形式。 */
     Form form() const { return form_; }
     /** 返回指定查询键的第一个解码值；不存在时返回 fallback。 */
-    std::string query_param(const std::string &name,
-                            const std::string &fallback = "") const;
+    std::string query_param(std::string_view name,
+                            std::string_view fallback = "") const;
     /** 按原顺序返回指定查询键的所有解码值，保留重复键。 */
-    std::vector<std::string> query_values(const std::string &name) const;
+    std::vector<std::string> query_values(std::string_view name) const;
     /** 检查百分号编码完整性，并拒绝空白、控制字符和片段标记。 */
-    static bool valid_encoding(const std::string &value);
+    static bool valid_encoding(std::string_view value);
 
   private:
     std::string raw_, path_, query_;

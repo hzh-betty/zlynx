@@ -564,6 +564,29 @@ TEST(HttpRequestParserContractTest,
     }
 }
 
+TEST(HttpRequestParserContractTest, FieldsOwnBytesAcrossBufferReuseAndReset) {
+    HttpRequestParser parser;
+    znet::ByteBuffer input(32);
+    const std::string header(256, 'h');
+    const std::string trailer(256, 't');
+    input.append("POST /owned?q=first HTTP/1.1\r\nX-Value: " + header +
+                 "\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabc\r\n0\r\n");
+    ASSERT_EQ(parse_request(parser, &input), ParseResult::NEED_MORE);
+    input.append("X-Trailer: " + trailer + "\r\n\r\n");
+    ASSERT_EQ(parse_request(parser, &input), ParseResult::COMPLETE);
+    const auto owned = parser.request();
+    parser.reset();
+    input.retrieve_all();
+    input.append("GET /next HTTP/1.1\r\nX-Value: " + std::string(16384, 'x') +
+                 "\r\n\r\n");
+    ASSERT_EQ(parse_request(parser, &input), ParseResult::COMPLETE);
+    EXPECT_EQ(owned->path(), "/owned");
+    EXPECT_EQ(owned->query_param("q"), "first");
+    EXPECT_EQ(owned->header_view("X-Value"), header);
+    EXPECT_EQ(owned->trailers().get_view("X-Trailer"), trailer);
+    EXPECT_EQ(owned->body(), "abc");
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
 

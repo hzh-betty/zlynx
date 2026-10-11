@@ -6,14 +6,14 @@
 
 namespace zhttp {
 
-void parse_urlencoded_params(const std::string &text, RequestParams &params) {
+void parse_urlencoded_params(std::string_view text, RequestParams &params) {
     size_t pos = 0;
     while (pos < text.size()) {
         size_t end = text.find('&', pos);
         if (end == std::string::npos) {
             end = text.size();
         }
-        const std::string pair = text.substr(pos, end - pos);
+        const auto pair = text.substr(pos, end - pos);
         const size_t eq = pair.find('=');
         if (eq != std::string::npos) {
             params[url_decode(pair.substr(0, eq))] =
@@ -29,20 +29,20 @@ namespace detail {
 ParsedRequestBody::ParsedRequestBody(const std::string &body) : body_(&body) {}
 ParsedRequestBody::~ParsedRequestBody() = default;
 
-bool ParsedRequestBody::is_json(const std::string &content_type) {
+bool ParsedRequestBody::is_json(std::string_view content_type) {
     return normalize_mime_type(content_type) == "application/json";
 }
 
-bool ParsedRequestBody::is_form_urlencoded(const std::string &content_type) {
+bool ParsedRequestBody::is_form_urlencoded(std::string_view content_type) {
     return normalize_mime_type(content_type) ==
            "application/x-www-form-urlencoded";
 }
 
-bool ParsedRequestBody::is_multipart(const std::string &content_type) {
+bool ParsedRequestBody::is_multipart(std::string_view content_type) {
     return normalize_mime_type(content_type) == "multipart/form-data";
 }
 
-bool ParsedRequestBody::parse_json(const std::string &content_type) const {
+bool ParsedRequestBody::parse_json(std::string_view content_type) const {
     // 已经解析过则直接复用缓存结果。
     if (json_parsed_) {
         return json_ != nullptr;
@@ -76,7 +76,7 @@ bool ParsedRequestBody::parse_json(const std::string &content_type) const {
 }
 
 bool ParsedRequestBody::parse_form_urlencoded(
-    const std::string &content_type) const {
+    std::string_view content_type) const {
     // 表单解析结果无失败分支，解析过后直接复用。
     if (form_parsed_) {
         return true;
@@ -93,7 +93,7 @@ bool ParsedRequestBody::parse_form_urlencoded(
     return true;
 }
 
-bool ParsedRequestBody::parse_multipart(const std::string &content_type,
+bool ParsedRequestBody::parse_multipart(std::string_view content_type,
                                         const MultipartParser &parser) const {
     if (multipart_parsed_) {
         return multipart_ != nullptr;
@@ -117,7 +117,7 @@ bool ParsedRequestBody::parse_multipart(const std::string &content_type,
 }
 
 const ParsedRequestBody::Json *
-ParsedRequestBody::json(const std::string &content_type) const {
+ParsedRequestBody::json(std::string_view content_type) const {
     if (!json_parsed_) {
         parse_json(content_type);
     }
@@ -125,7 +125,7 @@ ParsedRequestBody::json(const std::string &content_type) const {
 }
 
 const ParsedRequestBody::Params &
-ParsedRequestBody::form_params(const std::string &content_type) const {
+ParsedRequestBody::form_params(std::string_view content_type) const {
     if (!form_parsed_) {
         parse_form_urlencoded(content_type);
     }
@@ -133,7 +133,7 @@ ParsedRequestBody::form_params(const std::string &content_type) const {
 }
 
 const MultipartFormData *
-ParsedRequestBody::multipart(const std::string &content_type,
+ParsedRequestBody::multipart(std::string_view content_type,
                              const MultipartParser &parser) const {
     if (!multipart_parsed_) {
         parse_multipart(content_type, parser);

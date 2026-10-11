@@ -37,29 +37,31 @@ const char *method_to_string(HttpMethod method) {
     }
 }
 
-HttpMethod string_to_method(const std::string &str) {
-    // 转换为大写进行比较
-    std::string upper = str;
-    std::transform(upper.begin(), upper.end(), upper.begin(),
-                   [](unsigned char c) { return std::toupper(c); });
-
-    if (upper == "GET")
+HttpMethod string_to_method(std::string_view str) {
+    const auto matches = [str](std::string_view method) {
+        return str.size() == method.size() &&
+               std::equal(str.begin(), str.end(), method.begin(),
+                          [](unsigned char c, unsigned char expected) {
+                              return std::toupper(c) == expected;
+                          });
+    };
+    if (matches("GET"))
         return HttpMethod::GET;
-    if (upper == "POST")
+    if (matches("POST"))
         return HttpMethod::POST;
-    if (upper == "PUT")
+    if (matches("PUT"))
         return HttpMethod::PUT;
-    if (upper == "DELETE")
+    if (matches("DELETE"))
         return HttpMethod::DELETE;
-    if (upper == "HEAD")
+    if (matches("HEAD"))
         return HttpMethod::HEAD;
-    if (upper == "OPTIONS")
+    if (matches("OPTIONS"))
         return HttpMethod::OPTIONS;
-    if (upper == "PATCH")
+    if (matches("PATCH"))
         return HttpMethod::PATCH;
-    if (upper == "CONNECT")
+    if (matches("CONNECT"))
         return HttpMethod::CONNECT;
-    if (upper == "TRACE")
+    if (matches("TRACE"))
         return HttpMethod::TRACE;
     return HttpMethod::UNKNOWN;
 }
@@ -75,7 +77,7 @@ const char *version_to_string(HttpVersion version) {
     }
 }
 
-HttpVersion string_to_version(const std::string &str) {
+HttpVersion string_to_version(std::string_view str) {
     if (str == "HTTP/1.0") {
         return HttpVersion::HTTP_1_0;
     }
@@ -218,44 +220,58 @@ const char *get_mime_type(const std::string &extension) {
     return "application/octet-stream";
 }
 
-std::string to_lower(const std::string &str) {
-    std::string lower = str;
+std::string to_lower(std::string_view str) {
+    std::string lower(str);
     std::transform(
         lower.begin(), lower.end(), lower.begin(),
         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return lower;
 }
 
+std::string_view trim_view(std::string_view str) {
+    while (!str.empty() && std::isspace(static_cast<unsigned char>(str.front())))
+        str.remove_prefix(1);
+    while (!str.empty() && std::isspace(static_cast<unsigned char>(str.back())))
+        str.remove_suffix(1);
+    return str;
+}
+
 void trim(std::string &str) {
-    auto is_space = [](unsigned char c) { return std::isspace(c) != 0; };
-
-    while (!str.empty() && is_space(static_cast<unsigned char>(str.front()))) {
-        str.erase(str.begin());
-    }
-    while (!str.empty() && is_space(static_cast<unsigned char>(str.back()))) {
-        str.pop_back();
-    }
+    const auto view = trim_view(str);
+    const auto length = view.size();
+    str.erase(0, static_cast<size_t>(view.data() - str.data()));
+    str.resize(length);
 }
 
-std::string normalize_mime_type(const std::string &content_type) {
-    std::string mime = content_type.substr(0, content_type.find(';'));
-    trim(mime);
-    return to_lower(mime);
+std::string normalize_mime_type(std::string_view content_type) {
+    return to_lower(trim_view(content_type.substr(0, content_type.find(';'))));
 }
 
-bool header_contains_token(const std::string &header_value,
-                           const std::string &target) {
-    const std::string expected = to_lower(target);
-    for (std::string token : split_string(header_value, ',')) {
-        trim(token);
-        if (!token.empty() && to_lower(token) == expected) {
+namespace {
+bool equal_case_insensitive(std::string_view a, std::string_view b) {
+    return a.size() == b.size() &&
+           std::equal(a.begin(), a.end(), b.begin(),
+                      [](unsigned char x, unsigned char y) {
+                          return std::tolower(x) == std::tolower(y);
+                      });
+}
+} // namespace
+
+bool header_contains_token(std::string_view header_value,
+                           std::string_view target) {
+    while (!header_value.empty()) {
+        const auto comma = header_value.find(',');
+        const auto token = trim_view(header_value.substr(0, comma));
+        if (!token.empty() && equal_case_insensitive(token, target))
             return true;
-        }
+        if (comma == std::string_view::npos)
+            break;
+        header_value.remove_prefix(comma + 1);
     }
     return false;
 }
 
-std::vector<std::string> split_string(const std::string &str, char delimiter) {
+std::vector<std::string> split_string(std::string_view str, char delimiter) {
     std::vector<std::string> parts;
 
     size_t start = 0;
@@ -265,7 +281,7 @@ std::vector<std::string> split_string(const std::string &str, char delimiter) {
             pos = str.size();
         }
 
-        parts.push_back(str.substr(start, pos - start));
+        parts.emplace_back(str.substr(start, pos - start));
 
         if (pos == str.size()) {
             break;
@@ -292,7 +308,7 @@ std::string join_string(const std::vector<std::string> &values,
     return output;
 }
 
-std::string url_decode(const std::string &str) {
+std::string url_decode(std::string_view str) {
     // URL 解码整体策略：
     // 1) 顺序扫描输入字符串；
     // 2) 遇到合法 "%HH"（十六进制）则还原为单字节；
@@ -347,7 +363,7 @@ std::string url_decode(const std::string &str) {
 namespace {
 
 // qvalue 使用千分整数，避免浮点和宽松数值解析接受非法输入。
-int parse_encoding_quality(const std::string &value) {
+int parse_encoding_quality(std::string_view value) {
     if (value.empty() || (value[0] != '0' && value[0] != '1'))
         return 0;
     if (value.size() == 1)
@@ -367,34 +383,38 @@ int parse_encoding_quality(const std::string &value) {
 
 } // namespace
 
-std::vector<std::string> accepted_content_encodings(const std::string &header,
+std::vector<std::string> accepted_content_encodings(std::string_view header,
                                                     bool enable_br,
                                                     bool enable_gzip) {
     // 保留默认行为：未指定编码时返回原始实体。
     if (header.empty())
         return {""};
     int br = -1, gzip = -1, identity = -1, wildcard = -1;
-    for (std::string item : split_string(to_lower(header), ',')) {
-        const size_t semi = item.find(';');
-        std::string token = item.substr(0, semi);
-        trim(token);
-        int *target = token == "br"         ? &br
-                      : token == "gzip"     ? &gzip
-                      : token == "identity" ? &identity
-                      : token == "*"        ? &wildcard
-                                            : nullptr;
+    while (!header.empty()) {
+        const auto comma = header.find(',');
+        const auto item = header.substr(0, comma);
+        header = comma == std::string_view::npos ? std::string_view{}
+                                                 : header.substr(comma + 1);
+        const auto semi = item.find(';');
+        const auto token = trim_view(item.substr(0, semi));
+        int *target = equal_case_insensitive(token, "br")       ? &br
+                    : equal_case_insensitive(token, "gzip")   ? &gzip
+                    : equal_case_insensitive(token, "identity") ? &identity
+                    : token == "*"                             ? &wildcard
+                                                               : nullptr;
         if (!target)
             continue;
         int quality = 1000;
-        if (semi != std::string::npos) {
-            std::string parameter = item.substr(semi + 1);
-            const size_t equal = parameter.find('=');
-            std::string name = parameter.substr(0, equal);
-            trim(name);
-            std::string value =
-                equal == std::string::npos ? "" : parameter.substr(equal + 1);
-            trim(value);
-            quality = name == "q" ? parse_encoding_quality(value) : 0;
+        if (semi != std::string_view::npos) {
+            const auto parameter = item.substr(semi + 1);
+            const auto equal = parameter.find('=');
+            const auto name = trim_view(parameter.substr(0, equal));
+            const auto value = equal == std::string_view::npos
+                                   ? std::string_view{}
+                                   : trim_view(parameter.substr(equal + 1));
+            quality = equal_case_insensitive(name, "q")
+                          ? parse_encoding_quality(value)
+                          : 0;
         }
         // 重复项取较严格值，显式 q=0 不能被另一个重复项覆盖。
         *target = *target < 0 ? quality : std::min(*target, quality);

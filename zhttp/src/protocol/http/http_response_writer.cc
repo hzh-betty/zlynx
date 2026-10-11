@@ -79,9 +79,11 @@ WriteResult HttpResponseWriter::send(
             if (count > sizeof(buffer) ||
                 (p.length != HttpBody::UnknownLength && count > p.length - sent))
                 return WriteResult::Failed;
-            const auto bytes = p.chunked ? ResponseEncoder::chunk(buffer, count)
-                                        : std::string(buffer, count);
-            if (!send_all_or_fail(conn, bytes.data(), bytes.size()))
+            if (p.chunked) {
+                const auto bytes = ResponseEncoder::chunk(buffer, count);
+                if (!send_all_or_fail(conn, bytes.data(), bytes.size()))
+                    return WriteResult::Failed;
+            } else if (!send_all_or_fail(conn, buffer, count))
                 return WriteResult::Failed;
             sent += count;
         }
@@ -100,9 +102,11 @@ WriteResult HttpResponseWriter::send(
                 continue;
             if (n <= 0)
                 return WriteResult::Failed;
-            auto bytes = p.chunked ? ResponseEncoder::chunk(buffer, n)
-                                   : std::string(buffer, n);
-            if (!send_all_or_fail(conn, bytes.data(), bytes.size()))
+            if (p.chunked) {
+                const auto bytes = ResponseEncoder::chunk(buffer, n);
+                if (!send_all_or_fail(conn, bytes.data(), bytes.size()))
+                    return WriteResult::Failed;
+            } else if (!send_all_or_fail(conn, buffer, static_cast<size_t>(n)))
                 return WriteResult::Failed;
             sent += n;
         }

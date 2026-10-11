@@ -68,7 +68,7 @@ class HttpRequestParser {
 
   private:
     ParseResult fail(HttpStatus status, const char *message);
-    bool parse_line(const std::string &line);
+    bool parse_line(std::string_view line);
     bool finish_headers();
     RequestLimits limits_;
     HttpRequest::ptr request_;

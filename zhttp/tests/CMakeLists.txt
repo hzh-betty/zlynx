@@ -11,6 +11,7 @@ set(ZHTTP_UNIT_TESTS
     http_common_test
     http_request_test
     http_response_test
+    http_response_writer_test
     static_path_test
     websocket_frame_test
     websocket_handshake_test
@@ -42,6 +43,7 @@ set(ZHTTP_UNIT_TESTS
 if(BUILD_TESTING)
     set(ZHTTP_NETWORK_UNIT_TESTS
         http_parser_test
+        http_response_writer_test
         websocket_frame_test
         websocket_handshake_test
         server_config_test

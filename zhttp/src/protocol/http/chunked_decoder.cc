@@ -48,7 +48,8 @@ ParseResult ChunkedDecoder::parse(znet::ByteBuffer &buffer, HttpRequest &request
                         "Request trailers too large");
         if (!crlf)
             return ParseResult::NEED_MORE;
-        std::string line(buffer.peek(), crlf);
+        // retrieve 不移动字节；视图仅用于本轮解析，trailer 仍由请求拥有。
+        const std::string_view line(buffer.peek(), bytes - 2);
         buffer.retrieve(bytes);
         if (state_ == State::Size) {
             if (!HttpHeaders::valid("chunk-size", line))
@@ -96,7 +97,7 @@ ParseResult ChunkedDecoder::parse(znet::ByteBuffer &buffer, HttpRequest &request
                 HttpHeaders::equal_name(name, "Host") ||
                 HttpHeaders::equal_name(name, "Connection"))
                 return fail(HttpStatus::BAD_REQUEST, "Invalid chunk trailer");
-            trim(value);
+            value = trim_view(value);
             request.append_trailer(name, value);
         }
     }

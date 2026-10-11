@@ -157,6 +157,42 @@ TEST(HttpCommonTest, UrlDecodeHandlesValidAndInvalidEscapes) {
     EXPECT_EQ(url_decode("mix%4G+ok"), "mix%4G ok");
 }
 
+TEST(HttpCommonTest, UtilitiesRespectViewBoundsWithoutNullTerminators) {
+    const std::string method = "[gEt]";
+    EXPECT_EQ(string_to_method(std::string_view(method).substr(1, 3)),
+              HttpMethod::GET);
+    const std::string version = "[HTTP/1.1]";
+    EXPECT_EQ(string_to_version(std::string_view(version).substr(1, 8)),
+              HttpVersion::HTTP_1_1);
+    const std::string tokens = "[ keep-alive, UpGrade ]";
+    EXPECT_TRUE(header_contains_token(
+        std::string_view(tokens).substr(1, tokens.size() - 2), "upgrade"));
+    const std::string encoded = "[a%00%ff+b]";
+    EXPECT_EQ(url_decode(std::string_view(encoded).substr(1, encoded.size() - 2)),
+              std::string("a\0\xff b", 5));
+    const std::string encodings = "[ gzip ; Q=0.5, br;q=1, identity;q=0 ]";
+    EXPECT_EQ(accepted_content_encodings(
+                  std::string_view(encodings).substr(1, encodings.size() - 2),
+                  true, true),
+              (std::vector<std::string>{"br", "gzip"}));
+}
+
+TEST(HttpCommonTest, TrimHandlesEmptyAndLongWhitespaceWithoutChangingStorage) {
+    EXPECT_TRUE(trim_view({}).empty());
+    EXPECT_TRUE(trim_view(" \t\r\n").empty());
+    std::string text = std::string(8192, ' ') + "value" + "\t\n";
+    const auto view = trim_view(text);
+    EXPECT_EQ(view, "value");
+    EXPECT_EQ(view.data(), text.data() + 8192);
+    trim(text);
+    EXPECT_EQ(text, "value");
+    text = " \t\r\n";
+    trim(text);
+    EXPECT_TRUE(text.empty());
+    trim(text);
+    EXPECT_TRUE(text.empty());
+}
+
 } // namespace
 } // namespace zhttp
 

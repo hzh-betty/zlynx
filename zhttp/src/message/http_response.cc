@@ -13,8 +13,7 @@ HttpResponse &HttpResponse::status(int code) {
     line_.status_code = static_cast<std::uint16_t>(code);
     return *this;
 }
-HttpResponse &HttpResponse::header(const std::string &key,
-                                   const std::string &value) {
+HttpResponse &HttpResponse::header(std::string_view key, std::string_view value) {
     check_mutable();
     headers_.set(key, value);
     return *this;

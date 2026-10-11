@@ -11,37 +11,35 @@
 #include "zhttp/http_request.h"
 #include <fstream>
 
-#include <sstream>
+#include <string_view>
 
 namespace zhttp {
 
 namespace {
-static bool extract_boundary(const std::string &content_type,
+static bool extract_boundary(std::string_view content_type,
                              std::string &boundary) {
     // 从 Content-Type 参数中提取 boundary，兼容 boundary="xxx" 这种带引号写法。
     // 典型头部：multipart/form-data; boundary=----WebKitFormBoundaryabc
     // 这里不假设参数顺序，只要在 ';' 之后的参数区里找到 boundary= 即可。
-    std::string ct = content_type;
-    auto semi = ct.find(';');
+    auto semi = content_type.find(';');
     if (semi == std::string::npos) {
         // 只有主类型、没有任何参数，按无 boundary 处理。
         return false;
     }
 
     // 按 ';' 拆分参数列表，每个 token 形如 key=value。
-    std::string params = ct.substr(semi + 1);
-    std::istringstream iss(params);
-    std::string token;
-    while (std::getline(iss, token, ';')) {
-        trim(token);
+    auto params = content_type.substr(semi + 1);
+    while (!params.empty()) {
+        const auto end = params.find(';');
+        const auto token = trim_view(params.substr(0, end));
+        params = end == std::string_view::npos ? std::string_view{} : params.substr(end + 1);
         if (token.size() >= 9 && to_lower(token.substr(0, 9)) == "boundary=") {
-            boundary = token.substr(9);
-            trim(boundary);
+            auto value = trim_view(token.substr(9));
             // RFC 中参数值允许用双引号包裹，去掉外层引号后再使用。
-            if (!boundary.empty() && boundary.front() == '"' &&
-                boundary.back() == '"' && boundary.size() >= 2) {
-                boundary = boundary.substr(1, boundary.size() - 2);
+            if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
+                value = value.substr(1, value.size() - 2);
             }
+            boundary = value;
             // 空 boundary 视为非法（后续无法正确定位分隔符）。
             return !boundary.empty();
         }
@@ -50,7 +48,7 @@ static bool extract_boundary(const std::string &content_type,
     return false;
 }
 
-static bool parse_content_disposition(const std::string &value,
+static bool parse_content_disposition(std::string_view value,
                                       std::string &name,
                                       std::string &filename) {
     // 解析形如 form-data; name="field"; filename="a.txt" 的参数串。
@@ -59,11 +57,11 @@ static bool parse_content_disposition(const std::string &value,
     filename.clear();
 
     // Content-Disposition 同样是 ';' 分隔的参数列表。
-    std::istringstream iss(value);
-    std::string token;
     bool first = true;
-    while (std::getline(iss, token, ';')) {
-        trim(token);
+    while (!value.empty()) {
+        const auto end = value.find(';');
+        const auto token = trim_view(value.substr(0, end));
+        value = end == std::string_view::npos ? std::string_view{} : value.substr(end + 1);
         if (token.empty()) {
             continue;
         }
@@ -79,10 +77,8 @@ static bool parse_content_disposition(const std::string &value,
             continue;
         }
 
-        std::string k = token.substr(0, eq);
-        std::string v = token.substr(eq + 1);
-        trim(k);
-        trim(v);
+        const auto k = trim_view(token.substr(0, eq));
+        auto v = trim_view(token.substr(eq + 1));
         // 参数值若被双引号包裹，去掉外层引号。
         if (!v.empty() && v.front() == '"' && v.back() == '"' &&
             v.size() >= 2) {
@@ -102,7 +98,7 @@ static bool parse_content_disposition(const std::string &value,
 }
 
 static bool
-parse_part_headers(const std::string &headers_blob,
+parse_part_headers(std::string_view headers_blob,
                    std::unordered_map<std::string, std::string> &headers_out) {
     // multipart 的每个 part 也有自己的一组头部，格式和普通 HTTP 头部类似。
     // 输入是“已剥离头体分隔空行”的纯头部区域（多行 CRLF 拼接）。
@@ -114,15 +110,13 @@ parse_part_headers(const std::string &headers_blob,
         if (end == std::string::npos) {
             end = headers_blob.size();
         }
-        std::string line = headers_blob.substr(pos, end - pos);
+        const auto line = headers_blob.substr(pos, end - pos);
         if (!line.empty()) {
             // 头部格式：Key: Value。只按第一个 ':' 切分。
             auto colon = line.find(':');
             if (colon != std::string::npos) {
-                std::string k = line.substr(0, colon);
-                std::string v = line.substr(colon + 1);
-                trim(k);
-                trim(v);
+                const auto k = trim_view(line.substr(0, colon));
+                const auto v = trim_view(line.substr(colon + 1));
                 if (!k.empty()) {
                     // 统一小写键名，便于后续无大小写差别地查找。
                     headers_out[to_lower(k)] = v;
@@ -180,7 +174,7 @@ MultipartFormData::ptr MultipartFormData::parse(const HttpRequest &request,
     }
 
     // 非 multipart 请求按“空结果”处理，调用方无需把它视为异常。
-    std::string ct = request.content_type();
+    const auto ct = request.header_view("Content-Type");
     if (to_lower(ct).find("multipart/form-data") == std::string::npos) {
         // 与 URL-encoded/JSON 等请求体类型共存时，调用方可统一调用 parse，
         // 再通过返回对象是否有字段/文件判断结果。
@@ -243,7 +237,7 @@ MultipartFormData::ptr MultipartFormData::parse(const HttpRequest &request,
             return nullptr;
         }
 
-        std::string headers_blob = body.substr(pos, headers_end - pos);
+        const auto headers_blob = std::string_view(body).substr(pos, headers_end - pos);
         pos = headers_end + 4;
 
         std::unordered_map<std::string, std::string> part_headers;
@@ -267,7 +261,7 @@ MultipartFormData::ptr MultipartFormData::parse(const HttpRequest &request,
             return nullptr;
         }
 
-        std::string part_ct;
+        std::string_view part_ct;
         auto it_ct = part_headers.find("content-type");
         if (it_ct != part_headers.end()) {
             // 文件 part 通常会携带具体 MIME，普通字段可为空。
@@ -291,15 +285,15 @@ MultipartFormData::ptr MultipartFormData::parse(const HttpRequest &request,
         if (!filename.empty()) {
             // 只要带 filename，就按文件上传处理。
             UploadedFile f;
-            f.field_name = name;
-            f.filename = filename;
+            f.field_name = std::move(name);
+            f.filename = std::move(filename);
             f.content_type = part_ct;
             f.data = std::move(part_data);
             out->files_.push_back(std::move(f));
         } else {
             // 否则当作普通文本字段处理。
             // 这里采用“同名字段后写覆盖前写”的语义；若要保留多值可改为 vector。
-            out->fields_[name] = std::move(part_data);
+            out->fields_[std::move(name)] = std::move(part_data);
         }
 
         // 跳到下一个 boundary，继续处理下一个 part。
