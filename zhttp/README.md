@@ -406,6 +406,12 @@ Daemon 只在显式进程运行入口安装信号处理，返回时恢复原处�
 
 4.0 的 API 迁移、实际目录树和验证结果见 [重构实施报告](docs/refactoring-report.md)。
 
+5.0 将三种限流器的状态和互斥锁改为 16 个按 64 字节对齐的分片，公共源码接口保持不变，
+类布局及共享库 SOVERSION 已升级。升级时必须重新编译消费者，使用
+`find_package(zhttp 5 CONFIG REQUIRED)`。每次请求只持有所属分片的锁；显式
+`prune_expired()` 依次清理各分片，返回本次实际删除数，不提供跨分片的原子快照。
+自定义时钟须支持并发调用。性能修改和验证结果见 [优化实施报告](docs/optimization-report.md)。
+
 ## 测试、覆盖率与性能
 
 测试需要 GTest/GMock 和 Brotli decoder (`brotlidec`)。先构建测试二进制，再运行：
@@ -435,12 +441,20 @@ coverage/run_coverage.sh --no-test
 
 ```bash
 cmake --preset perf
-cmake --build --preset perf --target zhttp_benchmark -j 4
+cmake --build --preset perf --target zhttp_benchmark zhttp_core_benchmark -j 4
 build/perf/zhttp/tests/zhttp_benchmark \
   --mode all --threads 4 --wrk-threads 4 \
   --wrk-connections 256 --wrk-duration 10s --path /
+taskset -c 2 build/perf/zhttp/tests/zhttp_core_benchmark cache
+taskset -c 0-7 build/perf/zhttp/tests/zhttp_core_benchmark limiter
 ```
 
 `--mode` 支持 `independent`、`shared`、`all`。benchmark fork 本地 HTTP 服务，
-输出 wrk 的吞吐、延迟和传输速率。可在同一 benchmark 参数下使用 `perf` 或 `valgrind` 采样；cachegrind 的文本报告
+先发送预热请求（`--warmup-ms` 默认 500，向上取整到整秒，0 关闭预热），
+再输出独立测量阶段的吞吐、延迟和传输速率。wrk 失败、socket error、非成功状态、
+缺少有效吞吐或服务异常退出均返回非零退出码。核心 benchmark 不需要 wrk，支持
+`all/cache/pipeline/encode/limiter`，输出 CSV，每项预热 50ms、测量至少 200ms、重复 5 次；
+限流测试分别使用相同 key 和独立 key。其核心路径使用系统 allocator，不可直接与网络路径相加。
+缓存文件是临时小文件，只用于衡量命中路径，不代表磁盘吞吐。
+可在同一 benchmark 参数下使用 `perf` 或 `valgrind` 采样；cachegrind 的文本报告
 使用 `cg_annotate`。同一机器、构建参数和负载下的吞吐与延迟结果才适合比较。
