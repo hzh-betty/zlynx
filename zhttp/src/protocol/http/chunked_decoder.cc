@@ -28,7 +28,7 @@ ParseResult ChunkedDecoder::parse(znet::ByteBuffer &buffer, HttpRequest &request
         if (state_ == State::DataEnd) {
             if (buffer.readable_bytes() < 2)
                 return ParseResult::NEED_MORE;
-            if (buffer.peek()[0] != '\r' || buffer.peek()[1] != '\n')
+            if (buffer.peek()[0] != kCRLF[0] || buffer.peek()[1] != kCRLF[1])
                 return fail(HttpStatus::BAD_REQUEST,
                             "Invalid chunk data terminator");
             buffer.retrieve(2);

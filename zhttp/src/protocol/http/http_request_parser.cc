@@ -22,9 +22,9 @@ ParseResult HttpRequestParser::fail(HttpStatus status, const char *message) {
     return ParseResult::ERROR;
 }
 bool HttpRequestParser::parse_line(const std::string &line) {
-    auto first = line.find(' '), last = line.rfind(' ');
+    auto first = line.find(kSP), last = line.rfind(kSP);
     if (first == std::string::npos || first == last ||
-        line.find(' ', first + 1) != last)
+        line.find(kSP, first + 1) != last)
         return false;
     const auto method = line.substr(0, first), version = line.substr(last + 1);
     request_->set_method(string_to_method(method));

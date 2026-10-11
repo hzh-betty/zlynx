@@ -11,6 +11,10 @@
 #include <vector>
 
 namespace zhttp {
+/** HTTP 协议行结束符与起始行字段分隔符。 */
+inline constexpr char kCRLF[] = "\r\n";
+inline constexpr char kSP = ' ';
+
 /** 框架支持的 HTTP 请求方法，UNKNOWN 表示未识别方法。 */
 enum class HttpMethod {
     GET,

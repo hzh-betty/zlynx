@@ -122,8 +122,11 @@ WriteResult HttpResponseWriter::send(
         }
     }
     // 正文完全发送后才写终止 chunk；失败路径不伪造正常结束标记。
-    if (p.chunked && !send_all_or_fail(conn, "0\r\n\r\n", 5))
-        return WriteResult::Failed;
+    if (p.chunked) {
+        const auto terminator = std::string("0").append(kCRLF).append(kCRLF);
+        if (!send_all_or_fail(conn, terminator.data(), terminator.size()))
+            return WriteResult::Failed;
+    }
     return WriteResult::Completed;
 }
 } // namespace zhttp

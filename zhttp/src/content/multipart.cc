@@ -110,7 +110,7 @@ parse_part_headers(const std::string &headers_blob,
     size_t pos = 0;
     while (pos < headers_blob.size()) {
         // 逐行读取，兼容最后一行没有 CRLF 结尾的情况。
-        size_t end = headers_blob.find("\r\n", pos);
+        size_t end = headers_blob.find(kCRLF, pos);
         if (end == std::string::npos) {
             end = headers_blob.size();
         }
@@ -225,7 +225,7 @@ MultipartFormData::ptr MultipartFormData::parse(const HttpRequest &request,
         }
 
         // 标准写法里 boundary 后面紧跟 CRLF，再开始 part 头部。
-        if (pos + 2 <= body.size() && body.compare(pos, 2, "\r\n") == 0) {
+        if (pos + 2 <= body.size() && body.compare(pos, 2, kCRLF) == 0) {
             pos += 2;
         } else {
             // 为了兼容非标准输入，这里宽容接受单个换行符。
@@ -235,7 +235,7 @@ MultipartFormData::ptr MultipartFormData::parse(const HttpRequest &request,
         }
 
         // part 头部和正文之间同样用空行分隔。
-        size_t headers_end = body.find("\r\n\r\n", pos);
+        size_t headers_end = body.find(std::string(kCRLF).append(kCRLF), pos);
         if (headers_end == std::string::npos) {
             if (error) {
                 *error = "Invalid multipart: missing header terminator";
@@ -275,7 +275,7 @@ MultipartFormData::ptr MultipartFormData::parse(const HttpRequest &request,
         }
 
         // 当前 part 的正文以“CRLF + 下一个 boundary”为结束标记。
-        std::string marker = "\r\n" + dash_boundary;
+        std::string marker = kCRLF + dash_boundary;
         size_t next = body.find(marker, pos);
         if (next == std::string::npos) {
             // 即使是最后一个 part，后面也应当还能看到结束 boundary。
