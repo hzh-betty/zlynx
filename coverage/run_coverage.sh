@@ -15,6 +15,9 @@ Usage:
 Environment variables:
   BUILD_DIR   Override coverage build directory (default: ./build-cov-all)
   REPORT_ROOT Override report output directory (default: ./coverage/reports)
+  GCOV        Override gcov reader command (for example: "llvm-cov gcov")
+  BUILD_JOBS  Number of concurrent build jobs (default: 4)
+  CTEST_JOBS  Number of concurrent test programs (default: 4)
 EOF
 }
 
@@ -53,19 +56,64 @@ if [[ ! -f "${BUILD_DIR}/CMakeCache.txt" ]]; then
         -G Ninja \
         -DCMAKE_CXX_COMPILER=clang++ \
         -DCMAKE_BUILD_TYPE=Debug \
+        -DBUILD_SHARED_LIBS=ON \
         -DBUILD_TESTING=ON \
         -DZLYNX_ENABLE_COVERAGE=ON
 fi
 
-cmake --build "${BUILD_DIR}" -j"$(nproc)"
+cmake --build "${BUILD_DIR}" -j"${BUILD_JOBS:-4}"
 
+test_exit=0
+test_status_file="${REPORT_ROOT}/test-status.txt"
 if [[ ${RUN_TESTS} -eq 1 ]]; then
     find "${BUILD_DIR}" -name '*.gcda' -delete
-    if ! ctest --test-dir "${BUILD_DIR}" --output-on-failure -j"${CTEST_JOBS}"; then
+    if ctest --test-dir "${BUILD_DIR}" --output-on-failure -j"${CTEST_JOBS}"; then
+        echo "initial_ctest_exit=0" >"${test_status_file}"
+    else
+        test_exit=$?
+        echo "initial_ctest_exit=${test_exit}" >"${test_status_file}"
         echo "Initial ctest run failed, rerunning failed tests sequentially..."
-        ctest --test-dir "${BUILD_DIR}" --output-on-failure --rerun-failed -j1
+        if ctest --test-dir "${BUILD_DIR}" --output-on-failure --rerun-failed -j1; then
+            echo "rerun_ctest_exit=0" >>"${test_status_file}"
+            echo "flaky=true" >>"${test_status_file}"
+            echo "Rerun passed; the initial failure is retained (flaky tests)." >&2
+        else
+            rerun_exit=$?
+            echo "rerun_ctest_exit=${rerun_exit}" >>"${test_status_file}"
+            echo "flaky=false" >>"${test_status_file}"
+            echo "Rerun also failed; generating coverage for diagnosis." >&2
+        fi
+    fi
+else
+    echo "tests=skipped" >"${test_status_file}"
+fi
+
+compiler="$(sed -n 's/^CMAKE_CXX_COMPILER:[^=]*=//p' "${BUILD_DIR}/CMakeCache.txt" | head -n1)"
+if [[ -z "${GCOV:-}" ]]; then
+    if "${compiler}" --version | head -n1 | grep -qi clang; then
+        llvm_cov="$("${compiler}" -print-prog-name=llvm-cov)"
+        if ! command -v "${llvm_cov}" >/dev/null; then
+            echo "Matching llvm-cov is unavailable; set GCOV explicitly." >&2
+            exit 1
+        fi
+        GCOV="${llvm_cov} gcov"
+    else
+        GCOV="$("${compiler}" -print-prog-name=gcov)"
     fi
 fi
+{
+    echo "generated_utc=$(date -u +%FT%TZ)"
+    echo "source_commit=$(git -C "${ROOT_DIR}" rev-parse HEAD)"
+    echo "source_status:"
+    git -C "${ROOT_DIR}" status --short
+    echo "compiler=${compiler}"
+    "${compiler}" --version | head -n1
+    gcovr --version
+    echo "gcov_command=${GCOV}"
+    echo "source_filter=<module>/(src|include)/"
+    echo "excluded: tests, third-party, unreachable branches, throw branches, noncode lines"
+    echo "zco/znet: logging expansion lines; znet: SSL_ERROR_ branch fanout"
+} >"${REPORT_ROOT}/metadata.txt"
 
 modules=(zlog zmalloc zco znet zhttp)
 
@@ -73,6 +121,7 @@ gcovr_common=(
     gcovr
     -j 1
     -r "${ROOT_DIR}" "${BUILD_DIR}"
+    --gcov-executable "${GCOV}"
     --merge-lines
     --exclude '/usr/.*'
     --exclude '.*/(third_party|3rdparty|external|_deps)/.*'
@@ -97,10 +146,7 @@ for module in "${modules[@]}"; do
     branch_file="${module_dir}/branches.txt"
     html_file="${module_dir}/index.html"
     module_extra_args=()
-    module_source_filter="${module}/src"
-    if [[ "${module}" == "zhttp" ]]; then
-        module_source_filter="zhttp/(?!tests/)"
-    fi
+    module_source_filter="${module}/(src|include)/"
 
     case "${module}" in
     zco)
@@ -119,20 +165,14 @@ for module in "${modules[@]}"; do
         "${module_extra_args[@]}" \
         --filter "${module_source_filter}" \
         --decisions \
+        --json "${module_dir}/coverage.json" \
+        --json-summary "${module_dir}/summary.json" \
         --txt-summary >"${summary_file}"
 
-    "${gcovr_common[@]}" \
-        "${module_extra_args[@]}" \
-        --filter "${module_source_filter}" \
-        --txt \
-        --txt-metric branch \
-        --sort uncovered-percent >"${branch_file}"
-
-    "${gcovr_common[@]}" \
-        "${module_extra_args[@]}" \
-        --filter "${module_source_filter}" \
-        --decisions \
-        --html-details "${html_file}" \
+    gcovr -r "${ROOT_DIR}" --json-add-tracefile "${module_dir}/coverage.json" \
+        --txt --txt-metric branch --sort uncovered-percent >"${branch_file}"
+    gcovr -r "${ROOT_DIR}" --json-add-tracefile "${module_dir}/coverage.json" \
+        --decisions --html-details "${html_file}" \
         --html-title "${module} coverage" >/dev/null
 
     line_cov="$(grep '^lines:' "${summary_file}" | awk '{print $2}')"
@@ -147,3 +187,4 @@ done
 
 echo "Coverage reports generated under: ${REPORT_ROOT}"
 echo "Summary table: ${summary_table}"
+exit "${test_exit}"
