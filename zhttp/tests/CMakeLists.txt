@@ -91,4 +91,6 @@ endif()
 if(ZLYNX_BUILD_PERF_TESTS)
     # HTTP benchmark 需要手动运行，不参与覆盖率和 CTest。
     zlynx_add_perf_target(zhttp_benchmark benchmark/zhttp_benchmark.cc zhttp)
+    zlynx_add_perf_target(zhttp_core_benchmark benchmark/zhttp_core_benchmark.cc zhttp_core)
+    target_include_directories(zhttp_core_benchmark PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
 endif()

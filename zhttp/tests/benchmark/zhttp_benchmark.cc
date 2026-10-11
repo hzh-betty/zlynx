@@ -3,11 +3,13 @@
 #include <atomic>
 #include <cerrno>
 #include <chrono>
+#include <cmath>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <limits>
 #include <poll.h>
 #include <sstream>
 #include <string>
@@ -64,8 +66,8 @@ void print_usage(const char *prog) {
         << "  --wrk-bin PATH                   wrk binary/path (default wrk)\n"
         << "  --wrk-threads N                  wrk threads (default 4)\n"
         << "  --wrk-connections N              wrk connections (default 256)\n"
-        << "  --wrk-duration STR               wrk duration (default 10s)\n"
-        << "  --warmup-ms N                    Delay before wrk (default 500)\n"
+        << "  --wrk-duration STR               wrk duration (default 3s)\n"
+        << "  --warmup-ms N                    Warmup requests, rounded up to seconds (default 500)\n"
         << "  --path STR                       Request path (default /)\n"
         << "  --wrk-arg ARG                    Extra arg forwarded to wrk\n"
         << "  -h, --help                       Show help\n";
@@ -76,8 +78,10 @@ bool parse_int(const char *text, int &value) {
         return false;
     }
     char *end = nullptr;
+    errno = 0;
     long parsed = std::strtol(text, &end, 10);
-    if (!end || *end != '\0') {
+    if (!end || *end != '\0' || errno == ERANGE ||
+        parsed < std::numeric_limits<int>::min() || parsed > std::numeric_limits<int>::max()) {
         return false;
     }
     value = static_cast<int>(parsed);
@@ -163,6 +167,12 @@ BenchConfig parse_args(int argc, char **argv) {
     if (cfg.mode != "all" && cfg.mode != "independent" &&
         cfg.mode != "shared") {
         std::cerr << "Invalid --mode: " << cfg.mode << std::endl;
+        std::exit(2);
+    }
+    if (cfg.port < 1 || cfg.port > (cfg.mode == "all" ? 65534 : 65535) ||
+        cfg.threads < 1 || cfg.wrk_threads < 1 ||
+        cfg.wrk_connections < cfg.wrk_threads || cfg.warmup_ms < 0) {
+        std::cerr << "Invalid port, thread count, connection count or warmup" << std::endl;
         std::exit(2);
     }
     return cfg;
@@ -333,10 +343,6 @@ WrkResult run_wrk(const BenchConfig &cfg) {
         ::dup2(pipefd[1], STDERR_FILENO);
         ::close(pipefd[1]);
 
-        if (cfg.warmup_ms > 0) {
-            ::usleep(static_cast<useconds_t>(cfg.warmup_ms) * 1000);
-        }
-
         ::execvp(argv[0], argv.data());
         std::perror("execvp wrk");
         _exit(127);
@@ -358,13 +364,20 @@ WrkResult run_wrk(const BenchConfig &cfg) {
             result.output.append(buffer, static_cast<size_t>(n));
             continue;
         }
+        if (n < 0 && errno == EINTR)
+            continue;
         break;
     }
     ::close(pipefd[0]);
 
     int status = 0;
-    (void)::waitpid(pid, &status, 0);
-    if (WIFEXITED(status)) {
+    pid_t waited;
+    do {
+        waited = ::waitpid(pid, &status, 0);
+    } while (waited < 0 && errno == EINTR);
+    if (waited < 0) {
+        result.exit_code = 1;
+    } else if (WIFEXITED(status)) {
         result.exit_code = WEXITSTATUS(status);
     } else if (WIFSIGNALED(status)) {
         result.exit_code = 128 + WTERMSIG(status);
@@ -375,6 +388,13 @@ WrkResult run_wrk(const BenchConfig &cfg) {
     result.requests_per_sec = extract_metric(result.output, "Requests/sec");
     result.transfer_per_sec = extract_metric(result.output, "Transfer/sec");
     result.latency = extract_wrk_latency(result.output);
+    char *end = nullptr;
+    const double qps = std::strtod(result.requests_per_sec.c_str(), &end);
+    if (result.exit_code == 0 &&
+        (!end || *end != '\0' || !std::isfinite(qps) || qps <= 0 ||
+         result.output.find("Socket errors:") != std::string::npos ||
+         result.output.find("Non-2xx or 3xx responses:") != std::string::npos))
+        result.exit_code = 1;
     return result;
 }
 
@@ -393,8 +413,7 @@ bool terminate_server(pid_t pid, bool &clean_exit) {
             return true;
         }
         if (waited < 0 && errno == ECHILD) {
-            clean_exit = true;
-            return true;
+            return false;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
@@ -467,6 +486,20 @@ ModeResult run_mode(const BenchConfig &base_cfg, const std::string &mode,
         return mode_result;
     }
 
+    if (cfg.warmup_ms > 0) {
+        BenchConfig warmup = cfg;
+        warmup.wrk_duration = std::to_string(cfg.warmup_ms / 1000 + (cfg.warmup_ms % 1000 != 0)) + "s";
+        auto result = run_wrk(warmup);
+        if (result.exit_code != 0) {
+            mode_result.wrk = std::move(result);
+            mode_result.wrk.output = "warmup failed:\n" + mode_result.wrk.output;
+            mode_result.wrk_exit_code = mode_result.wrk.exit_code;
+            terminate_server(server_pid, mode_result.server_exited_cleanly);
+            mode_result.server_log = read_all_fd(log_pipe[0]);
+            ::close(log_pipe[0]);
+            return mode_result;
+        }
+    }
     mode_result.wrk = run_wrk(cfg);
     mode_result.wrk_exit_code = mode_result.wrk.exit_code;
     terminate_server(server_pid, mode_result.server_exited_cleanly);
@@ -536,7 +569,8 @@ int main(int argc, char **argv) {
     print_summary(results);
 
     for (const auto &result : results) {
-        if (result.wrk_exit_code != 0 || !result.server_started) {
+        if (result.wrk_exit_code != 0 || !result.server_started ||
+            !result.server_exited_cleanly) {
             return 1;
         }
     }

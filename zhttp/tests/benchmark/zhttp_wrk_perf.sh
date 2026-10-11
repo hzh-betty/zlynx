@@ -25,7 +25,7 @@ done
 
 if [[ -z "${BIN}" ]]; then
   echo "error: zhttp_benchmark not found. Build first:" >&2
-  echo "  cmake -S ${ROOT_DIR} -B ${BUILD_DIR} -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_TESTS=ON -DZLYNX_USE_ZMALLOC_OVERRIDE=OFF" >&2
+  echo "  cmake -S ${ROOT_DIR} -B ${BUILD_DIR} -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DZLYNX_BUILD_PERF_TESTS=ON -DZLYNX_USE_ZMALLOC_OVERRIDE=ON" >&2
   echo "  cmake --build ${BUILD_DIR} -j --target zhttp_benchmark" >&2
   exit 2
 fi
@@ -113,7 +113,7 @@ run_perf() {
     > "${out_dir}/benchmark_output.txt" 2>&1
 
   perf report -i "${out_dir}/perf.data" --stdio \
-    > "${out_dir}/perf_report.txt" 2>&1 || true
+    > "${out_dir}/perf_report.txt" 2>&1
 
   echo "perf data: ${out_dir}/perf.data"
   echo "perf report: ${out_dir}/perf_report.txt"
@@ -147,7 +147,7 @@ run_valgrind() {
     )"
     if [[ -n "${selected_file}" ]]; then
       cp "${selected_file}" "${out_dir}/cachegrind.out"
-      cg_annotate --auto=yes "${selected_file}" > "${out_dir}/cachegrind_report.txt" 2>&1 || true
+      cg_annotate --auto=yes "${selected_file}" > "${out_dir}/cachegrind_report.txt" 2>&1
       echo "cachegrind selected: ${selected_file}"
       echo "cachegrind report: ${out_dir}/cachegrind_report.txt"
     fi
