@@ -1,9 +1,9 @@
 /**
  * @file page_cache.h
- * @brief 页缓存，以页为单位管理内存，支持 Span 的分配、合并和释放
+ * @brief 页缓存，以页为单位管理内存，支持 Span
+ * 的分配、合并和释放
  * @author hzh-betty
  */
-
 #ifndef ZMALLOC_INTERNAL_PAGE_CACHE_H_
 #define ZMALLOC_INTERNAL_PAGE_CACHE_H_
 
@@ -22,7 +22,10 @@
 
 namespace zmalloc {
 
-/** @brief 受页锁保护的页缓存统计，不包含元数据映射。 */
+/**
+ * @brief 受页锁保护的页缓存统计，不包含元数据映射。
+
+ */
 struct PageCacheStats {
     size_t free_bytes;
     size_t released_bytes;
@@ -66,7 +69,7 @@ class PageCache : public NonCopyable {
      * @param obj 对象指针
      * @return Span 指针
      * @note 仅用于存活的受管对象，或持有 page_mtx_ 的内部访问。小对象及
-     *       尚未归还中心层的缓存对象计入 use_count，保证所属 Span 不被复用。
+     * 尚未归还中心层的缓存对象计入 use_count，保证所属 Span 不被复用。
      */
     inline Span *map_object_to_span(void *obj) {
         PageId id = reinterpret_cast<PageId>(obj) >> PAGE_SHIFT;
@@ -80,7 +83,7 @@ class PageCache : public NonCopyable {
      * @param obj 对象指针
      * @return 找到则返回 Span，否则返回 nullptr
      * @note 原子查询不锁定 Span 生命周期。任意地址的查询结果若需解引用，
-     *       必须在查询前取得 page_mtx_ 并保持到检查结束；存活对象可无锁查询。
+     * 必须在查询前取得 page_mtx_ 并保持到检查结束；存活对象可无锁查询。
      */
     inline Span *try_map_object_to_span(void *obj) {
         PageId id = reinterpret_cast<PageId>(obj) >> PAGE_SHIFT;
@@ -88,10 +91,15 @@ class PageCache : public NonCopyable {
     }
 
     /**
-     * @brief 查询带缓存映射标记的 Span，供 override 的无锁常见路径使用。
-     * @note 缓存映射不会 munmap，合法外部指针不可能落入这些页。
-     *       合法受管指针自身保证 Span 存活；非法释放仍不在本接口的保证范围内。
-     *       若未来解除缓存映射，必须同步调整此标记及查询的生命周期协议。
+     * @brief 查询带缓存映射标记的 Span，供 override
+     * 的无锁常见路径使用。
+     * @note 缓存映射不会
+     * munmap，合法外部指针不可能落入这些页。
+     * 合法受管指针自身保证 Span
+     * 存活；非法释放仍不在本接口的保证范围内。
+     *
+     * 若未来解除缓存映射，必须同步调整此标记及查询的生命周期协议。
+
      */
     Span *try_map_cached_object_to_span(void *obj) {
         const PageId id = reinterpret_cast<PageId>(obj) >> PAGE_SHIFT;
@@ -101,7 +109,10 @@ class PageCache : public NonCopyable {
                    : nullptr;
     }
 
-    /** @brief 登记大对齐块的附加页；调用者须持有 page_mtx_。 */
+    /**
+     * @brief 登记大对齐块的附加页；调用者须持有 page_mtx_。
+
+     */
     void map_span_page(Span *span, void *address) {
         const PageId id = reinterpret_cast<PageId>(address) >> PAGE_SHIFT;
         assert(id >= span->page_id && id - span->page_id < span->n);
@@ -114,24 +125,34 @@ class PageCache : public NonCopyable {
      */
     void release_span_to_page_cache(Span *span);
 
-    /** @brief 建议回收完全空闲 Span 的物理页；调用者须持有 page_mtx_。 */
+    /**
+     * @brief 建议回收完全空闲 Span 的物理页；调用者须持有 page_mtx_。
+
+     */
     size_t release_free_pages();
 
-    /** @brief 获取页缓存统计；调用者须持有 page_mtx_。 */
+    /**
+     * @brief 获取页缓存统计；调用者须持有 page_mtx_。
+
+     */
     PageCacheStats statistics();
 
-    /** @brief 返回保护页缓存元数据的互斥锁；调用者负责加锁和解锁。 */
+    /**
+     * @brief 返回保护页缓存元数据的互斥锁；调用者负责加锁和解锁。
+
+     */
     std::mutex &page_mtx() { return page_mtx_; }
 
   private:
     friend struct CacheTestAccess;
-    static_assert(alignof(Span) >= 2, "Span must reserve a low bit for tagging");
+    static_assert(alignof(Span) >= 2,
+                  "Span must reserve a low bit for tagging");
     static constexpr uintptr_t kCachedObjectTag = 1;
 
     // 标记保存在原子叶项的低位；所有通用查询和合并路径须先去除标记。
     static Span *decode_span(void *entry) {
-        return reinterpret_cast<Span *>(
-            reinterpret_cast<uintptr_t>(entry) & ~kCachedObjectTag);
+        return reinterpret_cast<Span *>(reinterpret_cast<uintptr_t>(entry) &
+                                        ~kCachedObjectTag);
     }
 
     // 缓存中的已分配 Span 带标记，空闲边界和直接系统映射均不带标记。
@@ -148,20 +169,25 @@ class PageCache : public NonCopyable {
             auto_release_cursor_ = span->prev;
         }
     }
+
     void maybe_release_free_pages(size_t returned_bytes);
 
     PageCache() = default;
 
   private:
-    SpanList large_spans_;        // 精确尺寸复用，按归还顺序驱逐，页锁保护。
+    SpanList large_spans_; // 精确尺寸复用，按归还顺序驱逐，页锁保护。
     size_t large_cached_bytes_ = 0;
     std::array<SpanList, NPAGES> span_lists_; // 按页数分桶
-    PageMap id_span_map_;         // 页号到 Span 的映射
-    ObjectPool<Span> span_pool_;  // Span 对象池
-    std::mutex page_mtx_;         // 全局锁
-    size_t mapped_bytes_ = 0;     // 受管页映射，不含元数据；由页锁保护。
+    PageMap id_span_map_;                     // 页号到 Span 的映射
+    ObjectPool<Span> span_pool_;              // Span 对象池
+    std::mutex page_mtx_;                     // 全局锁
+    size_t mapped_bytes_ = 0;         // 受管页映射，不含元数据；由页锁保护。
     size_t total_released_bytes_ = 0; // 累计成功建议回收字节数。
+
+    // 空闲且尚未成功建议物理回收的页字节数，决定自动回收是否达到触发阈值。
     size_t unreleased_free_bytes_ = 0;
+
+    // 自上次自动回收检查后归还的字节数，用于限制回收检查频率。
     size_t returned_since_auto_release_ = 0;
     size_t auto_release_bucket_ = 0; // 0 为大块链表，1..128 为普通桶。
     Span *auto_release_cursor_ = nullptr;
@@ -169,4 +195,4 @@ class PageCache : public NonCopyable {
 
 } // namespace zmalloc
 
-#endif // ZMALLOC_INTERNAL_PAGE_CACHE_H_
+#endif

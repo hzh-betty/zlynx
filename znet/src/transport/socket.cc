@@ -123,8 +123,9 @@ Result<Socket> Socket::accept(zco::Deadline deadline) {
         });
     if (!accepted)
         return accepted.error();
-    return from_descriptor(zco::io::Descriptor(static_cast<int>(accepted.value())),
-                           family_, kind_);
+    return from_descriptor(
+        zco::io::Descriptor(static_cast<int>(accepted.value())), family_,
+        kind_);
 }
 
 Result<void> Socket::connect(const Endpoint &endpoint, zco::Deadline deadline) {
@@ -217,8 +218,9 @@ Result<Datagram> Socket::receive_from(void *bytes, size_t size,
               });
     if (!count)
         return count.error();
-    // Unix datagrams may come from an unbound socket, in which case the
-    // kernel supplies no sockaddr. The payload is still a valid message.
+
+    // Unix 数据报可能来自未绑定的套接字，此时内核不提供源地址，
+    // 但负载仍是有效消息。
     auto source =
         family_ == AF_UNIX && address_size == 0
             ? Endpoint::unix_domain({})

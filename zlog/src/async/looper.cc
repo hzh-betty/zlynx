@@ -3,7 +3,6 @@
  * @brief 异步日志的记录队列与完成屏障。
  * @author hzh-betty
  */
-
 #include "looper.h"
 #include "zlog/logger.h"
 
@@ -26,7 +25,8 @@ void *AsyncLooper::operator new(size_t size) {
 void AsyncLooper::operator delete(void *memory) noexcept { std::free(memory); }
 
 AsyncLooper::AsyncLooper(Functor func, AsyncType looper_type,
-                         std::chrono::milliseconds milliseco, FlushFunctor flush)
+                         std::chrono::milliseconds milliseco,
+                         FlushFunctor flush)
     : looper_type_(looper_type), callback_(std::move(func)),
       flush_callback_(std::move(flush)), milliseco_(milliseco) {
     if (milliseco_.count() <= 0) {
@@ -42,10 +42,12 @@ bool AsyncLooper::is_worker_thread() const {
 
 void AsyncLooper::push(const char *data, size_t len) {
     if (is_worker_thread()) {
-        throw std::logic_error("cannot log to an async logger from its own sink");
+        throw std::logic_error(
+            "cannot log to an async logger from its own sink");
     }
     const size_t limit = looper_type_ == AsyncType::ASYNC_SAFE
-                             ? kDefaultBufferSize : kMaxBufferSize;
+                             ? kDefaultBufferSize
+                             : kMaxBufferSize;
     if (len > limit - kRecordHeaderSize) {
         throw std::length_error("log message exceeds async buffer capacity");
     }
@@ -56,13 +58,14 @@ void AsyncLooper::push(const char *data, size_t len) {
     std::unique_lock<std::mutex> lock(mutex_);
     cond_pro_.wait(lock, [&] {
         return stop_ || (looper_type_ == AsyncType::ASYNC_SAFE
-                            ? pro_buf_.writable_size() >= needed
-                            : pro_buf_.can_accommodate(needed));
+                             ? pro_buf_.writable_size() >= needed
+                             : pro_buf_.can_accommodate(needed));
     });
     if (stop_) {
         throw std::runtime_error("async logger is closed");
     }
     const size_t previous_size = pro_buf_.readable_size();
+
     // 扩容完成后才写入长度头，保证分配失败不会留下半条记录。
     pro_buf_.reserve(needed);
     pro_buf_.push(reinterpret_cast<const char *>(&len), kRecordHeaderSize);
@@ -71,6 +74,7 @@ void AsyncLooper::push(const char *data, size_t len) {
     const bool notify = previous_size < kFlushBufferSize &&
                         pro_buf_.readable_size() >= kFlushBufferSize;
     lock.unlock();
+
     // 只在越过阈值时通知；等待谓词在队列锁下检查，不依赖通知计数。
     if (notify) {
         cond_con_.notify_one();
@@ -79,7 +83,8 @@ void AsyncLooper::push(const char *data, size_t len) {
 
 void AsyncLooper::flush() {
     if (is_worker_thread()) {
-        throw std::logic_error("cannot flush an async logger from its own sink");
+        throw std::logic_error(
+            "cannot flush an async logger from its own sink");
     }
     std::lock_guard<std::mutex> operation(stop_mutex_);
     std::unique_lock<std::mutex> lock(mutex_);
@@ -87,9 +92,8 @@ void AsyncLooper::flush() {
         const uint64_t request = ++flush_state_.flush_requested;
         flush_state_.flush_target = flush_state_.accepted;
         cond_con_.notify_one();
-        cond_done_.wait(lock, [&] {
-            return flush_state_.flush_completed >= request;
-        });
+        cond_done_.wait(
+            lock, [&] { return flush_state_.flush_completed >= request; });
     }
     if (callback_exception_) {
         std::rethrow_exception(callback_exception_);
@@ -98,7 +102,8 @@ void AsyncLooper::flush() {
 
 void AsyncLooper::stop() {
     if (is_worker_thread()) {
-        throw std::logic_error("cannot close an async logger from its own sink");
+        throw std::logic_error(
+            "cannot close an async logger from its own sink");
     }
     std::lock_guard<std::mutex> operation(stop_mutex_);
     {
@@ -135,9 +140,12 @@ void AsyncLooper::thread_entry() {
             std::unique_lock<std::mutex> lock(mutex_);
             cond_con_.wait_for(lock, milliseco_, [&] {
                 return stop_ ||
-                       flush_state_.flush_requested != flush_state_.flush_completed ||
+                       flush_state_.flush_requested !=
+                           flush_state_.flush_completed ||
                        pro_buf_.readable_size() >= kFlushBufferSize;
             });
+
+            // 持队列锁转移缓冲区后，后台独占本批字节；生产者可填充另一块存储。
             con_buf_.swap(pro_buf_);
             cond_pro_.notify_all();
         }
@@ -180,6 +188,8 @@ void AsyncLooper::thread_entry() {
             }
             {
                 std::unique_lock<std::mutex> lock(mutex_);
+
+                // 即使刷新回调失败，也发布请求完成以释放等待者；异常另行保存并传播。
                 flush_state_.flush_completed = request;
             }
             cond_done_.notify_all();

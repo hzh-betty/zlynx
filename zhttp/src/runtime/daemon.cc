@@ -1,10 +1,8 @@
 /**
- * daemon.cc
- * daemon 实现。
+ * @file daemon.cc
  *
  * @author hzh-betty
  */
-
 #include "zhttp/runtime/daemon.h"
 
 #include <fcntl.h>
@@ -14,21 +12,22 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include <atomic>
 #include <array>
-#include <stdexcept>
-#include <fmt/format.h>
+#include <atomic>
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <fmt/format.h>
 #include <sstream>
+#include <stdexcept>
 
 namespace zhttp {
 
 // 全局停止标志
-static_assert(std::atomic<bool>::is_always_lock_free, "Signal flag must be lock-free");
+static_assert(std::atomic<bool>::is_always_lock_free,
+              "Signal flag must be lock-free");
 static std::atomic<bool> g_stop_flag{false};
 static std::atomic_flag process_runner_active = ATOMIC_FLAG_INIT;
 
@@ -46,14 +45,16 @@ int daemonize_process() {
             _exit(0);
         }
         if (pid < 0) {
-            fmt::print(stderr, "fork() failed while daemonizing: {} (errno={})\n",
-                            strerror(errno), errno);
+            fmt::print(stderr,
+                       "fork() failed while daemonizing: {} (errno={})\n",
+                       strerror(errno), errno);
             return -1;
         }
+
         // 子进程继续执行，成为新的会话领导者和进程组领导者。
         if (setsid() < 0) {
-            fmt::print(stderr, "setsid() failed: {} (errno={})\n", strerror(errno),
-                            errno);
+            fmt::print(stderr, "setsid() failed: {} (errno={})\n",
+                       strerror(errno), errno);
             return -1;
         }
     }
@@ -88,7 +89,7 @@ bool wait_for_child_exit(pid_t child_pid, int &status) {
         }
 
         fmt::print(stderr, "waitpid() failed: {} (errno={})\n", strerror(errno),
-                        errno);
+                   errno);
         return false;
     }
 }
@@ -133,8 +134,8 @@ int real_daemon(int argc, char **argv, Daemon::MainCallback main_cb,
             return real_start(argc, argv, main_cb);
         } else if (pid < 0) {
             // fork 失败
-            fmt::print(stderr, "fork() failed: {} (errno={})\n", strerror(errno),
-                            errno);
+            fmt::print(stderr, "fork() failed: {} (errno={})\n",
+                       strerror(errno), errno);
             return -1;
         } else {
             // 父进程：等待子进程
@@ -152,23 +153,29 @@ int real_daemon(int argc, char **argv, Daemon::MainCallback main_cb,
                 int exit_code = WEXITSTATUS(status);
                 if (exit_code == 0) {
                     // 业务正常结束：守护进程也正常退出，不再拉起新 worker。
-                    fmt::print(stderr, "Worker process exited normally (PID: {})\n",
-                                   pid);
+                    fmt::print(stderr,
+                               "Worker process exited normally (PID: {})\n",
+                               pid);
                     break; // 正常退出，不重启
                 }
+
                 // 业务异常退出：进入重启流程。
-                fmt::print(stderr, "Worker process exited with code {} (PID: {})\n",
-                               exit_code, pid);
+                fmt::print(stderr,
+                           "Worker process exited with code {} (PID: {})\n",
+                           exit_code, pid);
             } else if (WIFSIGNALED(status)) {
                 int sig = WTERMSIG(status);
+
                 // 被信号杀死：也进入重启流程（除非外部已触发全局停止标记）。
-                fmt::print(stderr, "Worker process killed by signal {} (PID: {})\n",
-                                sig, pid);
+                fmt::print(stderr,
+                           "Worker process killed by signal {} (PID: {})\n",
+                           sig, pid);
             }
 
             // 重启
             ProcessInfo::instance().restart_count++;
-            fmt::print(stderr,
+            fmt::print(
+                stderr,
                 "Restarting worker process in {} seconds... (count: {})\n",
                 restart_interval_sec, ProcessInfo::instance().restart_count);
             sleep_before_restart(restart_interval_sec);
@@ -208,15 +215,19 @@ class SignalScope {
         struct sigaction action{};
         sigemptyset(&action.sa_mask);
         for (size_t i = 0; i < signals_.size(); ++i) {
-            action.sa_handler = signals_[i] == SIGPIPE ? SIG_IGN : signal_handler;
+            action.sa_handler =
+                signals_[i] == SIGPIPE ? SIG_IGN : signal_handler;
             if (::sigaction(signals_[i], &action, &previous_[i]) < 0) {
                 restore();
-                throw std::runtime_error("Cannot install process signal handlers");
+                throw std::runtime_error(
+                    "Cannot install process signal handlers");
             }
             ++installed_;
         }
     }
+
     ~SignalScope() { restore(); }
+
   private:
     void restore() {
         while (installed_) {
@@ -224,10 +235,12 @@ class SignalScope {
             ::sigaction(signals_[installed_], &previous_[installed_], nullptr);
         }
     }
+
     const std::array<int, 3> signals_{SIGTERM, SIGINT, SIGPIPE};
     std::array<struct sigaction, 3> previous_{};
     size_t installed_ = 0;
 };
+
 struct RunnerScope {
     ~RunnerScope() { process_runner_active.clear(std::memory_order_release); }
 };
@@ -235,13 +248,15 @@ struct RunnerScope {
 
 int Daemon::start_daemon(int argc, char **argv, MainCallback main_cb,
                          bool is_daemon, uint32_t restart_interval_sec) {
-    if (!main_cb || process_runner_active.test_and_set(std::memory_order_acquire))
+    if (!main_cb ||
+        process_runner_active.test_and_set(std::memory_order_acquire))
         return -1;
     RunnerScope runner_scope;
     g_stop_flag.store(false, std::memory_order_release);
     SignalScope signals;
     if (!is_daemon)
         return real_start(argc, argv, std::move(main_cb));
+
     // 监督进程只使用同步输出，工作进程在 fork 后构建 Runtime 和日志回调。
     return real_daemon(argc, argv, std::move(main_cb), restart_interval_sec);
 }

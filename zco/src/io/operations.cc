@@ -101,7 +101,8 @@ TransferResult transfer(const std::shared_ptr<detail::Resource> &resource,
                 return {
                     0, std::make_error_code(std::errc::operation_not_permitted),
                     false};
-            // send prevents SIGPIPE for sockets; non-sockets use write.
+
+            // 套接字通过 MSG_NOSIGNAL 抑制 SIGPIPE；非套接字回退到 write。
             if (reading)
                 count = ::read(resource->fd, buffer, size);
             else {

@@ -2,16 +2,16 @@
 #include "zmalloc/zmalloc.h"
 #include <memory>
 
+#include <cerrno>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
-#include <cerrno>
 #include <cstring>
-#include <new>
 #include <limits>
 #include <malloc.h>
-#include <thread>
+#include <new>
 #include <pthread.h>
+#include <thread>
 
 #include "zmalloc/internal/thread_cache.h"
 
@@ -30,6 +30,7 @@ TEST(AllocatorOverrideTest, ExplicitReleaseKeepsMallocAndAlignedBlocksUsable) {
     std::memset(small, 0x5a, 64);
     std::memset(medium, 0xa5, 512 * 1024);
     std::memset(aligned, 0x3c, 128);
+
     // 显式回收可与全局替换同时使用，存活块及对齐头仍应保留。
     release_memory();
     EXPECT_EQ(memory_stats().thread_cache_bytes, 0u);
@@ -68,17 +69,22 @@ TEST(AllocatorOverrideTest, PthreadDestructorRunsAfterCacheCleanup) {
         bool finished = false;
         void *live = nullptr;
     } state;
+
     pthread_key_t key;
-    ASSERT_EQ(pthread_key_create(&key, [](void *value) {
-        auto *state = static_cast<ExitState *>(value);
-        std::free(state->live);
-        void *p = std::malloc(128);
-        if (p != nullptr) {
-            std::memset(p, 42, 128);
-            std::free(p);
-            state->finished = get_thread_cache()->cached_bytes() == 0;
-        }
-    }), 0);
+    ASSERT_EQ(
+        pthread_key_create(&key,
+                           [](void *value) {
+                               auto *state = static_cast<ExitState *>(value);
+                               std::free(state->live);
+                               void *p = std::malloc(128);
+                               if (p != nullptr) {
+                                   std::memset(p, 42, 128);
+                                   std::free(p);
+                                   state->finished =
+                                       get_thread_cache()->cached_bytes() == 0;
+                               }
+                           }),
+        0);
     int registered = -1;
     std::thread worker([&] {
         state.live = std::malloc(65);
@@ -443,7 +449,10 @@ TEST(AllocatorOverrideTest, StandardAlignedNewDeleteVariants) {
 }
 
 TEST(AllocatorOverrideTest, OverAlignedObjectsAndArraysUseStandardDelete) {
-    struct alignas(128) Value { int number = 42; };
+    struct alignas(128) Value {
+        int number = 42;
+    };
+
     auto *value = new Value;
     EXPECT_EQ(reinterpret_cast<uintptr_t>(value) % 128, 0u);
     EXPECT_EQ(value->number, 42);

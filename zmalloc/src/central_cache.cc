@@ -1,8 +1,6 @@
 /**
  * @file central_cache.cc
- * @brief CentralCache 实现
  * @author hzh-betty
-
  */
 #include "zmalloc/internal/central_cache.h"
 
@@ -49,6 +47,7 @@ size_t CentralCache::fetch_range_obj(void *&start, void *&end, size_t n,
             break;
         }
         Span *span = get_one_span(free_list, size, lock);
+
         // 第二步：从 Span 的自由链表头摘取本次所需的对象段。
         void *head = span->free_list;
         void *tail = head;
@@ -60,6 +59,7 @@ size_t CentralCache::fetch_range_obj(void *&start, void *&end, size_t n,
         span->free_list = next_obj(tail);
         next_obj(tail) = nullptr;
         span->use_count += count;
+
         // 第三步：把多个 Span 提供的对象段拼成一条链返回调用方。
         if (end != nullptr) {
             next_obj(end) = head;
@@ -95,6 +95,7 @@ Span *CentralCache::get_one_span(CentralFreeList &free_list, size_t size,
         span->is_use = true;
         span->obj_size = size;
     }
+
     // 将连续页按固定对象大小原地串成 intrusive 自由链表。
     char *head = reinterpret_cast<char *>(span->page_id << PAGE_SHIFT);
     const size_t count = (span->n << PAGE_SHIFT) / size;
@@ -104,6 +105,7 @@ Span *CentralCache::get_one_span(CentralFreeList &free_list, size_t size,
         head += size;
     }
     next_obj(head) = nullptr;
+
     // 完成初始化后重新获取桶锁，使其他线程只能看到完整的 Span 状态。
     lock.lock();
     free_list.nonempty.push_front(span);
@@ -165,7 +167,6 @@ void CentralCache::release_list_to_spans(void *start, size_t index) {
             }
 
             if (gi == static_cast<size_t>(-1)) {
-                // new group
                 spans[groups] = span;
                 group_start[groups] = start;
                 group_end[groups] = start;

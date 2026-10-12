@@ -1,9 +1,7 @@
 /**
  * @file message.h
- * @brief message 定义。
  * @author hzh-betty
  */
-
 #ifndef ZLOG_MESSAGE_H_
 #define ZLOG_MESSAGE_H_
 #include <ctime>
@@ -25,11 +23,11 @@ using ThreadId = std::thread::id;
  * 正文和名称视图借用外部存储，调用方须保证其在格式化期间有效。
  */
 struct LogMessage {
-    time_t curtime_;          // 日志输出时间
-    LogLevel::value level_;   // 日志等级
-    const char *file_;        // 源码文件名称
-    size_t line_;             // 源码行号
-    ThreadId tid_;            // 线程ID
+    time_t curtime_;               // 日志输出时间
+    LogLevel::value level_;        // 日志等级
+    const char *file_;             // 源码文件名称
+    size_t line_;                  // 源码行号
+    ThreadId tid_;                 // 线程ID
     fmt::string_view payload_;     // 按长度借用日志正文
     fmt::string_view logger_name_; // 按长度借用日志器自有名称
 
@@ -50,4 +48,4 @@ struct LogMessage {
 };
 } // namespace zlog
 
-#endif // ZLOG_MESSAGE_H_
+#endif

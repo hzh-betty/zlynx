@@ -3,12 +3,12 @@
  * 用于perf工具采集同步/异步日志器的性能数据
  *
  * 用法: ./zlog_performance [options]
- *   -m <mode>      模式: sync/async/both (默认: both)
- *   -c <count>     日志条数 (默认: 1000000)
- *   -t <threads>   线程数 (默认: 4)
- *   -d <duration>  运行时长(秒)，0表示按条数运行 (默认: 0)
- *   -s <size>      日志消息大小(字节) (默认: 128)
- *   -o <output>    输出目录 (默认: perf_bench_logs)
+ * -m <mode>      模式: sync/async/both (默认: both)
+ * -c <count>     日志条数 (默认: 1000000)
+ * -t <threads>   线程数 (默认: 4)
+ * -d <duration>  运行时长(秒)，0表示按条数运行 (默认: 0)
+ * -s <size>      日志消息大小(字节) (默认: 128)
+ * -o <output>    输出目录 (默认: perf_bench_logs)
  */
 #include "zlog/logger.h"
 #include "zlog/sink.h"
@@ -89,9 +89,10 @@ void printConfig(const Config &cfg) {
 
 // 打印统计结果
 void printStats(const std::string &name, const Stats &stats, int msgSize) {
-    double seconds = std::chrono::duration<double>(
-                         stats.endTime - stats.startTime).count();
-    double throughputMsg = seconds > 0 ? stats.successCount.load() / seconds : 0;
+    double seconds =
+        std::chrono::duration<double>(stats.endTime - stats.startTime).count();
+    double throughputMsg =
+        seconds > 0 ? stats.successCount.load() / seconds : 0;
     double throughputKB = throughputMsg * msgSize / 1024.0;
     double throughputMB = throughputKB / 1024.0;
 
@@ -128,8 +129,7 @@ void runSyncBenchmark(const Config &cfg) {
     Formatter::ptr formatter =
         std::make_shared<Formatter>("[%d{%H:%M:%S}][%t][%p] %m%n");
     std::vector<LogSink::ptr> sinks;
-    sinks.push_back(
-        std::make_shared<FileSink>(logFile, false)); // autoFlush=false
+    sinks.push_back(std::make_shared<FileSink>(logFile, false));
 
     std::shared_ptr<SyncLogger> logger = std::make_shared<SyncLogger>(
         "sync_bench", LogLevel::value::INFO, formatter, sinks);
@@ -145,11 +145,12 @@ void runSyncBenchmark(const Config &cfg) {
     long long countPerThread = cfg.count / cfg.threads;
 
     for (int t = 0; t < cfg.threads; t++) {
-        const long long threadCount = countPerThread + (t < cfg.count % cfg.threads);
+        const long long threadCount =
+            countPerThread + (t < cfg.count % cfg.threads);
         threads.push_back(std::thread([&logger, &msg, &stats, &running,
                                        threadCount, &cfg]() {
-            for (long long i = 0; running.load() &&
-                 (cfg.duration > 0 || i < threadCount); i++) {
+            for (long long i = 0;
+                 running.load() && (cfg.duration > 0 || i < threadCount); i++) {
                 logger->log_impl(LogLevel::value::INFO, __FILE__, __LINE__,
                                  msg.c_str());
                 stats.successCount++;
@@ -207,17 +208,18 @@ void runAsyncBenchmark(const Config &cfg, AsyncType asyncType) {
         long long countPerThread = cfg.count / cfg.threads;
 
         for (int t = 0; t < cfg.threads; t++) {
-            const long long threadCount = countPerThread + (t < cfg.count % cfg.threads);
-            threads.push_back(std::thread(
-                [&logger, &msg, &stats, &running, threadCount, &cfg]() {
-                    for (long long i = 0; running.load() &&
-                         (cfg.duration > 0 || i < threadCount);
-                         i++) {
-                        logger->log_impl(LogLevel::value::INFO, __FILE__,
-                                         __LINE__, msg.c_str());
-                        stats.successCount++;
-                    }
-                }));
+            const long long threadCount =
+                countPerThread + (t < cfg.count % cfg.threads);
+            threads.push_back(std::thread([&logger, &msg, &stats, &running,
+                                           threadCount, &cfg]() {
+                for (long long i = 0;
+                     running.load() && (cfg.duration > 0 || i < threadCount);
+                     i++) {
+                    logger->log_impl(LogLevel::value::INFO, __FILE__, __LINE__,
+                                     msg.c_str());
+                    stats.successCount++;
+                }
+            }));
         }
 
         // 如果指定了时长，等待超时后停止
@@ -294,13 +296,7 @@ int main(int argc, char *argv[]) {
     }
 
     if (cfg.mode == "async" || cfg.mode == "both") {
-        // // 测试Safe模式
-        // runAsyncBenchmark(cfg, AsyncType::ASYNC_SAFE);
-
-        // // 短暂休息
-        // std::this_thread::sleep_for(std::chrono::seconds(2));
-
-        // 测试Unsafe模式
+        // 测试允许缓冲扩容的异步模式
         runAsyncBenchmark(cfg, AsyncType::ASYNC_UNSAFE);
     }
 

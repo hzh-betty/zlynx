@@ -1,4 +1,5 @@
-#pragma once
+#ifndef ZLYNX_ZNET_INCLUDE_ZNET_ENDPOINT_H_
+#define ZLYNX_ZNET_INCLUDE_ZNET_ENDPOINT_H_
 
 #include "znet/error.h"
 #include <cstdint>
@@ -7,13 +8,18 @@
 #include <vector>
 
 namespace znet {
-// Validated, owning address value. Native access is const and borrowed.
+/**
+ * @brief 拥有经校验的地址值；原生地址接口返回只读借用指针。
+ */
 class Endpoint {
   public:
     static Result<Endpoint> ipv4(std::string_view ip, uint16_t port = 0);
     static Result<Endpoint> ipv6(std::string_view ip, uint16_t port = 0);
-    // Leading NUL selects Linux's abstract namespace. An empty path represents
-    // an unnamed endpoint.
+
+    /**
+     * @brief 首字节为 NUL 时表示 Linux 抽象命名空间地址；空路径表示
+     * 未命名端点。
+     */
     static Result<Endpoint> unix_domain(std::string_view path);
     static Result<Endpoint> from_native(const sockaddr *address,
                                         socklen_t size);
@@ -35,8 +41,12 @@ class Endpoint {
     socklen_t size_ = 0;
 };
 
-// Blocking resolver: call during configuration, outside an IO worker.
+/**
+ * @brief 执行阻塞地址解析；应在配置阶段、I/O 工作线程之外调用。
+ */
 Result<std::vector<Endpoint>> resolve_endpoints(std::string_view host,
                                                 uint16_t port = 0,
                                                 int family = AF_UNSPEC);
 } // namespace znet
+
+#endif

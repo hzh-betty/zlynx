@@ -27,10 +27,12 @@ TEST(SocketTest, InternalCreationAndExternalAdoptionKeepSocketConfiguration) {
             auto created = Socket::create(family, kind);
             ASSERT_TRUE(created);
             expect_socket_options(created.value(), family, kind);
-            const int type = kind == SocketKind::stream ? SOCK_STREAM : SOCK_DGRAM;
+            const int type =
+                kind == SocketKind::stream ? SOCK_STREAM : SOCK_DGRAM;
             int fd = ::socket(family, type, 0);
             ASSERT_GE(fd, 0);
-            // External fds still need validation and flag configuration.
+
+            // 外部描述符仍需校验并配置标志。
             auto adopted = Socket::adopt(fd);
             ASSERT_TRUE(adopted);
             expect_socket_options(adopted.value(), family, kind);
@@ -169,7 +171,8 @@ TEST(SocketTest, UnixAbstractStreamAndDatagramAddressesRoundTrip) {
                 auto accepted =
                     listener.value().accept(zco::Deadline::after(1s));
                 ASSERT_TRUE(accepted);
-                expect_socket_options(accepted.value(), AF_UNIX, SocketKind::stream);
+                expect_socket_options(accepted.value(), AF_UNIX,
+                                      SocketKind::stream);
                 EXPECT_TRUE(client.value().write_some(
                     "unix", 4, zco::Deadline::after(1s)));
                 EXPECT_EQ(accepted.value()

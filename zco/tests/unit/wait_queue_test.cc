@@ -102,8 +102,8 @@ TEST(WaitQueue, CoroutineTimeoutStormAndSignalLeaveTheEventReusable) {
             tasks.push_back(test::spawn(runtime, [&] {
                 ++entered;
                 auto result = event.wait(test::ms(5));
-                EXPECT_TRUE(result || result.error() ==
-                                          wait_error(WaitOutcome::timeout));
+                EXPECT_TRUE(result ||
+                            result.error() == wait_error(WaitOutcome::timeout));
                 ++returned;
             }));
         EXPECT_TRUE(test::wait_until([&] { return entered == 2000; }));

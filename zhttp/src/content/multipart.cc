@@ -1,10 +1,8 @@
 /**
- * multipart.cc
- * multipart 实现。
+ * @file multipart.cc
  *
  * @author hzh-betty
  */
-
 #include "zhttp/content/multipart.h"
 
 #include "zhttp/http_common.h"
@@ -32,24 +30,28 @@ static bool extract_boundary(std::string_view content_type,
     while (!params.empty()) {
         const auto end = params.find(';');
         const auto token = trim_view(params.substr(0, end));
-        params = end == std::string_view::npos ? std::string_view{} : params.substr(end + 1);
+        params = end == std::string_view::npos ? std::string_view{}
+                                               : params.substr(end + 1);
         if (token.size() >= 9 && to_lower(token.substr(0, 9)) == "boundary=") {
             auto value = trim_view(token.substr(9));
+
             // RFC 中参数值允许用双引号包裹，去掉外层引号后再使用。
-            if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
+            if (value.size() >= 2 && value.front() == '"' &&
+                value.back() == '"') {
                 value = value.substr(1, value.size() - 2);
             }
             boundary = value;
+
             // 空 boundary 视为非法（后续无法正确定位分隔符）。
             return !boundary.empty();
         }
     }
+
     // 遍历完参数仍未找到 boundary=。
     return false;
 }
 
-static bool parse_content_disposition(std::string_view value,
-                                      std::string &name,
+static bool parse_content_disposition(std::string_view value, std::string &name,
                                       std::string &filename) {
     // 解析形如 form-data; name="field"; filename="a.txt" 的参数串。
     // 我们只依赖 name/filename 两个参数，其他扩展参数（如 filename*）当前忽略。
@@ -61,7 +63,8 @@ static bool parse_content_disposition(std::string_view value,
     while (!value.empty()) {
         const auto end = value.find(';');
         const auto token = trim_view(value.substr(0, end));
-        value = end == std::string_view::npos ? std::string_view{} : value.substr(end + 1);
+        value = end == std::string_view::npos ? std::string_view{}
+                                              : value.substr(end + 1);
         if (token.empty()) {
             continue;
         }
@@ -79,6 +82,7 @@ static bool parse_content_disposition(std::string_view value,
 
         const auto k = trim_view(token.substr(0, eq));
         auto v = trim_view(token.substr(eq + 1));
+
         // 参数值若被双引号包裹，去掉外层引号。
         if (!v.empty() && v.front() == '"' && v.back() == '"' &&
             v.size() >= 2) {
@@ -137,7 +141,8 @@ parse_part_headers(std::string_view headers_blob,
 bool UploadedFile::save_to(const std::string &filepath,
                            std::string *error) const {
     std::ofstream output(filepath, std::ios::binary);
-    if (!output || !output.write(data.data(), static_cast<std::streamsize>(data.size()))) {
+    if (!output ||
+        !output.write(data.data(), static_cast<std::streamsize>(data.size()))) {
         if (error) {
             *error = "Failed to write file: " + filepath;
         }
@@ -191,8 +196,8 @@ MultipartFormData::ptr MultipartFormData::parse(const HttpRequest &request,
 
     const std::string &body = request.body();
     const std::string dash_boundary = "--" + boundary;
-    // 注意 body 中实际分隔符是 "--" + boundary（不是裸 boundary）。
 
+    // 注意 body 中实际分隔符是 "--" + boundary（不是裸 boundary）。
     // multipart Body 由多个 --boundary 包围的 part 组成，先定位起始 boundary。
     size_t pos = body.find(dash_boundary);
     if (pos == std::string::npos) {
@@ -237,7 +242,8 @@ MultipartFormData::ptr MultipartFormData::parse(const HttpRequest &request,
             return nullptr;
         }
 
-        const auto headers_blob = std::string_view(body).substr(pos, headers_end - pos);
+        const auto headers_blob =
+            std::string_view(body).substr(pos, headers_end - pos);
         pos = headers_end + 4;
 
         std::unordered_map<std::string, std::string> part_headers;

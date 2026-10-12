@@ -117,6 +117,7 @@ class ScopedTlsPemFiles {
     }
 
     const std::string &cert_path() const { return cert_path_; }
+
     const std::string &key_path() const { return key_path_; }
 
   private:
@@ -149,7 +150,6 @@ int tls_call(SSL *ssl, zco::Deadline deadline, Operation operation) {
 
 // 注意：集成测试需要网络环境，可能需要特殊配置
 // 这里提供基本的路由和中间件测试
-
 TEST(HttpServerIntegrationTest, RouteRegistration) {
     bool handler_called = false;
     HttpApplication router;
@@ -308,14 +308,13 @@ TEST(HttpServerIntegrationTest, HandlesChunkedRequestBodyEndToEnd) {
 TEST(HttpServerIntegrationTest, SendsExplicitChunkedResponseBody) {
 
     auto server = make_server();
-    server->router().get(
-        "/chunked-static", [](HttpContext &context) {
-            auto &resp = context.response();
-            resp.status(HttpStatus::OK)
-                .content_type("text/plain")
-                .body("hello")
-                .enable_chunked();
-        });
+    server->router().get("/chunked-static", [](HttpContext &context) {
+        auto &resp = context.response();
+        resp.status(HttpStatus::OK)
+            .content_type("text/plain")
+            .body("hello")
+            .enable_chunked();
+    });
 
     ASSERT_TRUE(server);
     ScopedServer guard(server);
@@ -346,28 +345,27 @@ TEST(HttpServerIntegrationTest, SendsExplicitChunkedResponseBody) {
 TEST(HttpServerIntegrationTest, SendsChunkedStreamResponse) {
 
     auto server = make_server();
-    server->router().get(
-        "/chunked-stream", [](HttpContext &context) {
-            auto &resp = context.response();
-            resp.status(HttpStatus::OK)
-                .content_type("text/plain")
-                .stream([chunks = std::vector<std::string>{"Wiki", "pedia"},
-                         index = size_t{0}](char *buffer,
-                                            size_t size) mutable -> size_t {
-                    // 每次回调返回一段数据，服务端会把该段编码为独立 chunk。
-                    if (index >= chunks.size()) {
-                        return 0;
-                    }
+    server->router().get("/chunked-stream", [](HttpContext &context) {
+        auto &resp = context.response();
+        resp.status(HttpStatus::OK)
+            .content_type("text/plain")
+            .stream([chunks = std::vector<std::string>{"Wiki", "pedia"},
+                     index = size_t{0}](char *buffer,
+                                        size_t size) mutable -> size_t {
+                // 每次回调返回一段数据，服务端会把该段编码为独立 chunk。
+                if (index >= chunks.size()) {
+                    return 0;
+                }
 
-                    const std::string &chunk = chunks[index++];
-                    if (chunk.size() > size) {
-                        return 0;
-                    }
+                const std::string &chunk = chunks[index++];
+                if (chunk.size() > size) {
+                    return 0;
+                }
 
-                    std::memcpy(buffer, chunk.data(), chunk.size());
-                    return chunk.size();
-                });
-        });
+                std::memcpy(buffer, chunk.data(), chunk.size());
+                return chunk.size();
+            });
+    });
 
     ASSERT_TRUE(server);
     ScopedServer guard(server);
@@ -537,8 +535,7 @@ TEST(HttpServerIntegrationTest, RunServesHttpAndStopsOnSignal) {
     EXPECT_EQ(WEXITSTATUS(server.child->status()), 0);
 }
 
-TEST(HttpServerIntegrationTest,
-     RunFailsWhenHttpsPortAlreadyInUse) {
+TEST(HttpServerIntegrationTest, RunFailsWhenHttpsPortAlreadyInUse) {
     auto occupied_https = bind_and_listen_port();
     const uint16_t https_port = occupied_https.local_endpoint().value().port();
     ASSERT_NE(https_port, 0);
@@ -560,23 +557,20 @@ TEST(HttpServerIntegrationTest,
 TEST(HttpServerIntegrationTest, HandlesStreamErrorPaths) {
 
     auto server = make_server();
-    server->router()
-        .get("/chunked-stream-throw",
-             [](HttpContext &context) {
-                 auto &resp = context.response();
-                 resp.status(HttpStatus::OK)
-                     .content_type("text/plain")
-                     .stream([](char *, size_t) -> size_t {
-                         throw std::runtime_error("stream boom");
-                     });
-             });
-    server->router().get(
-        "/chunked-stream-oversize", [](HttpContext &context) {
-            auto &resp = context.response();
-            resp.status(HttpStatus::OK)
-                .content_type("text/plain")
-                .stream([](char *, size_t size) -> size_t { return size + 1; });
-        });
+    server->router().get("/chunked-stream-throw", [](HttpContext &context) {
+        auto &resp = context.response();
+        resp.status(HttpStatus::OK)
+            .content_type("text/plain")
+            .stream([](char *, size_t) -> size_t {
+                throw std::runtime_error("stream boom");
+            });
+    });
+    server->router().get("/chunked-stream-oversize", [](HttpContext &context) {
+        auto &resp = context.response();
+        resp.status(HttpStatus::OK)
+            .content_type("text/plain")
+            .stream([](char *, size_t size) -> size_t { return size + 1; });
+    });
 
     ASSERT_TRUE(server);
     ScopedServer guard(server);
@@ -728,9 +722,9 @@ TEST(HttpServerIntegrationTest,
     auto client = connect_to(*server);
     ASSERT_TRUE(client) << client.error().message();
     const int fd = client.value().native_handle();
-    ASSERT_TRUE(send_all(fd,
-        "GET /stream HTTP/1.1\r\nHost: test\r\n\r\n"
-        "GET /next HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n"));
+    ASSERT_TRUE(send_all(
+        fd, "GET /stream HTTP/1.1\r\nHost: test\r\n\r\n"
+            "GET /next HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n"));
     const auto response = recv_until_close(fd, 1000);
     EXPECT_NE(response.find("4\r\ndata\r\n0\r\n\r\nHTTP/1.1 200 OK"),
               std::string::npos)
@@ -742,18 +736,16 @@ TEST(HttpServerIntegrationTest,
 TEST(HttpServerIntegrationTest, LargePullStreamIsFullyDrained) {
     const size_t blocks = 160, block_size = 8192;
     auto server = make_server();
-    server->router().get(
-        "/large", [=](HttpContext &context) {
-            context.response().stream(
-                [remaining = blocks](char *buffer,
-                                     size_t size) mutable -> size_t {
-                    if (!remaining)
-                        return 0;
-                    --remaining;
-                    std::memset(buffer, 'x', size);
-                    return size;
-                });
-        });
+    server->router().get("/large", [=](HttpContext &context) {
+        context.response().stream(
+            [remaining = blocks](char *buffer, size_t size) mutable -> size_t {
+                if (!remaining)
+                    return 0;
+                --remaining;
+                std::memset(buffer, 'x', size);
+                return size;
+            });
+    });
     ScopedServer guard(server);
     ASSERT_TRUE(server->start());
     auto client = connect_to(*server);

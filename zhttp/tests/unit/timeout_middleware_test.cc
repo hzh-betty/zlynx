@@ -138,6 +138,7 @@ TEST(TimeoutMiddlewareTest, SharedInstanceSeparatesOverlappingContexts) {
 
 TEST(TimeoutMiddlewareTest, SameInstanceCanBeRegisteredGloballyAndForAPath) {
     zhttp::test::ManualClock clock;
+
     class DelayAfter : public Middleware {
       public:
         explicit DelayAfter(zhttp::test::ManualClock &clock) : clock_(clock) {}
@@ -149,6 +150,7 @@ TEST(TimeoutMiddlewareTest, SameInstanceCanBeRegisteredGloballyAndForAPath) {
       private:
         zhttp::test::ManualClock &clock_;
     };
+
     TimeoutMiddleware::Options options;
     options.timeout_ms = 10;
     auto middleware = std::make_shared<TimeoutMiddleware>(options);
@@ -157,7 +159,8 @@ TEST(TimeoutMiddlewareTest, SameInstanceCanBeRegisteredGloballyAndForAPath) {
     pipeline.use(middleware);
     pipeline.use(std::make_shared<DelayAfter>(clock));
     pipeline.use("/", middleware);
-    router.get("/", [](HttpContext &context) { context.response().text("ok"); });
+    router.get("/",
+               [](HttpContext &context) { context.response().text("ok"); });
     auto request = std::make_shared<HttpRequest>();
     request->set_method(HttpMethod::GET);
     HttpContext context(request);

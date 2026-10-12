@@ -1,18 +1,21 @@
 #include "zhttp/uri.h"
 #include "zhttp/http_common.h"
 #include <stdexcept>
+
 namespace zhttp {
 namespace {
 bool hex(unsigned char c) {
     return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
            (c >= 'A' && c <= 'F');
 }
+
 bool query_key_matches(std::string_view encoded, std::string_view name) {
     return encoded.find_first_of("%+") == std::string_view::npos
                ? encoded == name
                : url_decode(encoded) == name;
 }
 } // namespace
+
 bool Uri::valid_encoding(std::string_view value) {
     for (size_t i = 0; i < value.size(); ++i) {
         const unsigned char c = value[i];
@@ -27,9 +30,11 @@ bool Uri::valid_encoding(std::string_view value) {
     }
     return true;
 }
+
 Uri::Uri(std::string target) : raw_(std::move(target)) {
     if (raw_.empty() || !valid_encoding(raw_))
         throw std::invalid_argument("Invalid request target");
+
     // 仅拆分请求目标，不解码路径；查询键值在访问时单独做百分号与 + 解码。
     auto q = raw_.find('?');
     path_ = raw_.substr(0, q);
@@ -47,6 +52,7 @@ Uri::Uri(std::string target) : raw_(std::move(target)) {
         if (scheme == 0 || authority_start == path_.size() ||
             slash == authority_start)
             throw std::invalid_argument("Invalid absolute request target");
+
         // 绝对形式请求目标只保留路由使用的路径，原始目标仍存放在 raw_。
         path_ = slash == std::string::npos ? "/" : path_.substr(slash);
     } else {
@@ -62,6 +68,7 @@ Uri::Uri(std::string target) : raw_(std::move(target)) {
                 throw std::invalid_argument("Invalid authority port");
     }
 }
+
 std::vector<std::string> Uri::query_values(std::string_view name) const {
     std::vector<std::string> values;
     std::string_view remaining = query_;
@@ -69,7 +76,7 @@ std::vector<std::string> Uri::query_values(std::string_view name) const {
         const auto amp = remaining.find('&');
         const auto pair = remaining.substr(0, amp);
         remaining = amp == std::string_view::npos ? std::string_view{}
-                                                   : remaining.substr(amp + 1);
+                                                  : remaining.substr(amp + 1);
         if (pair.empty())
             continue;
         auto eq = pair.find('=');
@@ -79,6 +86,7 @@ std::vector<std::string> Uri::query_values(std::string_view name) const {
     }
     return values;
 }
+
 std::string Uri::query_param(std::string_view name,
                              std::string_view fallback) const {
     std::string_view remaining = query_;
@@ -86,13 +94,14 @@ std::string Uri::query_param(std::string_view name,
         const auto amp = remaining.find('&');
         const auto pair = remaining.substr(0, amp);
         remaining = amp == std::string_view::npos ? std::string_view{}
-                                                   : remaining.substr(amp + 1);
+                                                  : remaining.substr(amp + 1);
         if (pair.empty())
             continue;
         const auto eq = pair.find('=');
         if (query_key_matches(pair.substr(0, eq), name))
-            return eq == std::string_view::npos ? ""
-                                               : url_decode(pair.substr(eq + 1));
+            return eq == std::string_view::npos
+                       ? ""
+                       : url_decode(pair.substr(eq + 1));
     }
     return std::string(fallback);
 }

@@ -1,4 +1,5 @@
-#pragma once
+#ifndef ZLYNX_ZNET_INCLUDE_ZNET_TRANSPORT_TLS_CREDENTIALS_H_
+#define ZLYNX_ZNET_INCLUDE_ZNET_TRANSPORT_TLS_CREDENTIALS_H_
 
 #include "znet/transport/byte_stream.h"
 #include <memory>
@@ -7,8 +8,10 @@
 namespace znet {
 class Socket;
 
-// Immutable server credentials. SSL sessions hold OpenSSL's own reference to
-// the context, so a stream remains valid after its credentials are destroyed.
+/**
+ * @brief 加载后不再修改的服务器凭据；SSL 会话持有 OpenSSL 对上下文的引用，
+ * 凭据对象销毁不会单独使已创建流的 SSL 上下文失效。
+ */
 class TlsCredentials {
   public:
     static Result<TlsCredentials> load(const std::string &certificate,
@@ -26,3 +29,5 @@ class TlsCredentials {
     std::unique_ptr<Impl> impl_;
 };
 } // namespace znet
+
+#endif

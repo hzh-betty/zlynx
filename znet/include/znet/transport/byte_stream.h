@@ -1,12 +1,15 @@
-#pragma once
+#ifndef ZLYNX_ZNET_INCLUDE_ZNET_TRANSPORT_BYTE_STREAM_H_
+#define ZLYNX_ZNET_INCLUDE_ZNET_TRANSPORT_BYTE_STREAM_H_
 
 #include "zco/deadline.h"
 #include "znet/endpoint.h"
 
 namespace znet {
-// A transport owns its resources. One reader and one writer may run together;
-// close must be thread-safe and interrupt start/read/write. Each call preserves
-// the supplied absolute deadline. Implementations report errors, never log.
+/**
+ * @brief 传输层拥有其资源；允许一个读取者和一个写入者并行操作。
+ * 实现须使 close 可并发调用，并中断 start/read/write；每次调用沿用
+ * 传入的绝对截止时间；通过返回值报告错误，不自行记录日志。
+ */
 class ByteStream {
   public:
     virtual ~ByteStream() = default;
@@ -23,3 +26,5 @@ class ByteStream {
 };
 
 } // namespace znet
+
+#endif

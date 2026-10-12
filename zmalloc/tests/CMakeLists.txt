@@ -39,7 +39,7 @@ if(BUILD_TESTING)
     add_test(NAME zmalloc_cold_start_test COMMAND zmalloc_cold_start_test)
     set_tests_properties(zmalloc_cold_start_test PROPERTIES TIMEOUT 30)
 
-    # White-box tests include override.cc, so they also need its runtime dependency.
+    # 白盒测试包含 override.cc，因此也需要链接其运行时依赖。
     target_link_libraries(zmalloc_override_whitebox_test PRIVATE ${CMAKE_DL_LIBS})
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(zmalloc_override_whitebox_test PRIVATE -fno-builtin -ftls-model=initial-exec)

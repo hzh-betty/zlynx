@@ -31,6 +31,7 @@ TEST(OverrideWhiteboxTest, BootstrapOperationsWhilePageLockIsHeld) {
     PageCache &pc = PageCache::get_instance();
     std::lock_guard<std::mutex> lock(pc.page_mtx());
     AllocatorCallGuard guard;
+
     // 模拟页锁内的运行库递归调用；普通和对齐 bootstrap 块均不能重入页锁。
     void *plain = allocate_bytes(32);
     ASSERT_NE(plain, nullptr);
@@ -198,7 +199,8 @@ TEST(OverrideWhiteboxTest, ManagedReallocateAcrossLargeCacheBoundary) {
         EXPECT_EQ(errno, ENOMEM);
         EXPECT_EQ(ptr[initial - 1], 0x5a);
         const size_t next_size = initial + 1024 * 1024;
-        auto *next = static_cast<unsigned char *>(reallocate_bytes(ptr, next_size));
+        auto *next =
+            static_cast<unsigned char *>(reallocate_bytes(ptr, next_size));
         ASSERT_NE(next, nullptr);
         EXPECT_EQ(next[0], 0x5a);
         EXPECT_EQ(next[initial - 1], 0x5a);

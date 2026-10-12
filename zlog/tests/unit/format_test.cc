@@ -87,6 +87,7 @@ TEST_F(FormatTest, TimeOutputDefault) {
     item.format(buffer, *msg);
 
     std::string result(buffer.data(), buffer.size());
+
     // 默认格式 %H:%M:%S，应匹配 HH:MM:SS 格式
     std::regex timePattern(R"(\d{2}:\d{2}:\d{2})");
     EXPECT_TRUE(std::regex_match(result, timePattern)) << "Got: " << result;
@@ -268,8 +269,10 @@ TEST_F(FormatTest, FormatterTimeWithSubPattern) {
     formatter.format(buffer, *msg);
 
     std::string result(buffer.data(), buffer.size());
+
     // 验证包含消息内容
     EXPECT_THAT(result, ::testing::HasSubstr("test message"));
+
     // 验证结果不为空且有数字（时间部分）
     EXPECT_FALSE(result.empty());
     bool hasDigit = false;
@@ -315,7 +318,7 @@ TEST_F(FormatTest, FormatterUnknownPatternItemThrows) {
 TEST_F(FormatTest, FormatterPreservesTrailingLiteralsAndPercent) {
     // 普通文本在解析结束时也必须保存。
     for (const auto &pattern : {std::string("literal"), std::string("[%m] END"),
-                               std::string("%m%%")}) {
+                                std::string("%m%%")}) {
         Formatter formatter(pattern);
         fmt::memory_buffer buffer;
         formatter.format(buffer, *msg);

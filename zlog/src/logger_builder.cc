@@ -2,7 +2,6 @@
  * @file logger_builder.cc
  * @brief 收集配置并构建日志器。
  */
-
 #include "zlog/logger_builder.h"
 
 namespace zlog {

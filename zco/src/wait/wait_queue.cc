@@ -23,7 +23,7 @@ void WaitQueue::erase(Entries::iterator entry) {
 }
 
 void WaitQueue::prune_expired() {
-    // Bound each pass while reclaiming abandoned registrations on later adds.
+    // 每轮清理有界；后续添加时继续回收失去所有者的注册项。
     size_t budget = entries_.size() < 4 ? entries_.size() : 4;
     while (budget--) {
         if (cleanup_ == entries_.end())

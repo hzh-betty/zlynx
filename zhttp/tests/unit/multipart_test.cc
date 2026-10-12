@@ -1,7 +1,6 @@
 #include "../support/request_builder.h"
 #include <gtest/gtest.h>
 
-
 #include <fcntl.h>
 #include <unistd.h>
 
@@ -330,10 +329,13 @@ TEST_F(MultipartTest, ParsedPartsOwnMetadataAndDataAfterRequestChanges) {
     const std::string name(128, 'n');
     const std::string filename(128, 'f');
     const std::string data(8192, 'd');
-    request.set_header("Content-Type", "multipart/form-data; boundary=\"owned\"");
-    request.set_body("--owned\r\nContent-Disposition: form-data; name=\"" + name +
-                     "\"; filename=\"" + filename + "\"\r\nContent-Type: "
-                     "application/octet-stream\r\n\r\n" + data +
+    request.set_header("Content-Type",
+                       "multipart/form-data; boundary=\"owned\"");
+    request.set_body("--owned\r\nContent-Disposition: form-data; name=\"" +
+                     name + "\"; filename=\"" + filename +
+                     "\"\r\nContent-Type: "
+                     "application/octet-stream\r\n\r\n" +
+                     data +
                      "\r\n--owned\r\nContent-Disposition: form-data; "
                      "name=\"field\"\r\n\r\nvalue\r\n--owned--\r\n");
     std::string error;

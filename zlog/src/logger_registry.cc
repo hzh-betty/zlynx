@@ -2,7 +2,6 @@
  * @file logger_registry.cc
  * @brief 保存和查询命名日志器。
  */
-
 #include "zlog/logger_registry.h"
 
 namespace zlog {
@@ -21,7 +20,8 @@ void LoggerManager::add_logger(const Logger::ptr &logger) {
     }
     std::unique_lock<std::mutex> lock(mutex_);
     if (!loggers_.insert({logger->get_name(), logger}).second) {
-        throw std::invalid_argument("logger is already registered: " + logger->get_name());
+        throw std::invalid_argument("logger is already registered: " +
+                                    logger->get_name());
     }
 }
 

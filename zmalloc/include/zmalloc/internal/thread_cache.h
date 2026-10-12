@@ -3,7 +3,6 @@
  * @brief 线程本地缓存，每个线程独享，无锁快速分配小对象
  * @author hzh-betty
  */
-
 #ifndef ZMALLOC_INTERNAL_THREAD_CACHE_H_
 #define ZMALLOC_INTERNAL_THREAD_CACHE_H_
 
@@ -34,7 +33,12 @@ class ThreadCache : public NonCopyable {
     // 释放路径触发的软预算；分配补货及低水位回收不保证立即低于预算。
     static constexpr size_t kCacheBudget = THREAD_CACHE_BUDGET;
 
-    /** @brief 为当前线程分配一个小对象；缓存未命中时向共享缓存批量补货。 */
+    /**
+     * @brief 为当前线程分配一个小对象，未命中时向共享缓存批量补货。
+     * @pre 0 < size <= MAX_BYTES，且仅由所属线程调用。
+     * @return 至少可容纳 size
+     * 个字节的受管对象，之后可在任一线程通过分配器释放。
+     */
     ZM_ALWAYS_INLINE void *allocate(size_t size) {
         const auto &e = SizeClass::lookup(size);
         assert(size > 0 && size <= MAX_BYTES);
@@ -46,7 +50,12 @@ class ThreadCache : public NonCopyable {
         return fetch_from_central_cache(e);
     }
 
-    /** @brief 将小对象放回当前线程缓存，超出阈值时触发回收。 */
+    /**
+     * @brief 缓存一个小对象，超过大小类阈值或总字节预算时触发回收。
+     * @pre 仅由所属线程调用；ptr 是尚未释放的受管小对象起始地址，
+     * size 映射到该对象的实际大小类。对象可以来自其他线程的分配。
+     * @post 调用方不再拥有该对象，原指针不能继续读写或再次释放。
+     */
     ZM_ALWAYS_INLINE void deallocate(void *ptr, size_t size) {
         const auto &e = SizeClass::lookup(size);
         assert(ptr && size > 0 && size <= MAX_BYTES);
@@ -63,34 +72,63 @@ class ThreadCache : public NonCopyable {
         }
     }
 
-    /** @brief 归还本线程的空闲对象；不影响调用方持有的对象，可重复调用。 */
+    /**
+     * @brief 归还本线程的空闲对象；不影响调用方持有的对象，可重复调用。
+     */
     void cleanup();
-    /** @brief 关闭本地缓存并清理空闲对象；之后的分配/释放直接走共享缓存。 */
+
+    /**
+     * @brief 关闭本地缓存并清理空闲对象；之后的分配/释放直接走共享缓存。
+     */
     void shutdown();
-    /** @brief 返回当前线程缓存中空闲对象占用的字节数。 */
+
+    /**
+     * @brief 返回当前线程缓存中空闲对象占用的字节数。
+     */
     size_t cached_bytes() const { return cached_bytes_; }
 
   private:
     friend struct CacheTestAccess;
-    /** @brief 从共享缓存补充一批对象，并返回其中一个供当前请求使用。 */
+
+    /**
+     * @brief 从共享缓存补充一批对象，并返回其中一个供当前请求使用。
+     */
     void *fetch_from_central_cache(const SizeClassLookup &e);
-    /** @brief 将单个对象直接归还中心缓存，供缓存关闭后的释放路径使用。 */
+
+    /**
+     * @brief 将单个对象直接归还中心缓存，供缓存关闭后的释放路径使用。
+     */
     void release_direct(void *ptr, const SizeClassLookup &e);
-    /** @brief 从本地链表取出一批对象并归还共享缓存。 */
+
+    /**
+     * @brief 从本地链表取出一批对象并归还共享缓存。
+     */
     void release_batch(size_t index, size_t count, bool use_transfer = true);
-    /** @brief 处理一次释放触发的批量回收和缓存预算检查。 */
+
+    /**
+     * @brief 处理一次释放触发的批量回收和缓存预算检查。
+     */
     void deallocate_slow(const SizeClassLookup &e);
-    /** @brief 按各大小类低水位回收长期闲置的本地对象。 */
+
+    /**
+     * @brief 按各大小类低水位回收长期闲置的本地对象。
+     */
     void scavenge();
 
     std::array<FreeList, NFREELISTS> free_lists_;
+
+    // 记录已使用规格的对齐字节数，回收时无需由自由链表反查 Span。
     std::array<size_t, NFREELISTS> class_sizes_{};
+
+    // 连续超额释放的次数，用于降低长期过大的批量阈值。
     std::array<unsigned, NFREELISTS> length_overages_{};
     size_t cached_bytes_ = 0;
     bool closed_ = false;
 };
 
-/** @brief 获取当前线程专属的 ThreadCache，并注册线程退出清理钩子。 */
+/**
+ * @brief 获取当前线程专属的 ThreadCache，并注册线程退出清理钩子。
+ */
 ThreadCache *get_thread_cache();
 
 namespace internal {
@@ -115,4 +153,4 @@ ZM_ALWAYS_INLINE ThreadCache *get_thread_cache_fast() {
 
 } // namespace zmalloc
 
-#endif // ZMALLOC_INTERNAL_THREAD_CACHE_H_
+#endif

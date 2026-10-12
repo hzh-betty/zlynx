@@ -1,10 +1,8 @@
 /**
- * security_middleware.cc
- * security_middleware 实现。
+ * @file security_middleware.cc
  *
  * @author hzh-betty
  */
-
 #include "zhttp/middleware/security_middleware.h"
 
 namespace zhttp {
@@ -15,6 +13,7 @@ SecurityMiddleware::SecurityMiddleware(SecurityMiddleware::Options options)
 
 void SecurityMiddleware::after(HttpContext &context) {
     auto &response = context.response();
+
     // 仅在响应头缺失时才补齐，避免覆盖业务层显式设置的安全头。
     if (options_.set_x_frame_options && !options_.x_frame_options.empty()) {
         set_header_if_absent(response, "X-Frame-Options",

@@ -22,9 +22,9 @@ TEST_F(BufferTest, InitialState) {
 }
 
 TEST_F(BufferTest, DefaultBufferConstants) {
-    EXPECT_EQ(kDefaultBufferSize, 1024u * 1024u * 2u);   // 2MB
-    EXPECT_EQ(kThresholdBufferSize, 1024u * 1024u * 8u); // 8MB
-    EXPECT_EQ(kMaxBufferSize, 1024u * 1024u * 512u);     // 512MB
+    EXPECT_EQ(kDefaultBufferSize, 1024u * 1024u * 2u);
+    EXPECT_EQ(kThresholdBufferSize, 1024u * 1024u * 8u);
+    EXPECT_EQ(kMaxBufferSize, 1024u * 1024u * 512u);
 }
 
 TEST_F(BufferTest, PushSmallData) {
@@ -51,7 +51,7 @@ TEST_F(BufferTest, PushSingleByte) {
 }
 
 TEST_F(BufferTest, PushLargeData) {
-    std::vector<char> largeData(1024 * 1024, 'A'); // 1MB
+    std::vector<char> largeData(1024 * 1024, 'A');
     buf.push(largeData.data(), largeData.size());
 
     EXPECT_EQ(buf.readable_size(), largeData.size());
@@ -84,10 +84,6 @@ TEST_F(BufferTest, PushWithNullBytes) {
     EXPECT_EQ(std::memcmp(buf.begin(), data, 11), 0);
 }
 
-
-
-
-
 TEST_F(BufferTest, ResetAfterPush) {
     buf.push("hello world", 11);
     buf.reset();
@@ -96,7 +92,6 @@ TEST_F(BufferTest, ResetAfterPush) {
     EXPECT_TRUE(buf.empty());
     EXPECT_EQ(buf.writable_size(), buf.capacity());
 }
-
 
 TEST_F(BufferTest, ResetOnEmpty) {
     buf.reset();
@@ -176,7 +171,7 @@ TEST_F(BufferTest, AutoResizeSmall) {
 }
 
 TEST_F(BufferTest, AutoResizeLarge) {
-    std::vector<char> data(1024 * 1024 * 3, 'A'); // 3MB > 2MB
+    std::vector<char> data(1024 * 1024 * 3, 'A');
     EXPECT_NO_THROW(buf.push(data.data(), data.size()));
     EXPECT_EQ(buf.readable_size(), data.size());
 }
@@ -202,7 +197,9 @@ TEST_F(BufferTest, GeometricGrowthPreservesDataPastEightMiB) {
     EXPECT_EQ(buf.readable_size(), 32u * chunk.size());
     for (int i = 0; i < 32; ++i) {
         chunk.assign(chunk.size(), static_cast<char>(i));
-        EXPECT_EQ(std::memcmp(buf.begin() + i * chunk.size(), chunk.data(), chunk.size()), 0);
+        EXPECT_EQ(std::memcmp(buf.begin() + i * chunk.size(), chunk.data(),
+                              chunk.size()),
+                  0);
     }
 }
 
@@ -288,7 +285,6 @@ TEST_F(BufferTest, BeginPointerConsistency) {
     EXPECT_EQ(p1, p2);
 }
 
-
 TEST_F(BufferTest, ManySmallPushes) {
     const int iterations = 10000;
     for (int i = 0; i < iterations; i++) {
@@ -317,7 +313,7 @@ TEST_F(BufferTest, ResetCycle) {
 }
 
 TEST_F(BufferTest, DataIntegrityLarge) {
-    std::vector<char> original(1024 * 512, '\0'); // 512KB
+    std::vector<char> original(1024 * 512, '\0');
     for (size_t i = 0; i < original.size(); i++) {
         original[i] = static_cast<char>(i % 256);
     }

@@ -1,10 +1,8 @@
 /**
- * request_body_middleware.h
- * request_body_middleware 定义。
+ * @file request_body_middleware.h
  *
  * @author hzh-betty
  */
-
 #ifndef ZHTTP_REQUEST_BODY_MIDDLEWARE_H_
 #define ZHTTP_REQUEST_BODY_MIDDLEWARE_H_
 
@@ -15,14 +13,16 @@
 namespace zhttp {
 namespace mid {
 /**
- * 请求体解析中间件
+ * @brief 请求体解析中间件
  *
  * 参考 drogon 的请求体访问体验：在进入业务处理器前，按 Content-Type
  * 自动触发请求体解析，让业务代码可直接读取 JSON、表单和上传文件数据。
  */
 class RequestBodyMiddleware : public Middleware {
   public:
-    /** 自动正文解析与失败响应策略。 */
+    /**
+     * @brief 自动正文解析与失败响应策略。
+     */
     struct Options {
         Options()
             : parse_json(true), parse_form_urlencoded(true),
@@ -45,10 +45,12 @@ class RequestBodyMiddleware : public Middleware {
         std::string invalid_multipart_message;
     };
 
-    /** 设置自动解析类型和失败处理策略。 */
     explicit RequestBodyMiddleware(Options options = Options());
 
-    /** 按 Content-Type 解析正文，配置要求拒绝的解析错误返回 400 并中止链路。 */
+    /**
+     * @brief 按 Content-Type 解析正文，配置要求拒绝的解析错误返回 400
+     * 并中止链路。
+     */
     bool before(HttpContext &context) override;
 
   private:
@@ -59,4 +61,4 @@ class RequestBodyMiddleware : public Middleware {
 
 } // namespace zhttp
 
-#endif // ZHTTP_REQUEST_BODY_MIDDLEWARE_H_
+#endif

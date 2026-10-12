@@ -5,7 +5,10 @@
 #include <stdexcept>
 
 namespace zco {
-// A Channel is a non-copyable bounded queue. It must outlive its operations.
+/**
+ * @brief 不可复制的有界队列，可供线程与协程发送、接收。
+ * @note 对象必须存活至所有操作结束；关闭后拒绝发送，但可继续取走已缓冲的值。
+ */
 template <class T> class Channel {
   public:
     explicit Channel(size_t capacity) : capacity_(capacity) {
@@ -62,7 +65,8 @@ template <class T> class Channel {
         std::lock_guard<std::mutex> lock(mutex_);
         closed_ = true;
         senders_.complete_all(WaitOutcome::closed);
-        // Receivers may drain buffered values after close.
+
+        // 关闭后接收方仍可取走缓冲区中的值，因此唤醒后需重新检查队列。
         receivers_.complete_all();
     }
 

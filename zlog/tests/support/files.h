@@ -1,4 +1,6 @@
-#pragma once
+#ifndef ZLYNX_ZLOG_TESTS_SUPPORT_FILES_H_
+#define ZLYNX_ZLOG_TESTS_SUPPORT_FILES_H_
+
 #include <cstdlib>
 #include <filesystem>
 #include <stdexcept>
@@ -40,3 +42,5 @@ inline std::vector<std::string> listDir(const std::string &path) {
     return names;
 }
 } // namespace zlog::test
+
+#endif

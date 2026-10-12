@@ -1,13 +1,11 @@
 /**
- * router.cc
- * router 实现。
+ * @file router.cc
  *
  * @author hzh-betty
  */
-
 #include "zhttp/router/router.h"
-#include "zhttp/http_context.h"
 #include "router/radix_tree.h"
+#include "zhttp/http_context.h"
 
 #include <exception>
 #include <utility>
@@ -27,7 +25,9 @@ struct Router::Impl {
     std::unordered_map<std::string, MethodHandlers> static_routes;
     RadixTree radix_tree;
 };
+
 Router::Router() : impl_(new Impl) {}
+
 Router::~Router() = default;
 
 bool Router::is_dynamic_path(const std::string &path) const {
@@ -142,7 +142,6 @@ std::string Router::normalize_homepage(const std::string &homepage) const {
 RouteMatch Router::match(const std::string &path, HttpMethod method) const {
     RouteMatch ctx;
     ctx.route_id = path;
-
 
     if (should_redirect_to_homepage(path, method)) {
         ctx.found = true;

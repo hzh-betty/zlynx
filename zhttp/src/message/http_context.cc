@@ -1,6 +1,7 @@
 #include "zhttp/http_context.h"
 #include "zhttp/content/multipart.h"
 #include <stdexcept>
+
 namespace zhttp {
 namespace {
 std::shared_ptr<const HttpRequest>
@@ -9,6 +10,7 @@ require_request(std::shared_ptr<const HttpRequest> request) {
         throw std::invalid_argument("Missing HTTP request");
     return request;
 }
+
 static void parse_cookie_header(std::string_view cookie_header,
                                 HttpContext::Params &out) {
     // 每次解析前清空输出，避免重复调用时残留旧数据。
@@ -43,6 +45,7 @@ static void parse_cookie_header(std::string_view cookie_header,
 }
 
 } // namespace
+
 HttpContext::HttpContext(std::shared_ptr<const HttpRequest> request,
                          ConnectionInfo info)
     : connection_(std::move(info)),
@@ -50,12 +53,15 @@ HttpContext::HttpContext(std::shared_ptr<const HttpRequest> request,
     response_.set_version(request_->version());
     response_.set_keep_alive(request_->is_keep_alive());
 }
+
 HttpContext::~HttpContext() { complete(CompletionResult::Cancelled); }
+
 void HttpContext::invalidate_derived() {
     parsed_.invalidate();
     cookies_parsed_ = false;
     cookies_.clear();
 }
+
 const HttpContext::Params &HttpContext::cookies() const {
     if (!cookies_parsed_) {
         cookies_parsed_ = true;
@@ -63,31 +69,39 @@ const HttpContext::Params &HttpContext::cookies() const {
     }
     return cookies_;
 }
+
 std::string HttpContext::cookie(const std::string &key,
                                 const std::string &fallback) const {
     auto it = cookies().find(key);
     return it == cookies().end() ? fallback : it->second;
 }
+
 std::string HttpContext::path_param(const std::string &key,
                                     const std::string &fallback) const {
     auto it = path_params_.find(key);
     return it == path_params_.end() ? fallback : it->second;
 }
+
 std::string HttpContext::form_param(const std::string &key,
                                     const std::string &fallback) const {
     auto it = form_params().find(key);
     return it == form_params().end() ? fallback : it->second;
 }
+
 bool HttpContext::parse_multipart() {
-    return parsed_.parse_multipart(header_view("Content-Type"), [this](std::string *error) {
-        return MultipartFormData::parse(request(), error);
-    });
+    return parsed_.parse_multipart(
+        header_view("Content-Type"), [this](std::string *error) {
+            return MultipartFormData::parse(request(), error);
+        });
 }
+
 const MultipartFormData *HttpContext::multipart() const {
-    return parsed_.multipart(header_view("Content-Type"), [this](std::string *error) {
-        return MultipartFormData::parse(request(), error);
-    });
+    return parsed_.multipart(
+        header_view("Content-Type"), [this](std::string *error) {
+            return MultipartFormData::parse(request(), error);
+        });
 }
+
 void HttpContext::upgrade_to_websocket(WebSocketCallbacks callbacks,
                                        const WebSocketOptions &options) {
     if (response_.committed())
@@ -95,24 +109,29 @@ void HttpContext::upgrade_to_websocket(WebSocketCallbacks callbacks,
     response_.enable_chunked(false).body("").status(
         HttpStatus::SWITCHING_PROTOCOLS);
     response_.set_keep_alive(true);
+
     // 这里只保存升级意图；真实握手和底层协议对象由网络层接管。
     upgrade_.reset(new WebSocketUpgrade{std::move(callbacks), options});
 }
+
 void HttpContext::reset_result() {
     upgrade_.reset();
     response_ = HttpResponse();
     response_.set_version(request().version());
     response_.set_keep_alive(false);
 }
+
 void HttpContext::on_complete(std::function<void(CompletionResult)> callback) {
     if (completed_)
         throw std::logic_error("Request already complete");
     if (callback)
         completion_callbacks_.push_back(std::move(callback));
 }
+
 void HttpContext::complete(CompletionResult result) {
     if (completed_)
         return;
+
     // 先标记完成并移出回调列表，重复或重入完成通知都不会再次执行回调。
     completed_ = true;
     auto callbacks = std::move(completion_callbacks_);
@@ -120,7 +139,8 @@ void HttpContext::complete(CompletionResult result) {
     for (auto &callback : callbacks) {
         try {
             callback(result);
-        // 单个收尾回调失败不能阻止后续清理，也不能从析构路径传播异常。
+
+            // 单个收尾回调失败不能阻止后续清理，也不能从析构路径传播异常。
         } catch (...) {
         }
     }

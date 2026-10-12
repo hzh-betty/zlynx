@@ -2,10 +2,10 @@
  * @file znet_wrk_benchmark.cc
  * @brief 性能测试。
  * @author hzh-betty
- */
 
-#include "znet/endpoint.h"
+ */
 #include "znet/byte_buffer.h"
+#include "znet/endpoint.h"
 #include "znet/server/connection.h"
 #include "znet/server/tcp_server.h"
 
@@ -560,7 +560,9 @@ int run_server_process(const BenchConfig &cfg, const int ready_fd) {
     std::signal(SIGINT, server_signal_handler);
     std::signal(SIGPIPE, SIG_IGN);
 
-    auto address = znet::Endpoint::ipv4("127.0.0.1", static_cast<uint16_t>(cfg.port)).value();
+    auto address =
+        znet::Endpoint::ipv4("127.0.0.1", static_cast<uint16_t>(cfg.port))
+            .value();
     zco::RuntimeOptions runtime_options;
     runtime_options.worker_count = cfg.server_threads;
     zco::Runtime runtime(runtime_options);
@@ -569,13 +571,17 @@ int run_server_process(const BenchConfig &cfg, const int ready_fd) {
     options.read_timeout = std::chrono::milliseconds{100};
     options.write_timeout = std::chrono::milliseconds{1000};
     HelloWorldHandler handler;
-    znet::TcpServer server(runtime, address,
+    znet::TcpServer server(
+        runtime, address,
         [&handler](const znet::Connection::ptr &) {
             return znet::SessionCallbacks{
-                [&handler](const znet::Connection::ptr &conn, znet::ByteBuffer &buffer) {
+                [&handler](const znet::Connection::ptr &conn,
+                           znet::ByteBuffer &buffer) {
                     handler.on_message(conn, buffer);
-                }, {}};
-        }, options);
+                },
+                {}};
+        },
+        options);
 
     if (!server.start()) {
         notify_ready(ready_fd, '0');

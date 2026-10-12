@@ -8,20 +8,21 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+
 namespace zhttp::mid {
 /**
- * 限流器抽象接口
+ * @brief 限流器抽象接口
  *
  * 提供三种标准限流算法：
- * - Fixed Window（固定窗口）
- * - Sliding Window（滑动窗口）
- * - Token Bucket（令牌桶）
+ * - 固定窗口
+ * - 滑动窗口
+ * - 令牌桶
  *
  * 注意：线程安全：实现类通常需要支持并发调用（同一实例被多个请求共享）。
- *       本库内置实现均在内部加锁保证并发安全，但代价是每次判定需要持锁。
+ * 本库内置实现均在内部加锁保证并发安全，但代价是每次判定需要持锁。
  *
  * 注意：key 的选择：key 决定限流维度（例如 remote ip / user id / 全局）。
- *       key 的基数越大（例如把完整的 UA、URL 拼进去），内部 map
+ * key 的基数越大（例如把完整的 UA、URL 拼进去），内部 map
  * 占用会增长越快。
  */
 class RateLimiter {
@@ -39,7 +40,7 @@ class RateLimiter {
     };
 
     /**
-     * 时间单位枚举
+     * @brief 时间单位枚举
      *
      * 不同算法都会把容量和时间单位组合起来解释为“单位时间内允许多少请求”。
      */
@@ -53,7 +54,7 @@ class RateLimiter {
     virtual ~RateLimiter() = default;
 
     /**
-     * 检查是否允许通过
+     * @brief 检查是否允许通过
      *
      * 语义：
      * - 返回 true：本次请求“消耗”一次额度（计数+1 / 消耗 1 令牌等）。
@@ -64,15 +65,18 @@ class RateLimiter {
      * @param key 维度 key（例如 remote ip / user id / global）
      */
     virtual bool isAllowed(const std::string &key) = 0;
-    /** 回收已无额度约束的过期 key；不清除仍然有效的配额。 */
+
+    /**
+     * @brief 回收已无额度约束的过期 key；不清除仍然有效的配额。
+     */
     virtual size_t prune_expired() { return 0; }
 
     /**
-     * 计算建议的重试等待时间（用于 Retry-After），无法估算返回 0
+     * @brief 计算建议的重试等待时间（用于 Retry-After），无法估算返回 0
      *
      * 注意：
      * 该值是“建议等待时间”，并不保证严格准确（例如实现可能不会在此处推进内部时间状态）。
-     *       中间件通常会将其向上取整到秒，写入 Retry-After 响应头。
+     * 中间件通常会将其向上取整到秒，写入 Retry-After 响应头。
      */
     virtual Milliseconds retryAfter(const std::string &key) const {
         (void)key;
@@ -80,22 +84,23 @@ class RateLimiter {
     }
 
     /**
-     * 工厂方法：创建限流器实例
+     * @brief 工厂方法：创建限流器实例
      *
      * @param type 算法类型
-     * @param capacity 窗口容量 / 令牌桶容量
+     * @param capacity 窗口容量 / 令牌桶容量，0 按 1 处理
      * @param unit 时间单位（窗口大小为 1 * unit；令牌补充速率为 capacity /
      * unit）
-     *             - 对于窗口类算法：窗口大小固定为 1 个单位。
-     *             - 对于令牌桶：补充速率为 “capacity 个令牌 / 1 个单位”。
-     * @param now_func 自定义时钟（测试可用），为空则使用 steady_clock::now
+     * - 对于窗口类算法：窗口大小固定为 1 个单位。
+     * - 对于令牌桶：补充速率为 “capacity 个令牌 / 1 个单位”。
+     * @param now_func 自定义时钟，须支持并发调用并提供单调时间基准；为空使用
+     * steady_clock::now
      */
     static ptr newRateLimiter(Type type, size_t capacity, TimeUnit unit,
                               NowFunc now_func = NowFunc());
 };
 
 /**
- * Token Bucket 令牌桶限流器实现
+ * @brief 令牌桶限流器实现
  *
  * 行为要点：
  * - 桶容量为 capacity。
@@ -103,14 +108,14 @@ class RateLimiter {
  * - 每次请求消耗 1 个令牌，不足则拒绝。
  *
  * 注意：内部按 key 保存桶状态；按补充周期回收已完全恢复额度的 bucket。
- *       若 key 基数巨大，建议在上层进行归一化（例如按用户 ID，而非按 URL）。
+ * 若 key 基数巨大，建议在上层进行归一化（例如按用户 ID，而非按 URL）。
  */
 class TokenBucketRateLimiter : public RateLimiter {
   public:
     /**
-     * 构造令牌桶限流器
+     * @brief 构造令牌桶限流器
      *
-     * @param capacity 桶容量，同时也是每个时间单位内的补充量
+     * @param capacity 桶容量及每个时间单位内的补充量；0 按 1 处理
      * @param unit 时间单位
      * @param now_func 可选时钟函数，主要用于测试
      */
@@ -118,7 +123,7 @@ class TokenBucketRateLimiter : public RateLimiter {
                            NowFunc now_func = NowFunc());
 
     /**
-     * 判断当前 key 是否还有可用令牌
+     * @brief 判断当前 key 是否还有可用令牌
      *
      * @param key 限流维度 key
      * @return true 表示放行并消耗 1 个令牌
@@ -127,7 +132,7 @@ class TokenBucketRateLimiter : public RateLimiter {
     size_t prune_expired() override;
 
     /**
-     * 估算下次至少多久后才能再放行
+     * @brief 估算下次至少多久后才能再放行
      *
      * @param key 限流维度 key
      * @return 建议等待时间
@@ -137,6 +142,7 @@ class TokenBucketRateLimiter : public RateLimiter {
   private:
     // 统一获取当前时间，便于测试注入自定义时钟。
     TimePoint now() const;
+
     // 返回一个时间单位对应的秒数，用于计算令牌补充速率。
     std::chrono::duration<double> unitDuration() const;
 
@@ -150,17 +156,19 @@ class TokenBucketRateLimiter : public RateLimiter {
         bool initialized = false;
     };
 
+    // 同一 key 固定落入一个分片；mutex 保护额度和清理游标，清理会扫描该分片。
     struct alignas(64) Shard {
         mutable std::mutex mutex;
         std::unordered_map<std::string, Bucket> buckets;
         TimePoint next_cleanup{};
     };
+
     size_t prune_locked(Shard &shard, TimePoint time);
     mutable std::array<Shard, 16> shards_;
 };
 
 /**
- * Fixed Window 固定窗口限流器实现
+ * @brief 固定窗口限流器实现
  *
  * 行为要点：
  * - 每个 key 维护一个固定长度时间窗口（大小为 1 * unit）。
@@ -172,9 +180,9 @@ class TokenBucketRateLimiter : public RateLimiter {
 class FixedWindowRateLimiter final : public RateLimiter {
   public:
     /**
-     * 构造固定窗口限流器
+     * @brief 构造固定窗口限流器
      *
-     * @param capacity 每个窗口允许的最大请求数
+     * @param capacity 每个窗口允许的最大请求数；0 按 1 处理
      * @param unit 窗口时间单位（窗口大小固定为 1 个单位）
      * @param now_func 可选时钟函数，主要用于测试
      */
@@ -182,7 +190,7 @@ class FixedWindowRateLimiter final : public RateLimiter {
                            NowFunc now_func = NowFunc());
 
     /**
-     * 判断当前 key 在当前窗口内是否仍可放行
+     * @brief 判断当前 key 在当前窗口内是否仍可放行
      *
      * @param key 限流维度 key
      * @return true 表示放行并消耗当前窗口内一个配额
@@ -191,7 +199,7 @@ class FixedWindowRateLimiter final : public RateLimiter {
     size_t prune_expired() override;
 
     /**
-     * 估算距离当前窗口结束还需等待多久
+     * @brief 估算距离当前窗口结束还需等待多久
      *
      * @param key 限流维度 key
      * @return 建议等待时间
@@ -205,11 +213,13 @@ class FixedWindowRateLimiter final : public RateLimiter {
         bool initialized = false;
     };
 
+    // 同一 key 固定落入一个分片；mutex 保护额度和清理游标，清理会扫描该分片。
     struct alignas(64) Shard {
         mutable std::mutex mutex;
         std::unordered_map<std::string, State> states;
         TimePoint next_cleanup{};
     };
+
     size_t prune_locked(Shard &shard, TimePoint time);
     mutable std::array<Shard, 16> shards_;
     size_t capacity_;
@@ -218,7 +228,7 @@ class FixedWindowRateLimiter final : public RateLimiter {
 };
 
 /**
- * Sliding Window 滑动窗口限流器实现
+ * @brief 滑动窗口限流器实现
  *
  * 行为要点：
  * - 每个 key 维护窗口内请求时间点序列。
@@ -230,9 +240,9 @@ class FixedWindowRateLimiter final : public RateLimiter {
 class SlidingWindowRateLimiter final : public RateLimiter {
   public:
     /**
-     * 构造滑动窗口限流器
+     * @brief 构造滑动窗口限流器
      *
-     * @param capacity 窗口内允许的最大请求数
+     * @param capacity 窗口内允许的最大请求数；0 按 1 处理
      * @param unit 窗口时间单位（窗口大小固定为 1 个单位）
      * @param now_func 可选时钟函数，主要用于测试
      */
@@ -240,7 +250,7 @@ class SlidingWindowRateLimiter final : public RateLimiter {
                              NowFunc now_func = NowFunc());
 
     /**
-     * 判断当前 key 在滑动窗口内是否仍可放行
+     * @brief 判断当前 key 在滑动窗口内是否仍可放行
      *
      * @param key 限流维度 key
      * @return true 表示放行并记录当前请求时间点
@@ -249,7 +259,7 @@ class SlidingWindowRateLimiter final : public RateLimiter {
     size_t prune_expired() override;
 
     /**
-     * 估算距离释放下一个可用配额还需等待多久
+     * @brief 估算距离释放下一个可用配额还需等待多久
      *
      * @param key 限流维度 key
      * @return 建议等待时间
@@ -257,12 +267,15 @@ class SlidingWindowRateLimiter final : public RateLimiter {
     Milliseconds retryAfter(const std::string &key) const override;
 
   private:
+    // 同一 key 固定落入一个分片；mutex 保护额度和清理游标，清理会扫描该分片。
     struct alignas(64) Shard {
         mutable std::mutex mutex;
+
         // 每个 key 对应一个时间点队列，仅保留窗口范围内的请求时间。
         std::unordered_map<std::string, std::deque<TimePoint>> queues;
         TimePoint next_cleanup{};
     };
+
     size_t prune_locked(Shard &shard, TimePoint time);
     mutable std::array<Shard, 16> shards_;
     size_t capacity_;

@@ -1,10 +1,8 @@
 /**
- * compression_middleware.cc
- * compression_middleware 实现。
+ * @file compression_middleware.cc
  *
  * @author hzh-betty
  */
-
 #include "zhttp/middleware/compression_middleware.h"
 
 #include <brotli/encode.h>
@@ -36,6 +34,7 @@ bool CompressionMiddleware::is_compressible_content_type(
         if (rule.empty()) {
             continue;
         }
+
         // 规则以 '/' 结尾时按前缀匹配（例如 text/），否则按精确值匹配。
         if (rule.back() == '/') {
             if (content_type.compare(0, rule.size(), rule) == 0) {
@@ -98,6 +97,7 @@ bool CompressionMiddleware::compress_with_gzip(const std::string &input,
     const int level = std::clamp(options_.gzip_level, 1, 9);
 
     z_stream stream;
+
     // 这里使用显式字段初始化，便于和 zlib 文档参数一一对应。
     stream.zalloc = Z_NULL;
     stream.zfree = Z_NULL;
@@ -165,6 +165,7 @@ bool CompressionMiddleware::compress_with_brotli(const std::string &input,
 
 void CompressionMiddleware::after(HttpContext &request) {
     auto &response = request.response();
+
     // 已编码和流式实体由各自发送路径负责协商，避免重写其元数据。
     const int status = static_cast<int>(response.status_code());
     if (response.body_source().kind() != HttpBody::Kind::Memory ||
@@ -201,6 +202,7 @@ void CompressionMiddleware::after(HttpContext &request) {
             return;
         }
     }
+
     // 客户端也禁止 identity 时不能静默回退到未压缩正文。
     response.status(HttpStatus::NOT_ACCEPTABLE)
         .body("")

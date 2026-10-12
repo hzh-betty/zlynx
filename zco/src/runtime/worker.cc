@@ -29,9 +29,9 @@ Worker::Worker(size_t index, const RuntimeOptions &options,
                std::weak_ptr<Submission> submission,
                std::shared_ptr<Reactor> reactor)
     : index_(index), steal_cursor_(index + 1),
-      submission_(std::move(submission)),
-      reactor_(std::move(reactor)), inbox_(std::make_shared<Inbox>(reactor_)),
-      stacks_(options), io_waits_(reactor_) {}
+      submission_(std::move(submission)), reactor_(std::move(reactor)),
+      inbox_(std::make_shared<Inbox>(reactor_)), stacks_(options),
+      io_waits_(reactor_) {}
 
 Worker::~Worker() {
     if (thread_.joinable()) {
@@ -174,6 +174,8 @@ void Worker::collect_notifications() {
         if (found == tasks_.end())
             continue;
         auto &record = *found->second;
+
+        // 同一任务可能已开始下一次等待；只有代次匹配的完成通知才能重新入队。
         if (record.phase == Phase::waiting && record.wait &&
             record.wait->id() == id && record.wait->completed()) {
             record.phase = Phase::ready;
@@ -189,6 +191,9 @@ void Worker::resume(Record &record) {
         if (!record.execution)
             record.execution.reset(new Continuation(stacks_, entry));
         record.execution->resume(caller_);
+
+        // 快照分配失败时，原共享栈仍完好；恢复任务并在挂起点抛出异常，
+        // 让任务栈上的资源正常展开后再销毁执行记录。
         while (record.phase != Phase::finished) {
             try {
                 record.execution->save();
@@ -199,7 +204,7 @@ void Worker::resume(Record &record) {
             }
         }
     } catch (...) {
-        // Failures before switching do not publish a half-created execution.
+        // 切换栈前发生失败时，不发布尚未完成初始化的执行状态。
         record.result = TaskStatus::failed;
         record.exception = std::current_exception();
         record.phase = Phase::finished;
@@ -212,7 +217,7 @@ void Worker::resume(Record &record) {
         auto exception = record.exception;
         record.pending.task = {};
         tasks_.erase(
-            id); // Release execution resources before publishing completion.
+            id); // 先释放执行资源再发布完成，确保等待完成的一方不会提前销毁关联资源。
         --live_;
         completion->finish(result, exception);
     } else if (record.phase == Phase::ready ||
@@ -223,6 +228,8 @@ void Worker::resume(Record &record) {
 }
 
 void Worker::run_batch() {
+    // 有界执行批次为 I/O 和定时器留出轮询机会，避免持续提交使事件处理饥饿。
+    // 有就绪任务时与新任务交替调度；停止阶段只恢复既有任务以完成收尾。
     for (size_t budget = 0; budget < 64; ++budget) {
         if (!ready_.empty() && (inbox_->stopping || budget % 2)) {
             auto id = ready_.front();
@@ -290,8 +297,9 @@ bool Worker::poll_once(int timeout) {
     if (timeout) {
         if (auto endpoint = submission_.lock()) {
             std::lock_guard<std::mutex> lock(endpoint->mutex);
-            // Admission and idle registration share the same lock. Work
-            // published before registration must also prevent sleeping.
+
+            // 提交准入和空闲登记共用同一把锁；登记前已发布的任务
+            // 也必须阻止工作线程休眠，避免错过唤醒。
             bool pending = inbox_->stopping || queues_.size() != 0;
             for (auto *worker : endpoint->workers)
                 if (worker->queues_.movable_size()) {

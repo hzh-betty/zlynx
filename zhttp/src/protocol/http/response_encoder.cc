@@ -2,11 +2,13 @@
 #include <charconv>
 #include <limits>
 #include <stdexcept>
+
 namespace zhttp {
 
 std::string ResponseEncoder::chunk(const char *data, std::size_t size) {
     if (!size)
         return "";
+
     // 每四个值位最多占一个十六进制字符；to_chars 不写末尾 NUL。
     char line[(std::numeric_limits<std::size_t>::digits + 3) / 4];
     const auto result = std::to_chars(line, line + sizeof(line), size, 16);
@@ -17,10 +19,8 @@ std::string ResponseEncoder::chunk(const char *data, std::size_t size) {
     return frame;
 }
 
-
 ResponsePlan ResponseEncoder::plan(const HttpRequestLine &request,
-                                      const HttpResponse &response,
-                                      bool upgrade) {
+                                   const HttpResponse &response, bool upgrade) {
     const auto code = response.status_line().status_code;
     if (code < 100 || code > 599 ||
         (response.version() != HttpVersion::HTTP_1_0 &&
@@ -30,6 +30,7 @@ ResponsePlan ResponseEncoder::plan(const HttpRequestLine &request,
         throw std::invalid_argument("Informational response cannot be final");
     ResponsePlan p;
     const auto &body = response.body_source();
+
     // HEAD 仍可携带实体长度，但不发送正文；无正文状态码同样跳过正文。
     p.send_body = request.method != HttpMethod::HEAD &&
                   is_body_allowed(response.status_code());
@@ -37,6 +38,7 @@ ResponsePlan ResponseEncoder::plan(const HttpRequestLine &request,
     p.chunked =
         p.send_body && response.version() == HttpVersion::HTTP_1_1 &&
         (response.is_chunked_enabled() || p.length == HttpBody::UnknownLength);
+
     // HTTP/1.0 无法对未知长度使用 chunked，必须以关闭连接界定正文末尾。
     p.close =
         !response.is_keep_alive() ||
@@ -47,13 +49,15 @@ ResponsePlan ResponseEncoder::plan(const HttpRequestLine &request,
             p.close = true;
     return p;
 }
+
 std::string ResponseEncoder::headers(const HttpRequestLine &request,
-                                        const HttpResponse &response,
-                                        bool upgrade) {
+                                     const HttpResponse &response,
+                                     bool upgrade) {
     return headers(response, plan(request, response, upgrade), upgrade);
 }
+
 std::string ResponseEncoder::headers(const HttpResponse &response,
-                                    const ResponsePlan &p, bool upgrade) {
+                                     const ResponsePlan &p, bool upgrade) {
     const auto code = response.status_line().status_code;
     std::string out;
     size_t capacity = 128;
@@ -68,6 +72,7 @@ std::string ResponseEncoder::headers(const HttpResponse &response,
     out.push_back(kSP);
     out.append(status_to_string(response.status_code()));
     out.append(kCRLF);
+
     // 正文边界和连接头由写出计划统一生成，忽略业务层设置的同名字段。
     for (const auto &h : response.headers()) {
         if (HttpHeaders::equal_name(h.first, "Content-Length") ||
@@ -87,44 +92,53 @@ std::string ResponseEncoder::headers(const HttpResponse &response,
         out.append("Transfer-Encoding: chunked").append(kCRLF);
     else if (code >= 200 && code != 204 && code != 304 &&
              p.length != HttpBody::UnknownLength)
-        out.append("Content-Length: ").append(std::to_string(p.length)).append(kCRLF);
-    // A 304 with an explicitly supplied representation is permitted length
-    // metadata.
+        out.append("Content-Length: ")
+            .append(std::to_string(p.length))
+            .append(kCRLF);
+
+    // 304 响应可以携带显式提供的表示长度元数据，
+    // 但不发送表示正文。
     else if (code == 304 &&
              response.body_source().kind() != HttpBody::Kind::Empty &&
              p.length != HttpBody::UnknownLength)
-        out.append("Content-Length: ").append(std::to_string(p.length)).append(kCRLF);
-    out.append(upgrade ? "Connection: Upgrade"
-                       : p.close ? "Connection: close" : "Connection: keep-alive")
+        out.append("Content-Length: ")
+            .append(std::to_string(p.length))
+            .append(kCRLF);
+    out.append(upgrade   ? "Connection: Upgrade"
+               : p.close ? "Connection: close"
+                         : "Connection: keep-alive")
         .append(kCRLF);
     out.append(kCRLF);
     return out;
 }
+
 std::string ResponseEncoder::serialize(const HttpResponse &response,
-                                          bool include_body,
-                                          HttpMethod method) {
+                                       bool include_body, HttpMethod method) {
     HttpRequestLine request;
     request.method = method;
     request.version = response.version();
     auto p = plan(request, response,
                   response.status_code() == HttpStatus::SWITCHING_PROTOCOLS);
-    std::string out = headers(response, p,
-                             response.status_code() == HttpStatus::SWITCHING_PROTOCOLS);
+    std::string out = headers(
+        response, p, response.status_code() == HttpStatus::SWITCHING_PROTOCOLS);
     if (include_body && p.send_body &&
         response.body_source().kind() == HttpBody::Kind::Memory) {
         if (p.chunked) {
             out.append(chunk(response.body_content().data(),
                              response.body_content().size()))
-                .append("0").append(kCRLF).append(kCRLF);
+                .append("0")
+                .append(kCRLF)
+                .append(kCRLF);
         } else {
             out.append(response.body_content());
         }
     }
     return out;
 }
+
 void ResponseEncoder::serialize_to(const HttpResponse &response,
-                                      std::string *out, bool include_body,
-                                      HttpMethod method) {
+                                   std::string *out, bool include_body,
+                                   HttpMethod method) {
     if (out)
         *out = serialize(response, include_body, method);
 }

@@ -1,10 +1,8 @@
 /**
- * range_parse.cc
- * range_parse 实现。
+ * @file range_parse.cc
  *
  * @author hzh-betty
  */
-
 #include "static_files/range.h"
 
 #include "zhttp/http_common.h"
@@ -28,6 +26,7 @@ bool parse_size_token(const std::string &token, size_t &value) {
     if (result.ptr != end) {
         return false;
     }
+
     // 保留 stoull 的纯数字溢出副作用；尾随非法字符不会改变 errno。
     if (result.ec == std::errc::result_out_of_range) {
         errno = ERANGE;
@@ -51,6 +50,7 @@ ParsedRange parse_range_request(const HttpContext &request,
     ParsedRange result;
 
     const std::string range_header = request.header("Range");
+
     // 没有 Range 头：交给调用方按整包处理（NONE）。
     if (range_header.empty()) {
         return result;
@@ -66,6 +66,7 @@ ParsedRange parse_range_request(const HttpContext &request,
     }
 
     const std::string lowered = to_lower(range_header);
+
     // 仅处理 bytes 单位；其余单位按语法非法处理。
     if (lowered.size() < 7 || lowered.compare(0, 6, "bytes=") != 0) {
         result.state = RangeParseState::INVALID;
@@ -74,6 +75,7 @@ ParsedRange parse_range_request(const HttpContext &request,
 
     std::string range_spec = range_header.substr(6);
     trim(range_spec);
+
     // 多范围（逗号）暂不支持，按 INVALID 处理；
     // 当前策略下 INVALID 会在输出层回落 200/HEAD。
     if (range_spec.empty() || range_spec.find(',') != std::string::npos) {
@@ -123,6 +125,7 @@ ParsedRange parse_range_request(const HttpContext &request,
             result.state = RangeParseState::INVALID;
             return result;
         }
+
         // 起点越界：不可满足（416）。
         if (start >= content_length) {
             result.state = RangeParseState::NOT_SATISFIABLE;
@@ -136,11 +139,13 @@ ParsedRange parse_range_request(const HttpContext &request,
                 result.state = RangeParseState::INVALID;
                 return result;
             }
+
             // 终点早于起点：语义不可满足。
             if (end < start) {
                 result.state = RangeParseState::NOT_SATISFIABLE;
                 return result;
             }
+
             // 允许客户端把 end 写到文件末尾之后，服务端截断到末尾。
             if (end >= content_length) {
                 end = content_length - 1;

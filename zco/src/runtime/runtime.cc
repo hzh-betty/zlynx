@@ -28,8 +28,9 @@ Result<TaskHandle> submit(const std::shared_ptr<Submission> &endpoint,
     if (!pinned) {
         index = endpoint->next_worker;
         endpoint->next_worker = (index + 1) % workers.size();
-        // Rotate the first candidate and compare one separated peer. Stealing
-        // handles remaining imbalance without scanning every worker here.
+
+        // 轮换首选工作线程，并与一个间隔位置的线程比较负载；
+        // 剩余不均衡交由任务窃取处理，避免在提交时扫描所有工作线程。
         auto peer = (index + workers.size() / 2) % workers.size();
         if (peer != index && workers[peer]->load() < workers[index]->load())
             index = peer;

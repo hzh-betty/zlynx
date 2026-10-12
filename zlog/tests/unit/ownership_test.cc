@@ -51,6 +51,7 @@ TEST(OwnershipTest, AsyncLoggerOwnsNameAndDrainsOnDestruction) {
 
     EXPECT_EQ(logger->get_name(), expected_name);
     logger->info(__FILE__, __LINE__, "pending");
+
     // 小消息不会达到消费阈值；通过析构等待排空，不依赖固定睡眠。
     sinks.clear();
     logger.reset();
@@ -98,6 +99,7 @@ TEST(OwnershipTest, AsyncLoggerDrainsBeforeDestroyingItsOnlySink) {
     auto logger = std::make_shared<AsyncLogger>(
         "sink_lifetime", LogLevel::value::DEBUG, formatter, sinks,
         AsyncType::ASYNC_SAFE, std::chrono::hours(1));
+
     // 释放调用方的引用，让 sink 仅由日志器持有。
     sinks.clear();
     logger->info(__FILE__, __LINE__, "pending");

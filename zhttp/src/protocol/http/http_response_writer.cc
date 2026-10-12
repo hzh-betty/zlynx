@@ -7,11 +7,13 @@
 #include <stdexcept>
 #include <sys/stat.h>
 #include <unistd.h>
+
 namespace zhttp {
 static bool send_all_or_fail(const std::shared_ptr<znet::Connection> &conn,
-                      const char *data, size_t size) {
+                             const char *data, size_t size) {
     if (!conn || !conn->connected())
         return false;
+
     // 只在连接回调内调用；每批数据排空后才继续生产，避免积压响应内容。
     while (size) {
         const size_t batch = std::min(size, static_cast<size_t>(64 * 1024));
@@ -23,18 +25,22 @@ static bool send_all_or_fail(const std::shared_ptr<znet::Connection> &conn,
     }
     return true;
 }
-WriteResult HttpResponseWriter::send(
-    const std::shared_ptr<znet::Connection> &conn, HttpContext &context,
-    bool upgrade) {
+
+WriteResult
+HttpResponseWriter::send(const std::shared_ptr<znet::Connection> &conn,
+                         HttpContext &context, bool upgrade) {
     if (context.response().committed())
         throw std::logic_error("Response already committed");
     return send(conn, context,
-                ResponseEncoder::plan(context.request().request_line(), context.response(), upgrade),
+                ResponseEncoder::plan(context.request().request_line(),
+                                      context.response(), upgrade),
                 upgrade);
 }
-WriteResult HttpResponseWriter::send(
-    const std::shared_ptr<znet::Connection> &conn, HttpContext &context,
-    const ResponsePlan &p, bool upgrade) {
+
+WriteResult
+HttpResponseWriter::send(const std::shared_ptr<znet::Connection> &conn,
+                         HttpContext &context, const ResponsePlan &p,
+                         bool upgrade) {
     auto &response = context.response();
     if (response.committed())
         throw std::logic_error("Response already committed");
@@ -48,11 +54,13 @@ WriteResult HttpResponseWriter::send(
             throw std::runtime_error("Response file changed before commit");
     }
     auto header_bytes = ResponseEncoder::headers(response, p, upgrade);
-    const bool combined = p.send_body && !p.chunked &&
-                          body.kind() == HttpBody::Kind::Memory &&
-                          body.content().size() <= 4096 && header_bytes.size() <= 64 * 1024 - body.content().size();
+    const bool combined =
+        p.send_body && !p.chunked && body.kind() == HttpBody::Kind::Memory &&
+        body.content().size() <= 4096 &&
+        header_bytes.size() <= 64 * 1024 - body.content().size();
     if (combined)
         header_bytes.append(body.content());
+
     // 文件范围与头部在提交前校验；提交后只允许发送或失败，不能改写响应。
     response.commit();
     if (!send_all_or_fail(conn, header_bytes.data(), header_bytes.size()))
@@ -62,6 +70,7 @@ WriteResult HttpResponseWriter::send(
     if (body.kind() == HttpBody::Kind::Stream) {
         char buffer[8192];
         std::uint64_t sent = 0;
+
         // 回调与写出在同一次连接处理里完成，不依赖新的读取事件或控制队列。
         while (conn && conn->connected()) {
             std::size_t count;
@@ -77,7 +86,8 @@ WriteResult HttpResponseWriter::send(
                 break;
             }
             if (count > sizeof(buffer) ||
-                (p.length != HttpBody::UnknownLength && count > p.length - sent))
+                (p.length != HttpBody::UnknownLength &&
+                 count > p.length - sent))
                 return WriteResult::Failed;
             if (p.chunked) {
                 const auto bytes = ResponseEncoder::chunk(buffer, count);
@@ -125,6 +135,7 @@ WriteResult HttpResponseWriter::send(
             sent += count;
         }
     }
+
     // 正文完全发送后才写终止 chunk；失败路径不伪造正常结束标记。
     if (p.chunked) {
         const auto terminator = std::string("0").append(kCRLF).append(kCRLF);

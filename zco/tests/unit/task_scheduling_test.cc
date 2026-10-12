@@ -299,8 +299,9 @@ TEST(Scheduling, OrdinaryTasksUseAllWorkersUnderBlockingLoad) {
                 EXPECT_EQ(gate.wait_for(std::chrono::seconds(6)),
                           std::future_status::ready);
             }));
-            // Observe admission before blocking the next worker; this removes
-            // submission timing from the worker utilization assertion.
+
+            // 先观察任务获准提交，再阻塞下一个工作线程，
+            // 使工作线程利用率断言不依赖提交时序。
             if (!test::wait_until([&] { return started == i + 1; })) {
                 ADD_FAILURE() << "ordinary task did not reach an idle worker";
                 break;

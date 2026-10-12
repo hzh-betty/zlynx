@@ -28,9 +28,9 @@ Error tls_error(std::string operation) {
                       std::move(operation), ssl_detail());
 }
 
-// OpenSSL's standard socket BIO can raise SIGPIPE. This BIO uses MSG_NOSIGNAL
-// without changing process-wide signal policy. Every SSL operation holds a
-// Descriptor::Borrow, keeping this fd alive until all BIO calls return.
+// OpenSSL 的标准套接字 BIO 可能触发 SIGPIPE；此 BIO 使用 MSG_NOSIGNAL，
+// 不改变整个进程的信号策略；每次 SSL 操作持有 Descriptor::Borrow，
+// 保证所有 BIO 调用返回前描述符不会关闭。
 const BIO_METHOD *socket_bio() {
     static const std::unique_ptr<BIO_METHOD, decltype(&BIO_meth_free)> method(
         [] {
@@ -133,7 +133,7 @@ class TlsStream final : public ByteStream {
     }
 
     Result<void> shutdown_write(zco::Deadline deadline) override {
-        // Send close_notify; do not wait for the peer's reciprocal shutdown.
+        // 发送 close_notify 后返回，避免等待对端的关闭通知。
         auto result = retry([&] { return SSL_shutdown(ssl_.get()); }, deadline,
                             "TLS shutdown", true);
         if (!result)
@@ -173,8 +173,8 @@ class TlsStream final : public ByteStream {
                         false};
             int ssl_error;
             {
-                // SSL itself is never accessed concurrently, but neither lock
-                // survives a coroutine wait. A reader cannot stall a writer.
+                // 对 SSL 对象的访问串行化，但两把锁均不跨协程等待持有，
+                // 避免读取等待阻止写入继续。
                 std::lock_guard<std::mutex> lock(ssl_mutex_);
                 auto borrowed = socket_.descriptor().borrow();
                 if (borrowed.fd() < 0)

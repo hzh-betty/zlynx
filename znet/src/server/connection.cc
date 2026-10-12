@@ -8,15 +8,16 @@ Transfer failed(std::errc code, const char *operation) {
     return {0, make_error(ErrorKind::runtime, code, operation), false};
 }
 
-// Avoid type erasure/heap allocation on the coroutine path. Ordinary callers
-// still join before their borrowed operation/buffers can leave scope.
+// 协程路径直接调用，避免类型擦除和堆分配；普通线程调用方仍在
+// 借用的操作和缓冲区离开作用域前等待提交任务完成。
 template <class Operation>
 Transfer perform_io(zco::Executor &executor, Operation &&operation) {
     if (zco::in_coroutine())
         return operation();
     Transfer result;
-    // No coroutine waiter can return early on cancellation here: the caller
-    // is an ordinary thread and joins the submitted task's final completion.
+
+    // 此处调用方是普通线程，会等待提交任务最终完成，
+    // 不会像协程等待者那样因取消而提前返回、使借用缓冲区失效。
     auto task = executor.spawn([&] { result = operation(); });
     if (!task)
         return {0, runtime_error("submit connection IO", task.error()), false};
@@ -160,7 +161,7 @@ Transfer Connection::send(std::string_view bytes,
 
 Result<void> Connection::shutdown() {
     auto result = perform_io(executor_, [&]() -> Transfer {
-        // A finite budget prevents graceful TLS shutdown from waiting forever.
+        // 设置有限等待预算，避免正常 TLS 关闭无限等待。
         const auto deadline = zco::Deadline::after(
             write_timeout_.count() ? write_timeout_ : Timeout{1000});
         auto locked = writes_.lock(deadline);

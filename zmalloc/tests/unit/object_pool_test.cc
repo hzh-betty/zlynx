@@ -3,7 +3,6 @@
  * @file object_pool_test.cc
  * @brief ObjectPool 单元测试
  */
-
 #include "zmalloc/internal/object_pool.h"
 #include <gtest/gtest.h>
 
@@ -18,6 +17,7 @@ struct TestObject {
     char padding[64];
 
     TestObject() : value(42) {}
+
     ~TestObject() { value = 0; }
 };
 
@@ -25,16 +25,20 @@ class ObjectPoolTest : public ::testing::Test {
   protected:
     ObjectPool<TestObject> pool_;
 };
-class ObjectPoolLifoParamTest
-    : public ObjectPoolTest, public ::testing::WithParamInterface<int> {};
-class ObjectPoolBatchParamTest
-    : public ObjectPoolTest, public ::testing::WithParamInterface<int> {};
-class ObjectPoolAlternateParamTest
-    : public ObjectPoolTest, public ::testing::WithParamInterface<int> {};
-class ObjectPoolSmallCountParamTest
-    : public ::testing::TestWithParam<int> {};
-class ObjectPoolLargeCountParamTest
-    : public ::testing::TestWithParam<int> {};
+
+class ObjectPoolLifoParamTest : public ObjectPoolTest,
+                                public ::testing::WithParamInterface<int> {};
+
+class ObjectPoolBatchParamTest : public ObjectPoolTest,
+                                 public ::testing::WithParamInterface<int> {};
+
+class ObjectPoolAlternateParamTest : public ObjectPoolTest,
+                                     public ::testing::WithParamInterface<int> {
+};
+
+class ObjectPoolSmallCountParamTest : public ::testing::TestWithParam<int> {};
+
+class ObjectPoolLargeCountParamTest : public ::testing::TestWithParam<int> {};
 
 static void ExpectPointerAligned(void *p) {
     ASSERT_NE(p, nullptr);
@@ -81,6 +85,7 @@ TEST_F(ObjectPoolTest, ReuseFreedObjects) {
     TestObject *obj1 = pool_.allocate();
     pool_.deallocate(obj1);
     TestObject *obj2 = pool_.allocate();
+
     // 应该复用刚释放的对象
     EXPECT_EQ(obj1, obj2);
     pool_.deallocate(obj2);
@@ -121,6 +126,7 @@ TEST(ObjectPoolSmallTest, SmallObjectHandling) {
 struct LargeObject {
     char data[1024];
     int value;
+
     LargeObject() : value(999) { std::memset(data, 0, sizeof(data)); }
 };
 

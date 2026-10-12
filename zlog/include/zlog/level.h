@@ -1,9 +1,7 @@
 /**
  * @file level.h
- * @brief level 定义。
  * @author hzh-betty
  */
-
 #ifndef ZLOG_LEVEL_H_
 #define ZLOG_LEVEL_H_
 #include <string>
@@ -12,7 +10,6 @@
  * @brief 日志等级模块
  * 定义日志等级枚举和相关转换接口
  */
-
 namespace zlog {
 /**
  * @brief 日志级别类
@@ -57,4 +54,4 @@ inline bool operator>=(LogLevel::value lhs, LogLevel::value rhs) {
 }
 } // namespace zlog
 
-#endif // ZLOG_LEVEL_H_
+#endif

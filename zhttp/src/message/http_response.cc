@@ -1,11 +1,13 @@
 #include "zhttp/http_response.h"
 #include <sstream>
 #include <stdexcept>
+
 namespace zhttp {
 void HttpResponse::check_mutable() const {
     if (committed_)
         throw std::logic_error("Response already committed");
 }
+
 HttpResponse &HttpResponse::status(int code) {
     check_mutable();
     if (code < 100 || code > 599)
@@ -13,11 +15,14 @@ HttpResponse &HttpResponse::status(int code) {
     line_.status_code = static_cast<std::uint16_t>(code);
     return *this;
 }
-HttpResponse &HttpResponse::header(std::string_view key, std::string_view value) {
+
+HttpResponse &HttpResponse::header(std::string_view key,
+                                   std::string_view value) {
     check_mutable();
     headers_.set(key, value);
     return *this;
 }
+
 HttpResponse &HttpResponse::append_vary(const std::string &value) {
     std::string token = value;
     trim(token);
@@ -32,6 +37,7 @@ HttpResponse &HttpResponse::append_vary(const std::string &value) {
     header("Vary", current.empty() ? token : current + ", " + token);
     return *this;
 }
+
 HttpResponse &HttpResponse::stream(StreamCallback callback,
                                    std::uint64_t length) {
     check_mutable();
@@ -39,6 +45,7 @@ HttpResponse &HttpResponse::stream(StreamCallback callback,
     chunked_ = length == HttpBody::UnknownLength;
     return body(std::move(source));
 }
+
 std::string HttpResponse::build_set_cookie_value(const std::string &name,
                                                  const std::string &value,
                                                  const CookieOptions &opt) {

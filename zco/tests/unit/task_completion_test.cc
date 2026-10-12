@@ -27,12 +27,13 @@ TEST(TaskCompletion, UnobservedTaskAndCompletedJoinNeedNoWaitAllocations) {
     auto result = TaskHandle(completion).join();
     count_allocations = false;
     EXPECT_TRUE(result);
-    // Only the shared completion itself, with no wait storage.
+
+    // 只分配共享完成状态，不分配等待存储。
     EXPECT_EQ(allocations, 1u);
 }
 
 TEST(TaskCompletion, FirstJoinAllocationFailureAllowsRetryAndCompletion) {
-    // The wait state and its registration node can each fail.
+    // 等待状态和注册节点的分配都可能独立失败。
     for (int allocation = 0; allocation < 2; ++allocation) {
         auto completion = std::make_shared<detail::Completion>(TaskId{1});
         TaskHandle handle(completion);
@@ -98,7 +99,8 @@ TEST(TaskCompletion, MultipleCoroutineJoinersObserveTheSameResult) {
                     ++observed;
                 }
             }));
-        // A pinned marker runs only after all preceding joiners have parked.
+
+        // 固定到工作线程的标记仅在此前所有等待者挂起后运行。
         auto marker = test::spawn(runtime.executor(1), [] {});
         EXPECT_TRUE(marker.join(test::soon()));
         EXPECT_EQ(entered, 16);

@@ -1,4 +1,6 @@
-#pragma once
+#ifndef ZLYNX_ZMALLOC_TESTS_SUPPORT_THREAD_OBJECTS_H_
+#define ZLYNX_ZMALLOC_TESTS_SUPPORT_THREAD_OBJECTS_H_
+
 #include "zmalloc/internal/thread_cache.h"
 #include <unordered_map>
 
@@ -50,3 +52,5 @@ class ThreadObjects {
     std::unordered_map<void *, size_t> live_;
 };
 } // namespace zmalloc::test
+
+#endif

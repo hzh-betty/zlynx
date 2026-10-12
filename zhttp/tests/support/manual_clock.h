@@ -1,4 +1,6 @@
-#pragma once
+#ifndef ZLYNX_ZHTTP_TESTS_SUPPORT_MANUAL_CLOCK_H_
+#define ZLYNX_ZHTTP_TESTS_SUPPORT_MANUAL_CLOCK_H_
+
 #include <chrono>
 #include <cstdint>
 
@@ -26,3 +28,5 @@ class ManualClock {
 };
 } // namespace test
 } // namespace zhttp
+
+#endif

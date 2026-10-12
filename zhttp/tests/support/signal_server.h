@@ -1,4 +1,6 @@
-#pragma once
+#ifndef ZLYNX_ZHTTP_TESTS_SUPPORT_SIGNAL_SERVER_H_
+#define ZLYNX_ZHTTP_TESTS_SUPPORT_SIGNAL_SERVER_H_
+
 #include "process.h"
 #include "server_fixture.h"
 #include "zhttp/http_server_builder.h"
@@ -27,7 +29,7 @@ inline int run_signal_server(uint16_t port) {
         builder.run();
         return 0;
     } catch (const std::exception &error) {
-        // Retry only a port reservation lost to another process.
+        // 仅在预留端口被其他进程占用时重试。
         return std::string(error.what()).find("Address already in use") !=
                        std::string::npos
                    ? 98
@@ -45,8 +47,8 @@ struct SignalServer {
 };
 
 inline SignalServer start_signal_server() {
-    // Builder requires a nonzero configured port. A lost reservation is retried
-    // explicitly; a full response identifies the child that actually bound it.
+    // 构建器要求配置非零端口；端口预留失效时显式重试，
+    // 通过完整响应确认实际绑定该端口的子进程。
     const auto overall = zco::Deadline::after(std::chrono::seconds(3));
     for (int attempt = 0;
          attempt < 8 && !overall.expired(zco::Deadline::Clock::now());
@@ -93,3 +95,5 @@ inline SignalServer start_signal_server() {
     throw std::runtime_error("signal server could not reserve a port");
 }
 } // namespace zhttp::test
+
+#endif

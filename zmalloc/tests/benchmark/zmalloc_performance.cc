@@ -1,15 +1,16 @@
 /**
- * @file performance.cc
- * @brief zmalloc performance driver (for perf analysis)
+ * @file zmalloc_performance.cc
+ * @brief zmalloc 性能测试程序，供 perf 分析使用。
  *
- * Example:
- *   ./zmalloc_performance --threads 8 --size 64 --allocs 200000 --rounds 20
+ * 使用示例：
+ * @code{.sh}
+ * ./zmalloc_performance --threads 8 --size 64 --allocs 200000 --rounds 20
+ * @endcode
  *
- * Notes:
+ * 说明：
  * - 仅测试 zmalloc/zfree 路径，适合 perf/callgrind 分析。
  * - --touch 会写入 1 字节，避免某些场景下分配后不触碰内存带来的偏差。
  */
-
 #include "zmalloc/zmalloc.h"
 
 #include <atomic>
@@ -205,8 +206,7 @@ static bool parse_args(int argc, char **argv, Options *opt) {
 #if defined(__GNUC__) || defined(__clang__)
 __attribute__((noinline))
 #endif
-static void
-do_not_optimize_ptr(void *p) {
+static void do_not_optimize_ptr(void *p) {
 #if defined(__GNUC__) || defined(__clang__)
     asm volatile("" : : "g"(p) : "memory");
 #else
@@ -217,9 +217,9 @@ do_not_optimize_ptr(void *p) {
 static long long run_zmalloc(const Options &opt) {
     std::atomic<uintptr_t> sink{0};
 
-    auto worker = [&](int /*tid*/) {
-        // Thread-local RNG to avoid contention and keep distributions
-        // independent.
+    auto worker = [&](int) {
+        // 每线程独立的随机数生成器避免状态竞争，
+        // 各线程分别维护生成器状态。
         std::random_device rd;
         std::mt19937_64 rng((static_cast<uint64_t>(rd()) << 32) ^
                             static_cast<uint64_t>(rd()));
@@ -259,7 +259,7 @@ static long long run_zmalloc(const Options &opt) {
     }
     auto end = Clock::now();
 
-    // prevent whole-program cleverness
+    // 保留写入副作用，避免全程序优化删除测试工作量
     do_not_optimize_ptr(
         reinterpret_cast<void *>(sink.load(std::memory_order_relaxed)));
 
@@ -283,7 +283,7 @@ int main(int argc, char **argv) {
               << ", touch=" << (opt.touch_memory ? "true" : "false")
               << std::endl;
 
-    // small warmup to stabilize caches / thread startup costs
+    // 短暂预热，降低缓存和线程启动开销对计时的影响
     {
         Options warm = opt;
         warm.rounds = 1;

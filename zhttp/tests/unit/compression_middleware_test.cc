@@ -365,6 +365,7 @@ TEST(CompressionMiddlewareTest, HonorsEncodingWeightsExclusionsAndWildcard) {
         const char *header;
         const char *encoding;
     };
+
     const Case cases[] = {
         {"gzip;q=0, br;q=0", ""},
         {"br;q=0.2, gzip;q=0.9", "gzip"},

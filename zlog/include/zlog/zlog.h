@@ -1,9 +1,7 @@
 /**
  * @file zlog.h
- * @brief zlog 定义。
  * @author hzh-betty
  */
-
 #ifndef ZLOG_ZLOG_H_
 #define ZLOG_ZLOG_H_
 #include "zlog/logger_builder.h"
@@ -13,11 +11,10 @@
 #include "zlog/logger.h"
 
 namespace zlog {
-// 1. 提供获取指定日志器的全局接口--避免用户使用单例对象创建
 /**
- * @brief 获取指定名称的日志器
- * @param name 日志器名称
- * @return 返回对应名称的日志器智能指针，如果不存在则返回空指针
+ * @brief 获取已注册的指定名称日志器。
+ * @return 共享持有对应日志器的智能指针。
+ * @throws std::runtime_error 指定名称尚未注册。
  */
 inline Logger::ptr get_logger(const std::string &name) {
     Logger::ptr logger = LoggerManager::get_instance().get_logger(name);
@@ -26,6 +23,7 @@ inline Logger::ptr get_logger(const std::string &name) {
     }
     return logger;
 }
+
 /**
  * @brief 获取root日志器
  * @return 返回root日志器的智能指针
@@ -54,4 +52,4 @@ inline Logger::ptr root_logger() {
 
 } // namespace zlog
 
-#endif // ZLOG_ZLOG_H_
+#endif

@@ -1,9 +1,7 @@
 /**
  * @file transfer_cache.cc
- * @brief TransferCache 实现
  * @author hzh-betty
  */
-
 #include "zmalloc/internal/transfer_cache.h"
 
 #include <algorithm>
@@ -22,11 +20,9 @@ TransferCache::TransferCache() {
     // 每规格以 64KiB 为目标，至少容纳一批，避免批量回收反复落到中心层。
     for (size_t size = 1; size <= MAX_BYTES;) {
         const auto &e = SizeClass::lookup(size);
-        entries_[e.index].capacity_ =
-            std::min<size_t>(TransferCacheEntry::kMaxCacheSlots,
-                             std::max<size_t>(
-                                 e.num_move,
-                                 TRANSFER_CACHE_BUDGET / e.align_size));
+        entries_[e.index].capacity_ = std::min<size_t>(
+            TransferCacheEntry::kMaxCacheSlots,
+            std::max<size_t>(e.num_move, TRANSFER_CACHE_BUDGET / e.align_size));
         size = e.align_size + 1;
     }
 }
@@ -118,6 +114,7 @@ size_t TransferCache::drain() {
     std::array<void *, MAX_BATCH_SIZE> objects;
     for (size_t size = 1; size <= MAX_BYTES;) {
         const auto &e = SizeClass::lookup(size);
+
         // 只处理初始数量的上限；并发补货不会让回收无限追赶生产者。
         size_t remaining = entries_[e.index].size();
         while (remaining != 0) {
@@ -126,12 +123,14 @@ size_t TransferCache::drain() {
             if (removed == 0) {
                 break;
             }
+
             // remove_range 已释放传输锁，再归还中心层，避免形成嵌套锁。
             for (size_t i = 1; i < removed; ++i) {
                 next_obj(objects[i - 1]) = objects[i];
             }
             next_obj(objects[removed - 1]) = nullptr;
-            CentralCache::get_instance().release_list_to_spans(objects[0], e.index);
+            CentralCache::get_instance().release_list_to_spans(objects[0],
+                                                               e.index);
             bytes += removed * e.align_size;
             remaining -= removed;
         }

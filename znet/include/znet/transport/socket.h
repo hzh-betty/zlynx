@@ -1,4 +1,5 @@
-#pragma once
+#ifndef ZLYNX_ZNET_INCLUDE_ZNET_TRANSPORT_SOCKET_H_
+#define ZLYNX_ZNET_INCLUDE_ZNET_TRANSPORT_SOCKET_H_
 
 #include "zco/deadline.h"
 #include "zco/io/descriptor.h"
@@ -16,13 +17,19 @@ struct Datagram {
     bool truncated;
 };
 
-// Unique, nonblocking OS socket. Movement requires no outstanding operations.
-// accept/connect/transfer require a zco task; close may run on any thread and
-// revokes pending waits. Native handles are borrowed, never manually closed.
+/**
+ * @brief 独占非阻塞套接字；移动对象时不得有尚未结束的操作。
+ * accept/connect/传输操作要求在 zco 任务中调用；close 可由任意线程调用，
+ * 并撤销未完成等待；原生句柄仅供借用，不得手动关闭。
+ */
 class Socket {
   public:
     static Result<Socket> create(int family, SocketKind kind);
-    static Result<Socket> adopt(int fd); // Consumes fd, including on failure.
+
+    /**
+     * @brief 校验并接管 fd 的所有权，失败时也负责关闭。
+     */
+    static Result<Socket> adopt(int fd);
     Socket(Socket &&) noexcept = default;
     Socket &operator=(Socket &&) noexcept = default;
     Socket(const Socket &) = delete;
@@ -69,7 +76,9 @@ class Socket {
     Socket(zco::io::Descriptor descriptor, int family, SocketKind kind)
         : descriptor_(std::move(descriptor)), family_(family), kind_(kind) {}
 
-    // Callers provide validated metadata and NONBLOCK/CLOEXEC descriptors.
+    /**
+     * @brief 调用方须提供已校验的元数据，以及设置 NONBLOCK/CLOEXEC 的描述符。
+     */
     static Result<Socket> from_descriptor(zco::io::Descriptor descriptor,
                                           int family, SocketKind kind);
     Result<Endpoint> endpoint(bool remote) const;
@@ -80,3 +89,5 @@ class Socket {
 
 Result<std::unique_ptr<ByteStream>> make_tcp_stream(Socket socket);
 } // namespace znet
+
+#endif

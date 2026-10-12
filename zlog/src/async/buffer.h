@@ -1,16 +1,13 @@
 /**
  * @file buffer.h
- * @brief buffer 定义。
  * @author hzh-betty
  */
-
 #ifndef ZLOG_INTERNAL_BUFFER_H_
 #define ZLOG_INTERNAL_BUFFER_H_
 #include <cstddef>
 
 namespace zlog {
 namespace detail {
-// 缓冲区大小常量定义
 static constexpr size_t kDefaultBufferSize =
     1024 * 1024 * 2; // 默认缓冲区大小：2MB
 static constexpr size_t kThresholdBufferSize =
@@ -19,85 +16,72 @@ static constexpr size_t kMaxBufferSize =
     1024 * 1024 * 512; // 最大缓冲区大小：512MB
 
 /**
- * @brief 双缓冲区类
- * 用于异步日志系统的缓冲区管理，支持动态扩容
- * 之所以不用 std::vector 是因为频繁的构造与析构调用__memset_avx2_unaligned_erms
+ * @brief 独占连续字节存储的追加缓冲区，为异步日志批量交换提供基础。
+ *
+ * 只跟踪已写入长度，不解析记录；双缓冲关系由 AsyncLooper 管理。
+ * 本类不加锁，扩容上限为 kMaxBufferSize；重置保留已分配容量。
  */
 class alignas(64) Buffer {
   public:
-    /**
-     * @brief 构造函数
-     * 初始化缓冲区为默认大小
-     */
     Buffer();
 
     // 缓冲区独占底层内存，禁止浅拷贝；交换通过 swap 显式完成。
     Buffer(const Buffer &) = delete;
     Buffer &operator=(const Buffer &) = delete;
 
-
-    /**
-     * @brief 析构函数
-     * 释放缓冲区内存
-     */
     ~Buffer();
 
     /**
-     * @brief 向缓冲区写入数据
-     * @param data 数据指针
-     * @param len 数据长度
+     * @brief 复制并追加原始字节，保留内嵌 NUL；必要时扩容。
+     *
+     * @param data 输入存储；len 为 0 时允许为空且不做操作。
+     * @param len 待追加字节数。
+     * @pre 非零长度时，data 指向至少 len 个可读字节，不与待写区域重叠；
+     * 可能扩容时不得借用本缓冲区的存储。
+     * @throws std::invalid_argument 非零长度时 data 为空。
+     * @throws std::length_error 追加后超过容量上限。
+     * @throws std::bad_alloc 扩容分配失败。
      */
     void push(const char *data, size_t len);
 
-    /** @brief 为一次完整写入预留空间，失败时不改变已有数据。 */
+    /**
+     * @brief 为额外 len 个字节预留空间，不改变已写入长度。
+     *
+     * 失败时保留已有数据；成功扩容可能使此前借用的指针失效。
+     * @throws std::length_error 所需空间超过容量上限。
+     * @throws std::bad_alloc 扩容分配失败。
+     */
     void reserve(size_t len);
 
     /**
-     * @brief 返回可读数据的起始位置
-     * @return 可读数据的指针
+     * @brief 借用已写入数据的起始地址，可读长度为 readable_size()。
+     *
+     * 扩容或销毁后指针失效；swap 后存储归另一缓冲区所有，reset
+     * 后原内容不再属于可读范围。
      */
     const char *begin() const;
 
-    /**
-     * @brief 返回可写数据的长度
-     * @return 可写空间大小
-     */
     size_t writable_size() const;
 
-    /**
-     * @brief 返回可读数据的长度
-     * @return 可读数据大小
-     */
     size_t readable_size() const;
 
     /**
-     * @brief 重置读写位置，初始化缓冲区
+     * @brief 清空可读范围但保留存储，不覆盖原字节。
      */
     void reset();
 
     /**
-     * @brief 与另一个缓冲区交换内容
-     * @param buffer 要交换的缓冲区
+     * @brief 交换存储所有权、已写入长度和容量，不复制底层字节。
      */
     void swap(Buffer &buffer) noexcept;
 
-    /**
-     * @brief 判断缓冲区是否为空
-     * @return 空返回true，否则返回false
-     */
     bool empty() const;
 
     /**
-     * @brief 检查是否可以容纳指定长度的数据而不超过最大缓冲区大小
-     * @param len 需要的空间大小
-     * @return 可以容纳返回true，否则返回false
+     * @brief 判断追加 len 个字节是否仍在容量上限内，不执行分配。
      */
     bool can_accommodate(size_t len) const;
 
-    /**
-     * @brief 获取缓冲区容量
-     * @return 缓冲区总大小
-     */
     size_t capacity() const { return capacity_; }
 
   private:
@@ -115,11 +99,12 @@ class alignas(64) Buffer {
     size_t calculate_new_size(size_t len) const;
 
   private:
-    char *data_;        // 缓冲区指针
-    size_t writer_idx_; // 当前可写数据的下标 (热路径)
-    size_t capacity_;   // 缓冲区总容量
+    // [0, writer_idx_) 为有效字节，剩余容量尚未写入；所有者负责串行访问。
+    char *data_;
+    size_t writer_idx_;
+    size_t capacity_;
 };
 } // namespace detail
 } // namespace zlog
 
-#endif // ZLOG_INTERNAL_BUFFER_H_
+#endif

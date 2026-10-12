@@ -14,7 +14,7 @@ using namespace zlog;
 namespace {
 
 bool dirExists(const std::string &path) {
-    struct stat st {};
+    struct stat st{};
     return stat(path.c_str(), &st) == 0 && S_ISDIR(st.st_mode);
 }
 
@@ -69,6 +69,7 @@ TEST(UtilTest, CreateDirectoryWithoutSeparatorCreatesLeafDir) {
             std::filesystem::remove_all(path, error);
         }
     } cleanup{dirname};
+
     File::create_directory(dirname);
 
     EXPECT_TRUE(dirExists(dirname));

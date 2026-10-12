@@ -1,4 +1,5 @@
 #include "protocol/websocket/websocket_message_assembler.h"
+
 namespace zhttp {
 bool WebSocketMessageAssembler::assemble(
     WebSocketFrameEvent frame, std::vector<WebSocketFrameEvent> &messages,

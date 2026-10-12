@@ -2,7 +2,6 @@
  * @file benchmark.cc
  * @brief zmalloc 性能基准测试
  */
-
 #include "zmalloc/zmalloc.h"
 
 #include <chrono>
@@ -23,7 +22,6 @@ void benchmark_single_thread(size_t alloc_size, size_t num_allocs,
               << ", allocs=" << num_allocs << ", rounds=" << rounds
               << std::endl;
 
-    // zmalloc
     auto start = Clock::now();
     for (size_t r = 0; r < rounds; ++r) {
         std::vector<void *> ptrs;
@@ -39,7 +37,6 @@ void benchmark_single_thread(size_t alloc_size, size_t num_allocs,
     auto zmalloc_time =
         std::chrono::duration_cast<Milliseconds>(end - start).count();
 
-    // malloc
     start = Clock::now();
     for (size_t r = 0; r < rounds; ++r) {
         std::vector<void *> ptrs;
@@ -91,7 +88,6 @@ void benchmark_multi_thread(size_t alloc_size, size_t num_allocs,
         }
     };
 
-    // zmalloc
     auto start = Clock::now();
     {
         std::vector<std::thread> threads;
@@ -106,7 +102,6 @@ void benchmark_multi_thread(size_t alloc_size, size_t num_allocs,
     auto zmalloc_time =
         std::chrono::duration_cast<Milliseconds>(end - start).count();
 
-    // malloc
     start = Clock::now();
     {
         std::vector<std::thread> threads;
@@ -147,7 +142,6 @@ void benchmark_random_single_thread(size_t min_size, size_t max_size,
         }
     }
 
-    // zmalloc
     auto start = Clock::now();
     for (size_t r = 0; r < rounds; ++r) {
         std::vector<void *> ptrs;
@@ -163,7 +157,6 @@ void benchmark_random_single_thread(size_t min_size, size_t max_size,
     auto zmalloc_time =
         std::chrono::duration_cast<Milliseconds>(end - start).count();
 
-    // malloc
     start = Clock::now();
     for (size_t r = 0; r < rounds; ++r) {
         std::vector<void *> ptrs;
@@ -193,7 +186,7 @@ void benchmark_random_multi_thread(size_t min_size, size_t max_size,
               << "," << max_size << "]" << ", allocs=" << num_allocs
               << ", threads=" << thread_count << std::endl;
 
-    // Pre-generate per-thread size sequences once; reuse for both allocators.
+    // 预先生成每线程的分配尺寸序列，让两个分配器使用相同输入。
     std::vector<std::vector<size_t>> sizes_per_thread(
         static_cast<size_t>(thread_count));
     {
@@ -234,7 +227,6 @@ void benchmark_random_multi_thread(size_t min_size, size_t max_size,
         }
     };
 
-    // zmalloc
     auto start = Clock::now();
     {
         std::vector<std::thread> threads;
@@ -250,7 +242,6 @@ void benchmark_random_multi_thread(size_t min_size, size_t max_size,
     auto zmalloc_time =
         std::chrono::duration_cast<Milliseconds>(end - start).count();
 
-    // malloc
     start = Clock::now();
     {
         std::vector<std::thread> threads;

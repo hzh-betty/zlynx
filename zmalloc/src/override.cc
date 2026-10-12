@@ -1,9 +1,7 @@
 /**
  * @file override.cc
- * @brief override 实现。
  * @author hzh-betty
  */
-
 #include "zmalloc/internal/page_cache.h"
 #include "zmalloc/internal/system_alloc.h"
 #include "zmalloc/zmalloc.h"
@@ -31,7 +29,6 @@ namespace {
 // - 初始化早期或递归进入分配器时，先走 bootstrap allocator 保底。
 // - 正常阶段优先走 zmalloc 管理路径。
 // - 对非 zmalloc 指针提供保守降级（glibc free/realloc）。
-
 #if defined(__GLIBC__)
 extern "C" void __libc_free(void *ptr) noexcept;
 extern "C" void *__libc_realloc(void *ptr, size_t size) noexcept;
@@ -93,6 +90,7 @@ void *bootstrap_allocate(size_t size) noexcept {
         errno = ENOMEM;
         return nullptr;
     }
+
     // user_ptr 紧跟在元信息之后，避免额外地址映射结构。
     alloc->user_ptr = alloc + 1;
     alloc->user_size = size;
@@ -215,6 +213,7 @@ void ensure_allocator_ready() {
     }
 
     tls_initializing_allocator = true;
+
     // 热身一次主路径，确保后续重入判断可依赖 ready 标记。
     try {
         void *warm = zmalloc(8);
@@ -287,6 +286,7 @@ Span *managed_span(void *ptr) {
     if (span != nullptr) {
         return validate_managed_span(ptr, span);
     }
+
     // 外部地址及直接系统映射没有上述保证，查询及字段检查须与回收串行化。
     return managed_span_slow(ptr);
 }
@@ -382,6 +382,7 @@ void *aligned_allocate_bytes(size_t size, size_t alignment) noexcept {
     uintptr_t start = reinterpret_cast<uintptr_t>(raw) + header_size;
     uintptr_t aligned =
         (start + alignment - 1) & ~(static_cast<uintptr_t>(alignment) - 1);
+
     // 在对齐地址前塞回溯头，free/realloc 可从用户指针逆向找回 raw。
     auto *header = reinterpret_cast<AlignedHeader *>(aligned - header_size);
     header->magic = kAlignedAllocMagic;
@@ -427,7 +428,8 @@ void deallocate_bytes(void *ptr) noexcept {
         return;
     }
 
-    if (!ready && !tls_initializing_allocator && tls_allocator_call_depth == 0) {
+    if (!ready && !tls_initializing_allocator &&
+        tls_allocator_call_depth == 0) {
         if (Span *span = managed_span(ptr)) {
             AllocatorCallGuard guard;
             deallocate_managed(ptr, span);
@@ -649,6 +651,7 @@ extern "C" void *pvalloc(size_t size) noexcept {
         errno = ENOMEM;
         return nullptr;
     }
+
     // pvalloc 语义：按页向上取整后再返回页对齐地址。
     rounded &= ~(zmalloc::PAGE_SIZE - 1);
     if (rounded == 0) {

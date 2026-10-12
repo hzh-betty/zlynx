@@ -11,6 +11,7 @@ std::atomic<bool> fail_query{false};
 } // namespace
 
 extern "C" int __real_fcntl(int, int, ...);
+
 extern "C" int __wrap_fcntl(int fd, int command, ...) {
     if (command == F_GETFL) {
         ++queries;
@@ -19,7 +20,8 @@ extern "C" int __wrap_fcntl(int fd, int command, ...) {
             return -1;
         }
     }
-    if (command == F_SETFL || command == F_DUPFD_CLOEXEC || command == F_DUPFD) {
+    if (command == F_SETFL || command == F_DUPFD_CLOEXEC ||
+        command == F_DUPFD) {
         va_list arguments;
         va_start(arguments, command);
         int argument = va_arg(arguments, int);

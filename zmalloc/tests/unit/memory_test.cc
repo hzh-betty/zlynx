@@ -20,19 +20,23 @@ using ManagedMemory = std::unique_ptr<unsigned char, decltype(&zmalloc::zfree)>;
 class MemoryTest : public ::testing::Test {
   protected:
     void SetUp() override { zmalloc::release_memory(); }
+
     void TearDown() override { zmalloc::release_memory(); }
 };
 
 TEST_F(MemoryTest, DrainReturnsRealObjectsFromAllSizeClassesToCentral) {
     auto &transfer = zmalloc::TransferCache::get_instance();
     size_t bytes = 0;
+
     // 使用中心层实际分配的对象，验证 drain 的所有权转交，不使用假指针。
     for (size_t size = 1; size <= zmalloc::MAX_BYTES;) {
         const auto &e = zmalloc::SizeClass::lookup(size);
         void *start = nullptr, *end = nullptr;
-        const size_t got = zmalloc::CentralCache::get_instance().fetch_range_obj(
-            start, end, 2, e.align_size, e.index);
-        void *objects[2] = {start, got > 1 ? zmalloc::next_obj(start) : nullptr};
+        const size_t got =
+            zmalloc::CentralCache::get_instance().fetch_range_obj(
+                start, end, 2, e.align_size, e.index);
+        void *objects[2] = {start,
+                            got > 1 ? zmalloc::next_obj(start) : nullptr};
         ASSERT_EQ(transfer.insert_range(e.index, objects, got), got);
         bytes += got * e.align_size;
         size = e.align_size + 1;
@@ -50,7 +54,8 @@ TEST_F(MemoryTest, FullReleaseDrainsCachesAndCanBeRepeatedAfterReuse) {
         ptr = zmalloc::zmalloc(size);
         std::memset(ptr, 0x5a, size);
     }
-    for (void *ptr : objects) zmalloc::zfree(ptr);
+    for (void *ptr : objects)
+        zmalloc::zfree(ptr);
     const auto before = zmalloc::memory_stats();
     EXPECT_GT(before.thread_cache_bytes, 0u);
     EXPECT_GT(before.transfer_cache_bytes, 0u);
@@ -61,7 +66,8 @@ TEST_F(MemoryTest, FullReleaseDrainsCachesAndCanBeRepeatedAfterReuse) {
     EXPECT_EQ(after.thread_cache_bytes, 0u);
     EXPECT_EQ(after.transfer_cache_bytes, 0u);
     EXPECT_EQ(after.page_cache_free_bytes, after.page_cache_released_bytes);
-    EXPECT_EQ(after.total_released_bytes - before.total_released_bytes, released);
+    EXPECT_EQ(after.total_released_bytes - before.total_released_bytes,
+              released);
     EXPECT_EQ(after.page_cache_mapped_bytes, before.page_cache_mapped_bytes);
     EXPECT_EQ(zmalloc::release_memory(), 0u);
 
@@ -125,6 +131,7 @@ TEST_F(MemoryTest, UncachedLargeAllocationAccountsNewMappingAndUnmapping) {
 
 TEST_F(MemoryTest, CachedLargeAllocationReusesMappingAfterRelease) {
     const size_t size = 2 * 1024 * 1024;
+
     // 先取得并归还一个已知尺寸的块，建立确定的复用前置条件。
     ManagedMemory large(static_cast<unsigned char *>(zmalloc::zmalloc(size)),
                         &zmalloc::zfree);
@@ -170,7 +177,8 @@ TEST_F(MemoryTest, ReleaseDoesNotAccessAnotherThreadsLocalCache) {
         zmalloc::zfree(ptr);
         const size_t cached = zmalloc::get_thread_cache()->cached_bytes();
         ready.store(true, std::memory_order_release);
-        while (!resume.load(std::memory_order_acquire)) std::this_thread::yield();
+        while (!resume.load(std::memory_order_acquire))
+            std::this_thread::yield();
         intact.store(cached != 0 &&
                          zmalloc::get_thread_cache()->cached_bytes() == cached,
                      std::memory_order_relaxed);
@@ -178,7 +186,8 @@ TEST_F(MemoryTest, ReleaseDoesNotAccessAnotherThreadsLocalCache) {
         std::memset(ptr, 0x5a, 64);
         zmalloc::zfree(ptr);
     });
-    while (!ready.load(std::memory_order_acquire)) std::this_thread::yield();
+    while (!ready.load(std::memory_order_acquire))
+        std::this_thread::yield();
     zmalloc::release_memory();
     EXPECT_EQ(zmalloc::memory_stats().thread_cache_bytes, 0u);
     resume.store(true, std::memory_order_release);
@@ -195,7 +204,8 @@ TEST_F(MemoryTest, ConcurrentReleasePreservesActiveObjects) {
     for (size_t t = 0; t < workers; ++t) {
         threads.emplace_back([&, t] {
             ready.fetch_add(1, std::memory_order_release);
-            while (!go.load(std::memory_order_acquire)) std::this_thread::yield();
+            while (!go.load(std::memory_order_acquire))
+                std::this_thread::yield();
             for (size_t round = 0; round < 500; ++round) {
                 unsigned char *objects[16];
                 const size_t size = sizes[(round + t) % 6];
@@ -206,20 +216,24 @@ TEST_F(MemoryTest, ConcurrentReleasePreservesActiveObjects) {
                 std::this_thread::yield();
                 for (auto *ptr : objects) {
                     for (size_t i = 0; i < size; i += 4096) {
-                        if (ptr[i] != t + 1) intact.store(false, std::memory_order_relaxed);
+                        if (ptr[i] != t + 1)
+                            intact.store(false, std::memory_order_relaxed);
                     }
-                    if (ptr[size - 1] != t + 1) intact.store(false, std::memory_order_relaxed);
+                    if (ptr[size - 1] != t + 1)
+                        intact.store(false, std::memory_order_relaxed);
                     zmalloc::zfree(ptr);
                 }
             }
             remaining.fetch_sub(1, std::memory_order_release);
         });
     }
+
     // 两个回收者同时运行，验证共享排空和页回收之间的同步。
     for (size_t t = 0; t < 2; ++t) {
         threads.emplace_back([&] {
             ready.fetch_add(1, std::memory_order_release);
-            while (!go.load(std::memory_order_acquire)) std::this_thread::yield();
+            while (!go.load(std::memory_order_acquire))
+                std::this_thread::yield();
             while (remaining.load(std::memory_order_acquire) != 0) {
                 zmalloc::release_memory();
                 zmalloc::memory_stats();
@@ -227,9 +241,11 @@ TEST_F(MemoryTest, ConcurrentReleasePreservesActiveObjects) {
             }
         });
     }
-    while (ready.load(std::memory_order_acquire) != workers + 2) std::this_thread::yield();
+    while (ready.load(std::memory_order_acquire) != workers + 2)
+        std::this_thread::yield();
     go.store(true, std::memory_order_release);
-    for (auto &thread : threads) thread.join();
+    for (auto &thread : threads)
+        thread.join();
     EXPECT_TRUE(intact.load(std::memory_order_relaxed));
     zmalloc::release_memory();
     EXPECT_EQ(zmalloc::memory_stats().transfer_cache_bytes, 0u);

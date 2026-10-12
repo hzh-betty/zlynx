@@ -1,4 +1,6 @@
-#pragma once
+#ifndef ZLYNX_ZCO_SRC_IO_LINUX_EPOLL_REACTOR_H_
+#define ZLYNX_ZCO_SRC_IO_LINUX_EPOLL_REACTOR_H_
+
 #include "io/reactor.h"
 #include <map>
 #include <mutex>
@@ -27,3 +29,5 @@ class EpollReactor final : public Reactor {
 };
 } // namespace detail
 } // namespace zco
+
+#endif

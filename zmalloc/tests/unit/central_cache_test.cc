@@ -158,6 +158,7 @@ class CentralCacheTest : public ::testing::Test {
     zmalloc::PageCache &pc = zmalloc::PageCache::get_instance();
     CentralObjectOwners owners{cc};
 };
+
 class CentralCacheFetchReleaseParamTest
     : public CentralCacheTest,
       public ::testing::WithParamInterface<std::tuple<size_t, size_t>> {};
@@ -239,6 +240,7 @@ TEST_F(CentralCacheTest, SpanSplitDoesNotCreatePartialTailObject) {
 
 TEST_F(CentralCacheTest, EmptyNonEmptyListsInitiallySmall) {
     const size_t index = zmalloc::SizeClass::index_fast(64);
+
     // 刚开始不要求为空，但至少结构可访问。
     EXPECT_LE(
         CountSpans(zmalloc::CacheTestAccess::buckets(cc)[index].nonempty) +
@@ -443,23 +445,23 @@ TEST_P(CentralCacheFetchReleaseParamTest, FetchAndReleaseSizeBatchPair) {
 
 INSTANTIATE_TEST_SUITE_P(
     SizeBatchPairs, CentralCacheFetchReleaseParamTest,
-    ::testing::Values(
-        std::make_tuple(8u, 1u), std::make_tuple(8u, 8u),
-        std::make_tuple(8u, 64u), std::make_tuple(16u, 1u),
-        std::make_tuple(16u, 32u), std::make_tuple(32u, 1u),
-        std::make_tuple(32u, 32u), std::make_tuple(64u, 1u),
-        std::make_tuple(64u, 2u), std::make_tuple(64u, 8u),
-        std::make_tuple(64u, 32u), std::make_tuple(64u, 64u),
-        std::make_tuple(96u, 8u), std::make_tuple(128u, 1u),
-        std::make_tuple(128u, 16u), std::make_tuple(256u, 1u),
-        std::make_tuple(256u, 8u), std::make_tuple(512u, 1u),
-        std::make_tuple(512u, 8u), std::make_tuple(1024u, 1u),
-        std::make_tuple(1024u, 4u), std::make_tuple(2048u, 1u),
-        std::make_tuple(2048u, 2u), std::make_tuple(4096u, 1u),
-        std::make_tuple(4096u, 2u), std::make_tuple(8192u, 1u),
-        std::make_tuple(8192u, 2u), std::make_tuple(65536u, 1u),
-        std::make_tuple(65536u, 2u), std::make_tuple(131072u, 1u),
-        std::make_tuple(131072u, 2u), std::make_tuple(262144u, 1u)));
+    ::testing::Values(std::make_tuple(8u, 1u), std::make_tuple(8u, 8u),
+                      std::make_tuple(8u, 64u), std::make_tuple(16u, 1u),
+                      std::make_tuple(16u, 32u), std::make_tuple(32u, 1u),
+                      std::make_tuple(32u, 32u), std::make_tuple(64u, 1u),
+                      std::make_tuple(64u, 2u), std::make_tuple(64u, 8u),
+                      std::make_tuple(64u, 32u), std::make_tuple(64u, 64u),
+                      std::make_tuple(96u, 8u), std::make_tuple(128u, 1u),
+                      std::make_tuple(128u, 16u), std::make_tuple(256u, 1u),
+                      std::make_tuple(256u, 8u), std::make_tuple(512u, 1u),
+                      std::make_tuple(512u, 8u), std::make_tuple(1024u, 1u),
+                      std::make_tuple(1024u, 4u), std::make_tuple(2048u, 1u),
+                      std::make_tuple(2048u, 2u), std::make_tuple(4096u, 1u),
+                      std::make_tuple(4096u, 2u), std::make_tuple(8192u, 1u),
+                      std::make_tuple(8192u, 2u), std::make_tuple(65536u, 1u),
+                      std::make_tuple(65536u, 2u), std::make_tuple(131072u, 1u),
+                      std::make_tuple(131072u, 2u),
+                      std::make_tuple(262144u, 1u)));
 
 TEST_F(CentralCacheTest, FetchTwiceConcatThenRelease) {
     FetchTwiceConcatAndRelease(cc, 8, 8, 64);
@@ -478,6 +480,7 @@ TEST_F(CentralCacheTest, ReleaseReversedChainDoesNotCrash) {
     ASSERT_EQ(zmalloc::next_obj(e), nullptr);
     void *rev_end = nullptr;
     ReverseChain(s, rev_end);
+
     // 反转后仍应是合法单链表
     ASSERT_EQ(CountChain(s), got);
     owners.release_list_to_spans(s, zmalloc::SizeClass::index_fast(64));

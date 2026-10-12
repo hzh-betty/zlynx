@@ -1,5 +1,5 @@
-#include "protocol/http/response_encoder.h"
 #include "../support/request_builder.h"
+#include "protocol/http/response_encoder.h"
 #include "zhttp/http_response.h"
 
 #include <gtest/gtest.h>
@@ -96,12 +96,16 @@ TEST(HttpResponseTest, Serialize) {
 
     // 检查状态行
     EXPECT_NE(serialized.find("HTTP/1.1 200 OK"), std::string::npos);
+
     // 检查 Content-Type
     EXPECT_NE(serialized.find("Content-Type: text/plain"), std::string::npos);
+
     // 检查 Content-Length
     EXPECT_NE(serialized.find("Content-Length: 5"), std::string::npos);
+
     // 检查 Connection
     EXPECT_NE(serialized.find("Connection: keep-alive"), std::string::npos);
+
     // 检查 body
     EXPECT_NE(serialized.find("\r\n\r\nHello"), std::string::npos);
 }

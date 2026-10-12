@@ -27,6 +27,7 @@ void parse_urlencoded_params(std::string_view text, RequestParams &params) {
 
 namespace detail {
 ParsedRequestBody::ParsedRequestBody(const std::string &body) : body_(&body) {}
+
 ParsedRequestBody::~ParsedRequestBody() = default;
 
 bool ParsedRequestBody::is_json(std::string_view content_type) {

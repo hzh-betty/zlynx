@@ -1,10 +1,8 @@
 /**
- * compression_middleware.h
- * compression_middleware 定义。
+ * @file compression_middleware.h
  *
  * @author hzh-betty
  */
-
 #ifndef ZHTTP_COMPRESSION_MIDDLEWARE_H_
 #define ZHTTP_COMPRESSION_MIDDLEWARE_H_
 
@@ -18,7 +16,7 @@ namespace zhttp {
 namespace mid {
 
 /**
- * 响应压缩中间件（动态压缩）
+ * @brief 响应压缩中间件（动态压缩）
  *
  * 该中间件在响应阶段根据客户端 `Accept-Encoding` 对响应体进行动态压缩。
  * - 按客户端 q 权重选择编码，同权重时优先 `br`，其次 `gzip`；
@@ -28,7 +26,7 @@ namespace mid {
 class CompressionMiddleware : public Middleware {
   public:
     /**
-     * 压缩中间件配置项
+     * @brief 压缩中间件配置项
      */
     struct Options {
         Options()
@@ -48,6 +46,7 @@ class CompressionMiddleware : public Middleware {
 
         // gzip 压缩等级（1~9），越大压缩率更高但 CPU 开销更大。
         int gzip_level;
+
         // brotli 质量等级（0~11），越大压缩率更高但 CPU 开销更大。
         int brotli_quality;
 
@@ -58,17 +57,16 @@ class CompressionMiddleware : public Middleware {
         std::vector<std::string> compressible_content_types;
     };
 
-    /** 设置编码、阈值及压缩等级。 */
     explicit CompressionMiddleware(Options options = Options());
 
     /**
-     * 后置处理：执行响应压缩
+     * @brief 后置处理：执行响应压缩
      */
     void after(HttpContext &context) override;
 
   private:
     /**
-     * 判断是否可以压缩响应
+     * @brief 判断是否可以压缩响应
      *
      * 该函数会综合检查：
      * - 请求方法是否允许压缩（例如 HEAD 不压缩）；
@@ -80,7 +78,7 @@ class CompressionMiddleware : public Middleware {
     bool can_compress(HttpContext &request, const HttpResponse &response) const;
 
     /**
-     * 判断响应内容类型是否可压缩
+     * @brief 判断响应内容类型是否可压缩
      *
      * 支持两种规则：
      * - 以 '/' 结尾的前缀规则（如 text/）；
@@ -89,7 +87,7 @@ class CompressionMiddleware : public Middleware {
     bool is_compressible_content_type(const HttpResponse &response) const;
 
     /**
-     * 使用 gzip 压缩数据
+     * @brief 使用 gzip 压缩数据
      *
      * @param input 待压缩的输入数据
      * @param output 压缩后的输出数据
@@ -99,7 +97,7 @@ class CompressionMiddleware : public Middleware {
                             std::string &output) const;
 
     /**
-     * 使用 brotli 压缩数据
+     * @brief 使用 brotli 压缩数据
      *
      * @param input 待压缩的输入数据
      * @param output 压缩后的输出数据
@@ -114,4 +112,4 @@ class CompressionMiddleware : public Middleware {
 } // namespace mid
 } // namespace zhttp
 
-#endif // ZHTTP_COMPRESSION_MIDDLEWARE_H_
+#endif

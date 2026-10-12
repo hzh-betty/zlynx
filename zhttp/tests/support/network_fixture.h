@@ -1,15 +1,16 @@
 #ifndef ZHTTP_TESTS_NETWORK_FIXTURE_H_
 #define ZHTTP_TESTS_NETWORK_FIXTURE_H_
-#include "request_builder.h"
-#include "zhttp/http_server.h"
 #include "protocol/http/http_request_parser.h"
-#include "protocol/websocket/websocket_frame_parser.h"
-#include "protocol/websocket/websocket_protocol_handler.h"
-#include "protocol/websocket/websocket_handshake.h"
-#include "protocol/websocket/websocket_message_assembler.h"
 #include "protocol/http/http_response_writer.h"
 #include "protocol/http/response_encoder.h"
+#include "protocol/websocket/websocket_frame_parser.h"
+#include "protocol/websocket/websocket_handshake.h"
+#include "protocol/websocket/websocket_message_assembler.h"
+#include "protocol/websocket/websocket_protocol_handler.h"
+#include "request_builder.h"
+#include "zhttp/http_server.h"
 #include "znet/byte_buffer.h"
+
 namespace zhttp {
 inline bool run_server(HttpServer &server, const TestContext::ptr &context,
                        HttpResponse &response) {
@@ -18,18 +19,22 @@ inline bool run_server(HttpServer &server, const TestContext::ptr &context,
     response = std::move(context->response());
     return found;
 }
+
 inline ParseResult parse_request(HttpRequestParser &parser,
                                  znet::ByteBuffer *buffer) {
     auto result = parser.parse(buffer);
     return result == ParseResult::HEADERS_READY ? parser.parse(buffer) : result;
 }
-// Existing frame cases exercise both the newly separated parser and assembler.
+
+// 现有帧测试同时覆盖帧解析器和消息组装器。
 class TestWebSocketParser {
   public:
     explicit TestWebSocketParser(size_t limit = kDefaultWebSocketMaxMessageSize)
         : max_message_size_(limit), assembler_(limit) {}
-    bool parse(znet::ByteBuffer *buffer, std::vector<WebSocketFrameEvent> *events,
-               uint16_t *code, std::string *error) {
+
+    bool parse(znet::ByteBuffer *buffer,
+               std::vector<WebSocketFrameEvent> *events, uint16_t *code,
+               std::string *error) {
         if (!buffer || !events || !code || !error)
             return false;
         events->clear();

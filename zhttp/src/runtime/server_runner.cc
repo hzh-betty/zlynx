@@ -4,16 +4,16 @@
 #include "zhttp/runtime/daemon.h"
 #include "zhttp/server_config.h"
 #include <chrono>
+#include <fmt/format.h>
 #include <stdexcept>
 #include <thread>
 #include <utility>
-#include <fmt/format.h>
 
 namespace zhttp {
 namespace detail {
 void run_server(const ServerConfig &config, const ServerFactory &factory) {
     std::string failure;
-    auto serve = [&factory, &failure](int /*argc*/, char ** /*argv*/) -> int {
+    auto serve = [&factory, &failure](int, char **) -> int {
         try {
             // 在 daemon 回调中创建服务，保证守护模式下资源在 fork 后初始化。
             auto server = factory();
@@ -26,7 +26,8 @@ void run_server(const ServerConfig &config, const ServerFactory &factory) {
                 std::this_thread::sleep_for(std::chrono::seconds(1));
             }
 
-            const bool stopped = Daemon::should_stop() || server->stop_requested();
+            const bool stopped =
+                Daemon::should_stop() || server->stop_requested();
             server->stop();
             if (!stopped)
                 failure = "HTTP listener stopped unexpectedly";
@@ -42,8 +43,7 @@ void run_server(const ServerConfig &config, const ServerFactory &factory) {
         }
     };
 
-    int rc =
-        Daemon::start_daemon(0, nullptr, std::move(serve), config.daemon);
+    int rc = Daemon::start_daemon(0, nullptr, std::move(serve), config.daemon);
     if (rc != 0) {
         throw std::runtime_error(failure + "; server exited with code " +
                                  std::to_string(rc));

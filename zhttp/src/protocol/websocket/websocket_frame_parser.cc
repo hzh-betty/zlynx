@@ -1,6 +1,7 @@
 #include "protocol/websocket/websocket_frame_parser.h"
 #include "znet/byte_buffer.h"
 #include <limits>
+
 namespace zhttp {
 namespace {
 bool is_known_opcode(uint8_t opcode) {
@@ -35,6 +36,7 @@ uint64_t read_u64_be(const uint8_t *data) {
 }
 
 } // namespace
+
 bool parse_websocket_frame(znet::ByteBuffer *buffer,
                            std::vector<WebSocketFrameEvent> *events,
                            uint16_t *close_code, std::string *error,
@@ -189,6 +191,7 @@ bool parse_websocket_frame(znet::ByteBuffer *buffer,
                 }
 
                 event.payload = payload.substr(2);
+
                 // 关闭原因按规范必须是 UTF-8 字符串。
                 if (!event.payload.empty() &&
                     !valid_websocket_utf8(event.payload)) {

@@ -1,4 +1,5 @@
-#pragma once
+#ifndef ZLYNX_ZNET_INCLUDE_ZNET_ERROR_H_
+#define ZLYNX_ZNET_INCLUDE_ZNET_ERROR_H_
 
 #include <cstddef>
 #include <optional>
@@ -28,8 +29,10 @@ Error make_error(ErrorKind kind, std::errc code, std::string operation,
 Error io_error(std::string operation, int code);
 Error runtime_error(std::string operation, std::error_code code);
 
-// Runtime failures are values; accessing the wrong alternative is a contract
-// violation. No errno or optional output arguments form part of this API.
+/**
+ * @brief 运行时失败通过返回值报告；先检查结果，再访问对应的值或错误，
+ * 访问错误分支会抛出异常；调用方无需读取 errno 或可选输出参数。
+ */
 template <class T> class [[nodiscard]] Result {
   public:
     Result(T value) : storage_(std::move(value)) {}
@@ -81,8 +84,10 @@ template <> class [[nodiscard]] Result<void> {
     std::optional<Error> error_;
 };
 
-// bytes remains meaningful on failure. eof is reserved for stream EOF, never
-// a zero-length datagram or a zero-length request.
+/**
+ * @brief bytes 在失败时仍表示已传输进度；eof 仅表示流读取结束，
+ * 不表示零长度数据报或零长度请求。
+ */
 struct [[nodiscard]] Transfer {
     size_t bytes = 0;
     Error error;
@@ -91,3 +96,5 @@ struct [[nodiscard]] Transfer {
     explicit operator bool() const { return !error; }
 };
 } // namespace znet
+
+#endif

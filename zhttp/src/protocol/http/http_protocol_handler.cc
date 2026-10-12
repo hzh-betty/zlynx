@@ -1,26 +1,30 @@
 #include "protocol/http/http_protocol_handler.h"
-#include "zhttp/http_application.h"
-#include "protocol/websocket/websocket_protocol_handler.h"
-#include "protocol/websocket/websocket_handshake.h"
 #include "protocol/http/http_response_writer.h"
 #include "protocol/http/response_encoder.h"
+#include "protocol/websocket/websocket_handshake.h"
+#include "protocol/websocket/websocket_protocol_handler.h"
+#include "zhttp/http_application.h"
 #include "znet/server/connection.h"
+
 namespace zhttp {
 HttpProtocolHandler::HttpProtocolHandler(const HttpApplication &application,
-                                       RequestLimits limits, uint32_t timeout,
-                                       std::string name,
-                                       Switch switch_protocol)
+                                         RequestLimits limits, uint32_t timeout,
+                                         std::string name,
+                                         Switch switch_protocol)
     : application_(application), parser_(limits), timeout_(timeout),
       name_(std::move(name)), switch_protocol_(std::move(switch_protocol)) {}
+
 HttpProtocolHandler::~HttpProtocolHandler() { on_closed(); }
+
 void HttpProtocolHandler::on_closed() {
     if (closed_)
         return;
     closed_ = true;
     switch_protocol_ = {};
 }
-void HttpProtocolHandler::on_data(
-    const std::shared_ptr<znet::Connection> &conn, znet::ByteBuffer &buffer) {
+
+void HttpProtocolHandler::on_data(const std::shared_ptr<znet::Connection> &conn,
+                                  znet::ByteBuffer &buffer) {
     if (closed_)
         return;
     auto send_error = [&](HttpStatus code, const std::string &message) {
@@ -44,6 +48,7 @@ void HttpProtocolHandler::on_data(
             if (buffer.readable_bytes() == 0)
                 return;
             receiving_ = true;
+
             // 从本次请求首字节起设定整体读取期限，半包到达时不延长期限。
             conn->set_read_deadline(
                 timeout_
@@ -80,9 +85,11 @@ void HttpProtocolHandler::on_data(
             auto local = conn->local_endpoint();
             if (local)
                 connection_info_.local_address = local.value().to_string();
+
             // 处理器独占一个已建立连接；查询失败保留空地址，不从请求头推断。
             connection_info_ready_ = true;
         }
+
         // 请求上下文在本次同步处理内完成，无需跨回调共享其生命周期。
         HttpContext context(parser_.request(), connection_info_);
         context.response().header("Server", name_);
@@ -95,6 +102,7 @@ void HttpProtocolHandler::on_data(
                 .text("Internal Server Error");
         }
         std::unique_ptr<ProtocolHandler> candidate;
+
         // 业务层仅提出升级意图；握手校验成功才创建候选协议处理器。
         if (context.upgrade()) {
             auto intent = context.take_upgrade();
@@ -111,8 +119,8 @@ void HttpProtocolHandler::on_data(
         ResponsePlan plan;
         try {
             plan = ResponseEncoder::plan(context.request().request_line(),
-                                            context.response(),
-                                                      static_cast<bool>(candidate));
+                                         context.response(),
+                                         static_cast<bool>(candidate));
         } catch (...) {
             candidate.reset();
             context.reset_result();
@@ -120,7 +128,7 @@ void HttpProtocolHandler::on_data(
                 .status(HttpStatus::INTERNAL_SERVER_ERROR)
                 .text("Internal Server Error");
             plan = ResponseEncoder::plan(context.request().request_line(),
-                                            context.response());
+                                         context.response());
         }
         WriteResult written = WriteResult::Failed;
         try {
@@ -132,6 +140,7 @@ void HttpProtocolHandler::on_data(
                              ? CompletionResult::Failed
                          : candidate ? CompletionResult::Upgraded
                                      : CompletionResult::Completed);
+
         // 响应一旦部分写出，不能再改成错误页；直接关闭以免残留字节被当作下一响应。
         if (written == WriteResult::Failed) {
             (void)conn->close();
@@ -141,11 +150,13 @@ void HttpProtocolHandler::on_data(
             (void)conn->shutdown();
             return;
         }
+
         // 只有 101 握手完整写出后才交接协议；连接调度者在本回调返回后执行切换。
         if (candidate) {
             switch_protocol_(std::move(candidate));
             return;
         }
+
         // 当前响应完成且保持连接时复位解析器，继续处理缓冲区中后续请求。
         parser_.reset();
     }

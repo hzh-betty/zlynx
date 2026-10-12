@@ -9,13 +9,13 @@ TEST(RegexPrefixBucketTest, RegexPrefixGrouping) {
 
     // 注册多个正则路由，按前缀分桶
     // 前缀 /api/v1/users/
-    router.router().add_regex_route(zhttp::HttpMethod::GET, "/api/v1/users/(\\d+)",
-                           {"user_id"}, [](zhttp::HttpContext &context) {
-                               auto *req = &context;
-                               auto &resp = context.response();
-                               resp.json("{\"user_id\": \"" +
-                                         req->path_param("user_id") + "\"}");
-                           });
+    router.router().add_regex_route(
+        zhttp::HttpMethod::GET, "/api/v1/users/(\\d+)", {"user_id"},
+        [](zhttp::HttpContext &context) {
+            auto *req = &context;
+            auto &resp = context.response();
+            resp.json("{\"user_id\": \"" + req->path_param("user_id") + "\"}");
+        });
 
     router.router().add_regex_route(
         zhttp::HttpMethod::GET, "/api/v1/users/(\\d+)/profile", {"user_id"},
@@ -27,13 +27,14 @@ TEST(RegexPrefixBucketTest, RegexPrefixGrouping) {
         });
 
     // 前缀 /api/v1/photos/
-    router.router().add_regex_route(zhttp::HttpMethod::GET, "/api/v1/photos/(\\d+)",
-                           {"photo_id"}, [](zhttp::HttpContext &context) {
-                               auto *req = &context;
-                               auto &resp = context.response();
-                               resp.json("{\"photo_id\": \"" +
-                                         req->path_param("photo_id") + "\"}");
-                           });
+    router.router().add_regex_route(
+        zhttp::HttpMethod::GET, "/api/v1/photos/(\\d+)", {"photo_id"},
+        [](zhttp::HttpContext &context) {
+            auto *req = &context;
+            auto &resp = context.response();
+            resp.json("{\"photo_id\": \"" + req->path_param("photo_id") +
+                      "\"}");
+        });
 
     // 前缀 /api/v2/
     router.router().add_regex_route(
@@ -82,17 +83,17 @@ TEST(RegexPrefixBucketTest, DynamicRouteHasPriority) {
 
     // 动态路由
     router.router().add_route(zhttp::HttpMethod::GET, "/users/:id",
-                     [](zhttp::HttpContext &context) {
-                         auto &resp = context.response();
-                         resp.text("dynamic");
-                     });
+                              [](zhttp::HttpContext &context) {
+                                  auto &resp = context.response();
+                                  resp.text("dynamic");
+                              });
 
     // 正则路由（同一路径）
-    router.router().add_regex_route(zhttp::HttpMethod::GET, "/users/(\\d+)", {"id"},
-                           [](zhttp::HttpContext &context) {
-                               auto &resp = context.response();
-                               resp.text("regex");
-                           });
+    router.router().add_regex_route(zhttp::HttpMethod::GET, "/users/(\\d+)",
+                                    {"id"}, [](zhttp::HttpContext &context) {
+                                        auto &resp = context.response();
+                                        resp.text("regex");
+                                    });
 
     // 动态路由应该优先匹配
     auto req = std::make_shared<zhttp::TestContext>();
@@ -107,11 +108,12 @@ TEST(RegexPrefixBucketTest, DynamicRouteHasPriority) {
 TEST(RegexPrefixBucketTest, RegexNoMatch) {
     zhttp::HttpApplication router;
 
-    router.router().add_regex_route(zhttp::HttpMethod::GET, "/api/v1/users/(\\d+)",
-                           {"id"}, [](zhttp::HttpContext &context) {
-                               auto &resp = context.response();
-                               resp.text("matched");
-                           });
+    router.router().add_regex_route(zhttp::HttpMethod::GET,
+                                    "/api/v1/users/(\\d+)", {"id"},
+                                    [](zhttp::HttpContext &context) {
+                                        auto &resp = context.response();
+                                        resp.text("matched");
+                                    });
 
     // 不匹配的路径（字母而非数字）
     auto req = std::make_shared<zhttp::TestContext>();
@@ -131,11 +133,12 @@ TEST(RegexPrefixBucketTest, ManyRegexRoutes) {
             std::string pattern = "/api/v" + std::to_string(prefix) +
                                   "/resource" + std::to_string(route) +
                                   "/(\\d+)";
-            router.router().add_regex_route(zhttp::HttpMethod::GET, pattern, {"id"},
-                                   [](zhttp::HttpContext &context) {
-                                       auto &resp = context.response();
-                                       resp.text("ok");
-                                   });
+            router.router().add_regex_route(zhttp::HttpMethod::GET, pattern,
+                                            {"id"},
+                                            [](zhttp::HttpContext &context) {
+                                                auto &resp = context.response();
+                                                resp.text("ok");
+                                            });
         }
     }
 
@@ -162,7 +165,8 @@ TEST(RadixTreeViewTest, CapturedParametersOwnTheirBytes) {
 
 TEST(RadixTreeViewTest, RegexPrefixAndOptionalCapturesRetainOwnership) {
     zhttp::RadixTree tree;
-    tree.insert_regex(zhttp::HttpMethod::GET, "/long/prefix/users/([a-z]+)([0-9]+)?",
+    tree.insert_regex(zhttp::HttpMethod::GET,
+                      "/long/prefix/users/([a-z]+)([0-9]+)?",
                       {"name", "number"}, [](zhttp::HttpContext &) {});
     std::string path = "/long/prefix/users/" + std::string(128, 'u');
     const auto match = tree.find(path, zhttp::HttpMethod::GET);

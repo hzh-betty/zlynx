@@ -1,19 +1,35 @@
-#pragma once
+#ifndef ZLYNX_ZCO_SRC_IO_WAIT_REGISTRY_H_
+#define ZLYNX_ZCO_SRC_IO_WAIT_REGISTRY_H_
+
 #include "io/resource.h"
 #include <unordered_map>
 
 namespace zco {
 namespace detail {
-// Accessed only by the owning worker thread. The registry must outlive its
-// registrations.
+/**
+ * @brief 将反应器登记 ID 映射到等待状态，并在事件就绪时尝试完成等待。
+ *
+ * 仅由所属工作线程访问；注册表必须存活至全部 Registration 失效，
+ * 因为登记作用域借用该注册表。
+ */
 class IoWaitRegistry {
   public:
+    /**
+     * @brief 持有资源控制状态的登记作用域；移动转移解除责任，析构时解除登记。
+     *
+     * 析构忽略解除登记的错误；需要获知失败时应显式调用 finish()。
+     */
     class Registration {
       public:
         Registration(Registration &&) noexcept;
         Registration(const Registration &) = delete;
         Registration &operator=(const Registration &) = delete;
         ~Registration();
+
+        /**
+         * @brief 解除反应器登记并从等待映射移除；重复调用成功且无操作。
+         * @return 解除登记的结果；返回失败也不恢复本作用域的登记。
+         */
         Result<void> finish();
 
       private:
@@ -42,3 +58,5 @@ class IoWaitRegistry {
 };
 } // namespace detail
 } // namespace zco
+
+#endif

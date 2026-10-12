@@ -1,4 +1,6 @@
-#pragma once
+#ifndef ZLYNX_ZCO_TESTS_SUPPORT_RUNTIME_FIXTURE_H_
+#define ZLYNX_ZCO_TESTS_SUPPORT_RUNTIME_FIXTURE_H_
+
 #include "zco/zco.h"
 #include <atomic>
 #include <chrono>
@@ -19,8 +21,10 @@ template <class Predicate> bool wait_until(Predicate predicate) {
     return true;
 }
 
-// Releases blocking worker gates on an exception or a fatal test assertion.
-// Workers capture the shared_future by value so its state survives this owner.
+/**
+ * @brief 异常或致命测试断言发生时释放阻塞工作线程的门闩，避免清理时死锁。
+ * 工作线程按值捕获 shared_future，使共享状态不依赖此对象的存活。
+ */
 class ReleasePromise : public std::promise<void> {
   public:
     ~ReleasePromise() {
@@ -46,3 +50,5 @@ inline TaskHandle spawn(Executor executor, Task task) {
 }
 } // namespace test
 } // namespace zco
+
+#endif

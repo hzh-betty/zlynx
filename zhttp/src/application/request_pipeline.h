@@ -2,32 +2,49 @@
 #define ZHTTP_PIPELINE_REQUEST_PIPELINE_H_
 
 #include "zhttp/middleware/middleware.h"
-#include <exception>
 #include "zhttp/router/router.h"
+#include <exception>
+
 namespace zhttp {
-/** 请求处理流水线，组织路由、404、异常处理和中间件收尾。 */
+/**
+ * @brief 请求处理流水线，组织路由、404、异常处理和中间件收尾。
+ */
 class RequestPipeline {
   public:
-    /** 构造默认 404 和 500 处理器。 */
     RequestPipeline();
-    /** 追加全局中间件。 */
     void use(mid::Middleware::ptr middleware);
-    /** 追加精确请求路径中间件。 */
     void use(const std::string &path, mid::Middleware::ptr middleware);
-    /** 追加仅匹配前缀子路径的组中间件，根前缀忽略。 */
+
+    /**
+     * @brief 追加仅匹配前缀子路径的组中间件，根前缀忽略。
+     */
     void use_group(const std::string &prefix, mid::Middleware::ptr middleware);
-    /** 同步执行处理链；返回路由是否命中，异常经配置处理器转换。 */
+
+    /**
+     * @brief 同步执行处理链；返回路由是否命中，异常经配置处理器转换。
+     */
     bool execute(HttpContext &context, const Router &router) const;
-    /** 设置默认 404 路由处理器。 */
     void set_not_found_handler(HttpHandler callback);
-    /** 设置异常处理器；空回调恢复默认处理。 */
+
+    /**
+     * @brief 设置异常处理器；空回调恢复默认处理。
+     */
     void set_exception_handler(ExceptionHandler handler);
-    /** 冻结中间件与处理器配置，后续修改抛出 std::logic_error。 */
+
+    /**
+     * @brief 冻结中间件与处理器配置，后续修改抛出 std::logic_error。
+     */
     void freeze() { frozen_ = true; }
 
   private:
     void check_mutable() const;
-    // before 顺序执行，after 对已进入的中间件逆序收尾，逐个隔离异常。
+
+    /**
+     * @brief 执行选定处理链，并为正常返回过 before 的中间件逆序收尾。
+     *
+     * before 抛出的当前实例不计入 after 范围；返回 false 的当前实例仍需收尾。
+     * after 的异常逐个交给 error，不阻止外层中间件继续收尾。
+     */
     void execute_middlewares(
         HttpContext &context,
         const std::vector<mid::Middleware::ptr> &middlewares,
@@ -44,4 +61,4 @@ class RequestPipeline {
 };
 } // namespace zhttp
 
-#endif // ZHTTP_PIPELINE_REQUEST_PIPELINE_H_
+#endif

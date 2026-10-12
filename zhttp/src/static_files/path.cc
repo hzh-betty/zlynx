@@ -1,10 +1,8 @@
 /**
- * http_utils.cc
- * http_utils 实现。
+ * @file http_utils.cc
  *
  * @author hzh-betty
  */
-
 #include "static_files/path.h"
 
 #include "zhttp/http_common.h"
@@ -33,7 +31,7 @@ std::string static_path::normalize_prefix(const std::string &prefix) {
 }
 
 bool static_path::should_handle_path(const std::string &path,
-                                      const std::string &normalized_prefix) {
+                                     const std::string &normalized_prefix) {
     if (normalized_prefix == "/") {
         return !path.empty() && path[0] == '/';
     }
@@ -52,7 +50,7 @@ bool static_path::should_handle_path(const std::string &path,
 
 std::string
 static_path::map_to_relative_path(const std::string &path,
-                                   const std::string &normalized_prefix) {
+                                  const std::string &normalized_prefix) {
     if (normalized_prefix == "/") {
         return path;
     }
@@ -63,7 +61,7 @@ static_path::map_to_relative_path(const std::string &path,
 }
 
 bool static_path::sanitize_relative_path(const std::string &raw,
-                                          std::string &out) {
+                                         std::string &out) {
     // 先 URL 解码，防止 %2e%2e 这种编码形式绕过目录穿越检查。
     std::string decoded = url_decode(raw);
     std::vector<std::string> segments;
@@ -102,7 +100,7 @@ bool static_path::sanitize_relative_path(const std::string &raw,
 }
 
 std::string static_path::join_path(const std::string &left,
-                                    const std::string &right) {
+                                   const std::string &right) {
     if (right.empty()) {
         return left;
     }

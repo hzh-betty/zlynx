@@ -1,9 +1,7 @@
 /**
  * @file common.h
- * @brief common 定义。
  * @author hzh-betty
  */
-
 #ifndef ZMALLOC_INTERNAL_COMMON_H_
 #define ZMALLOC_INTERNAL_COMMON_H_
 
@@ -28,6 +26,7 @@ extern thread_local size_t tls_allocator_call_depth;
 class AllocatorCallGuard {
   public:
     AllocatorCallGuard() noexcept { ++tls_allocator_call_depth; }
+
     ~AllocatorCallGuard() { --tls_allocator_call_depth; }
 };
 
@@ -35,14 +34,14 @@ class AllocatorCallGuard {
 
 class NonCopyable {
   public:
-    /** @brief 构造不可复制基类。 */
     NonCopyable() = default;
-    /** @brief 默认析构函数。 */
     ~NonCopyable() = default;
 
-    /** @brief 禁止复制，避免派生的锁和缓存对象被意外复制。 */
+    /**
+     * @brief 禁止复制，避免派生的锁和缓存对象被意外复制。
+
+     */
     NonCopyable(const NonCopyable &) = delete;
-    /** @brief 禁止复制赋值。 */
     NonCopyable &operator=(const NonCopyable &) = delete;
 };
 
@@ -56,27 +55,35 @@ class NonCopyable {
  */
 class alignas(CACHE_LINE_SIZE) SpinLock : public NonCopyable {
   public:
-    /** @brief 创建未加锁状态的自旋锁。 */
     SpinLock() noexcept = default;
-    /** @brief 获取锁；锁被占用时自旋等待。 */
+
+    /**
+     * @brief 获取锁；锁被占用时自旋等待。
+     */
     void lock() noexcept {
         // 快速路径：立即尝试获取锁
         if (!locked_.exchange(true, std::memory_order_acquire)) {
             return;
         }
+
         // 慢路径：指数退避自旋
         lock_slow();
     }
 
+    /**
+     * @brief 释放锁，并向后续持锁线程发布临界区写入。
 
-    /** @brief 释放锁，并向后续持锁线程发布临界区写入。 */
+     */
     void unlock() noexcept { locked_.store(false, std::memory_order_release); }
 
   private:
     static constexpr int kMaxSpinCount = 64;
     std::atomic<bool> locked_{false};
 
-    /** @brief 执行平台相关的短暂让步指令，降低忙等开销。 */
+    /**
+     * @brief 执行平台相关的短暂让步指令，降低忙等开销。
+
+     */
     static inline void cpu_relax() noexcept {
 #if defined(__x86_64__) || defined(__i386__)
         __builtin_ia32_pause();
@@ -87,7 +94,10 @@ class alignas(CACHE_LINE_SIZE) SpinLock : public NonCopyable {
 #endif
     }
 
-    /** @brief 锁竞争时逐步增加自旋间隔，必要时让出线程时间片。 */
+    /**
+     * @brief 锁竞争时逐步增加自旋间隔，必要时让出线程时间片。
+
+     */
     void lock_slow() noexcept {
         int spin_count = 1;
         for (;;) {
@@ -111,4 +121,4 @@ class alignas(CACHE_LINE_SIZE) SpinLock : public NonCopyable {
 
 } // namespace zmalloc
 
-#endif // ZMALLOC_INTERNAL_COMMON_H_
+#endif

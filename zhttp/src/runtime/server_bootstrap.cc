@@ -1,8 +1,8 @@
 #include "runtime/server_runtime.h"
 
+#include "runtime/logging.h"
 #include "zhttp/http_server.h"
 #include "zhttp/server_config.h"
-#include "runtime/logging.h"
 #include "znet/endpoint.h"
 #include <stdexcept>
 
@@ -20,7 +20,8 @@ std::shared_ptr<HttpServer> create_http_server(const ServerConfig &config) {
     options.stack_model = config.stack_mode;
     auto server = std::make_shared<HttpServer>(addrs.value().front(), options);
     if (config.enable_https) {
-        auto tls = server->set_ssl_certificate(config.cert_file, config.key_file);
+        auto tls =
+            server->set_ssl_certificate(config.cert_file, config.key_file);
         if (!tls)
             throw std::runtime_error(tls.error().message());
     }

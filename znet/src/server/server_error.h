@@ -1,4 +1,5 @@
-#pragma once
+#ifndef ZLYNX_ZNET_SRC_SERVER_SERVER_ERROR_H_
+#define ZLYNX_ZNET_SRC_SERVER_SERVER_ERROR_H_
 
 #include "znet/error.h"
 #include <functional>
@@ -19,3 +20,5 @@ inline Error callback_error(std::string detail) {
                       "session callback", std::move(detail));
 }
 } // namespace znet::detail
+
+#endif

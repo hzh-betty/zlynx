@@ -1,4 +1,6 @@
-#pragma once
+#ifndef ZLYNX_ZMALLOC_TESTS_SUPPORT_CACHE_TEST_ACCESS_H_
+#define ZLYNX_ZMALLOC_TESTS_SUPPORT_CACHE_TEST_ACCESS_H_
+
 #include "zmalloc/internal/central_cache.h"
 #include "zmalloc/internal/page_cache.h"
 #include "zmalloc/internal/thread_cache.h"
@@ -7,8 +9,10 @@
 #include <stdexcept>
 
 namespace zmalloc {
-// Only internal cache invariants and fault setup need privileged access.
-// Callers retain the cache's normal locking and object ownership rules.
+/**
+ * @brief 只有内部缓存不变量和故障注入需要访问私有状态。
+ * 调用方仍须遵循缓存的加锁和对象所有权规则。
+ */
 struct CacheTestAccess {
     static auto &buckets(CentralCache &c) { return c.free_lists_; }
 
@@ -84,3 +88,5 @@ class SpanOwners {
     std::array<Span *, 256> live_{};
 };
 } // namespace zmalloc
+
+#endif

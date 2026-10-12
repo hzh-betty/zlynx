@@ -1,6 +1,7 @@
 #include "protocol/http/http_request_parser.h"
 #include "znet/byte_buffer.h"
 #include <limits>
+
 namespace zhttp {
 ParseResult ChunkedDecoder::fail(HttpStatus status, const char *message) {
     error_status_ = status;
@@ -8,12 +9,15 @@ ParseResult ChunkedDecoder::fail(HttpStatus status, const char *message) {
     state_ = State::Error;
     return ParseResult::ERROR;
 }
-ParseResult ChunkedDecoder::parse(znet::ByteBuffer &buffer, HttpRequest &request) {
+
+ParseResult ChunkedDecoder::parse(znet::ByteBuffer &buffer,
+                                  HttpRequest &request) {
     while (true) {
         if (state_ == State::Error)
             return ParseResult::ERROR;
         if (state_ == State::Complete)
             return ParseResult::COMPLETE;
+
         // chunk 数据可跨多个读事件到达；remaining_ 保存尚缺字节数。
         if (state_ == State::Data) {
             auto count = std::min(remaining_, buffer.readable_bytes());
@@ -48,6 +52,7 @@ ParseResult ChunkedDecoder::parse(znet::ByteBuffer &buffer, HttpRequest &request
                         "Request trailers too large");
         if (!crlf)
             return ParseResult::NEED_MORE;
+
         // retrieve 不移动字节；视图仅用于本轮解析，trailer 仍由请求拥有。
         const std::string_view line(buffer.peek(), bytes - 2);
         buffer.retrieve(bytes);
@@ -73,6 +78,7 @@ ParseResult ChunkedDecoder::parse(znet::ByteBuffer &buffer, HttpRequest &request
                 return fail(HttpStatus::PAYLOAD_TOO_LARGE,
                             "Request body too large");
             remaining_ = size;
+
             // 零长度 chunk 只结束数据部分，仍须读取 trailer 和最终空行。
             state_ = size ? State::Data : State::Trailers;
         } else {
@@ -90,6 +96,7 @@ ParseResult ChunkedDecoder::parse(znet::ByteBuffer &buffer, HttpRequest &request
             if (colon == std::string::npos)
                 return fail(HttpStatus::BAD_REQUEST, "Invalid chunk trailer");
             auto name = line.substr(0, colon), value = line.substr(colon + 1);
+
             // trailer 不能改变已经确定的正文边界、目标主机或连接语义。
             if (!HttpHeaders::valid(name, value) ||
                 HttpHeaders::equal_name(name, "Content-Length") ||

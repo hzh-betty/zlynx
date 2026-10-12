@@ -1,8 +1,7 @@
 #include "../support/request_builder.h"
-#include <gtest/gtest.h>
 #include <atomic>
+#include <gtest/gtest.h>
 #include <thread>
-
 
 #include "zhttp/middleware/rate_limiter_middleware.h"
 #include "zhttp/router/router.h"
@@ -271,9 +270,11 @@ TEST_F(RateLimiterTest, MiddlewareWorksWithDefaultLimiterAndKeyResolver) {
 }
 
 TEST_F(RateLimiterTest, ExpiryReclaimsKeysWithoutResettingActiveQuotas) {
-    for (auto type : {RateLimiter::Type::FIXED_WINDOW, RateLimiter::Type::SLIDING_WINDOW,
-                      RateLimiter::Type::TOKEN_BUCKET}) {
-        auto limiter = RateLimiter::newRateLimiter(type, 1, RateLimiter::TimeUnit::SECOND, now());
+    for (auto type :
+         {RateLimiter::Type::FIXED_WINDOW, RateLimiter::Type::SLIDING_WINDOW,
+          RateLimiter::Type::TOKEN_BUCKET}) {
+        auto limiter = RateLimiter::newRateLimiter(
+            type, 1, RateLimiter::TimeUnit::SECOND, now());
         EXPECT_TRUE(limiter->isAllowed("inactive"));
         advance_ms(500);
         EXPECT_TRUE(limiter->isAllowed("active"));
@@ -283,7 +284,9 @@ TEST_F(RateLimiterTest, ExpiryReclaimsKeysWithoutResettingActiveQuotas) {
         EXPECT_TRUE(limiter->isAllowed("inactive"));
     }
 }
-TEST(RateLimiterOwnershipTest, CopiedMiddlewareDoesNotCaptureTheOriginalInstance) {
+
+TEST(RateLimiterOwnershipTest,
+     CopiedMiddlewareDoesNotCaptureTheOriginalInstance) {
     std::unique_ptr<RateLimiterMiddleware> copy;
     {
         RateLimiterMiddleware original;
@@ -294,20 +297,25 @@ TEST(RateLimiterOwnershipTest, CopiedMiddlewareDoesNotCaptureTheOriginalInstance
     HttpContext context(request);
     EXPECT_TRUE(copy->before(context));
 }
-TEST(RateLimiterConcurrencyTest, SharedAndIndependentKeysRespectCapacityDuringPruning) {
+
+TEST(RateLimiterConcurrencyTest,
+     SharedAndIndependentKeysRespectCapacityDuringPruning) {
     const auto time = RateLimiter::Clock::now();
-    for (auto type : {RateLimiter::Type::FIXED_WINDOW, RateLimiter::Type::SLIDING_WINDOW,
-                      RateLimiter::Type::TOKEN_BUCKET}) {
-        auto limiter = RateLimiter::newRateLimiter(type, 100, RateLimiter::TimeUnit::SECOND,
-                                                   [time] { return time; });
+    for (auto type :
+         {RateLimiter::Type::FIXED_WINDOW, RateLimiter::Type::SLIDING_WINDOW,
+          RateLimiter::Type::TOKEN_BUCKET}) {
+        auto limiter = RateLimiter::newRateLimiter(
+            type, 100, RateLimiter::TimeUnit::SECOND, [time] { return time; });
         std::atomic<int> shared_allowed{0}, independent_allowed{0};
         std::vector<std::thread> threads;
         for (int i = 0; i < 8; ++i)
             threads.emplace_back([&, i] {
                 const auto key = "key" + std::to_string(i);
                 for (int j = 0; j < 200; ++j) {
-                    if (limiter->isAllowed("shared")) ++shared_allowed;
-                    if (limiter->isAllowed(key)) ++independent_allowed;
+                    if (limiter->isAllowed("shared"))
+                        ++shared_allowed;
+                    if (limiter->isAllowed(key))
+                        ++independent_allowed;
                     (void)limiter->retryAfter(key);
                 }
             });
@@ -315,17 +323,20 @@ TEST(RateLimiterConcurrencyTest, SharedAndIndependentKeysRespectCapacityDuringPr
             for (int j = 0; j < 200; ++j)
                 EXPECT_EQ(limiter->prune_expired(), 0U);
         });
-        for (auto &thread : threads) thread.join();
+        for (auto &thread : threads)
+            thread.join();
         EXPECT_EQ(shared_allowed.load(), 100);
         EXPECT_EQ(independent_allowed.load(), 800);
     }
 }
+
 TEST(RateLimiterConcurrencyTest, AllShardsAreReclaimedAtTheWindowBoundary) {
     auto time = RateLimiter::Clock::now();
-    for (auto type : {RateLimiter::Type::FIXED_WINDOW, RateLimiter::Type::SLIDING_WINDOW,
-                      RateLimiter::Type::TOKEN_BUCKET}) {
-        auto limiter = RateLimiter::newRateLimiter(type, 1, RateLimiter::TimeUnit::SECOND,
-                                                   [&] { return time; });
+    for (auto type :
+         {RateLimiter::Type::FIXED_WINDOW, RateLimiter::Type::SLIDING_WINDOW,
+          RateLimiter::Type::TOKEN_BUCKET}) {
+        auto limiter = RateLimiter::newRateLimiter(
+            type, 1, RateLimiter::TimeUnit::SECOND, [&] { return time; });
         for (int i = 0; i < 256; ++i)
             EXPECT_TRUE(limiter->isAllowed(std::to_string(i)));
         time += std::chrono::milliseconds{999};

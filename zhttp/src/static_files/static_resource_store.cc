@@ -1,9 +1,9 @@
 #include "static_files/static_resource_store.h"
 #include "static_files/path.h"
+#include "zhttp/http_common.h"
 #include <algorithm>
 #include <fstream>
 #include <sstream>
-#include "zhttp/http_common.h"
 #include <sys/stat.h>
 
 namespace zhttp::detail {
@@ -54,15 +54,17 @@ std::string get_etag(const struct stat &st) {
     return oss.str();
 }
 
-}
+} // namespace
 
-StaticResourceStore::StaticResourceStore(std::string root, std::string index, bool implicit_index,
-                                         CachePolicy cache, std::function<Clock::time_point()> now)
-    : root_(std::move(root)), index_(std::move(index)), implicit_index_(implicit_index),
-      policy_(cache), now_(std::move(now)) {
+StaticResourceStore::StaticResourceStore(std::string root, std::string index,
+                                         bool implicit_index, CachePolicy cache,
+                                         std::function<Clock::time_point()> now)
+    : root_(std::move(root)), index_(std::move(index)),
+      implicit_index_(implicit_index), policy_(cache), now_(std::move(now)) {
     if (!now_)
         now_ = Clock::now;
 }
+
 void StaticResourceStore::prune_locked(Clock::time_point now) {
     if (now <= earliest_expiry_)
         return;
@@ -77,23 +79,28 @@ void StaticResourceStore::prune_locked(Clock::time_point now) {
         }
     }
 }
+
 void StaticResourceStore::clear_expired() {
     const auto now = now_();
     std::lock_guard<std::mutex> lock(mutex_);
     prune_locked(now);
 }
+
 size_t StaticResourceStore::cached_bytes() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return cached_bytes_;
 }
+
 size_t StaticResourceStore::cached_entries() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return cache_.size();
 }
-void StaticResourceStore::remember(std::shared_ptr<const StaticResource> resource) {
+
+void StaticResourceStore::remember(
+    std::shared_ptr<const StaticResource> resource) {
     if (!resource->memory || !policy_.enabled || policy_.ttl.count() <= 0 ||
-        resource->size > policy_.max_file_size || resource->size > policy_.max_bytes ||
-        policy_.max_entries == 0)
+        resource->size > policy_.max_file_size ||
+        resource->size > policy_.max_bytes || policy_.max_entries == 0)
         return;
     const auto now = now_();
     std::lock_guard<std::mutex> lock(mutex_);
@@ -103,8 +110,10 @@ void StaticResourceStore::remember(std::shared_ptr<const StaticResource> resourc
         cached_bytes_ -= existing->second.resource->size;
         cache_.erase(existing);
     }
-    while (!cache_.empty() && (cache_.size() >= policy_.max_entries ||
-                               cached_bytes_ > policy_.max_bytes - resource->size)) {
+    while (!cache_.empty() &&
+           (cache_.size() >= policy_.max_entries ||
+            cached_bytes_ > policy_.max_bytes - resource->size)) {
+        // 只保证容量有界，不维护访问次序；驱逐不能描述为 LRU。
         auto victim = cache_.begin();
         cached_bytes_ -= victim->second.resource->size;
         cache_.erase(victim);
@@ -113,11 +122,15 @@ void StaticResourceStore::remember(std::shared_ptr<const StaticResource> resourc
     const auto path = resource->path;
     const auto expires = now + policy_.ttl;
     cache_.emplace(path, CacheEntry{std::move(resource), expires});
+
     // 覆盖或淘汰可留下偏早的下界；最多多扫描一次，不能漏掉过期条目。
     earliest_expiry_ = std::min(earliest_expiry_, expires);
 }
-ResourceLookup StaticResourceStore::lookup(const std::string &relative, bool trailing_slash,
-                                           const std::vector<std::string> &encodings, ReadMode mode) {
+
+ResourceLookup
+StaticResourceStore::lookup(const std::string &relative, bool trailing_slash,
+                            const std::vector<std::string> &encodings,
+                            ReadMode mode) {
     std::string disk_path = static_path::join_path(root_, relative);
     if (is_directory(disk_path)) {
         if (!implicit_index_) {
@@ -131,7 +144,9 @@ ResourceLookup StaticResourceStore::lookup(const std::string &relative, bool tra
     if (encodings.empty())
         clear_expired();
     for (const auto &encoding : encodings) {
-        const std::string candidate = disk_path + (encoding.empty() ? "" : encoding == "br" ? ".br" : ".gz");
+        const std::string candidate = disk_path + (encoding.empty()   ? ""
+                                                   : encoding == "br" ? ".br"
+                                                                      : ".gz");
         if (policy_.enabled && policy_.ttl.count() > 0) {
             std::shared_ptr<const StaticResource> cached;
             {
@@ -146,7 +161,8 @@ ResourceLookup StaticResourceStore::lookup(const std::string &relative, bool tra
                 return {ResourceLookup::State::Found, std::move(cached)};
         }
         struct stat info{};
-        if (::stat(candidate.c_str(), &info) != 0 || !S_ISREG(info.st_mode) || info.st_size < 0)
+        if (::stat(candidate.c_str(), &info) != 0 || !S_ISREG(info.st_mode) ||
+            info.st_size < 0)
             continue;
         auto resource = std::make_shared<StaticResource>();
         resource->path = candidate;
@@ -155,12 +171,14 @@ ResourceLookup StaticResourceStore::lookup(const std::string &relative, bool tra
         resource->size = static_cast<size_t>(info.st_size);
         resource->etag = get_etag(info);
         resource->last_modified = format_http_date_gmt(info.st_mtime);
-        if (mode == ReadMode::Content && policy_.enabled && resource->size <= policy_.max_file_size) {
+        if (mode == ReadMode::Content && policy_.enabled &&
+            resource->size <= policy_.max_file_size) {
             std::string bytes;
             if (!read_file(candidate, bytes))
                 return {};
             resource->size = bytes.size();
-            resource->memory = std::make_shared<const std::string>(std::move(bytes));
+            resource->memory =
+                std::make_shared<const std::string>(std::move(bytes));
             remember(resource);
         }
         return {ResourceLookup::State::Found, std::move(resource)};
@@ -170,7 +188,9 @@ ResourceLookup StaticResourceStore::lookup(const std::string &relative, bool tra
         return {ResourceLookup::State::NotAcceptable, {}};
     return {};
 }
-HttpBody StaticResourceStore::body(const StaticResource &resource, size_t offset, size_t length) {
+
+HttpBody StaticResourceStore::body(const StaticResource &resource,
+                                   size_t offset, size_t length) {
     if (resource.memory)
         return HttpBody::memory(resource.memory->substr(offset, length));
     return HttpBody::file(resource.path, offset, length);

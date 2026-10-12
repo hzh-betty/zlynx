@@ -52,7 +52,8 @@ void Continuation::suspend(NativeContext &caller) {
 void Continuation::interrupt(NativeContext &caller,
                              std::exception_ptr failure) {
     interruption_ = std::move(failure);
-    // The suspended stack is still resident. Do not restore its older snapshot.
+
+    // 挂起的栈仍驻留在原位置，恢复旧快照反而会覆盖当前栈内容。
     switch_context(caller, context_);
 }
 

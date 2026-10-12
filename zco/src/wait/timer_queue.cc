@@ -30,6 +30,8 @@ void TimerQueue::expire(Deadline::TimePoint now) {
         auto entry = std::move(entries_.begin()->second);
         index_.erase(entry.id);
         entries_.erase(entries_.begin());
+
+        // 先从两个索引摘除，再通知等待方，避免完成回调观察到仍有效的定时器。
         entry.token.complete(WaitOutcome::timeout);
     }
 }

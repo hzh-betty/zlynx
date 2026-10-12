@@ -1,4 +1,5 @@
 #include "protocol/websocket/websocket_frame.h"
+
 namespace zhttp {
 bool valid_websocket_close_code(const uint16_t code) {
     // 1004/1005/1006/1015 为保留值，不能出现在线上的 Close 帧中。
@@ -27,6 +28,7 @@ void append_u64_be(std::string *out, const uint64_t value) {
 
 bool is_continuation_byte(unsigned char b) { return (b & 0xc0) == 0x80; }
 } // namespace
+
 bool valid_websocket_utf8(const std::string &text) {
     // 严格 UTF-8 校验（RFC 3629）：
     // 1) 禁止过长编码；2) 禁止 surrogate；3) 限制到 U+10FFFF。

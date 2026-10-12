@@ -2,11 +2,11 @@
 #include "../support/thread_objects.h"
 #include <gtest/gtest.h>
 
-#include <cstdlib>
 #include <cstddef>
 #include <cstdint>
-#include <vector>
+#include <cstdlib>
 #include <thread>
+#include <vector>
 
 #include "zmalloc/internal/size_class.h"
 #include "zmalloc/internal/thread_cache.h"
@@ -29,8 +29,8 @@ void DrainTransfer(size_t size) {
             zmalloc::next_obj(objects[i - 1]) = objects[i];
         }
         zmalloc::next_obj(objects[count - 1]) = nullptr;
-        zmalloc::CentralCache::get_instance().release_list_to_spans(
-            objects[0], e.index);
+        zmalloc::CentralCache::get_instance().release_list_to_spans(objects[0],
+                                                                    e.index);
     }
 }
 
@@ -42,6 +42,7 @@ static void AllocTouchFree(zmalloc::ThreadCache *tc, size_t size) {
     zmalloc::test::ThreadObjects owners(*tc);
     void *p = owners.allocate(size);
     ASSERT_NE(p, nullptr);
+
     // 只做非常轻量的触摸，避免越界。
     static_cast<unsigned char *>(p)[0] = 0xAB;
     owners.deallocate(p, size);
@@ -83,17 +84,23 @@ class ThreadCacheTest : public ::testing::Test {
     zmalloc::ThreadCache cache;
     zmalloc::ThreadCache *tc = &cache;
     zmalloc::test::ThreadObjects owners{cache};
+
     void SetUp() override { zmalloc::get_thread_cache()->cleanup(); }
+
     void TearDown() override {
         owners.clear();
         cache.cleanup();
         zmalloc::get_thread_cache()->cleanup();
     }
 };
+
 class ThreadCacheAllocFreeParamTest
-    : public ThreadCacheTest, public ::testing::WithParamInterface<size_t> {};
+    : public ThreadCacheTest,
+      public ::testing::WithParamInterface<size_t> {};
+
 class ThreadCacheTooLongParamTest
-    : public ThreadCacheTest, public ::testing::WithParamInterface<size_t> {};
+    : public ThreadCacheTest,
+      public ::testing::WithParamInterface<size_t> {};
 
 TEST_F(ThreadCacheTest, AllocateReturnsNonNull) {
     void *p = owners.allocate(64);
@@ -265,6 +272,7 @@ TEST_F(ThreadCacheTest, ScavengeBatchesWithoutExceedingIdleLowWater) {
         zmalloc::CacheTestAccess::scavenge(*tc);
         EXPECT_EQ(tc->cached_bytes(),
                   (idle - std::min<size_t>(idle, e.num_move)) * e.align_size);
+
         // 回收仅针对闲置对象，调用方仍持有的对象必须保持可用。
         for (size_t i = idle; i < objects.size(); ++i) {
             static_cast<char *>(objects[i])[e.align_size - 1] = 42;
@@ -372,7 +380,8 @@ TEST_F(ThreadCacheTest, ThreadExitReturnsObjectsButPreservesLiveAllocation) {
             }
         });
         worker.join();
-        auto *span = zmalloc::PageCache::get_instance().map_object_to_span(live);
+        auto *span =
+            zmalloc::PageCache::get_instance().map_object_to_span(live);
         DrainTransfer(64);
         EXPECT_EQ(span->use_count, 1u);
         EXPECT_EQ(static_cast<char *>(live)[63], 42);
@@ -399,8 +408,10 @@ TEST_F(ThreadCacheTest, FastAccessInitializesEachThreadAndKeepsShutdownState) {
             EXPECT_EQ(cache->cached_bytes(), 0u);
         });
     }
-    for (auto &worker : workers) worker.join();
-    for (auto *identity : identities) EXPECT_NE(identity, nullptr);
+    for (auto &worker : workers)
+        worker.join();
+    for (auto *identity : identities)
+        EXPECT_NE(identity, nullptr);
 }
 
 TEST_F(ThreadCacheTest, LaterTlsDestructorCanAllocateAndFree) {
@@ -416,6 +427,7 @@ TEST_F(ThreadCacheTest, LaterTlsDestructorCanAllocateAndFree) {
                 *finished = zmalloc::get_thread_cache()->cached_bytes() == 0;
             }
         };
+
         // 先注册，后析构：确保运行在 ThreadCache 的退出钩子之后。
         thread_local LateCleanup late{&finished};
         late.live = zmalloc::zmalloc(64);
@@ -437,6 +449,7 @@ TEST_F(ThreadCacheTest, TransferCacheReusesPartialBatchAndFullCacheFallsBack) {
     for (void *p : objects) {
         owners.deallocate(p, size);
     }
+
     // 传输容量仅容纳一批，超出容量的对象必须安全回退中央层。
     zmalloc::CacheTestAccess::release_batch(
         *tc, e.index, zmalloc::CacheTestAccess::lists(*tc)[e.index].size());
@@ -444,6 +457,7 @@ TEST_F(ThreadCacheTest, TransferCacheReusesPartialBatchAndFullCacheFallsBack) {
     EXPECT_TRUE(transfer.get_entry(e.index).full());
     const size_t available = transfer.get_entry(e.index).size();
     ASSERT_EQ(available, e.num_move);
+
     // 取走一个存活对象，确保消费者请求一整批时仍正确处理不足一批的命中。
     zmalloc::ThreadCache consumer;
     zmalloc::test::ThreadObjects consumer_objects(consumer);
@@ -497,11 +511,11 @@ TEST_P(ThreadCacheAllocFreeParamTest, AllocTouchFreeBySize) {
 INSTANTIATE_TEST_SUITE_P(
     Sizes, ThreadCacheAllocFreeParamTest,
     ::testing::Values(1u, 2u, 7u, 8u, 9u, 15u, 16u, 17u, 24u, 31u, 32u, 33u,
-                      48u, 63u, 64u, 65u, 80u, 95u, 96u, 97u, 112u, 127u,
-                      128u, 129u, 192u, 255u, 256u, 257u, 384u, 511u, 512u,
-                      513u, 768u, 1023u, 1024u, 1025u, 2047u, 2048u, 2049u,
-                      4095u, 4096u, 4097u, 8191u, 8192u, 8193u, 16384u,
-                      32768u, 65536u, 131072u, 200000u, 262144u));
+                      48u, 63u, 64u, 65u, 80u, 95u, 96u, 97u, 112u, 127u, 128u,
+                      129u, 192u, 255u, 256u, 257u, 384u, 511u, 512u, 513u,
+                      768u, 1023u, 1024u, 1025u, 2047u, 2048u, 2049u, 4095u,
+                      4096u, 4097u, 8191u, 8192u, 8193u, 16384u, 32768u, 65536u,
+                      131072u, 200000u, 262144u));
 
 TEST_P(ThreadCacheTooLongParamTest, ListTooLongTriggerBySize) {
     TriggerListTooLongOnce(tc, GetParam(), 1);

@@ -28,6 +28,8 @@ void serve_session(const Connection::ptr &connection,
                 auto deadline = options.read_timeout.count()
                                     ? zco::Deadline::after(options.read_timeout)
                                     : zco::Deadline{};
+
+                // 单次读取与累计空闲采用较早的截止时间；零进度的读取超时不重置空闲期限。
                 if (idle.time() < deadline.time())
                     deadline = idle;
                 auto received =
@@ -54,8 +56,9 @@ void serve_session(const Connection::ptr &connection,
                             break;
                         continue;
                     }
-                    // Every other transport error is terminal; no busy-loop
-                    // retry or duplicate logging by the lower layers.
+
+                    // 其余传输错误均终止会话，不忙循环重试，
+                    // 也不由下层重复记录日志。
                     report_error(options.on_error, received.error);
                     break;
                 }

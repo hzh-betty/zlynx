@@ -1,6 +1,6 @@
 /**
- * zhttp.h
- * zhttp 库统一头文件
+ * @file zhttp.h
+ * @brief zhttp 库统一头文件
  *
  * 引入该头文件后，调用方可以一次性获得 zhttp 的主要公共 API。
  * 适合示例代码、快速原型或希望减少 include 列表的场景；
@@ -8,7 +8,6 @@
  *
  * @author hzh-betty
  */
-
 #ifndef ZHTTP_H_
 #define ZHTTP_H_
 
@@ -44,5 +43,4 @@
 #include "zhttp/server_config.h"
 
 // 日志：统一日志接口与宏定义。
-
-#endif // ZHTTP_H_
+#endif

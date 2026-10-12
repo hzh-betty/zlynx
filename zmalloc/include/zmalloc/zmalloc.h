@@ -3,10 +3,10 @@
  * @brief zmalloc 对外统一接口
  * @author hzh-betty
  *
- *
+
+ * *
  * 提供高性能的内存分配和释放 API。
  */
-
 #ifndef ZMALLOC_ZMALLOC_H_
 #define ZMALLOC_ZMALLOC_H_
 
@@ -22,32 +22,37 @@ namespace zmalloc {
 /**
  * @brief 缓存及页内存统计，不含 PageMap/ObjectPool 等元数据。
  * @note 线程缓存仅统计调用线程；共享缓存按大小类分别取样，整体不是原子快照。
- *       released 字节表示成功建议回收的页范围，不代表实际 RSS 降幅。
+ * released 字节表示成功建议回收的页范围，不代表实际 RSS 降幅。
  */
 struct MemoryStats {
     size_t thread_cache_bytes;        // 当前线程缓存的空闲对象字节数。
     size_t transfer_cache_bytes;      // 共享传输缓存的空闲对象字节数。
     size_t page_cache_free_bytes;     // 页缓存中完全空闲的页字节数。
     size_t page_cache_released_bytes; // 其中整段已建议回收的空闲 Span 字节数。
-    size_t page_cache_mapped_bytes;   // 受管页的虚拟映射字节数，含直接分配的大块。
-    size_t total_released_bytes;      // 累计成功建议回收的字节数，重复复用后可再次计入。
+    size_t
+        page_cache_mapped_bytes; // 受管页的虚拟映射字节数，含直接分配的大块。
+    size_t
+        total_released_bytes; // 累计成功建议回收的字节数，重复复用后可再次计入。
 };
 
 /**
  * @brief 清理当前线程缓存、有界排空传输缓存，并回收完全空闲页的物理内存。
  * @return 本次成功 MADV_DONTNEED 的页范围字节数；保留虚拟地址映射。
  * @note 不访问其他线程的 TLS；并发分配时不保证共享缓存最终为空。
- *       可重复调用，调用后仍可正常分配；首次初始化可能抛出 std::bad_alloc。
+ * 可重复调用，调用后仍可正常分配；首次初始化可能抛出 std::bad_alloc。
  */
 size_t release_memory();
 
-/** @brief 返回内存统计；首次初始化可能抛出 std::bad_alloc。 */
+/**
+ * @brief 返回内存统计；首次初始化可能抛出 std::bad_alloc。
+
+ */
 MemoryStats memory_stats();
 
 /**
- * @brief 分配内存
- * @param size 请求字节数
- * @return 内存指针，失败抛出 std::bad_alloc
+ * @brief 分配至少 size 字节的未初始化内存。
+ * @return size 为零时返回 nullptr；否则返回由调用方通过 zfree() 释放的地址。
+ * @throws std::bad_alloc 请求过大或无法分配所需内存。
  */
 ZM_ALWAYS_INLINE void *zmalloc(size_t size) {
     // 第一步：零字节请求按接口约定直接返回空指针。
@@ -90,8 +95,11 @@ ZM_ALWAYS_INLINE void deallocate_managed(void *ptr, Span *span) {
 } // namespace internal
 
 /**
- * @brief 释放内存
- * @param ptr 内存指针
+ * @brief 释放 zmalloc() 分配的内存；nullptr 不产生操作。
+ * @pre 非空 ptr
+ * 必须是尚未释放的 zmalloc() 分配起始地址，不能是块内地址。
+ * @post
+ * 原分配及其所有借用指针失效；不得重复释放。
  */
 ZM_ALWAYS_INLINE void zfree(void *ptr) {
     if (ZM_UNLIKELY(ptr == nullptr)) {
@@ -103,4 +111,4 @@ ZM_ALWAYS_INLINE void zfree(void *ptr) {
 
 } // namespace zmalloc
 
-#endif // ZMALLOC_ZMALLOC_H_
+#endif

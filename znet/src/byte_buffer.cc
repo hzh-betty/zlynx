@@ -23,7 +23,8 @@ void ByteBuffer::append(const void *bytes, size_t size) {
     if (!bytes)
         throw std::invalid_argument("Null bytes with nonzero size");
     const auto *source = static_cast<const char *>(bytes);
-    // An append may resize/compact the storage. Snapshot self-appends first.
+
+    // 追加可能重分配或搬移存储；先复制来自自身的输入，避免源指针失效。
     const std::less<const char *> less;
     if (!less(source, bytes_.data()) &&
         less(source, bytes_.data() + bytes_.size())) {
@@ -58,8 +59,9 @@ void ByteBuffer::ensure_writable_bytes(size_t size) {
     const size_t readable = readable_bytes();
     if (size > bytes_.max_size() - readable)
         throw std::length_error("ByteBuffer capacity overflow");
-    // Compact only when the reclaimed prefix pays for moving the live bytes.
-    // Otherwise grow with slack so small consume/append cycles are amortized.
+
+    // 仅当可回收前缀足够抵偿存活数据的搬移时压缩；
+    // 否则预留增长余量，减少反复少量消费、追加导致的搬移。
     if (reader_ >= readable && size <= bytes_.size() - readable) {
         std::memmove(bytes_.data(), peek(), readable);
     } else {

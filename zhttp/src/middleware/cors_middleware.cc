@@ -1,10 +1,8 @@
 /**
- * cors_middleware.cc
- * cors_middleware 实现。
+ * @file cors_middleware.cc
  *
  * @author hzh-betty
  */
-
 #include "zhttp/middleware/cors_middleware.h"
 
 #include "zhttp/http_common.h"
@@ -93,6 +91,7 @@ void CorsMiddleware::apply_common_cors_headers(HttpContext &request,
 
 bool CorsMiddleware::before(HttpContext &request) {
     auto &response = request.response();
+
     // 非预检请求不在 before 阶段处理，交给业务链路继续执行，
     // 最终在 after 阶段统一补齐 CORS 响应头。
     if (!is_preflight_request(request)) {
@@ -148,6 +147,7 @@ bool CorsMiddleware::before(HttpContext &request) {
 
 void CorsMiddleware::after(HttpContext &request) {
     auto &response = request.response();
+
     // 普通请求阶段补齐 CORS 头；预检请求即便 short-circuit，
     // 也会执行到 after，这里重复设置是幂等的（同名头会覆盖为同值）。
     apply_common_cors_headers(request, response);

@@ -1,5 +1,6 @@
 #include "zhttp/rate_limiter.h"
 #include <cmath>
+
 namespace zhttp::mid {
 namespace {
 // 将配置的时间单位换算成毫秒窗口，供固定窗口和滑动窗口算法使用。
@@ -25,7 +26,8 @@ static inline RateLimiter::NowFunc default_now(RateLimiter::NowFunc f) {
     return [] { return std::chrono::steady_clock::now(); };
 }
 
-}
+} // namespace
+
 FixedWindowRateLimiter::FixedWindowRateLimiter(size_t capacity, TimeUnit unit,
                                                NowFunc now_func)
     : capacity_(capacity), unit_(unit), now_func_(default_now(now_func)) {
@@ -35,9 +37,8 @@ FixedWindowRateLimiter::FixedWindowRateLimiter(size_t capacity, TimeUnit unit,
 }
 
 bool FixedWindowRateLimiter::isAllowed(const std::string &key) {
-    // 固定窗口：每个 key 维护一个窗口起点与计数。
-    // 优点：实现简单；缺点：窗口边界处可能产生“突刺”（例如两端各打满
-    // capacity）。 复杂度：摊还 O(1)，内存约为 O(key 基数)。
+    // 窗口以当前 key 首次放行的时间为起点，而非对齐到全局整点。
+    // 周期清理会扫描当前分片，不能将每次判定视为固定开销。
     const auto t = now_func_();
     const auto win = unit_to_ms(unit_);
 
@@ -186,8 +187,7 @@ std::chrono::duration<double> TokenBucketRateLimiter::unitDuration() const {
 }
 
 bool TokenBucketRateLimiter::isAllowed(const std::string &key) {
-    // 令牌桶：按时间流逝补充令牌（可累计小数），每次请求扣减 1。
-    // 复杂度：摊还 O(1)，内存约为 O(key 基数)。
+    // 小数令牌保留补充进度；按分片同步扣减，周期清理扫描该分片的桶。
     const auto t = now();
     const double cap = static_cast<double>(capacity_);
     const double rate = cap / unitDuration().count(); // 每秒补充的令牌数
@@ -244,6 +244,7 @@ TokenBucketRateLimiter::retryAfter(const std::string &key) const {
     }
 
     const Bucket &b = it->second;
+
     // 以当前剩余令牌推算距离下一个完整令牌还需等待多久。
     if (b.tokens >= 1.0) {
         return std::chrono::milliseconds(0);
@@ -262,27 +263,31 @@ TokenBucketRateLimiter::retryAfter(const std::string &key) const {
     return std::chrono::milliseconds(ms);
 }
 
-
 size_t FixedWindowRateLimiter::prune_locked(Shard &shard, TimePoint time) {
     size_t removed = 0;
     for (auto it = shard.states.begin(); it != shard.states.end();) {
         if (time - it->second.window_start >= unit_to_ms(unit_)) {
             it = shard.states.erase(it);
             ++removed;
-        } else ++it;
+        } else
+            ++it;
     }
     return removed;
 }
+
 size_t SlidingWindowRateLimiter::prune_locked(Shard &shard, TimePoint time) {
     size_t removed = 0;
     for (auto it = shard.queues.begin(); it != shard.queues.end();) {
-        if (it->second.empty() || time - it->second.back() >= unit_to_ms(unit_)) {
+        if (it->second.empty() ||
+            time - it->second.back() >= unit_to_ms(unit_)) {
             it = shard.queues.erase(it);
             ++removed;
-        } else ++it;
+        } else
+            ++it;
     }
     return removed;
 }
+
 size_t TokenBucketRateLimiter::prune_locked(Shard &shard, TimePoint time) {
     size_t removed = 0;
     for (auto it = shard.buckets.begin(); it != shard.buckets.end();) {
@@ -290,10 +295,12 @@ size_t TokenBucketRateLimiter::prune_locked(Shard &shard, TimePoint time) {
         if (time - it->second.last >= unit_to_ms(unit_)) {
             it = shard.buckets.erase(it);
             ++removed;
-        } else ++it;
+        } else
+            ++it;
     }
     return removed;
 }
+
 size_t FixedWindowRateLimiter::prune_expired() {
     const auto time = now_func_();
     size_t removed = 0;
@@ -303,6 +310,7 @@ size_t FixedWindowRateLimiter::prune_expired() {
     }
     return removed;
 }
+
 size_t SlidingWindowRateLimiter::prune_expired() {
     const auto time = now_func_();
     size_t removed = 0;
@@ -312,6 +320,7 @@ size_t SlidingWindowRateLimiter::prune_expired() {
     }
     return removed;
 }
+
 size_t TokenBucketRateLimiter::prune_expired() {
     const auto time = now();
     size_t removed = 0;

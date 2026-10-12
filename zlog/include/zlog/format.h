@@ -1,9 +1,7 @@
 /**
  * @file format.h
- * @brief format 定义。
  * @author hzh-betty
  */
-
 #ifndef ZLOG_FORMAT_H_
 #define ZLOG_FORMAT_H_
 #include <memory>
@@ -13,6 +11,7 @@
 #include <fmt/core.h>
 
 #include "zlog/message.h"
+
 namespace zlog {
 static const std::string kTimeFormatDefault = "%H:%M:%S"; // 默认时间输出格式
 
@@ -56,11 +55,15 @@ class Formatter {
      */
     bool parse_pattern();
 
-    // 格式项是已解析规则的值；key 为 0 时 value 保存普通文本。
+    /**
+     * @brief 格式项是已解析规则的值；key 为 0 时 value 保存普通文本。
+
+     */
     struct Item {
         char key;
         std::string value;
     };
+
     static Item create_item(const std::string &key, const std::string &val);
 
     std::string pattern_;     // 格式化字符串
@@ -68,4 +71,4 @@ class Formatter {
 };
 } // namespace zlog
 
-#endif // ZLOG_FORMAT_H_
+#endif

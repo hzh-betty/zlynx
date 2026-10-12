@@ -1,8 +1,9 @@
-#include "protocol/http/response_encoder.h"
 #include "../support/request_builder.h"
+#include "protocol/http/response_encoder.h"
 #include "zhttp/content/multipart.h"
 #include <type_traits>
 using namespace zhttp;
+
 TEST(RequestBodyTest, MultipartCacheUsesInjectedParserAndInvalidatesTogether) {
     std::string bytes = "payload";
     detail::ParsedRequestBody body(bytes);
@@ -20,16 +21,18 @@ TEST(RequestBodyTest, MultipartCacheUsesInjectedParserAndInvalidatesTogether) {
     EXPECT_EQ(body.multipart("multipart/form-data", parser), result.get());
     EXPECT_EQ(calls, 2);
     body.invalidate();
-    detail::ParsedRequestBody::MultipartParser failed = [&](std::string *error) {
-        ++calls;
-        *error = "missing boundary";
-        return std::shared_ptr<MultipartFormData>{};
-    };
+    detail::ParsedRequestBody::MultipartParser failed =
+        [&](std::string *error) {
+            ++calls;
+            *error = "missing boundary";
+            return std::shared_ptr<MultipartFormData>{};
+        };
     EXPECT_FALSE(body.parse_multipart("multipart/form-data", failed));
     EXPECT_FALSE(body.parse_multipart("multipart/form-data", failed));
     EXPECT_EQ(body.multipart_error(), "missing boundary");
     EXPECT_EQ(calls, 3);
 }
+
 TEST(ProtocolModelTest, ComposedLinesAndEncodedTargetsHaveOneSource) {
     HttpRequest request;
     request.set_method(HttpMethod::GET);
@@ -48,6 +51,7 @@ TEST(ProtocolModelTest, ComposedLinesAndEncodedTargetsHaveOneSource) {
               "HTTP/1.1 299 \r\n");
     EXPECT_THROW(request.set_target("/%GG"), std::invalid_argument);
 }
+
 TEST(ProtocolModelTest, HeadersPreserveOrderAndDuplicatesAndRejectInjection) {
     HttpHeaders headers;
     headers.append("Set-Cookie", "a=1");
@@ -60,7 +64,9 @@ TEST(ProtocolModelTest, HeadersPreserveOrderAndDuplicatesAndRejectInjection) {
     EXPECT_THROW(headers.append("Bad Name", "x"), std::invalid_argument);
     EXPECT_THROW(headers.set("X", "ok\r\nBad: header"), std::invalid_argument);
 }
-TEST(ProtocolModelTest, HeaderViewsDistinguishMissingAndEmptyAndInputsAreOwned) {
+
+TEST(ProtocolModelTest,
+     HeaderViewsDistinguishMissingAndEmptyAndInputsAreOwned) {
     HttpHeaders headers;
     EXPECT_FALSE(headers.get_view("Missing").has_value());
     headers.append("Empty", "");
@@ -76,6 +82,7 @@ TEST(ProtocolModelTest, HeaderViewsDistinguishMissingAndEmptyAndInputsAreOwned) 
     EXPECT_EQ(headers.get_view("x-long-header-name"), std::string(256, 'v'));
     EXPECT_EQ(headers.count("X-Long-Header-Name"), 1u);
 }
+
 TEST(ProtocolModelTest, HeaderMutationsAcceptViewsIntoTheirOwnFields) {
     HttpHeaders headers;
     headers.append("X-Long-Header-Name", std::string(256, 'a'));
@@ -96,6 +103,7 @@ TEST(ProtocolModelTest, HeaderMutationsAcceptViewsIntoTheirOwnFields) {
     EXPECT_EQ(headers.begin()->first, "Other-Long-Header");
     EXPECT_EQ(headers.begin()->second, "kept");
 }
+
 TEST(ProtocolModelTest, QueryLookupPreservesDecodingDuplicatesAndEmptyValues) {
     Uri uri("/?a+b=one&a%20b=two&flag&empty=&binary=%00%ff&&=blank");
     const std::string key = "[a b]";
@@ -109,6 +117,7 @@ TEST(ProtocolModelTest, QueryLookupPreservesDecodingDuplicatesAndEmptyValues) {
     EXPECT_EQ(uri.query_param(""), "blank");
     EXPECT_EQ(uri.query_param("binary"), std::string("\0\xff", 2));
 }
+
 TEST(ProtocolModelTest, BodyMovesResourcesAndModelIsNotImplicitlyCopied) {
     static_assert(!std::is_copy_constructible<HttpBody>::value,
                   "body resource cannot be copied");
@@ -120,6 +129,7 @@ TEST(ProtocolModelTest, BodyMovesResourcesAndModelIsNotImplicitlyCopied) {
     EXPECT_EQ(moved.content(), "bytes");
     EXPECT_EQ(moved.length(), 5u);
 }
+
 TEST(ContextTest, CompletionRunsOnceAndSurvivesCallbackExceptions) {
     auto request = std::make_shared<HttpRequest>();
     HttpContext context(request);
@@ -134,6 +144,7 @@ TEST(ContextTest, CompletionRunsOnceAndSurvivesCallbackExceptions) {
     context.complete(CompletionResult::Cancelled);
     EXPECT_EQ(calls, 2);
 }
+
 TEST(RequestComponentsTest, ReadonlyContextOwnsMutableDerivedCaches) {
     auto json = std::make_shared<HttpRequest>();
     json->set_header("Content-Type", "application/json");

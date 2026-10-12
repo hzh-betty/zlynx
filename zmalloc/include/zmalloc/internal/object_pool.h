@@ -1,9 +1,9 @@
 /**
  * @file object_pool.h
- * @brief 定长内存池，用于高效分配固定大小的对象（如 Span）
+ * @brief 定长内存池，用于高效分配固定大小的对象（如
+ * Span）
  * @author hzh-betty
  */
-
 #ifndef ZMALLOC_INTERNAL_OBJECT_POOL_H_
 #define ZMALLOC_INTERNAL_OBJECT_POOL_H_
 
@@ -19,13 +19,14 @@ namespace zmalloc {
 
 /**
  * @brief 定长内存池模板类
- * @tparam T 管理的对象类型
+ * @tparam T 可默认构造且可析构的对象类型；对齐后的槽位及对齐填充须适合 128 KiB
+ * 块。
  *
  * ObjectPool 从系统按 128 KiB 大块申请内存，再顺序切分为 T。
  * 释放的对象利用自身首字串成自由链表并优先复用。它用于 Span、
  * PageMap 节点等内部元数据，避免内部对象进入 zmalloc 形成递归分配。
  *
- * @note ObjectPool 不提供锁，上层组件负责串行化访问。
+ * @note ObjectPool 不提供锁，上层组件负责串行化访问；析构不回收系统内存块。
  */
 template <typename T> class ObjectPool : public NonCopyable {
   public:
@@ -90,8 +91,9 @@ template <typename T> class ObjectPool : public NonCopyable {
     }
 
     /**
-     * @brief 释放一个对象
-     * @param obj 对象指针
+     * @brief 析构对象并将其存储加入复用链表。
+     * @pre obj 必须是本池 allocate() 返回的存活对象，不能为空或重复释放。
+     * @post 原对象及其借用引用失效；底层内存保留在池中。
      */
     void deallocate(T *obj) {
         // 调用析构函数
@@ -110,4 +112,4 @@ template <typename T> class ObjectPool : public NonCopyable {
 
 } // namespace zmalloc
 
-#endif // ZMALLOC_INTERNAL_OBJECT_POOL_H_
+#endif

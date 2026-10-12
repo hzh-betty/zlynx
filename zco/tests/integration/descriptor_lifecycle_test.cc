@@ -72,8 +72,9 @@ TEST(Descriptor, ReplacementCancelsOldWaitAndStaleEventsCannotWakeNewWait) {
     auto fresh = fixture.reactor->await_registration();
     ASSERT_NE(stale, fresh);
     fixture.reactor->emit(stale, io::Interest::read);
-    // Pinned barrier executes after the stale event is consumed. A spurious
-    // wake would have finished next_task before this task runs.
+
+    // 固定到该工作线程的屏障在旧事件消费后执行；若有误唤醒，
+    // next_task 会在此任务运行前完成。
     EXPECT_TRUE(
         fixture
             .spawn([&] { EXPECT_EQ(next_task.status(), TaskStatus::running); })

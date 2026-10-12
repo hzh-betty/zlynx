@@ -1,22 +1,19 @@
 ﻿/**
  * @file logger.h
- * @brief logger 定义。
  * @author hzh-betty
  */
-
 #ifndef ZLOG_LOGGER_H_
 #define ZLOG_LOGGER_H_
 /**
  * @brief 日志器模块
  * 实现同步和异步日志器的记录接口
  */
-
 #include <atomic>
 #include <chrono>
 #include <memory>
 #include <mutex>
-#include <string>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -31,7 +28,10 @@ namespace detail {
 class AsyncLooper;
 }
 
-/** @brief 异步缓冲策略；两种策略达到容量上限时都会阻塞等待。 */
+/**
+ * @brief 异步缓冲策略；两种策略达到容量上限时都会阻塞等待。
+
+ */
 enum class AsyncType {
     ASYNC_SAFE,  // 固定容量，等待可用空间
     ASYNC_UNSAFE // 允许扩容，达到上限后等待可用空间
@@ -63,10 +63,16 @@ class Logger {
      */
     std::string get_name() const { return logger_name_; }
 
-    /** @brief 等待此前已接收的日志完成输出并刷新所有 sink；失败时抛出异常。 */
+    /**
+     * @brief 等待此前已接收的日志完成输出并刷新所有
+     * sink；失败时抛出异常。
+     */
     virtual void flush() = 0;
 
-    /** @brief 停止接收、排空并刷新；清理后报告错误，重复关闭无操作。 */
+    /**
+     * @brief 停止接收、排空并刷新；清理后报告错误，重复关闭无操作。
+
+     */
     virtual void close() = 0;
 
     /**
@@ -80,8 +86,8 @@ class Logger {
      * @param args 格式化参数
      */
     template <typename Level, typename... Args>
-    void log_impl(Level level, const char *file, size_t line, fmt::string_view fmt,
-                  Args &&...args) {
+    void log_impl(Level level, const char *file, size_t line,
+                  fmt::string_view fmt, Args &&...args) {
         log_impl_helper(level, file, line, fmt, std::forward<Args>(args)...);
     }
 
@@ -89,7 +95,8 @@ class Logger {
      * @brief 记录 DEBUG 级别日志
      */
     template <typename... Args>
-    void debug(const char *file, size_t line, fmt::string_view fmt, Args &&...args) {
+    void debug(const char *file, size_t line, fmt::string_view fmt,
+               Args &&...args) {
         log_impl(LogLevel::value::DEBUG, file, line, fmt,
                  std::forward<Args>(args)...);
     }
@@ -98,7 +105,8 @@ class Logger {
      * @brief 记录 INFO 级别日志
      */
     template <typename... Args>
-    void info(const char *file, size_t line, fmt::string_view fmt, Args &&...args) {
+    void info(const char *file, size_t line, fmt::string_view fmt,
+              Args &&...args) {
         log_impl(LogLevel::value::INFO, file, line, fmt,
                  std::forward<Args>(args)...);
     }
@@ -117,7 +125,8 @@ class Logger {
      * @brief 记录 ERROR 级别日志
      */
     template <typename... Args>
-    void error(const char *file, size_t line, fmt::string_view fmt, Args &&...args) {
+    void error(const char *file, size_t line, fmt::string_view fmt,
+               Args &&...args) {
         log_impl(LogLevel::value::ERROR, file, line, fmt,
                  std::forward<Args>(args)...);
     }
@@ -126,7 +135,8 @@ class Logger {
      * @brief 记录 FATAL 级别日志
      */
     template <typename... Args>
-    void fatal(const char *file, size_t line, fmt::string_view fmt, Args &&...args) {
+    void fatal(const char *file, size_t line, fmt::string_view fmt,
+               Args &&...args) {
         log_impl(LogLevel::value::FATAL, file, line, fmt,
                  std::forward<Args>(args)...);
     }
@@ -135,10 +145,15 @@ class Logger {
     // 缓存只借给当前最外层调用；异常退出也必须归还占用标记。
     class BufferUse {
       public:
-        explicit BufferUse(bool &in_use) noexcept : in_use_(in_use) { in_use_ = true; }
+        explicit BufferUse(bool &in_use) noexcept : in_use_(in_use) {
+            in_use_ = true;
+        }
+
         ~BufferUse() { in_use_ = false; }
+
         BufferUse(const BufferUse &) = delete;
         BufferUse &operator=(const BufferUse &) = delete;
+
       private:
         bool &in_use_;
     };
@@ -155,7 +170,8 @@ class Logger {
      */
     template <typename... Args>
     void log_impl_helper(const LogLevel::value level, const char *file,
-                         const size_t line, fmt::string_view fmt, Args &&...args) {
+                         const size_t line, fmt::string_view fmt,
+                         Args &&...args) {
         if (closed_.load(std::memory_order_acquire)) {
             throw std::runtime_error("logger is closed");
         }
@@ -167,15 +183,18 @@ class Logger {
         thread_local bool buffer_in_use = false;
         const auto write = [&](fmt::memory_buffer &buffer) {
             buffer.clear(); // 清空旧数据，保留已经扩容的容量。
+
             // 格式化到缓冲区。
             fmt::vformat_to(std::back_inserter(buffer), fmt,
                             fmt::make_format_args((args)...));
+
             // 视图只在本次序列化期间借用缓冲区，保留长度和内嵌零字节。
             serialize(level, file, line,
                       fmt::string_view(buffer.data(), buffer.size()));
         };
         if (buffer_in_use) {
-            // 自定义参数格式化或 sink 触发嵌套日志时，不覆盖外层还在使用的数据。
+            // 自定义参数格式化或 sink
+            // 触发嵌套日志时，不覆盖外层还在使用的数据。
             fmt::memory_buffer nested_buffer;
             write(nested_buffer);
         } else {
@@ -208,7 +227,7 @@ class Logger {
 
   protected:
     std::mutex mutex_;                // 互斥锁
-    std::atomic<bool> closed_{false};  // 关闭后拒绝新日志
+    std::atomic<bool> closed_{false}; // 关闭后拒绝新日志
     const std::string logger_name_;   // 自有名称，生命周期与日志器一致
     LogLevel::value limit_level_;     // 日志等级限制
     Formatter::ptr formatter_;        // 日志格式化器
@@ -258,7 +277,7 @@ class AsyncLogger final : public Logger {
      * @param formatter 日志格式化器
      * @param sinks 日志落地器列表
      * @param looper_type 异步类型
-     * @param milliseco 最大等待时间
+     * @param milliseco 消费者等待缓冲区数据的时间间隔，不限制生产者阻塞时间。
      */
     AsyncLogger(std::string logger_name, const LogLevel::value limit_level,
                 const Formatter::ptr &formatter,
@@ -285,4 +304,4 @@ class AsyncLogger final : public Logger {
 
 } // namespace zlog
 
-#endif // ZLOG_LOGGER_H_
+#endif

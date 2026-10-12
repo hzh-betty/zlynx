@@ -1,5 +1,6 @@
 #include "application/request_pipeline.h"
 #include <stdexcept>
+
 namespace zhttp {
 namespace {
 void default_exception_handler(HttpContext &context, std::exception_ptr) {
@@ -7,12 +8,14 @@ void default_exception_handler(HttpContext &context, std::exception_ptr) {
         .status(HttpStatus::INTERNAL_SERVER_ERROR)
         .text("Internal Server Error");
 }
+
 std::string normalize_group_prefix(const std::string &prefix) {
     if (prefix.empty()) {
         return "";
     }
 
     std::string normalized = prefix;
+
     // 统一裁掉尾随 /，避免同一个组前缀出现多份注册入口。
     while (normalized.size() > 1 && normalized.back() == '/') {
         normalized.pop_back();
@@ -25,8 +28,7 @@ std::string normalize_group_prefix(const std::string &prefix) {
     return normalized;
 }
 
-bool is_group_prefix_match(const std::string &prefix,
-                           const std::string &path) {
+bool is_group_prefix_match(const std::string &prefix, const std::string &path) {
     // path 必须严格位于 prefix 之下，因此至少要多一个 "/segment"。
     if (prefix.empty() || path.size() <= prefix.size()) {
         return false;
@@ -41,6 +43,7 @@ bool is_group_prefix_match(const std::string &prefix,
 }
 
 } // namespace
+
 RequestPipeline::RequestPipeline()
     : not_found_handler_([](HttpContext &context) {
           context.response()
@@ -48,10 +51,12 @@ RequestPipeline::RequestPipeline()
               .html("<html><body><h1>404 Not Found</h1></body></html>");
       }),
       exception_handler_(default_exception_handler) {}
+
 void RequestPipeline::check_mutable() const {
     if (frozen_)
         throw std::logic_error("Pipeline configuration is frozen");
 }
+
 void RequestPipeline::use_group(const std::string &prefix,
                                 mid::Middleware::ptr middleware) {
     check_mutable();
@@ -113,21 +118,25 @@ void RequestPipeline::use(mid::Middleware::ptr middleware) {
     if (middleware)
         global_middlewares_.push_back(std::move(middleware));
 }
+
 void RequestPipeline::use(const std::string &path,
                           mid::Middleware::ptr middleware) {
     check_mutable();
     if (middleware)
         route_middlewares_[path].push_back(std::move(middleware));
 }
+
 void RequestPipeline::set_not_found_handler(HttpHandler callback) {
     check_mutable();
     not_found_handler_ = std::move(callback);
 }
+
 void RequestPipeline::set_exception_handler(ExceptionHandler handler) {
     check_mutable();
     exception_handler_ =
         handler ? std::move(handler) : default_exception_handler;
 }
+
 void RequestPipeline::execute_middlewares(
     HttpContext &context, const std::vector<mid::Middleware::ptr> &middlewares,
     const HttpHandler &handler,
@@ -138,6 +147,8 @@ void RequestPipeline::execute_middlewares(
     try {
         for (const auto &middleware : middlewares) {
             proceed = middleware->before(context);
+
+            // 仅在 before 正常返回后登记收尾责任，返回 false 也包括当前实例。
             ++executed;
             if (!proceed)
                 break;
@@ -156,20 +167,27 @@ void RequestPipeline::execute_middlewares(
         }
     }
 }
-bool RequestPipeline::execute(HttpContext &context, const Router &router) const {
+
+bool RequestPipeline::execute(HttpContext &context,
+                              const Router &router) const {
     auto match = router.match(context.path(), context.method());
     context.set_path_params(std::move(match.params));
+
     // 配置列表共享只读；本次请求的选择顺序与执行状态保持局部所有权。
     auto groups = match.found ? collect_group_middlewares(context.path())
                               : std::vector<mid::Middleware::ptr>{};
     auto it = route_middlewares_.find(context.path());
     std::vector<mid::Middleware::ptr> middlewares;
-    middlewares.reserve(global_middlewares_.size() + groups.size() +
-                        (it == route_middlewares_.end() ? 0 : it->second.size()));
-    middlewares.insert(middlewares.end(), global_middlewares_.begin(), global_middlewares_.end());
+    middlewares.reserve(
+        global_middlewares_.size() + groups.size() +
+        (it == route_middlewares_.end() ? 0 : it->second.size()));
+    middlewares.insert(middlewares.end(), global_middlewares_.begin(),
+                       global_middlewares_.end());
     middlewares.insert(middlewares.end(), groups.begin(), groups.end());
     if (it != route_middlewares_.end())
-        middlewares.insert(middlewares.end(), it->second.begin(), it->second.end());
+        middlewares.insert(middlewares.end(), it->second.begin(),
+                           it->second.end());
+
     // 异常路径先清除原响应和升级意图；自定义处理器若再次失败则回退到普通 500。
     auto error = [&](std::exception_ptr exception) {
         context.reset_result();
@@ -193,6 +211,7 @@ bool RequestPipeline::execute(HttpContext &context, const Router &router) const 
     const auto status = context.response().status_line().status_code;
     if (context.upgrade() && status >= 200)
         context.take_upgrade();
+
     // 升级结果必须是空正文的 101；无升级意图的 1xx 不能成为最终响应。
     if ((context.upgrade() &&
          (status != 101 ||

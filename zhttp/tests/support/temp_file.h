@@ -1,4 +1,6 @@
-#pragma once
+#ifndef ZLYNX_ZHTTP_TESTS_SUPPORT_TEMP_FILE_H_
+#define ZLYNX_ZHTTP_TESTS_SUPPORT_TEMP_FILE_H_
+
 #include "zco/io/descriptor.h"
 #include <cstdlib>
 #include <stdexcept>
@@ -27,3 +29,5 @@ struct TempFile {
     zco::io::Descriptor descriptor;
 };
 } // namespace zhttp::test
+
+#endif

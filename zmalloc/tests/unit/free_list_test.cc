@@ -2,7 +2,6 @@
  * @file free_list_test.cc
  * @brief FreeList 单元测试
  */
-
 #include "zmalloc/internal/free_list.h"
 #include <gtest/gtest.h>
 
@@ -12,6 +11,7 @@ namespace {
 class FreeListTest : public ::testing::Test {
   protected:
     FreeList list_;
+
     // 用于测试的内存块
     char blocks_[10][sizeof(void *)];
 
@@ -22,8 +22,9 @@ class FreeListTest : public ::testing::Test {
         }
     }
 };
-class FreeListCountParamTest
-    : public FreeListTest, public ::testing::WithParamInterface<int> {};
+
+class FreeListCountParamTest : public FreeListTest,
+                               public ::testing::WithParamInterface<int> {};
 
 static size_t ChainLength(void *start, size_t hard_limit = 1024) {
     size_t n = 0;
@@ -133,6 +134,7 @@ TEST_F(FreeListTest, PopBatchExactCount) {
     ASSERT_EQ(list_.pop_batch(batch, 2), static_cast<size_t>(2));
     start = batch[0];
     end = batch[(2) - 1];
+
     // 取出全部
     EXPECT_EQ(list_.size(), 0);
     EXPECT_NE(start, nullptr);
@@ -234,10 +236,10 @@ TEST_F(FreeListTest, PopBatchChainStructure) {
     // 验证取出的是一个链表
     EXPECT_NE(start, nullptr);
     EXPECT_NE(end, nullptr);
+
     // 验证剩余
     EXPECT_EQ(list_.size(), 2);
 }
-
 
 TEST_F(FreeListTest, PushRangeAndPopAll) {
     next_obj(blocks_[0]) = blocks_[1];
@@ -292,7 +294,7 @@ TEST_P(FreeListCountParamTest, PopBatchReturnsRequestedChainLength) {
     void *batch[10] = {};
     ASSERT_EQ(list_.pop_batch(batch, n), static_cast<size_t>(n));
     start = batch[0];
-    end = batch[(n) - 1];
+    end = batch[(n)-1];
     ASSERT_NE(start, nullptr);
     ASSERT_NE(end, nullptr);
     EXPECT_EQ(ChainLength(start), static_cast<size_t>(n));
@@ -361,13 +363,13 @@ TEST_F(FreeListTest, PopBatchThenPushRangeRoundTrip) {
     ASSERT_EQ(ChainLength(start), 5u);
     list_.push_range(start, end, 5);
     EXPECT_EQ(list_.size(), 10u);
+
     // 还能完整 pop 出 10 个
     for (int i = 0; i < 10; ++i) {
         EXPECT_NE(list_.pop(), nullptr);
     }
     EXPECT_TRUE(list_.empty());
 }
-
 
 // push_range 后再 pop_batch：验证 end->next 被正确断开
 TEST_F(FreeListTest, PushRangeThenPopBatchBreaksEndNext) {

@@ -148,6 +148,7 @@ TEST(HttpServerBuilderTest, BuildConfiguresRoutesMiddlewareAndHandlers) {
         const char *path;
         const char *body;
     };
+
     const Case cases[] = {
         {HttpMethod::GET, "/cb-get", "cb-get"},
         {HttpMethod::POST, "/cb-post", "cb-post"},

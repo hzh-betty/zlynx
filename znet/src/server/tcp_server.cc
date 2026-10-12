@@ -8,8 +8,12 @@
 
 namespace znet {
 namespace {
-// Tasks retain only their run, never a facade/Runtime/application raw pointer.
-// Each restart creates a fresh run and fresh session ids.
+/**
+ * @brief 一次启动的不可变配置与可停止运行状态，由本轮任务共享持有。
+ *
+ * 重启创建新状态与会话编号；任务不借用 TcpServer 外观，避免请求停止后
+ * 外观先销毁时留下悬空捕获。所属 Runtime 仍须覆盖任务生命周期。
+ */
 struct ServerRun {
     ServerRun(Socket socket, Endpoint bound, SessionFactory create_session,
               ServerOptions config, std::vector<zco::Executor> executors)
@@ -77,7 +81,8 @@ struct ServerRun {
 
     void rollback_start() {
         request_stop();
-        // Retire the reaper even when no accept task could be submitted.
+
+        // 即使接收连接任务提交失败，也要结束清理任务。
         sessions.finish_accepting();
         join();
     }
@@ -111,7 +116,7 @@ TcpServer::TcpServer(zco::Runtime &runtime, Endpoint endpoint,
 
 TcpServer::~TcpServer() {
     if (zco::in_coroutine())
-        request_stop(); // Tasks own their run; no dangling facade capture.
+        request_stop(); // 任务持有运行状态，避免外观对象析构后留下悬空捕获。
     else
         stop();
 }
@@ -141,7 +146,8 @@ Result<void> TcpServer::start() {
     auto run = std::make_shared<ServerRun>(
         std::move(socket).value(), std::move(endpoint).value(), impl_->factory,
         impl_->options, std::move(workers));
-    // Publish before submission; a callback can immediately request_stop.
+
+    // 先发布运行状态再提交任务，使立即执行的回调能调用 request_stop。
     std::atomic_store(&impl_->run, run);
     try {
         auto started = run->start_tasks(run);

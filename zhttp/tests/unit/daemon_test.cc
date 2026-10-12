@@ -119,13 +119,20 @@ TEST(DaemonTest, SignalsAreHandledOnlyWithinTheProcessRunner) {
     for (int signal : {SIGTERM, SIGINT}) {
         struct sigaction previous{}, restored{};
         ASSERT_EQ(::sigaction(signal, nullptr, &previous), 0);
-        EXPECT_EQ(Daemon::start_daemon(0, nullptr, [signal](int, char **) {
-            EXPECT_FALSE(Daemon::should_stop());
-            std::raise(signal);
-            EXPECT_TRUE(Daemon::should_stop());
-            EXPECT_EQ(Daemon::start_daemon(0, nullptr, [](int, char **) { return 0; }, false), -1);
-            return 0;
-        }, false), 0);
+        EXPECT_EQ(Daemon::start_daemon(
+                      0, nullptr,
+                      [signal](int, char **) {
+                          EXPECT_FALSE(Daemon::should_stop());
+                          std::raise(signal);
+                          EXPECT_TRUE(Daemon::should_stop());
+                          EXPECT_EQ(Daemon::start_daemon(
+                                        0, nullptr,
+                                        [](int, char **) { return 0; }, false),
+                                    -1);
+                          return 0;
+                      },
+                      false),
+                  0);
         ASSERT_EQ(::sigaction(signal, nullptr, &restored), 0);
         EXPECT_EQ(restored.sa_handler, previous.sa_handler);
     }
@@ -134,12 +141,18 @@ TEST(DaemonTest, SignalsAreHandledOnlyWithinTheProcessRunner) {
 TEST(DaemonTest, SignalHandlersAreRestoredWhenCallbackThrows) {
     struct sigaction previous{}, restored{};
     ASSERT_EQ(::sigaction(SIGTERM, nullptr, &previous), 0);
-    EXPECT_THROW(Daemon::start_daemon(0, nullptr, [](int, char **) -> int {
-        throw std::runtime_error("callback failed");
-    }, false), std::runtime_error);
+    EXPECT_THROW(Daemon::start_daemon(
+                     0, nullptr,
+                     [](int, char **) -> int {
+                         throw std::runtime_error("callback failed");
+                     },
+                     false),
+                 std::runtime_error);
     ASSERT_EQ(::sigaction(SIGTERM, nullptr, &restored), 0);
     EXPECT_EQ(restored.sa_handler, previous.sa_handler);
-    EXPECT_EQ(Daemon::start_daemon(0, nullptr, [](int, char **) { return 0; }, false), 0);
+    EXPECT_EQ(Daemon::start_daemon(
+                  0, nullptr, [](int, char **) { return 0; }, false),
+              0);
 }
 
 TEST(DaemonTest, DaemonModeRunsWorkerCallbackInSubprocess) {

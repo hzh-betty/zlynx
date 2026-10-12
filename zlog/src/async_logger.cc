@@ -2,7 +2,6 @@
  * @file async_logger.cc
  * @brief 日志器与内部异步执行器的装配。
  */
-
 #include "async/looper.h"
 #include "zlog/logger.h"
 
@@ -20,11 +19,14 @@ AsyncLogger::AsyncLogger(std::string logger_name, LogLevel::value limit_level,
 
 AsyncLogger::~AsyncLogger() { close_noexcept(); }
 
-void AsyncLogger::log(const char *data, size_t len) { looper_->push(data, len); }
+void AsyncLogger::log(const char *data, size_t len) {
+    looper_->push(data, len);
+}
 
 void AsyncLogger::flush() {
     if (looper_->is_worker_thread()) {
-        throw std::logic_error("cannot flush an async logger from its own sink");
+        throw std::logic_error(
+            "cannot flush an async logger from its own sink");
     }
     std::lock_guard<std::mutex> lock(mutex_);
     if (!closed_) {
@@ -34,7 +36,8 @@ void AsyncLogger::flush() {
 
 void AsyncLogger::close() {
     if (looper_->is_worker_thread()) {
-        throw std::logic_error("cannot close an async logger from its own sink");
+        throw std::logic_error(
+            "cannot close an async logger from its own sink");
     }
     std::vector<LogSink::ptr> released;
     std::exception_ptr failure;

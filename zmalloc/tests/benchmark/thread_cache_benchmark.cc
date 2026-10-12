@@ -7,8 +7,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <thread>
 #include <sys/resource.h>
+#include <thread>
 
 namespace {
 constexpr size_t kBatch = 256;
@@ -69,7 +69,8 @@ int main(int argc, char **argv) {
             for (size_t r = 0; r < rounds; ++r) {
                 for (auto &slot : slots) {
                     void *p;
-                    while ((p = slot.load(std::memory_order_acquire)) == nullptr) {
+                    while ((p = slot.load(std::memory_order_acquire)) ==
+                           nullptr) {
                         std::this_thread::yield();
                     }
                     zmalloc::zfree(p);
@@ -89,10 +90,12 @@ int main(int argc, char **argv) {
             worker.join();
         }
     }
-    const double seconds = std::chrono::duration<double>(
-        std::chrono::steady_clock::now() - start).count();
+    const double seconds =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - start)
+            .count();
     rusage usage{};
     getrusage(RUSAGE_SELF, &usage);
+
     // /proc 的峰值仅针对当前地址空间，避免继承启动器的 ru_maxrss。
     long peak_rss = usage.ru_maxrss;
     long rss = 0;
@@ -105,6 +108,7 @@ int main(int argc, char **argv) {
         std::fclose(status);
     }
     std::printf("scenario=%s size=%zu pairs=%zu seconds=%.6f Mpairs/s=%.3f "
-                "peak_rss_kib=%ld rss_kib=%ld\n", argv[1], size, kBatch * rounds,
-                seconds, kBatch * rounds / seconds / 1e6, peak_rss, rss);
+                "peak_rss_kib=%ld rss_kib=%ld\n",
+                argv[1], size, kBatch * rounds, seconds,
+                kBatch * rounds / seconds / 1e6, peak_rss, rss);
 }

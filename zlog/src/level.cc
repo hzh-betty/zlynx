@@ -1,9 +1,7 @@
 /**
  * @file level.cc
- * @brief level 实现。
  * @author hzh-betty
  */
-
 #include "zlog/level.h"
 
 namespace zlog {

@@ -1,9 +1,7 @@
 /**
  * @file format.cc
- * @brief format 实现。
  * @author hzh-betty
  */
-
 #include "zlog/format.h"
 
 #include <sstream>
@@ -179,6 +177,7 @@ bool Formatter::parse_pattern() {
         if (fmt_order[i].first.empty()) {
             // 当前是普通字符串
             std::string combined_val = fmt_order[i].second;
+
             // 向后查看是否还有普通字符串
             while (i + 1 < fmt_order.size() && fmt_order[i + 1].first.empty()) {
                 combined_val += fmt_order[i + 1].second;

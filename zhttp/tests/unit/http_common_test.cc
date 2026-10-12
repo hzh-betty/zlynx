@@ -6,9 +6,7 @@ namespace zhttp {
 namespace {
 
 TEST(HttpCommonTest, FormatsHttpDateInGmt) {
-    EXPECT_EQ(format_http_date_gmt(0),
-              "Thu, 01 Jan 1970 00:00:00 GMT");
-
+    EXPECT_EQ(format_http_date_gmt(0), "Thu, 01 Jan 1970 00:00:00 GMT");
 }
 
 TEST(HttpCommonTest, HeaderTokenMatchingIsCaseInsensitiveAndExact) {
@@ -168,8 +166,9 @@ TEST(HttpCommonTest, UtilitiesRespectViewBoundsWithoutNullTerminators) {
     EXPECT_TRUE(header_contains_token(
         std::string_view(tokens).substr(1, tokens.size() - 2), "upgrade"));
     const std::string encoded = "[a%00%ff+b]";
-    EXPECT_EQ(url_decode(std::string_view(encoded).substr(1, encoded.size() - 2)),
-              std::string("a\0\xff b", 5));
+    EXPECT_EQ(
+        url_decode(std::string_view(encoded).substr(1, encoded.size() - 2)),
+        std::string("a\0\xff b", 5));
     const std::string encodings = "[ gzip ; Q=0.5, br;q=1, identity;q=0 ]";
     EXPECT_EQ(accepted_content_encodings(
                   std::string_view(encodings).substr(1, encodings.size() - 2),

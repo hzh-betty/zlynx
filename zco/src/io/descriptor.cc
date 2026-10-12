@@ -19,7 +19,7 @@ bool descriptor_is_nonblocking(int fd) {
         throw std::system_error(errno, std::generic_category(), "F_GETFL");
     return flags & O_NONBLOCK;
 }
-}
+} // namespace
 
 detail::Resource::Resource(int descriptor)
     : fd(descriptor), id{++next_resource},
@@ -95,7 +95,8 @@ Result<void> Descriptor::close() {
     resource->registrations.clear();
     int fd = resource->fd;
     resource->fd = -1;
-    // Linux closes the fd even on EINTR; retry could close a reused descriptor.
+
+    // Linux 在返回 EINTR 时也会关闭 fd；重试可能误关已复用该编号的描述符。
     if (::close(fd) != 0)
         return Result<void>(std::error_code(errno, std::generic_category()));
     return Result<void>(removal_error);

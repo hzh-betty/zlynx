@@ -61,7 +61,7 @@ target_compile_options(zmalloc_override PRIVATE
     "$<$<CXX_COMPILER_ID:MSVC>:/W4;/permissive->")
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    # malloc must not allocate while resolving its own thread-local state.
+    # malloc 获取自身线程局部状态时不能再次分配内存。
     target_compile_options(zmalloc PRIVATE -ftls-model=initial-exec)
     target_compile_options(zmalloc_override PRIVATE -ftls-model=initial-exec)
 endif()

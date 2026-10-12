@@ -1,17 +1,23 @@
 #include "runtime/logging.h"
 #include <gtest/gtest.h>
+
 namespace {
 class MemorySink : public zlog::LogSink {
   public:
-    void log(const char *data, size_t size) override { bytes.append(data, size); }
+    void log(const char *data, size_t size) override {
+        bytes.append(data, size);
+    }
+
     std::string bytes;
 };
+
 TEST(LoggingTest, IndependentErrorReceiversKeepTheirOwnLevelsAndSinks) {
     auto first = std::make_shared<MemorySink>();
     auto second = std::make_shared<MemorySink>();
     auto warning = zhttp::detail::network_error_logger("warning", first);
     auto error_only = zhttp::detail::network_error_logger("error", second);
-    auto failure = znet::make_error(znet::ErrorKind::io, std::errc::io_error, "session");
+    auto failure =
+        znet::make_error(znet::ErrorKind::io, std::errc::io_error, "session");
     warning(failure);
     error_only(failure);
     EXPECT_NE(first->bytes.find("session"), std::string::npos);
@@ -25,8 +31,8 @@ TEST(LoggingTest, IndependentErrorReceiversKeepTheirOwnLevelsAndSinks) {
 }
 
 TEST(LoggingTest, LevelsRemainCaseInsensitiveAndUnknownDefaultsToInfo) {
-    const auto failure = znet::make_error(
-        znet::ErrorKind::io, std::errc::io_error, "session");
+    const auto failure =
+        znet::make_error(znet::ErrorKind::io, std::errc::io_error, "session");
     for (const char *level : {"WARNING", "WaRn", "DEBUG", "unknown"}) {
         SCOPED_TRACE(level);
         auto sink = std::make_shared<MemorySink>();
@@ -40,4 +46,4 @@ TEST(LoggingTest, LevelsRemainCaseInsensitiveAndUnknownDefaultsToInfo) {
         EXPECT_TRUE(sink->bytes.empty());
     }
 }
-}
+} // namespace

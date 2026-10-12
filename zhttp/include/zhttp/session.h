@@ -1,10 +1,8 @@
 /**
- * session.h
- * session 定义。
+ * @file session.h
  *
  * @author hzh-betty
  */
-
 #ifndef ZHTTP_SESSION_H_
 #define ZHTTP_SESSION_H_
 
@@ -18,7 +16,7 @@
 namespace zhttp {
 
 /**
- * 轻量级会话对象（键值对）
+ * @brief 轻量级会话对象（键值对）
  *
  * 使用场景：
  * - 通过 SessionMiddleware 注入到
@@ -26,75 +24,80 @@ namespace zhttp {
  * - 该对象本身不做持久化，最终是否写回由 SessionMiddleware 的 after() 决定。
  *
  * 注意：线程安全：Session 通常是“每个请求一个实例”的使用方式，本身不加锁。
- *       不建议在多个线程间共享同一个 Session 实例。
+ * 不建议在多个线程间共享同一个 Session 实例。
  */
 class Session {
   public:
     using ptr = std::shared_ptr<Session>;
     using Data = std::unordered_map<std::string, std::string>;
 
-    /** 构造请求级会话，接管会话 ID 并标记是否新建。 */
+    /**
+     * @brief 构造请求级会话，接管会话 ID 并标记是否新建。
+
+     */
     Session(std::string id, bool is_new)
         : id_(std::move(id)), is_new_(is_new) {}
 
     /**
-     * 获取会话 ID
+     * @brief 获取会话 ID
      *
      * @return 当前会话唯一标识
      */
     const std::string &id() const { return id_; }
 
     /**
-     * 判断是否为本次请求中新建的会话
+     * @brief 判断是否为本次请求中新建的会话
      *
      * @return true 表示该会话此前不存在于存储中
      */
     bool is_new() const { return is_new_; }
 
     /**
-     * 判断会话数据是否被修改过
+     * @brief 判断会话数据是否被修改过
      *
      * @return true 表示需要在响应阶段写回存储
      */
     bool modified() const { return modified_; }
 
     /**
-     * 读取会话值；不存在时返回默认值
+     * @brief 读取会话值；不存在时返回默认值
      */
     std::string get(const std::string &key,
                     const std::string &default_val = "") const;
 
     /**
-     * 写入或覆盖会话值，并标记为已修改
+     * @brief 写入或覆盖会话值，并标记为已修改
      */
     void set(const std::string &key, const std::string &value);
 
     /**
-     * 删除指定键；若键存在则标记为已修改
+     * @brief 删除指定键；若键存在则标记为已修改
      */
     void erase(const std::string &key);
 
     /**
-     * 清空全部会话数据
+     * @brief 清空全部会话数据
      */
     void clear();
 
     /**
-     * 获取全部会话键值
+     * @brief 获取全部会话键值
      *
      * @return 当前数据的只读引用
      */
     const Data &data() const { return data_; }
 
     /**
-     * 整体替换会话数据
+     * @brief 整体替换会话数据
      *
      * @param data 新的数据快照
      */
     void set_data(Data data) { data_ = std::move(data); }
 
     // 在会话成功写回存储或刚从存储恢复后调用，重置脏标记。
-    /** 写回存储后清除新建和修改标记。 */
+    /**
+     * @brief 写回存储后清除新建和修改标记。
+     */
     void mark_persisted() {
         is_new_ = false;
         modified_ = false;
@@ -108,11 +111,11 @@ class Session {
 };
 
 /**
- * 会话管理器（内存存储）
+ * @brief 会话管理器（内存存储）
  *
  * 存储语义：
  * - 仅内存保存（进程重启即丢失），适合轻量服务或开发环境。
- * - 采用滑动过期（sliding expiration）：load()/save() 成功会刷新 expires_at。
+ * - 采用滑动过期：load()/save() 成功会刷新 expires_at。
  * - save() 覆盖写入：以传入 Session 的 data() 快照替换存储中的 data。
  *
  * 清理策略：
@@ -120,17 +123,18 @@ class Session {
  * - 清理是 O(store_ 大小) 的线性扫描，因此不宜将 cleanup_every 设得过小。
  *
  * 注意：session id 的随机性来自 std::mt19937_64（非密码学安全）。
- *       若用于安全敏感场景（例如强认证凭证），建议更换为 CSPRNG。
+ * 若用于安全敏感场景（例如强认证凭证），建议更换为 CSPRNG。
  */
 class SessionManager {
   public:
     using ptr = std::shared_ptr<SessionManager>;
 
     /**
-     * Session 存储配置
+     * @brief Session 存储配置
      */
     struct Options {
         Options() : ttl(std::chrono::seconds(1800)), cleanup_every(128) {}
+
         Options(std::chrono::seconds t, size_t cleanupEvery)
             : ttl(t), cleanup_every(cleanupEvery) {}
 
@@ -139,38 +143,38 @@ class SessionManager {
     };
 
     /**
-     * 构造内存 Session 管理器
+     * @brief 构造内存 Session 管理器
      *
      * @param opt 会话过期时间和清理策略配置
      */
     explicit SessionManager(Options opt = Options());
 
     /**
-     * 按 session id 加载会话
+     * @brief 按 session id 加载会话
      *
      * @return 会话不存在或已过期时返回 nullptr
      */
     Session::ptr load(const std::string &session_id);
 
     /**
-     * 创建一个新的空会话并立即放入存储
+     * @brief 创建一个新的空会话并立即放入存储
      */
     Session::ptr create();
 
     /**
-     * 持久化当前会话数据，同时刷新过期时间
+     * @brief 持久化当前会话数据，同时刷新过期时间
      */
     void save(const Session &session);
 
     /**
-     * 删除指定会话
+     * @brief 删除指定会话
      *
      * @param session_id 要删除的会话 ID
      */
     void destroy(const std::string &session_id);
 
     /**
-     * 获取当前管理器配置
+     * @brief 获取当前管理器配置
      *
      * @return 配置对象引用
      */
@@ -182,7 +186,7 @@ class SessionManager {
         std::chrono::steady_clock::time_point expires_at; // 绝对过期时间点
     };
 
-    // 生成随机 session id，避免可预测性。
+    // 使用非密码学伪随机数生成 32 个十六进制字符的会话 ID，不保证不可预测。
     std::string new_session_id();
 
     // 仅在持锁状态下调用，批量清理已过期的会话记录。
@@ -196,4 +200,4 @@ class SessionManager {
 
 } // namespace zhttp
 
-#endif // ZHTTP_SESSION_H_
+#endif

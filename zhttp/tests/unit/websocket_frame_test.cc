@@ -106,9 +106,9 @@ TEST(WebSocketFrameTest, LeavesDataUntouchedWhenExtendedHeaderIncomplete) {
     znet::ByteBuffer buffer;
 
     std::string partial;
-    partial.push_back(static_cast<char>(0x82)); // FIN + binary
+    partial.push_back(static_cast<char>(0x82)); // 设置 FIN 位的二进制帧
     partial.push_back(static_cast<char>(0x80 | 126));
-    partial.push_back(static_cast<char>(0x00)); // missing one byte of length
+    partial.push_back(static_cast<char>(0x00)); // 扩展长度字段缺少一个字节
     buffer.append(partial);
 
     std::vector<WebSocketFrameEvent> events;
@@ -177,7 +177,7 @@ TEST(WebSocketFrameTest, RejectsRsvBitsAndUnknownOpcode) {
 
     znet::ByteBuffer rsv_buffer;
     std::string rsv_frame;
-    rsv_frame.push_back(static_cast<char>(0xC1)); // RSV + text
+    rsv_frame.push_back(static_cast<char>(0xC1)); // 设置保留位的文本帧
     rsv_frame.push_back(static_cast<char>(0x80));
     rsv_frame.append("\x11\x22\x33\x44", 4);
     rsv_buffer.append(rsv_frame);
@@ -189,7 +189,7 @@ TEST(WebSocketFrameTest, RejectsRsvBitsAndUnknownOpcode) {
 
     znet::ByteBuffer opcode_buffer;
     std::string bad_opcode_frame;
-    bad_opcode_frame.push_back(static_cast<char>(0x83)); // unknown opcode=3
+    bad_opcode_frame.push_back(static_cast<char>(0x83)); // 未识别的操作码 3
     bad_opcode_frame.push_back(static_cast<char>(0x80));
     bad_opcode_frame.append("\x11\x22\x33\x44", 4);
     opcode_buffer.append(bad_opcode_frame);
@@ -205,9 +205,9 @@ TEST(WebSocketFrameTest, RejectsInvalid64BitPayloadLengthPrefix) {
     znet::ByteBuffer buffer;
 
     std::string frame;
-    frame.push_back(static_cast<char>(0x82)); // FIN + binary
+    frame.push_back(static_cast<char>(0x82)); // 设置 FIN 位的二进制帧
     frame.push_back(static_cast<char>(0x80 | 127));
-    frame.push_back(static_cast<char>(0x80)); // highest bit must be zero
+    frame.push_back(static_cast<char>(0x80)); // 64 位扩展长度的最高位必须为零
     frame.append(7, '\0');
     buffer.append(frame);
 
@@ -247,14 +247,19 @@ TEST(WebSocketFrameTest, AcceptsUtf8BoundarySequences) {
     znet::ByteBuffer buffer;
 
     std::string utf8_payload = "x";
-    utf8_payload.append(std::string("\xC2\xA2", 2));         // 2-byte
-    utf8_payload.append(std::string("\xE0\xA0\x80", 3));     // E0 branch
-    utf8_payload.append(std::string("\xE1\x80\x80", 3));     // E1-EC branch
-    utf8_payload.append(std::string("\xED\x9F\xBF", 3));     // ED branch
-    utf8_payload.append(std::string("\xEE\x80\x80", 3));     // EE-EF branch
-    utf8_payload.append(std::string("\xF0\x90\x80\x80", 4)); // F0 branch
-    utf8_payload.append(std::string("\xF1\x80\x80\x80", 4)); // F1-F3 branch
-    utf8_payload.append(std::string("\xF4\x8F\xBF\xBF", 4)); // F4 branch
+    utf8_payload.append(std::string("\xC2\xA2", 2));     // 双字节 UTF-8 序列
+    utf8_payload.append(std::string("\xE0\xA0\x80", 3)); // 首字节为 E0 的分支
+    utf8_payload.append(
+        std::string("\xE1\x80\x80", 3)); // 首字节为 E1–EC 的分支
+    utf8_payload.append(std::string("\xED\x9F\xBF", 3)); // 首字节为 ED 的分支
+    utf8_payload.append(
+        std::string("\xEE\x80\x80", 3)); // 首字节为 EE–EF 的分支
+    utf8_payload.append(
+        std::string("\xF0\x90\x80\x80", 4)); // 首字节为 F0 的分支
+    utf8_payload.append(
+        std::string("\xF1\x80\x80\x80", 4)); // 首字节为 F1–F3 的分支
+    utf8_payload.append(
+        std::string("\xF4\x8F\xBF\xBF", 4)); // 首字节为 F4 的分支
 
     buffer.append(
         build_masked_client_frame(WebSocketOpcode::kText, utf8_payload));
@@ -422,7 +427,7 @@ TEST(WebSocketFrameTest, RejectsInvalidCloseStatusCode) {
     std::string close_payload;
     close_payload.push_back(static_cast<char>(0x03));
     close_payload.push_back(
-        static_cast<char>(0xED)); // 1005 is reserved/invalid on wire.
+        static_cast<char>(0xED)); // 关闭码 1005 为保留值，不能在帧中传输。
     buffer.append(
         build_masked_client_frame(WebSocketOpcode::kClose, close_payload));
 
@@ -444,7 +449,8 @@ TEST(WebSocketFrameTest, RejectsInvalidUtf8CloseReason) {
 
     std::string close_payload;
     close_payload.push_back(static_cast<char>(0x03));
-    close_payload.push_back(static_cast<char>(0xE8)); // 1000 normal closure.
+    close_payload.push_back(
+        static_cast<char>(0xE8)); // 关闭码 1000 表示正常关闭。
     close_payload.push_back(static_cast<char>(0xC3));
     close_payload.push_back(static_cast<char>(0x28));
     buffer.append(

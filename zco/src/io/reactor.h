@@ -1,4 +1,6 @@
-#pragma once
+#ifndef ZLYNX_ZCO_SRC_IO_REACTOR_H_
+#define ZLYNX_ZCO_SRC_IO_REACTOR_H_
+
 #include "zco/io/operations.h"
 #include <vector>
 
@@ -22,3 +24,5 @@ class Reactor {
 };
 } // namespace detail
 } // namespace zco
+
+#endif

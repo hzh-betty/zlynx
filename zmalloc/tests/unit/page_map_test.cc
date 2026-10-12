@@ -454,6 +454,7 @@ TEST_F(PageMap3Test, SetManyIncludingEnds) {
 TEST(PageMapClearRangeTest, ClearsAcrossLeavesWithoutTouchingNeighbors) {
     zmalloc::PageMap3<18> pm;
     int value = 42;
+
     // 跨多个叶子，并在未建立映射的区间清理。
     pm.clear_range(0, 4096);
     pm.set_range(60, 140, &value);
@@ -494,6 +495,7 @@ void CheckConcurrentPublicationAndClearing(PM &pm, uintptr_t key_count) {
     std::atomic<bool> valid(true);
     std::thread reader([&] {
         uintptr_t key = 0;
+
         // 查询先于首次建树开始，覆盖缺失节点以及发布途中的查询。
         reader_ready.store(true, std::memory_order_release);
         do {

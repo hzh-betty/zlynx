@@ -16,7 +16,6 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-// spdlog
 #include <spdlog/async.h>
 #include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/stdout_sinks.h>
@@ -139,10 +138,12 @@ void test_zlog_sync(int thread_count, size_t message_size) {
     std::string msg = make_string(message_size);
 
     auto result = run_timed_benchmark(
-        "Zlog-Sync", thread_count, message_size, [&](int thread_id) {
+        "Zlog-Sync", thread_count, message_size,
+        [&](int thread_id) {
             (void)thread_id;
             logger->log_impl(zlog::LogLevel::value::INFO, "", 0, msg.c_str());
-        }, [&] { logger->flush(); });
+        },
+        [&] { logger->flush(); });
 
     g_results.push_back(result);
     logger->close();
@@ -167,10 +168,12 @@ void test_zlog_async_safe(int thread_count, size_t message_size) {
     std::string msg = make_string(message_size);
 
     auto result = run_timed_benchmark(
-        "Zlog-Async-Safe", thread_count, message_size, [&](int thread_id) {
+        "Zlog-Async-Safe", thread_count, message_size,
+        [&](int thread_id) {
             (void)thread_id;
             logger->log_impl(zlog::LogLevel::value::INFO, "", 0, msg.c_str());
-        }, [&] { logger->flush(); });
+        },
+        [&] { logger->flush(); });
 
     g_results.push_back(result);
     logger->close();
@@ -196,10 +199,12 @@ void test_zlog_async_unsafe(int thread_count, size_t message_size) {
     std::string msg = make_string(message_size);
 
     auto result = run_timed_benchmark(
-        "Zlog-Async-Unsafe", thread_count, message_size, [&](int thread_id) {
+        "Zlog-Async-Unsafe", thread_count, message_size,
+        [&](int thread_id) {
             (void)thread_id;
             logger->log_impl(zlog::LogLevel::value::INFO, "", 0, msg.c_str());
-        }, [&] { logger->flush(); });
+        },
+        [&] { logger->flush(); });
 
     g_results.push_back(result);
     logger->close();
@@ -224,11 +229,13 @@ void test_spdlog_sync(int thread_count, size_t message_size) {
 
     std::string msg = make_string(message_size);
 
-    auto result = run_timed_benchmark("Spdlog-Sync", thread_count, message_size,
-                                      [&](int thread_id) {
-                                          (void)thread_id;
-                                          logger->info(msg);
-                                      }, [&] { logger->flush(); });
+    auto result = run_timed_benchmark(
+        "Spdlog-Sync", thread_count, message_size,
+        [&](int thread_id) {
+            (void)thread_id;
+            logger->info(msg);
+        },
+        [&] { logger->flush(); });
 
     g_results.push_back(result);
     spdlog::drop_all();
@@ -250,14 +257,16 @@ void test_spdlog_async(int thread_count, size_t message_size) {
 
     std::string msg = make_string(message_size);
 
-    auto result = run_timed_benchmark("Spdlog-Async", thread_count,
-                                      message_size, [&](int thread_id) {
-                                          (void)thread_id;
-                                          logger->info(msg);
-                                      }, [&] {
-                                          logger->flush();
-                                          pool.reset(); // 发送终止消息并 join，包含之前的刷新请求。
-                                      });
+    auto result = run_timed_benchmark(
+        "Spdlog-Async", thread_count, message_size,
+        [&](int thread_id) {
+            (void)thread_id;
+            logger->info(msg);
+        },
+        [&] {
+            logger->flush();
+            pool.reset(); // 发送终止消息并 join，包含之前的刷新请求。
+        });
 
     g_results.push_back(result);
     spdlog::drop_all();

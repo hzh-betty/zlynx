@@ -1,4 +1,6 @@
-#pragma once
+#ifndef ZLYNX_ZCO_TESTS_SUPPORT_FAKE_REACTOR_H_
+#define ZLYNX_ZCO_TESTS_SUPPORT_FAKE_REACTOR_H_
+
 #include "io/reactor.h"
 #include <algorithm>
 #include <atomic>
@@ -103,3 +105,5 @@ class FakeReactor final : public detail::Reactor {
 };
 } // namespace test
 } // namespace zco
+
+#endif

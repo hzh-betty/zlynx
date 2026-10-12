@@ -11,7 +11,7 @@ using namespace zhttp;
 using namespace zhttp::mid;
 
 static std::string extract_sid(const std::string &set_cookie_value) {
-    // ZHTTPSESSID=<id>; ...
+    // 提取形如 ZHTTPSESSID=<id>; ... 的会话标识
     auto eq = set_cookie_value.find('=');
     if (eq == std::string::npos) {
         return "";

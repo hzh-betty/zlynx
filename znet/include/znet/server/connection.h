@@ -1,4 +1,5 @@
-#pragma once
+#ifndef ZLYNX_ZNET_INCLUDE_ZNET_SERVER_CONNECTION_H_
+#define ZLYNX_ZNET_INCLUDE_ZNET_SERVER_CONNECTION_H_
 
 #include "zco/runtime.h"
 #include "zco/sync/mutex.h"
@@ -12,9 +13,11 @@
 #include <string_view>
 
 namespace znet {
-// A connection owns one transport. Input/protocol state belongs to the caller.
-// IO calls from ordinary threads use the injected executor and wait to finish;
-// coroutine callers execute directly. Reads and writes serialize independently.
+/**
+ * @brief 连接独占传输层；输入缓冲区和协议状态由调用方持有。
+ * 普通线程的 I/O 调用提交到注入的执行器并等待完成，
+ * 协程调用直接执行；读取与写入分别串行化，两者可以并行。
+ */
 class Connection {
   public:
     using ptr = std::shared_ptr<Connection>;
@@ -30,12 +33,26 @@ class Connection {
     Result<void> start(zco::Deadline deadline = {});
     Transfer read(ByteBuffer &input, size_t limit = 4096,
                   zco::Deadline deadline = {});
-    // Success means all bytes sent. On IO failure the transport is closed;
-    // result.bytes still reports progress. No hidden queue or implicit retry.
+
+    /**
+     * @brief 同步写出完整字节串，失败时保留已写入进度。
+     * @param timeout
+     * 未指定时使用构造时的写超时；零表示无截止时间，负值返回校验错误。
+     * @note 写出循环发生错误时关闭传输层；提交或获取写锁失败不保证关闭。
+     * bytes 仅在本次调用期间借用；不建立隐藏队列，也不自动重试整个发送操作。
+     */
     Transfer send(std::string_view bytes,
                   std::optional<Timeout> timeout = std::nullopt);
-    Result<void> shutdown(); // Sends TLS close_notify/SHUT_WR, then closes.
-    Result<void> close(); // Interrupts even an infinite read/write/handshake.
+
+    /**
+     * @brief 发送 TLS close_notify 或执行 SHUT_WR，然后关闭连接。
+     */
+    Result<void> shutdown();
+
+    /**
+     * @brief 关闭连接并中断读取、写入或握手，包括未设截止时间的等待。
+     */
+    Result<void> close();
 
     State state() const { return state_.load(); }
 
@@ -69,3 +86,5 @@ class Connection {
     zco::Deadline read_deadline_;
 };
 } // namespace znet
+
+#endif

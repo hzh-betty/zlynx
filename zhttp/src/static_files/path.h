@@ -1,10 +1,9 @@
 /**
- * path.h
- * 静态资源路径映射与相对路径校验。
+ * @file path.h
+ * @brief 静态资源路径映射与相对路径校验。
  *
  * @author hzh-betty
  */
-
 #ifndef ZHTTP_STATIC_FILES_PATH_H_
 #define ZHTTP_STATIC_FILES_PATH_H_
 
@@ -13,7 +12,7 @@
 namespace zhttp {
 
 /**
- * 路径相关公共操作集合
+ * @brief 路径相关公共操作集合
  *
  * 该模块负责“HTTP 路径到磁盘路径”这条链路上的通用逻辑，重点是：
  * - 统一前缀格式（避免 /assets、assets/ 混乱）；
@@ -28,7 +27,7 @@ namespace zhttp {
  */
 namespace static_path {
 /**
- * 规范化 URI 前缀
+ * @brief 规范化 URI 前缀
  *
  * 规则：
  * - 空串与 "/" 都归一为 "/"；
@@ -41,7 +40,7 @@ namespace static_path {
 std::string normalize_prefix(const std::string &prefix);
 
 /**
- * 判断请求路径是否应由指定前缀接管
+ * @brief 判断请求路径是否应由指定前缀接管
  *
  * 匹配保证“目录边界安全”：
  * - /assets 可命中 /assets 与 /assets/app.js；
@@ -55,7 +54,7 @@ bool should_handle_path(const std::string &path,
                         const std::string &normalized_prefix);
 
 /**
- * 将请求路径映射为相对路径
+ * @brief 将请求路径映射为相对路径
  *
  * 例如：
  * - prefix=/static, path=/static/js/app.js => /js/app.js
@@ -69,7 +68,7 @@ std::string map_to_relative_path(const std::string &path,
                                  const std::string &normalized_prefix);
 
 /**
- * 清洗并校验相对路径，阻断目录穿越
+ * @brief 清洗并校验相对路径，阻断目录穿越
  *
  * 处理流程：
  * 1) 先 URL 解码；
@@ -84,7 +83,7 @@ std::string map_to_relative_path(const std::string &path,
 bool sanitize_relative_path(const std::string &raw, std::string &out);
 
 /**
- * 拼接两个路径片段
+ * @brief 拼接两个路径片段
  *
  * 自动处理边界上的 /，避免出现 // 或漏 /。
  *

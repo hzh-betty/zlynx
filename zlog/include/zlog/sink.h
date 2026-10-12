@@ -1,9 +1,7 @@
 /**
  * @file sink.h
- * @brief sink 定义。
  * @author hzh-betty
  */
-
 #ifndef ZLOG_SINK_H_
 #define ZLOG_SINK_H_
 
@@ -22,8 +20,9 @@
  */
 namespace zlog {
 /**
- * @brief 日志落地抽象基类
- * 定义了日志输出的通用接口
+ * @brief 将格式化后的日志字节输出到目标。
+ * @note 多个日志器共享同一实例时可能并发调用 log() 和 flush()；
+ * 自定义实现负责同步自身的可变状态，日志器的锁不保护其他日志器的调用。
  */
 class LogSink {
   public:
@@ -32,13 +31,17 @@ class LogSink {
     virtual ~LogSink() = default;
 
     /**
-     * @brief 输出日志数据
-     * @param data 日志数据指针
-     * @param len 数据长度
+     * @brief 输出 len 字节的日志数据。
+     * @param data 借用的字节缓冲区，仅在本次调用期间有效。
+     * @pre len 非零时 data 必须指向至少 len 字节的有效存储。
+     * @note 必须在返回前消费或复制数据，不得保留 data 供稍后读取。
      */
     virtual void log(const char *data, size_t len) = 0;
 
-    /** @brief 刷新已输出数据；无缓冲的自定义 sink 可以使用默认实现。 */
+    /**
+     * @brief 刷新已输出数据；无缓冲的自定义 sink 可以使用默认实现。
+
+     */
     virtual void flush() {}
 };
 
@@ -55,7 +58,10 @@ class StdOutSink final : public LogSink {
     std::mutex mutex_; // 同步共享 sink 的写入与刷新
 };
 
-/** @brief 文件流缓冲策略；BUFFERED 的写错误可能延迟到 flush()/close()。 */
+/**
+ * @brief 文件流缓冲策略；BUFFERED 的写错误可能延迟到 flush()/close()。
+
+ */
 enum class FileBufferMode { UNBUFFERED, BUFFERED };
 
 /**
@@ -71,7 +77,10 @@ class FileSink final : public LogSink {
      */
     explicit FileSink(std::string pathname, bool auto_flush = false);
 
-    /** @brief 显式选择标准库文件缓冲；原构造函数保持无缓冲行为。 */
+    /**
+     * @brief 显式选择标准库文件缓冲；原构造函数保持无缓冲行为。
+
+     */
     FileSink(std::string pathname, bool auto_flush, FileBufferMode buffer_mode);
 
     void log(const char *data, size_t len) override;
@@ -85,22 +94,27 @@ class FileSink final : public LogSink {
 };
 
 /**
- * @brief 按大小滚动的文件日志落地器
- * 当文件大小超过限制时自动创建新文件
+ * @brief 在完整记录写入将使文件超限前滚动到新文件。
+ * @note 单条记录不拆分；长度超过 max_size 时抛出 std::length_error，
+ * 不写入该记录，也不为它触发滚动。
  */
 class RollBySizeSink final : public LogSink {
   public:
     /**
      * @brief 构造函数
      * @param basename 文件基础名称
-     * @param max_size 最大文件大小（字节）
+     * @param max_size 单个文件的字节上限，必须大于零。
      * @param auto_flush 是否每次写入后自动flush，默认false
-     * @param max_files 保留文件数量上限，默认10，必须大于0
+     * @param max_files 保留文件数量上限，默认 10，必须大于零。
+     * @throws std::invalid_argument max_size 或 max_files 为零。
      */
     RollBySizeSink(std::string basename, size_t max_size,
                    bool auto_flush = false, size_t max_files = 10);
 
-    /** @brief 显式选择文件缓冲；仍按完整单条记录检查滚动边界。 */
+    /**
+     * @brief 显式选择文件缓冲；仍按完整单条记录检查滚动边界。
+
+     */
     RollBySizeSink(std::string basename, size_t max_size, bool auto_flush,
                    size_t max_files, FileBufferMode buffer_mode);
 
@@ -120,7 +134,10 @@ class RollBySizeSink final : public LogSink {
      */
     void roll_over();
 
-    /** @brief 只清理本 basename 生成的旧文件，包含上次运行遗留的文件。 */
+    /**
+     * @brief 只清理本 basename 生成的旧文件，包含上次运行遗留的文件。
+
+     */
     void prune_files();
 
     std::string basename_; // 文件基础名称
@@ -136,4 +153,4 @@ class RollBySizeSink final : public LogSink {
 
 } // namespace zlog
 
-#endif // ZLOG_SINK_H_
+#endif

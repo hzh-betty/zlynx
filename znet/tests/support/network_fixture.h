@@ -1,4 +1,5 @@
-#pragma once
+#ifndef ZLYNX_ZNET_TESTS_SUPPORT_NETWORK_FIXTURE_H_
+#define ZLYNX_ZNET_TESTS_SUPPORT_NETWORK_FIXTURE_H_
 
 #include "znet/server/connection.h"
 #include "znet/transport/socket.h"
@@ -80,3 +81,5 @@ inline Socket connect_to(const Endpoint &endpoint) {
     return adopt(fd);
 }
 } // namespace znet::test
+
+#endif

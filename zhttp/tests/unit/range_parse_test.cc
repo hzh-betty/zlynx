@@ -1,9 +1,9 @@
-#include "protocol/http/response_encoder.h"
 #include "../support/request_builder.h"
+#include "protocol/http/response_encoder.h"
 #include "static_files/range.h"
 
-#include <gtest/gtest.h>
 #include <cerrno>
+#include <gtest/gtest.h>
 #include <limits>
 
 namespace zhttp {
@@ -156,6 +156,7 @@ TEST(RangeParseTest, PreservesExistingErrnoBehavior) {
         RangeParseState state;
         int error;
     };
+
     const std::string overflow =
         std::to_string(std::numeric_limits<unsigned long long>::max()) + "0";
     auto request = make_request();

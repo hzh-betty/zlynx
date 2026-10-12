@@ -3,6 +3,7 @@
 #include "zhttp/http_response.h"
 #include <openssl/evp.h>
 #include <openssl/sha.h>
+
 namespace zhttp {
 namespace {
 
@@ -37,6 +38,7 @@ bool parse_subprotocol_header(const std::string &header_value,
 }
 
 } // namespace
+
 WebSocketHandshakeResult check_websocket_handshake_request(
     const std::shared_ptr<const HttpRequest> &request, std::string *error) {
     if (!request) {

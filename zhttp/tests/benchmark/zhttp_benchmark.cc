@@ -67,7 +67,8 @@ void print_usage(const char *prog) {
         << "  --wrk-threads N                  wrk threads (default 4)\n"
         << "  --wrk-connections N              wrk connections (default 256)\n"
         << "  --wrk-duration STR               wrk duration (default 3s)\n"
-        << "  --warmup-ms N                    Warmup requests, rounded up to seconds (default 500)\n"
+        << "  --warmup-ms N                    Warmup requests, rounded up to "
+           "seconds (default 500)\n"
         << "  --path STR                       Request path (default /)\n"
         << "  --wrk-arg ARG                    Extra arg forwarded to wrk\n"
         << "  -h, --help                       Show help\n";
@@ -81,7 +82,8 @@ bool parse_int(const char *text, int &value) {
     errno = 0;
     long parsed = std::strtol(text, &end, 10);
     if (!end || *end != '\0' || errno == ERANGE ||
-        parsed < std::numeric_limits<int>::min() || parsed > std::numeric_limits<int>::max()) {
+        parsed < std::numeric_limits<int>::min() ||
+        parsed > std::numeric_limits<int>::max()) {
         return false;
     }
     value = static_cast<int>(parsed);
@@ -172,7 +174,8 @@ BenchConfig parse_args(int argc, char **argv) {
     if (cfg.port < 1 || cfg.port > (cfg.mode == "all" ? 65534 : 65535) ||
         cfg.threads < 1 || cfg.wrk_threads < 1 ||
         cfg.wrk_connections < cfg.wrk_threads || cfg.warmup_ms < 0) {
-        std::cerr << "Invalid port, thread count, connection count or warmup" << std::endl;
+        std::cerr << "Invalid port, thread count, connection count or warmup"
+                  << std::endl;
         std::exit(2);
     }
     return cfg;
@@ -230,7 +233,6 @@ int run_server_process(const BenchConfig &cfg, const std::string &mode,
     std::signal(SIGPIPE, SIG_IGN);
 
     try {
-
 
         zhttp::HttpServerBuilder builder;
         builder.listen("127.0.0.1", static_cast<uint16_t>(cfg.port))
@@ -488,11 +490,14 @@ ModeResult run_mode(const BenchConfig &base_cfg, const std::string &mode,
 
     if (cfg.warmup_ms > 0) {
         BenchConfig warmup = cfg;
-        warmup.wrk_duration = std::to_string(cfg.warmup_ms / 1000 + (cfg.warmup_ms % 1000 != 0)) + "s";
+        warmup.wrk_duration =
+            std::to_string(cfg.warmup_ms / 1000 + (cfg.warmup_ms % 1000 != 0)) +
+            "s";
         auto result = run_wrk(warmup);
         if (result.exit_code != 0) {
             mode_result.wrk = std::move(result);
-            mode_result.wrk.output = "warmup failed:\n" + mode_result.wrk.output;
+            mode_result.wrk.output =
+                "warmup failed:\n" + mode_result.wrk.output;
             mode_result.wrk_exit_code = mode_result.wrk.exit_code;
             terminate_server(server_pid, mode_result.server_exited_cleanly);
             mode_result.server_log = read_all_fd(log_pipe[0]);

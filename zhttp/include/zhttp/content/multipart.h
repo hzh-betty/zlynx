@@ -1,10 +1,8 @@
 /**
- * multipart.h
- * multipart 定义。
+ * @file multipart.h
  *
  * @author hzh-betty
  */
-
 #ifndef ZHTTP_MULTIPART_H_
 #define ZHTTP_MULTIPART_H_
 
@@ -18,7 +16,7 @@ namespace zhttp {
 class HttpRequest;
 
 /**
- * 上传文件
+ * @brief 上传文件
  *
  * multipart/form-data 里的每个文件字段最终都会被表示成一个 UploadedFile。
  * data 保存的是原始字节内容，因此既可以是文本文件，也可以是二进制文件。
@@ -30,21 +28,23 @@ struct UploadedFile {
     std::string data;         // 文件内容（原始字节）
 
     /**
-     * 保存到指定文件路径
-     *
-     * @param filepath 目标文件路径
-     * @param error 可选的错误输出参数
-     * @return true 成功，false 失败
+     * @brief 将文件内容写入指定路径，覆盖已有文件。
+     * @param[out] error 非空时接收打开或写入失败的说明；成功时不清除原值。
+     * @return 打开或 write() 检测到失败时返回 false，否则返回 true。
+     * @warning 失败时目标文件可能已被截断或部分写入，不会恢复原文件。
+     * @note 不检查关闭时的刷新错误，也不保证数据已持久化到存储设备。
      */
     bool save_to(const std::string &filepath,
                  std::string *error = nullptr) const;
 };
 
 /**
- * multipart/form-data 解析结果
+ * @brief multipart/form-data 解析结果
  *
- * 普通表单字段会进入 fields()，文件字段会进入 files()。
- * 一个字段名理论上可以对应多个文件，但当前 file() 便捷接口只返回第一个匹配项。
+ * 普通表单字段会进入 fields()，同名字段保留最后一个值；文件字段会进入 files()。
+ * 同名文件可以有多个，file() 只返回第一个匹配项。
+ * fields()、files() 和 file()
+ * 返回的引用或指针均借用本对象，不延长对象生命周期。
  */
 class MultipartFormData {
   public:
@@ -52,21 +52,21 @@ class MultipartFormData {
     using Fields = std::unordered_map<std::string, std::string>;
 
     /**
-     * 获取普通文本字段
+     * @brief 获取普通文本字段
      *
      * @return 文本字段映射表
      */
     const Fields &fields() const { return fields_; }
 
     /**
-     * 获取上传文件列表
+     * @brief 获取上传文件列表
      *
      * @return 所有文件字段解析结果
      */
     const std::vector<UploadedFile> &files() const { return files_; }
 
     /**
-     * 按字段名读取普通字段
+     * @brief 按字段名读取普通字段
      *
      * @param key 字段名
      * @param default_val 未命中时返回的默认值
@@ -76,19 +76,22 @@ class MultipartFormData {
                       const std::string &default_val = "") const;
 
     /**
-     * 按字段名读取第一个上传文件
+     * @brief 按字段名读取第一个上传文件
      *
      * @param field_name 表单字段名
-     * @return 文件指针；未命中时返回 nullptr
+     * @return 借用内部文件元素的指针；未命中时返回
+     * nullptr，对象销毁后指针失效。
      */
     const UploadedFile *file(const std::string &field_name) const;
 
     /**
-     * 从 HttpRequest 解析 multipart
+     * @brief 从 HttpRequest 解析 multipart
      *
      * @param request 已经完成 HTTP 头和 Body 解析的请求对象
      * @param error 可选的错误输出参数
-     * @return 解析成功返回结果对象，失败返回 nullptr
+     * @return 非 multipart 请求返回非空的空结果对象；解析成功返回结果，失败返回
+     * nullptr。
+     * @note 非空 error 在入口清空，并在解析失败时写入原因。
      */
     static ptr parse(const HttpRequest &request, std::string *error = nullptr);
 
@@ -102,4 +105,4 @@ class MultipartFormData {
 
 } // namespace zhttp
 
-#endif // ZHTTP_MULTIPART_H_
+#endif

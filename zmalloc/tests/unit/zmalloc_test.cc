@@ -2,7 +2,6 @@
  * @file zmalloc_test.cc
  * @brief zmalloc 核心接口单元测试
  */
-
 #include "zmalloc/zmalloc.h"
 #include <gtest/gtest.h>
 
@@ -20,6 +19,7 @@ static void AllocTouchFree(size_t size) {
     ASSERT_NE(size, 0u);
     unsigned char *p = static_cast<unsigned char *>(zmalloc(size));
     ASSERT_NE(p, nullptr);
+
     // 触达不同位置，验证可写且不会越界
     p[0] = 0xA5;
     p[size - 1] = 0x5A;
@@ -141,7 +141,7 @@ TEST(ZmallocTest, BoundaryAllocMaxBytes) {
 }
 
 TEST(ZmallocTest, BoundaryAllocMaxBytesPlus1) {
-    // MAX_BYTES + 1
+    // 比 MAX_BYTES 多一个字节
     void *ptr = zmalloc(256 * 1024 + 1);
     EXPECT_NE(ptr, nullptr);
     zfree(ptr);
@@ -152,6 +152,7 @@ TEST(ZmallocTest, LargeBlockAlloc257KB) {
     constexpr size_t size = 257 * 1024;
     void *ptr = zmalloc(size);
     EXPECT_NE(ptr, nullptr);
+
     // 验证可写
     std::memset(ptr, 0xAB, size);
     zfree(ptr);
@@ -168,7 +169,7 @@ TEST(ZmallocTest, LargeBlockAlloc1MB) {
 
 // 多次大块内存分配释放测试
 TEST(ZmallocTest, LargeBlockMultipleAllocFree) {
-    constexpr size_t size = 512 * 1024; // 512KB
+    constexpr size_t size = 512 * 1024;
     for (int i = 0; i < 10; ++i) {
         void *ptr = zmalloc(size);
         EXPECT_NE(ptr, nullptr);
@@ -237,6 +238,7 @@ TEST(ZmallocTest, MemoryReuse) {
     void *ptr1 = zmalloc(64);
     zfree(ptr1);
     void *ptr2 = zmalloc(64);
+
     // 可能复用刚释放的内存（取决于实现）
     EXPECT_NE(ptr2, nullptr);
     zfree(ptr2);
@@ -250,6 +252,7 @@ TEST(ZmallocTest, MemoryReuseMultiple) {
     for (void *p : ptrs) {
         zfree(p);
     }
+
     // 再次分配，应该复用之前的内存
     std::vector<void *> ptrs2;
     for (int i = 0; i < 10; ++i) {
@@ -395,6 +398,7 @@ TEST(ZmallocTest, RandomOrderFree) {
     for (int i = 0; i < 100; ++i) {
         ptrs.push_back(zmalloc(64));
     }
+
     // 伪随机顺序
     int order[] = {50, 25, 75, 12, 37, 62, 87, 6,  18, 31, 43, 56, 68, 81, 93,
                    3,  9,  15, 21, 28, 34, 40, 46, 53, 59, 65, 71, 78, 84, 90,
@@ -431,6 +435,7 @@ TEST(ZmallocTest, ConsecutiveSameSizeAlloc) {
         ptrs.push_back(zmalloc(256));
         EXPECT_NE(ptrs.back(), nullptr);
     }
+
     // 验证没有重复地址
     std::set<void *> unique_ptrs(ptrs.begin(), ptrs.end());
     EXPECT_EQ(unique_ptrs.size(), static_cast<size_t>(kCount));

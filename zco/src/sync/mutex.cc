@@ -12,7 +12,8 @@ Result<void> Mutex::lock(Deadline deadline) {
     auto outcome = ticket.wait(deadline);
     lock.lock();
     waiters_.remove(ticket);
-    // ready is published only by unlock while granting ownership.
+
+    // 只有 unlock 在转交锁所有权时发布 ready，因此 ready 表示已获得锁。
     return Result<void>(wait_error(outcome));
 }
 

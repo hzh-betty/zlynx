@@ -52,7 +52,8 @@ TEST(ByteBufferTest, SmallPartialConsumptionRetainsWritableSlack) {
     buffer.append(std::string(window, 'x'));
     buffer.retrieve(16);
     buffer.append(std::string(16, 'x'));
-    // One small consume/append must leave room for subsequent small writes.
+
+    // 少量消费和追加后仍须为后续小写入保留空间。
     EXPECT_GE(buffer.writable_bytes(), window / 2);
     EXPECT_LE(buffer.readable_bytes() + buffer.writable_bytes(), 2 * window);
 }
@@ -73,8 +74,8 @@ TEST(ByteBufferTest, SlidingWindowPreservesBytesAcrossGrowthAndCompaction) {
     }
     buffer.append(buffer.view());
     EXPECT_EQ(buffer.view(), expected + expected);
-    EXPECT_THROW(buffer.append(buffer.begin_write() - 1,
-                               buffer.writable_bytes() + 2),
-                 std::out_of_range);
+    EXPECT_THROW(
+        buffer.append(buffer.begin_write() - 1, buffer.writable_bytes() + 2),
+        std::out_of_range);
     EXPECT_EQ(buffer.view(), expected + expected);
 }

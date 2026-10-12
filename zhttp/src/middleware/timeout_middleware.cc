@@ -1,10 +1,8 @@
 /**
- * timeout_middleware.cc
- * timeout_middleware 实现。
+ * @file timeout_middleware.cc
  *
  * @author hzh-betty
  */
-
 #include "zhttp/middleware/timeout_middleware.h"
 #include <algorithm>
 #include <iterator>
@@ -16,15 +14,16 @@ TimeoutMiddleware::TimeoutMiddleware(TimeoutMiddleware::Options options)
     : options_(std::move(options)) {}
 
 bool TimeoutMiddleware::before(HttpContext &context) {
-    context.timeout_entries_.emplace_back(this, std::chrono::steady_clock::now());
+    context.timeout_entries_.emplace_back(this,
+                                          std::chrono::steady_clock::now());
     return true;
 }
 
 void TimeoutMiddleware::after(HttpContext &context) {
     auto &entries = context.timeout_entries_;
-    auto it = std::find_if(entries.rbegin(), entries.rend(), [this](const auto &entry) {
-        return entry.first == this;
-    });
+    auto it =
+        std::find_if(entries.rbegin(), entries.rend(),
+                     [this](const auto &entry) { return entry.first == this; });
     if (it == entries.rend())
         return;
     const auto begin = it->second;

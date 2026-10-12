@@ -2,7 +2,6 @@
  * @file logger_builder.h
  * @brief 日志器构建接口。
  */
-
 #ifndef ZLOG_LOGGER_BUILDER_H_
 #define ZLOG_LOGGER_BUILDER_H_
 
@@ -40,7 +39,8 @@ class LoggerBuilder {
     void build_logger_type(const LoggerType logger_type);
 
     /**
-     * @brief 启用非安全异步模式
+     * @brief 允许异步缓冲区在现有容量不足时扩容。
+     * @note 仍使用互斥量和容量上限；达到上限时生产者仍可能等待。
      */
     void build_enable_unsafe();
 
@@ -50,7 +50,9 @@ class LoggerBuilder {
      */
     void build_logger_name(const char *logger_name);
 
-    /** @brief 按长度复制名称；视图只需在调用期间有效。 */
+    /**
+     * @brief 按长度复制名称；视图只需在调用期间有效。
+     */
     void build_logger_name(fmt::string_view logger_name);
 
     /**
@@ -60,8 +62,9 @@ class LoggerBuilder {
     void build_logger_level(LogLevel::value limit_level);
 
     /**
-     * @brief 设置异步等待时间
-     * @param milliseco 等待时间（毫秒）
+     * @brief 设置异步消费者等待缓冲区数据的时间间隔。
+     * @param milliseco 消费者条件变量的等待时间，单位为毫秒。
+     * @note 不限制日志调用的阻塞时间；缓冲区满时生产者等待没有此超时。
      */
     void build_wait_time(const std::chrono::milliseconds milliseco);
 
@@ -84,7 +87,11 @@ class LoggerBuilder {
         sinks_.push_back(psink);
     }
 
-    /** @brief 构建日志器，不注册到全局管理器。 */
+    /**
+     * @brief 按当前配置构建日志器，不注册到全局管理器。
+     * @return 未设置名称时返回空指针；显式设置空名称仍可构建。
+     * @note 未指定格式化器时使用默认 Formatter；未添加落地器时使用 StdOutSink。
+     */
     Logger::ptr build();
 
   private:
@@ -95,9 +102,9 @@ class LoggerBuilder {
     Formatter::ptr formatter_;            // 日志格式化器
     std::vector<LogSink::ptr> sinks_;     // 日志落地器列表
     AsyncType looper_type_;               // 异步类型
-    std::chrono::milliseconds milliseco_; // 最大等待时间
+    std::chrono::milliseconds milliseco_; // 消费者等待数据的时间间隔
 };
 
 } // namespace zlog
 
-#endif // ZLOG_LOGGER_BUILDER_H_
+#endif

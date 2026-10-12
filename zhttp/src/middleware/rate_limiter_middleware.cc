@@ -1,10 +1,8 @@
 /**
- * rate_limiter_middleware.cc
- * rate_limiter_middleware 实现。
+ * @file rate_limiter_middleware.cc
  *
  * @author hzh-betty
  */
-
 #include "zhttp/middleware/rate_limiter_middleware.h"
 
 #include <cmath>
@@ -44,7 +42,6 @@ std::string default_key(HttpContext &request) {
 
     return "global";
 }
-
 
 static inline int ceil_div_ms_to_s(std::chrono::milliseconds ms) {
     // HTTP Retry-After 通常使用“秒”为单位的整数；这里做向上取整。
@@ -86,6 +83,7 @@ bool RateLimiterMiddleware::before(HttpContext &request) {
     if (retry_after <= 0) {
         retry_after = 1;
     }
+
     // 即便无法准确估算，也尽量给出一个保守的最小值，便于客户端退避。
     response.header(options_.retry_after_header, std::to_string(retry_after));
     return false;

@@ -565,6 +565,7 @@ TEST(HttpRequestParserContractTest,
     EXPECT_EQ(parser.request()->path(), "/next");
     EXPECT_EQ(request->body(), "abc");
 }
+
 TEST(HttpRequestParserContractTest, ValidatesEveryLengthAndRequestTarget) {
     for (const auto &headers :
          {"Content-Length: 2\r\nContent-Length: 3\r\n",

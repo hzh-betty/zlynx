@@ -3,7 +3,6 @@
  * @brief logger 的同步输出、刷新与关闭。
  * @author hzh-betty
  */
-
 #include "zlog/logger.h"
 
 #include <cstdio>
@@ -17,11 +16,14 @@ struct SinkCall {
     explicit SinkCall(const Logger *logger) : logger(logger), previous(active) {
         active = this;
     }
+
     ~SinkCall() { active = previous; }
+
     const Logger *logger;
     SinkCall *previous;
     static thread_local SinkCall *active;
 };
+
 thread_local SinkCall *SinkCall::active = nullptr;
 } // namespace
 
@@ -42,14 +44,17 @@ Logger::Logger(std::string logger_name, LogLevel::value limit_level,
 void Logger::serialize(LogLevel::value level, const char *file, size_t line,
                        fmt::string_view data) {
     // 1. 日志消息由本次调用持有，正文视图借用本次调用独占的缓冲区。
-    const LogMessage msg(level, file, line, data,
-                         fmt::string_view(logger_name_.data(), logger_name_.size()));
+    const LogMessage msg(
+        level, file, line, data,
+        fmt::string_view(logger_name_.data(), logger_name_.size()));
+
     // 2. 线程局部序列化缓冲区复用容量，直到所有 sink 返回前都保持占用。
     thread_local fmt::memory_buffer buffer;
     thread_local bool buffer_in_use = false;
     const auto write = [&](fmt::memory_buffer &output) {
         output.clear();
         formatter_->format(output, msg);
+
         // 3. 输出日志；同步 sink 返回或异步队列完成复制后才归还缓冲区。
         log(output.data(), output.size());
     };
@@ -113,7 +118,8 @@ void Logger::close_noexcept() noexcept {
         std::fprintf(stderr, "zlog: closing logger '%s' failed: %s\n",
                      logger_name_.c_str(), error.what());
     } catch (...) {
-        std::fprintf(stderr, "zlog: closing logger '%s' failed\n", logger_name_.c_str());
+        std::fprintf(stderr, "zlog: closing logger '%s' failed\n",
+                     logger_name_.c_str());
     }
 }
 
@@ -163,6 +169,7 @@ void SyncLogger::close() {
         }
         sinks_.swap(released);
     }
+
     // sink 可能被其他 logger 共享；只释放本 logger 的所有权。
     released.clear();
     if (failure) {

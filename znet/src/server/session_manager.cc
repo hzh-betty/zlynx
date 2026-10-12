@@ -16,8 +16,8 @@ bool SessionManager::admit(Socket socket, const TaskFactory &make_task) {
     }
     Error submission_error;
     {
-        // Register before submission/handshake. stop can close every accepted
-        // descriptor, including queued tasks and TLS waits.
+        // 在提交和握手前登记连接，使 stop 能关闭所有已接收的描述符，
+        // 包括任务尚在排队或等待 TLS 握手的连接。
         std::lock_guard<std::mutex> lock(mutex_);
         if (!running_)
             return false;
@@ -110,9 +110,10 @@ void SessionManager::reap_completed() {
                 std::lock_guard<std::mutex> lock(mutex_);
                 task = sessions_.at(id).task;
             }
-            // The notification precedes the task's final return. Keep its
-            // registration until execution resources have been released.
-            // A canceled wait leaves it for the control-thread join.
+
+            // 通知发生在任务最终返回前；保留注册项直到执行资源释放，
+            // 避免清理通知与任务收尾之间的生命周期缺口。
+            // 等待取消时由控制线程的 join 完成收尾。
             if (!task.join())
                 return;
             Session retired;

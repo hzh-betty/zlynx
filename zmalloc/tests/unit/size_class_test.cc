@@ -2,7 +2,6 @@
  * @file size_class_test.cc
  * @brief SizeClass 单元测试
  */
-
 #include "zmalloc/internal/size_class.h"
 #include <gtest/gtest.h>
 
@@ -59,8 +58,10 @@ TEST(SizeClassRoundUpTest, OverMaxClassFallsBackToPageAlignment) {
 // 索引测试
 class SizeClassIndexParamTest
     : public ::testing::TestWithParam<std::tuple<size_t, size_t>> {};
+
 class SizeClassNumMoveSizeParamTest
     : public ::testing::TestWithParam<std::tuple<size_t, size_t>> {};
+
 class SizeClassNumMovePageAtLeastParamTest
     : public ::testing::TestWithParam<size_t> {};
 
@@ -82,9 +83,10 @@ TEST(SizeClassIndexTest, LargeSizesIndex) {
 }
 
 TEST(SizeClassIndexTest, NumMoveSize) {
-    // 小对象保持原批量；4KiB 单独使用 64 个，其余较大对象目标 64KiB、最多 32 个。
-    // 小对象 (8字节): 4096/8 = 512，但上限 128
+    // 小对象保持原批量；4KiB 单独使用 64 个，其余较大对象目标 64KiB、最多 32
+    // 个。 小对象 (8字节): 4096/8 = 512，但上限 128
     EXPECT_EQ(SizeClass::num_move_size(8), 128);
+
     // 大对象上限低
     EXPECT_GE(SizeClass::num_move_size(256 * 1024), 2);
 }
@@ -196,19 +198,16 @@ TEST_P(SizeClassRoundUpParamTest, RoundsExpectedSize) {
 
 INSTANTIATE_TEST_SUITE_P(
     BoundaryCases, SizeClassRoundUpParamTest,
-    ::testing::Values(std::make_tuple(2u, 16u), std::make_tuple(15u, 16u),
-                      std::make_tuple(63u, 64u), std::make_tuple(64u, 64u),
-                      std::make_tuple(72u, 80u), std::make_tuple(73u, 80u),
-                      std::make_tuple(120u, 128u), std::make_tuple(121u, 128u),
-                      std::make_tuple(255u, 256u), std::make_tuple(257u, 272u),
-                      std::make_tuple(1000u, 1008u),
-                      std::make_tuple(2000u, 2048u),
-                      std::make_tuple(4097u, 4224u),
-                      std::make_tuple(8192u, 8192u),
-                      std::make_tuple(8193u, 9216u),
-                      std::make_tuple(65535u, 65536u),
-                      std::make_tuple(65536u, 65536u),
-                      std::make_tuple(65537u, 73728u)));
+    ::testing::Values(
+        std::make_tuple(2u, 16u), std::make_tuple(15u, 16u),
+        std::make_tuple(63u, 64u), std::make_tuple(64u, 64u),
+        std::make_tuple(72u, 80u), std::make_tuple(73u, 80u),
+        std::make_tuple(120u, 128u), std::make_tuple(121u, 128u),
+        std::make_tuple(255u, 256u), std::make_tuple(257u, 272u),
+        std::make_tuple(1000u, 1008u), std::make_tuple(2000u, 2048u),
+        std::make_tuple(4097u, 4224u), std::make_tuple(8192u, 8192u),
+        std::make_tuple(8193u, 9216u), std::make_tuple(65535u, 65536u),
+        std::make_tuple(65536u, 65536u), std::make_tuple(65537u, 73728u)));
 
 TEST_P(SizeClassIndexParamTest, ReturnsExpectedIndex) {
     const size_t size = std::get<0>(GetParam());

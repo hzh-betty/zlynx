@@ -266,28 +266,25 @@ TEST(WebSocketServerIntegrationTest,
         });
         context.response().stream([](char *, size_t) { return 0U; });
     });
-    server->router().get(
-        "/ws", [&](HttpContext &context) {
-            context.on_complete([&](CompletionResult result) {
-                EXPECT_EQ(result, CompletionResult::Upgraded);
-                ++completed;
-            });
-            WebSocketCallbacks callbacks;
-            callbacks.on_open =
-                [&](const WebSocketConnection::ptr &,
-                    const std::shared_ptr<const HttpRequest> &) {
-                    EXPECT_EQ(completed.load(), 1);
-                    EXPECT_EQ(stream_completed.load(), 1);
-                    ++opened;
-                };
-            callbacks.on_message =
-                [](const WebSocketConnection::ptr &connection,
-                   std::string &&message, WebSocketMessageType) {
-                    EXPECT_EQ(message, "hello");
-                    EXPECT_TRUE(connection->send_text(message));
-                };
-            context.upgrade_to_websocket(std::move(callbacks));
+    server->router().get("/ws", [&](HttpContext &context) {
+        context.on_complete([&](CompletionResult result) {
+            EXPECT_EQ(result, CompletionResult::Upgraded);
+            ++completed;
         });
+        WebSocketCallbacks callbacks;
+        callbacks.on_open = [&](const WebSocketConnection::ptr &,
+                                const std::shared_ptr<const HttpRequest> &) {
+            EXPECT_EQ(completed.load(), 1);
+            EXPECT_EQ(stream_completed.load(), 1);
+            ++opened;
+        };
+        callbacks.on_message = [](const WebSocketConnection::ptr &connection,
+                                  std::string &&message, WebSocketMessageType) {
+            EXPECT_EQ(message, "hello");
+            EXPECT_TRUE(connection->send_text(message));
+        };
+        context.upgrade_to_websocket(std::move(callbacks));
+    });
     ScopedServer guard(server);
     ASSERT_TRUE(server->start());
     auto client = connect_to(*server);
@@ -321,6 +318,7 @@ TEST(WebSocketServerIntegrationTest,
     EXPECT_EQ(completed.load(), 1);
     EXPECT_EQ(opened.load(), 1);
 }
+
 TEST(WebSocketServerIntegrationTest, LocalCloseWaitsForPeerWithBoundedTimeout) {
     std::atomic<int> closed{0};
     WebSocketCallbacks callbacks;

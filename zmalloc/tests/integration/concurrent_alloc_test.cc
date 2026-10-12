@@ -2,7 +2,6 @@
  * @file concurrent_alloc_test.cc
  * @brief 并发分配集成测试
  */
-
 #include "zmalloc/zmalloc.h"
 #include <gtest/gtest.h>
 
@@ -17,6 +16,7 @@ namespace {
 
 class ConcurrentAllocFreeParamTest
     : public ::testing::TestWithParam<std::tuple<int, int, size_t>> {};
+
 class ConcurrentMixedParamTest
     : public ::testing::TestWithParam<std::tuple<int, int>> {};
 
@@ -180,7 +180,7 @@ TEST(ConcurrentAllocTest, MultiThreadLargeAlloc) {
     auto worker = []() {
         std::vector<void *> ptrs;
         for (int i = 0; i < kAllocsPerThread; ++i) {
-            void *ptr = zmalloc(512 * 1024); // > MAX_BYTES
+            void *ptr = zmalloc(512 * 1024); // 超过 MAX_BYTES 的大对象分配
             if (ptr != nullptr) {
                 ptrs.push_back(ptr);
             }
@@ -367,10 +367,12 @@ TEST(ConcurrentAllocTest, BatchAllocBatchFree) {
     auto worker = []() {
         for (int round = 0; round < 10; ++round) {
             std::vector<void *> ptrs;
+
             // 批量分配
             for (int i = 0; i < 200; ++i) {
                 ptrs.push_back(zmalloc(100));
             }
+
             // 批量释放
             for (void *ptr : ptrs) {
                 zfree(ptr);
@@ -393,7 +395,7 @@ TEST(ConcurrentAllocTest, LargeObjectConcurrent) {
 
     auto worker = []() {
         for (int i = 0; i < 20; ++i) {
-            void *ptr = zmalloc(100 * 1024); // 100KB
+            void *ptr = zmalloc(100 * 1024);
             EXPECT_NE(ptr, nullptr);
             std::memset(ptr, 0xAA, 100 * 1024);
             zfree(ptr);
@@ -415,7 +417,7 @@ TEST(ConcurrentAllocTest, HugeObjectConcurrent) {
 
     auto worker = []() {
         for (int i = 0; i < 5; ++i) {
-            void *ptr = zmalloc(512 * 1024); // 512KB > MAX_BYTES
+            void *ptr = zmalloc(512 * 1024); // 512 KiB，超过 MAX_BYTES
             EXPECT_NE(ptr, nullptr);
             std::memset(ptr, 0xBB, 512 * 1024);
             zfree(ptr);
@@ -488,7 +490,8 @@ TEST(ConcurrentAllocTest, MultiProducerSingleConsumer) {
     constexpr int kProducers = 4;
     constexpr int kItemsPerProducer = 100;
 
-    std::vector<std::atomic<void *>> shared_buffer(kProducers * kItemsPerProducer);
+    std::vector<std::atomic<void *>> shared_buffer(kProducers *
+                                                   kItemsPerProducer);
     for (auto &slot : shared_buffer) {
         slot.store(nullptr, std::memory_order_relaxed);
     }
@@ -508,7 +511,8 @@ TEST(ConcurrentAllocTest, MultiProducerSingleConsumer) {
             void *ptr = shared_buffer[consumed].load(std::memory_order_acquire);
             if (ptr != nullptr) {
                 zfree(ptr);
-                shared_buffer[consumed].store(nullptr, std::memory_order_relaxed);
+                shared_buffer[consumed].store(nullptr,
+                                              std::memory_order_relaxed);
                 ++consumed;
             } else {
                 std::this_thread::yield();

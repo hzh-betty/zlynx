@@ -57,7 +57,7 @@ if(BUILD_TESTING)
             LINKER:--wrap=_ZNSt6chrono3_V212steady_clock3nowEv)
     endforeach()
     if(BUILD_SHARED_LIBS)
-        # Compile only the clock-sensitive implementations into the wrapping executables.
+        # 仅将依赖时钟的实现编译到使用链接包装的测试程序中。
         target_sources(zhttp_session_test PRIVATE ../src/session/session.cc)
         target_sources(zhttp_timeout_middleware_test PRIVATE ../src/middleware/timeout_middleware.cc)
     endif()

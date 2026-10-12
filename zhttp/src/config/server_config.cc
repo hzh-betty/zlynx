@@ -1,10 +1,8 @@
 /**
- * server_config.cc
- * server_config 实现。
+ * @file server_config.cc
  *
  * @author hzh-betty
  */
-
 #include "zhttp/server_config.h"
 
 #include <stdexcept>

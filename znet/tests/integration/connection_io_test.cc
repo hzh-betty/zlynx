@@ -87,7 +87,8 @@ TEST(ConnectionIoTest,
     });
     ASSERT_TRUE(reader);
     entered.wait(zco::Deadline::after(1s)).value();
-    // A barrier on this worker runs only after the reader has parked.
+
+    // 同一工作线程上的屏障仅在读取者挂起后运行。
     auto barrier = pair.runtime.executor(0).spawn([] {});
     ASSERT_TRUE(barrier);
     barrier.value().join().value();

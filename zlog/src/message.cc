@@ -1,9 +1,7 @@
 /**
  * @file message.cc
- * @brief message 实现。
  * @author hzh-betty
  */
-
 #include "zlog/message.h"
 
 #include <ctime>

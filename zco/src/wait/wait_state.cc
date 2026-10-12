@@ -10,6 +10,8 @@ bool WaitState::complete(WaitOutcome outcome) {
         outcome_ = outcome;
         completed_ = true;
     }
+
+    // 先在状态锁内确定唯一终态，再解锁通知；端点回调可查询状态而不递归持锁。
     cv_.notify_all();
     if (auto endpoint = endpoint_.lock())
         endpoint->notify(id_);

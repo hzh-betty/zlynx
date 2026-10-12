@@ -1,8 +1,14 @@
-#pragma once
+#ifndef ZLYNX_ZCO_INCLUDE_ZCO_DEADLINE_H_
+#define ZLYNX_ZCO_INCLUDE_ZCO_DEADLINE_H_
+
 #include <chrono>
 #include <limits>
 
 namespace zco {
+/**
+ * @brief 基于单调时钟的绝对截止时间，默认值表示无限等待。
+ * @note 多轮等待复用同一值，不会因重试重新开始计时。
+ */
 class Deadline {
   public:
     using Clock = std::chrono::steady_clock;
@@ -14,6 +20,10 @@ class Deadline {
 
     static Deadline at(TimePoint time) { return Deadline(time); }
 
+    /**
+     * @brief 将相对时长转换为当前时刻起的绝对截止时间。
+     * @return 非正时长表示立即到期；超出时钟可表示范围时返回无限截止时间。
+     */
     template <class Rep, class Period>
     static Deadline after(std::chrono::duration<Rep, Period> duration) {
         auto now = Clock::now();
@@ -38,3 +48,5 @@ class Deadline {
     TimePoint time_;
 };
 } // namespace zco
+
+#endif

@@ -22,12 +22,14 @@ TEST(HttpApplicationTest, ExecutesOfflineAndLeavesCompletionToCaller) {
     EXPECT_EQ(completions, 0);
     context.complete(CompletionResult::Completed);
     EXPECT_EQ(completions, 1);
-    EXPECT_THROW(app.router().get("/late", [](HttpContext &) {}), std::logic_error);
+    EXPECT_THROW(app.router().get("/late", [](HttpContext &) {}),
+                 std::logic_error);
     EXPECT_THROW(app.use(nullptr), std::logic_error);
     EXPECT_THROW(app.set_exception_handler({}), std::logic_error);
 }
 
-TEST(HttpApplicationTest, FrozenApplicationHandlesIndependentRequestsConcurrently) {
+TEST(HttpApplicationTest,
+     FrozenApplicationHandlesIndependentRequestsConcurrently) {
     HttpApplication app;
     app.router().get("/:value", [](HttpContext &context) {
         context.response().text(context.path_param("value"));
@@ -66,8 +68,10 @@ TEST(RouterOwnershipTest, SharedDynamicTopologyKeepsEachRoutesParameterNames) {
 
 TEST(RouterOwnershipTest, RegexRoutesKeepParameterNamesPerMethod) {
     Router router;
-    router.add_regex_route(HttpMethod::GET, "/files/(.*)", {"path"}, [](HttpContext &) {});
-    router.add_regex_route(HttpMethod::POST, "/files/(.*)", {"name"}, [](HttpContext &) {});
+    router.add_regex_route(HttpMethod::GET, "/files/(.*)", {"path"},
+                           [](HttpContext &) {});
+    router.add_regex_route(HttpMethod::POST, "/files/(.*)", {"name"},
+                           [](HttpContext &) {});
     EXPECT_EQ(router.match("/files/readme", HttpMethod::GET).params,
               (HttpRequest::Params{{"path", "readme"}}));
     EXPECT_EQ(router.match("/files/readme", HttpMethod::POST).params,

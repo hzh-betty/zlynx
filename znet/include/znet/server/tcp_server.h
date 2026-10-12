@@ -1,12 +1,15 @@
-#pragma once
+#ifndef ZLYNX_ZNET_INCLUDE_ZNET_SERVER_TCP_SERVER_H_
+#define ZLYNX_ZNET_INCLUDE_ZNET_SERVER_TCP_SERVER_H_
 
 #include "znet/server/connection.h"
 #include "znet/transport/tls_credentials.h"
 #include <functional>
 
 namespace znet {
-// Created once per established connection. Captured protocol state belongs to
-// these callbacks, not to the network connection. Both run on its session task.
+/**
+ * @brief 为每条建立的连接创建一次；捕获的协议状态由回调持有，
+ * 不属于网络连接对象；两个回调均在该连接的会话任务中运行。
+ */
 struct SessionCallbacks {
     std::function<void(const Connection::ptr &, ByteBuffer &)> on_message;
     std::function<void(const Connection::ptr &)> on_close;
@@ -23,14 +26,20 @@ struct ServerOptions {
     std::chrono::milliseconds handshake_timeout{10000};
     bool reuse_port = false;
     std::shared_ptr<const TlsCredentials> tls;
-    // One terminal error report at the service boundary. Never called under a
-    // server lock; must not throw. Expected EOF/stop/read timeouts are omitted.
+
+    /**
+     * @brief 在服务边界报告错误，不持有服务器锁；回调不应抛出异常。
+     * 预期的 EOF、停止和读取超时不报告；会话处理与关闭回调的错误可分别报告。
+     * @note 不同任务可能并发调用；Error 引用仅在回调期间有效。
+     */
     std::function<void(const Error &)> on_error;
 };
 
-// Runtime is borrowed and must outlive this server. Stack/unique_ptr ownership
-// is sufficient. Configuration is immutable. start/stop are control-thread
-// operations; callbacks use request_stop to avoid joining themselves.
+/**
+ * @brief 借用的 Runtime 必须比服务器存活更久；服务器可在栈上或由 unique_ptr
+ * 持有。 配置在构造后不再修改；start/stop 由非协程的控制线程调用， 回调应使用
+ * request_stop，避免等待包含自身的任务组。
+ */
 class TcpServer {
   public:
     TcpServer(zco::Runtime &runtime, Endpoint endpoint, SessionFactory factory,
@@ -41,7 +50,12 @@ class TcpServer {
 
     Result<void> start();
     void request_stop();
-    void stop(); // Waits for every accept/session task and its callbacks.
+
+    /**
+     * @brief 请求停止并等待全部接收连接任务、会话任务及其回调完成。
+     * @throws std::logic_error 从协程中调用；回调应改用 request_stop()。
+     */
+    void stop();
     bool is_running() const;
     Result<Endpoint> local_endpoint() const;
     size_t active_connections() const;
@@ -51,3 +65,5 @@ class TcpServer {
     std::unique_ptr<Impl> impl_;
 };
 } // namespace znet
+
+#endif

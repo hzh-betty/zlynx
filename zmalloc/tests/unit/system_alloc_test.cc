@@ -2,14 +2,14 @@
 
 #include <gtest/gtest.h>
 
+#include <cerrno>
 #include <cstdint>
 #include <cstring>
-#include <cerrno>
 #include <limits>
 #include <new>
-#include <vector>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <vector>
 
 #include "zmalloc/internal/zmalloc_config.h"
 
@@ -79,7 +79,8 @@ TEST(SystemAllocTest, NothrowEntryReportsFailureAndRemainsUsable) {
     errno = 0;
     EXPECT_EQ(system_alloc_nothrow(0), nullptr);
     EXPECT_EQ(errno, ENOMEM);
-    EXPECT_EQ(system_alloc_nothrow(std::numeric_limits<size_t>::max()), nullptr);
+    EXPECT_EQ(system_alloc_nothrow(std::numeric_limits<size_t>::max()),
+              nullptr);
     const size_t pages =
         (std::numeric_limits<size_t>::max() - PAGE_SIZE) / PAGE_SIZE;
     EXPECT_EQ(system_alloc_nothrow(pages), nullptr);
@@ -99,13 +100,17 @@ TEST(SystemAllocTest, ReleaseDiscardsPhysicalPagesAndKeepsAddressWritable) {
     const size_t os_page = static_cast<size_t>(sysconf(_SC_PAGESIZE));
     std::vector<unsigned char> resident(2 * PAGE_SIZE / os_page);
     ASSERT_EQ(mincore(ptr, 2 * PAGE_SIZE, resident.data()), 0);
-    for (unsigned char page : resident) EXPECT_EQ(page & 1, 1);
+    for (unsigned char page : resident)
+        EXPECT_EQ(page & 1, 1);
 
     ASSERT_TRUE(system_release(ptr, 2));
+
     // mincore 检查驻留页，避免用进程 RSS 的采样噪声判断回收是否成功。
     ASSERT_EQ(mincore(ptr, 2 * PAGE_SIZE, resident.data()), 0);
-    for (unsigned char page : resident) EXPECT_EQ(page & 1, 0);
-    for (size_t i = 0; i < 2 * PAGE_SIZE; ++i) EXPECT_EQ(ptr[i], 0);
+    for (unsigned char page : resident)
+        EXPECT_EQ(page & 1, 0);
+    for (size_t i = 0; i < 2 * PAGE_SIZE; ++i)
+        EXPECT_EQ(ptr[i], 0);
     std::memset(ptr, 0xa5, 2 * PAGE_SIZE);
     EXPECT_EQ(ptr[0], 0xa5);
     EXPECT_EQ(ptr[2 * PAGE_SIZE - 1], 0xa5);
@@ -121,6 +126,7 @@ TEST(SystemAllocTest, ReleaseRejectsInvalidRanges) {
     const uintptr_t last_page =
         std::numeric_limits<uintptr_t>::max() & ~(uintptr_t(PAGE_SIZE) - 1);
     EXPECT_FALSE(system_release(reinterpret_cast<void *>(last_page), 1));
+
     // 已解除的映射由内核拒绝，不能报告为成功回收。
     system_free(ptr, 1);
     EXPECT_FALSE(system_release(ptr, 1));

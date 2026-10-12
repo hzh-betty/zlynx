@@ -1,18 +1,16 @@
 /**
- * static_file_middleware.cc
- * static_file_middleware 实现。
+ * @file static_file_middleware.cc
  *
  * @author hzh-betty
  */
-
 #include "zhttp/middleware/static_file_middleware.h"
 
 #include <vector>
 
-#include "zhttp/http_common.h"
 #include "static_files/path.h"
 #include "static_files/range.h"
 #include "static_files/static_resource_store.h"
+#include "zhttp/http_common.h"
 
 namespace zhttp {
 namespace mid {
@@ -163,11 +161,17 @@ StaticFileMiddleware::StaticFileMiddleware(Options options)
     : options_(std::move(options)),
       normalized_prefix_(static_path::normalize_prefix(options_.uri_prefix)),
       store_(std::make_unique<detail::StaticResourceStore>(
-          options_.document_root, options_.index_file, options_.enable_implicit_index,
+          options_.document_root, options_.index_file,
+          options_.enable_implicit_index,
           detail::StaticResourceStore::CachePolicy{
-              options_.enable_memory_cache, std::chrono::seconds{options_.memory_cache_time},
-              options_.max_cached_file_size, options_.max_cache_bytes, options_.max_cache_entries})) {}
-StaticFileMiddleware::StaticFileMiddleware() : StaticFileMiddleware(Options()) {}
+              options_.enable_memory_cache,
+              std::chrono::seconds{options_.memory_cache_time},
+              options_.max_cached_file_size, options_.max_cache_bytes,
+              options_.max_cache_entries})) {}
+
+StaticFileMiddleware::StaticFileMiddleware()
+    : StaticFileMiddleware(Options()) {}
+
 StaticFileMiddleware::~StaticFileMiddleware() = default;
 
 bool StaticFileMiddleware::before(HttpContext &request) {
@@ -175,20 +179,27 @@ bool StaticFileMiddleware::before(HttpContext &request) {
     if (!should_handle_path(path))
         return true;
     auto &response = request.response();
-    if (request.method() != HttpMethod::GET && request.method() != HttpMethod::HEAD) {
-        response.status(HttpStatus::METHOD_NOT_ALLOWED).header("Allow", "GET, HEAD").text("Method Not Allowed");
+    if (request.method() != HttpMethod::GET &&
+        request.method() != HttpMethod::HEAD) {
+        response.status(HttpStatus::METHOD_NOT_ALLOWED)
+            .header("Allow", "GET, HEAD")
+            .text("Method Not Allowed");
         return false;
     }
-    const auto raw = static_path::map_to_relative_path(path, normalized_prefix_);
+    const auto raw =
+        static_path::map_to_relative_path(path, normalized_prefix_);
     std::string relative;
     if (!static_path::sanitize_relative_path(raw, relative)) {
         response.status(HttpStatus::FORBIDDEN).text("Forbidden");
         return false;
     }
-    auto selected = store_->lookup(relative, !raw.empty() && raw.back() == '/',
-        accepted_content_encodings(request.header_view("Accept-Encoding"), options_.br_static, options_.gzip_static),
-        request.method() == HttpMethod::HEAD ? detail::StaticResourceStore::ReadMode::Metadata
-                                            : detail::StaticResourceStore::ReadMode::Content);
+    auto selected = store_->lookup(
+        relative, !raw.empty() && raw.back() == '/',
+        accepted_content_encodings(request.header_view("Accept-Encoding"),
+                                   options_.br_static, options_.gzip_static),
+        request.method() == HttpMethod::HEAD
+            ? detail::StaticResourceStore::ReadMode::Metadata
+            : detail::StaticResourceStore::ReadMode::Content);
     using State = detail::ResourceLookup::State;
     if (selected.state == State::Missing)
         return true;
@@ -197,13 +208,17 @@ bool StaticFileMiddleware::before(HttpContext &request) {
         return false;
     }
     if (selected.state == State::NotAcceptable) {
-        response.status(HttpStatus::NOT_ACCEPTABLE).body("").header("Vary", "Accept-Encoding");
+        response.status(HttpStatus::NOT_ACCEPTABLE)
+            .body("")
+            .header("Vary", "Accept-Encoding");
         return false;
     }
     const auto &resource = *selected.resource;
     const auto etag = options_.enable_etag ? resource.etag : "";
-    const auto modified = options_.enable_last_modified ? resource.last_modified : "";
-    if (try_handle_conditional_not_modified(request, response, options_, etag, modified, resource.encoding))
+    const auto modified =
+        options_.enable_last_modified ? resource.last_modified : "";
+    if (try_handle_conditional_not_modified(request, response, options_, etag,
+                                            modified, resource.encoding))
         return false;
     const auto range = parse_range_request(request, resource.size, modified);
     HttpBody body;
@@ -221,15 +236,21 @@ bool StaticFileMiddleware::before(HttpContext &request) {
         }
     }
     response.status(HttpStatus::OK);
-    apply_entity_headers(response, options_, resource.content_type, resource.encoding, etag, modified);
+    apply_entity_headers(response, options_, resource.content_type,
+                         resource.encoding, etag, modified);
     if (range.state == RangeParseState::NOT_SATISFIABLE) {
         response.status(HttpStatus::REQUESTED_RANGE_NOT_SATISFIABLE)
-            .header("Content-Range", "bytes */" + std::to_string(resource.size)).body("");
+            .header("Content-Range", "bytes */" + std::to_string(resource.size))
+            .body("");
     } else {
-        response.body(std::move(body)).header("Content-Length", std::to_string(length));
+        response.body(std::move(body))
+            .header("Content-Length", std::to_string(length));
         if (range.state == RangeParseState::SATISFIABLE)
-            response.status(HttpStatus::PARTIAL_CONTENT).header("Content-Range",
-                "bytes " + std::to_string(range.start) + "-" + std::to_string(range.end) + "/" + std::to_string(resource.size));
+            response.status(HttpStatus::PARTIAL_CONTENT)
+                .header("Content-Range", "bytes " +
+                                             std::to_string(range.start) + "-" +
+                                             std::to_string(range.end) + "/" +
+                                             std::to_string(resource.size));
     }
     response.set_keep_alive(request.is_keep_alive());
     return false;

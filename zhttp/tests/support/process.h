@@ -1,4 +1,6 @@
-#pragma once
+#ifndef ZLYNX_ZHTTP_TESTS_SUPPORT_PROCESS_H_
+#define ZLYNX_ZHTTP_TESTS_SUPPORT_PROCESS_H_
+
 #include "zco/deadline.h"
 #include <cerrno>
 #include <csignal>
@@ -51,3 +53,5 @@ class ScopedChild {
     int status_ = 0;
 };
 } // namespace zhttp::test
+
+#endif

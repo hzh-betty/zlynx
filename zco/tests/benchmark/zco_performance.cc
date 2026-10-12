@@ -72,9 +72,7 @@ int main() {
             model == StackModel::kShared ? "shared" : "independent";
         if (selected_model && std::string(selected_model) != model_name)
             continue;
-        std::cout << "stack="
-                  << model_name
-                  << '\n';
+        std::cout << "stack=" << model_name << '\n';
         RuntimeOptions options{2};
         options.stack_model = model;
         Runtime runtime(options);

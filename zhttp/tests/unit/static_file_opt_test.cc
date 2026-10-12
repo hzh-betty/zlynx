@@ -1,5 +1,5 @@
-#include "protocol/http/response_encoder.h"
 #include "../support/request_builder.h"
+#include "protocol/http/response_encoder.h"
 #include "zhttp/http_request.h"
 #include "zhttp/http_response.h"
 #include "zhttp/middleware/static_file_middleware.h"
@@ -491,8 +491,7 @@ TEST_F(StaticFileMiddlewareTest, ServeHeadPartialContentWhenRangeIsValid) {
     EXPECT_EQ(resp.headers().at("Content-Range"), "bytes 2-5/10");
     EXPECT_EQ(resp.headers().at("Content-Length"), "4");
     EXPECT_EQ(resp.body_source().length(), 4u);
-    const auto wire =
-        ResponseEncoder::serialize(resp, true, HttpMethod::HEAD);
+    const auto wire = ResponseEncoder::serialize(resp, true, HttpMethod::HEAD);
     EXPECT_EQ(wire.substr(wire.find("\r\n\r\n") + 4), "");
 }
 
@@ -555,10 +554,12 @@ TEST_F(StaticFileMiddlewareTest,
     dir.write_file("data.txt.gz", "gzip");
     StaticFileMiddleware middleware(
         make_options("/assets", dir.path(), true, 60));
+
     struct Case {
         const char *header;
         const char *encoding;
     };
+
     const Case cases[] = {
         {"gzip;q=0, br;q=0", ""},
         {"br;q=0.2, gzip;q=0.9", "gzip"},

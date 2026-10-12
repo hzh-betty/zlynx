@@ -1,10 +1,8 @@
 /**
- * auth_middleware.h
- * auth_middleware 定义。
+ * @file auth_middleware.h
  *
  * @author hzh-betty
  */
-
 #ifndef ZHTTP_AUTH_MIDDLEWARE_H_
 #define ZHTTP_AUTH_MIDDLEWARE_H_
 
@@ -18,7 +16,7 @@ namespace zhttp {
 namespace mid {
 
 /**
- * 认证中间件：校验请求是否已登录
+ * @brief 认证中间件：校验请求是否已登录
  *
  * 支持两种认证来源（可单独或组合启用）：
  * - Session：检查会话中的某个键是否存在（如 user_id）
@@ -35,7 +33,7 @@ class AuthenticationMiddleware : public Middleware {
     using UnauthorizedHandler = std::function<void(HttpResponse &)>;
 
     /**
-     * 认证中间件配置
+     * @brief 认证中间件配置
      */
     struct Options {
         Options()
@@ -56,11 +54,10 @@ class AuthenticationMiddleware : public Middleware {
         UnauthorizedHandler unauthorized_handler;
     };
 
-    /** 使用指定来源与校验回调构造认证中间件。 */
     explicit AuthenticationMiddleware(Options options = Options());
 
     /**
-     * 请求进入业务前执行认证
+     * @brief 请求进入业务前执行认证
      * 认证通过时返回 true，失败时构造响应并返回 false
      */
     bool before(HttpContext &context) override;
@@ -73,7 +70,7 @@ class AuthenticationMiddleware : public Middleware {
 };
 
 /**
- * 角色授权中间件：校验当前用户是否具备访问所需角色
+ * @brief 角色授权中间件：校验当前用户是否具备访问所需角色
  *
  * 默认从 Session 中读取角色列表（逗号分隔字符串），例如："admin,editor"。
  * 也支持提供自定义 role_resolver，从请求中解析角色集合。
@@ -88,7 +85,7 @@ class RoleAuthorizationMiddleware : public Middleware {
     using ForbiddenHandler = std::function<void(HttpResponse &)>;
 
     /**
-     * 授权中间件配置
+     * @brief 授权中间件配置
      */
     struct Options {
         Options()
@@ -108,19 +105,18 @@ class RoleAuthorizationMiddleware : public Middleware {
         ForbiddenHandler forbidden_handler;
     };
 
-    /** 设置必需角色及解析、匹配策略。 */
     RoleAuthorizationMiddleware(std::vector<std::string> required_roles,
                                 Options options = Options());
 
     /**
-     * 请求进入业务前执行角色授权
+     * @brief 请求进入业务前执行角色授权
      * 授权通过时返回 true，失败时构造响应并返回 false
      */
     bool before(HttpContext &context) override;
 
   private:
     /**
-     * 解析当前请求的角色集合（已归一化）
+     * @brief 解析当前请求的角色集合（已归一化）
      *
      * 解析顺序：
      * 1) 若配置了 role_resolver，则优先使用其返回值；
@@ -132,7 +128,7 @@ class RoleAuthorizationMiddleware : public Middleware {
     std::vector<std::string> resolve_request_roles(HttpContext &request) const;
 
     /**
-     * 判断当前角色是否满足访问要求
+     * @brief 判断当前角色是否满足访问要求
      *
      * - require_all=true：必须包含 required_roles_ 的全部元素；
      * - require_all=false：包含任一 required_roles_ 元素即可。
@@ -143,7 +139,7 @@ class RoleAuthorizationMiddleware : public Middleware {
     bool has_authorization(const std::vector<std::string> &roles) const;
 
     /**
-     * 归一化单个角色字符串
+     * @brief 归一化单个角色字符串
      *
      * @param role 原始角色字符串
      * @return 归一化后的角色（去首尾空白，必要时转小写）
@@ -158,4 +154,4 @@ class RoleAuthorizationMiddleware : public Middleware {
 
 } // namespace zhttp
 
-#endif // ZHTTP_AUTH_MIDDLEWARE_H_
+#endif

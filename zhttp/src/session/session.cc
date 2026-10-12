@@ -1,10 +1,8 @@
 /**
- * session.cc
- * session 实现。
+ * @file session.cc
  *
  * @author hzh-betty
  */
-
 #include "zhttp/session.h"
 
 #include <random>
@@ -126,8 +124,8 @@ void SessionManager::destroy(const std::string &session_id) {
 }
 
 std::string SessionManager::new_session_id() {
-    // 128-bit 随机 ID（32 个十六进制字符），足够用于内存会话场景。
-    // 这里不引入锁：thread_local RNG 可避免多线程竞争。
+    // 拼接两个 64 位伪随机数，得到 32 个十六进制字符；不提供密码学安全保证。
+    // 每线程独立的随机数生成器避免共享生成器状态。
     static thread_local std::mt19937_64 rng{std::random_device{}()};
     auto rand64 = [&]() -> uint64_t { return rng(); };
 

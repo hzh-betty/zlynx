@@ -1,4 +1,5 @@
-#pragma once
+#ifndef ZLYNX_ZHTTP_TESTS_SUPPORT_SERVER_FIXTURE_H_
+#define ZLYNX_ZHTTP_TESTS_SUPPORT_SERVER_FIXTURE_H_
 
 #include "zco/deadline.h"
 #include "zhttp/http_server.h"
@@ -120,7 +121,9 @@ inline bool send_all(int fd, std::string_view data, int timeout_ms = 1000) {
     return true;
 }
 
-// 保存一次读取中的多余字节，后续头部或帧继续从同一接收缓冲中消费。
+/**
+ * @brief 保存一次读取中的多余字节，后续头部或帧继续从同一接收缓冲中消费。
+ */
 class SocketReader {
   public:
     explicit SocketReader(int fd, size_t read_limit = 4096)
@@ -230,3 +233,5 @@ inline zco::Result<std::string> recv_websocket_frame(SocketReader &reader,
 }
 
 } // namespace zhttp::test
+
+#endif

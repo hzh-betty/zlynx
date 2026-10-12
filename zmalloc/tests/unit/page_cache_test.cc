@@ -31,10 +31,14 @@ class PageCacheTest : public ::testing::Test {
   protected:
     zmalloc::PageCache &pc = zmalloc::PageCache::get_instance();
 };
+
 class PageCacheSmallSpanParamTest
-    : public PageCacheTest, public ::testing::WithParamInterface<size_t> {};
+    : public PageCacheTest,
+      public ::testing::WithParamInterface<size_t> {};
+
 class PageCacheLargeSpanParamTest
-    : public PageCacheTest, public ::testing::WithParamInterface<size_t> {};
+    : public PageCacheTest,
+      public ::testing::WithParamInterface<size_t> {};
 
 TEST_F(PageCacheTest, ReleasedStateSurvivesSplitAndResetsAfterReuseAndMerge) {
     // 独立实例保证测试确定地命中切分路径；所有访问仍遵守页锁约定。
@@ -43,7 +47,8 @@ TEST_F(PageCacheTest, ReleasedStateSurvivesSplitAndResetsAfterReuseAndMerge) {
     std::lock_guard<std::mutex> lock(cache.page_mtx());
     zmalloc::SpanOwners span_owners(cache);
     auto *whole = span_owners.allocate(zmalloc::NPAGES - 1);
-    auto *address = reinterpret_cast<unsigned char *>(whole->page_id << zmalloc::PAGE_SHIFT);
+    auto *address = reinterpret_cast<unsigned char *>(whole->page_id
+                                                      << zmalloc::PAGE_SHIFT);
     const size_t bytes = whole->n * zmalloc::PAGE_SIZE;
     std::memset(address, 0x5a, bytes);
     span_owners.release(whole);
@@ -53,7 +58,8 @@ TEST_F(PageCacheTest, ReleasedStateSurvivesSplitAndResetsAfterReuseAndMerge) {
 
     auto *part = span_owners.allocate(32);
     EXPECT_FALSE(part->is_released);
-    EXPECT_EQ(cache.statistics().released_bytes, bytes - 32 * zmalloc::PAGE_SIZE);
+    EXPECT_EQ(cache.statistics().released_bytes,
+              bytes - 32 * zmalloc::PAGE_SIZE);
     EXPECT_EQ(cache.release_free_pages(), 0u);
     EXPECT_EQ(cache.try_map_cached_object_to_span(address), part);
     std::memset(address, 0xa5, 32 * zmalloc::PAGE_SIZE);
@@ -81,6 +87,7 @@ static void NewSpanCheckMappingAndRelease(zmalloc::PageCache &pc, size_t k) {
     ASSERT_TRUE(span->is_use);
 
     const zmalloc::PageId page_id = span->page_id;
+
     // 小 span：要求每一页都建立映射。
     for (size_t i = 0; i < k; ++i) {
         auto *m = zmalloc::CacheTestAccess::decode(
@@ -155,11 +162,13 @@ TEST_F(PageCacheTest, ReleaseSpanMarksNotInUse) {
     const size_t page_id = span->page_id;
     const size_t n = span->n;
     span_owners.release(span);
+
     // release 之后 span 指针可能被合并/回收，不能再直接访问。
     auto *mapped = static_cast<zmalloc::Span *>(
         zmalloc::CacheTestAccess::page_map(pc).get(page_id));
     ASSERT_NE(mapped, nullptr);
     EXPECT_FALSE(mapped->is_use);
+
     // 原 span 的结束页若仍是边界页，则也应指向同一个空闲 span。
     auto *mapped_end = static_cast<zmalloc::Span *>(
         zmalloc::CacheTestAccess::page_map(pc).get(page_id + n - 1));
@@ -367,16 +376,18 @@ TEST_F(PageCacheTest, MultipleSmallAllocationsDoNotOverlapInMapping) {
     }
 }
 
-TEST_P(PageCacheSmallSpanParamTest, NewSpanMapsAllPagesAndReleaseKeepsBoundary) {
+TEST_P(PageCacheSmallSpanParamTest,
+       NewSpanMapsAllPagesAndReleaseKeepsBoundary) {
     NewSpanCheckMappingAndRelease(pc, GetParam());
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    SpanSizes, PageCacheSmallSpanParamTest,
-    ::testing::Values(1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 9u, 10u, 11u, 12u, 13u,
-                      14u, 15u, 16u, 17u, 18u, 19u, 20u, 21u, 22u, 23u, 24u,
-                      25u, 26u, 27u, 28u, 29u, 30u, 31u, 32u, 48u, 64u, 96u,
-                      127u, 128u));
+INSTANTIATE_TEST_SUITE_P(SpanSizes, PageCacheSmallSpanParamTest,
+                         ::testing::Values(1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 9u,
+                                           10u, 11u, 12u, 13u, 14u, 15u, 16u,
+                                           17u, 18u, 19u, 20u, 21u, 22u, 23u,
+                                           24u, 25u, 26u, 27u, 28u, 29u, 30u,
+                                           31u, 32u, 48u, 64u, 96u, 127u,
+                                           128u));
 
 TEST_P(PageCacheLargeSpanParamTest, LargeSpanAllocFree) {
     NewLargeSpanAllocAndFree(pc, GetParam());
@@ -390,7 +401,9 @@ TEST_F(PageCacheTest, CachedObjectTagIsDecodedAndClearedBeforeReuse) {
     zmalloc::SpanOwners span_owners(pc);
     zmalloc::Span *span = span_owners.allocate(1);
     span->obj_size = 64;
-    void *address = reinterpret_cast<void *>(span->page_id << zmalloc::PAGE_SHIFT);
+    void *address =
+        reinterpret_cast<void *>(span->page_id << zmalloc::PAGE_SHIFT);
+
     // 通用查询去除标记，释放后缓存边界映射不得继续携带分配标记。
     EXPECT_EQ(pc.try_map_cached_object_to_span(address), span);
     EXPECT_EQ(pc.try_map_object_to_span(address), span);
@@ -420,7 +433,8 @@ TEST_F(PageCacheTest, LargeCacheReusesExactSizeAndClearsAlignedMappings) {
     zmalloc::SpanOwners span_owners(cache);
     constexpr size_t pages = 256;
     auto *span = span_owners.allocate(pages);
-    auto *address = reinterpret_cast<unsigned char *>(span->page_id << zmalloc::PAGE_SHIFT);
+    auto *address =
+        reinterpret_cast<unsigned char *>(span->page_id << zmalloc::PAGE_SHIFT);
     void *extra = address + 65536;
     cache.map_span_page(span, extra);
     span->obj_size = pages * zmalloc::PAGE_SIZE;
@@ -459,7 +473,8 @@ TEST_F(PageCacheTest, LargeCacheBudgetEvictsOldestAndLeavesLiveObjectsIntact) {
     void *addresses[10];
     for (size_t i = 0; i < 10; ++i) {
         spans[i] = span_owners.allocate(pages);
-        addresses[i] = reinterpret_cast<void *>(spans[i]->page_id << zmalloc::PAGE_SHIFT);
+        addresses[i] =
+            reinterpret_cast<void *>(spans[i]->page_id << zmalloc::PAGE_SHIFT);
         static_cast<unsigned char *>(addresses[i])[bytes - 1] = 0x5a;
     }
     for (size_t i = 0; i < 9; ++i) {
@@ -469,11 +484,13 @@ TEST_F(PageCacheTest, LargeCacheBudgetEvictsOldestAndLeavesLiveObjectsIntact) {
         EXPECT_EQ(cache.try_map_object_to_span(addresses[i]), nullptr);
     }
     EXPECT_EQ(cache.statistics().free_bytes, zmalloc::LARGE_CACHE_BUDGET);
-    EXPECT_EQ(cache.statistics().mapped_bytes, zmalloc::LARGE_CACHE_BUDGET + bytes);
+    EXPECT_EQ(cache.statistics().mapped_bytes,
+              zmalloc::LARGE_CACHE_BUDGET + bytes);
     EXPECT_EQ(cache.map_object_to_span(addresses[9]), spans[9]);
     EXPECT_EQ(static_cast<unsigned char *>(addresses[9])[bytes - 1], 0x5a);
     span_owners.release(spans[9]);
     EXPECT_EQ(cache.statistics().mapped_bytes, zmalloc::LARGE_CACHE_BUDGET);
+
     // 精确尺寸，不把大缓存块拆给更小的请求。
     auto *different = span_owners.allocate(129);
     EXPECT_EQ(different->n, 129u);
@@ -489,7 +506,8 @@ TEST_F(PageCacheTest, BeyondLargeCacheLimitStillUnmapsImmediately) {
     std::lock_guard<std::mutex> lock(cache.page_mtx());
     zmalloc::SpanOwners span_owners(cache);
     auto *span = span_owners.allocate(zmalloc::LARGE_CACHE_MAX_PAGES + 1);
-    void *address = reinterpret_cast<void *>(span->page_id << zmalloc::PAGE_SHIFT);
+    void *address =
+        reinterpret_cast<void *>(span->page_id << zmalloc::PAGE_SHIFT);
     span_owners.release(span);
     EXPECT_EQ(cache.statistics().mapped_bytes, 0u);
     EXPECT_EQ(cache.statistics().free_bytes, 0u);
@@ -506,7 +524,8 @@ TEST_F(PageCacheTest, AutomaticReleaseIsBoundedAndKeepsLivePagesIntact) {
     zmalloc::Span *spans[65];
     for (auto &span : spans) {
         span = span_owners.allocate(pages);
-        auto *p = reinterpret_cast<unsigned char *>(span->page_id << zmalloc::PAGE_SHIFT);
+        auto *p = reinterpret_cast<unsigned char *>(span->page_id
+                                                    << zmalloc::PAGE_SHIFT);
         std::memset(p, 0x5a, bytes);
     }
     for (size_t i = 0; i < 64; ++i) {
@@ -531,10 +550,12 @@ TEST_F(PageCacheTest, AutomaticReleaseIsBoundedAndKeepsLivePagesIntact) {
         EXPECT_EQ(stats.released_bytes, 0u);
         EXPECT_EQ(stats.total_released_bytes, 0u);
     }
-    auto *live = reinterpret_cast<unsigned char *>(spans[64]->page_id << zmalloc::PAGE_SHIFT);
+    auto *live = reinterpret_cast<unsigned char *>(spans[64]->page_id
+                                                   << zmalloc::PAGE_SHIFT);
     EXPECT_EQ(live[0], 0x5a);
     EXPECT_EQ(live[bytes - 1], 0x5a);
-    EXPECT_EQ(cache.release_free_pages(), stats.free_bytes - stats.released_bytes);
+    EXPECT_EQ(cache.release_free_pages(),
+              stats.free_bytes - stats.released_bytes);
     EXPECT_EQ(zmalloc::CacheTestAccess::unreleased_bytes(cache), 0u);
     EXPECT_EQ(cache.release_free_pages(), 0u);
     span_owners.release(spans[64]);
@@ -563,6 +584,7 @@ TEST_F(PageCacheTest, AutomaticReleaseCursorSurvivesLargeCacheEviction) {
     ASSERT_NE(zmalloc::CacheTestAccess::release_cursor(cache), nullptr);
     ASSERT_NE(zmalloc::CacheTestAccess::release_cursor(cache),
               zmalloc::CacheTestAccess::large_spans(cache).end());
+
     // 显式回收后保留扫描位置，驱逐覆盖该位置的大块，后续扫描不能访问旧元数据。
     cache.release_free_pages();
     span_owners.release(first);
@@ -601,6 +623,7 @@ TEST_F(PageCacheTest, AutomaticReleaseCursorSurvivesAllocationSplitAndMerge) {
     ASSERT_NE(zmalloc::CacheTestAccess::release_cursor(cache), nullptr);
     ASSERT_NE(zmalloc::CacheTestAccess::release_cursor(cache),
               zmalloc::CacheTestAccess::span_lists(cache)[pages].end());
+
     // 分配直到命中跨轮保存的游标，再切分剩余桶并将页合并归还。
     zmalloc::Span *held[32];
     size_t count = 0;
@@ -635,7 +658,8 @@ TEST_F(PageCacheTest, ArbitraryQueriesHoldPageLockDuringSpanReuse) {
     std::thread reader([&] {
         reader_ready.store(true, std::memory_order_release);
         do {
-            // candidate 不保证对象存活，必须从查询开始就持锁，防止 Span 被复用。
+            // candidate 不保证对象存活，必须从查询开始就持锁，防止 Span
+            // 被复用。
             std::lock_guard<std::mutex> lock(pc.page_mtx());
             zmalloc::SpanOwners span_owners(pc);
             void *address = candidate.load(std::memory_order_relaxed);
@@ -659,6 +683,7 @@ TEST_F(PageCacheTest, ArbitraryQueriesHoldPageLockDuringSpanReuse) {
         for (size_t round = 0; round < 1000; ++round) {
             std::lock_guard<std::mutex> lock(pc.page_mtx());
             zmalloc::SpanOwners span_owners(pc);
+
             // 同时覆盖缓存块拆分/合并，以及系统映射释放后的元数据复用。
             const size_t pages = round % 2 == 0 ? round % 128 + 1 : 256;
             zmalloc::Span *span = span_owners.allocate(pages);

@@ -62,7 +62,8 @@ Result<RegistrationId> EpollReactor::add(io::ResourceId resource, int fd,
             std::make_error_code(std::errc::device_or_resource_busy));
     auto id = ++next_registration;
     next.registrations.emplace(id, requested);
-    // Allocate userspace entries first; ctl failure rolls them back atomically.
+
+    // 先分配用户态条目；epoll_ctl 失败时撤销条目，避免留下半完成注册。
     registrations_.emplace(id, resource.value);
     try {
         if (found == resources_.end())
@@ -123,7 +124,8 @@ std::vector<ReadyEvent> EpollReactor::poll(int timeout_ms) {
     std::lock_guard<std::mutex> lock(mutex_);
     for (int i = 0; i < count; ++i) {
         auto &event = events[i];
-        // epoll_event is packed; copy before binding a map key reference.
+
+        // epoll_event 使用紧凑布局；先复制字段，避免给映射键绑定未对齐引用。
         const uint64_t resource = event.data.u64;
         if (!resource) {
             uint64_t value;

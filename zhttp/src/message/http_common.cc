@@ -1,10 +1,8 @@
 /**
- * http_common.cc
- * http_common 实现。
+ * @file http_common.cc
  *
  * @author hzh-betty
  */
-
 #include "zhttp/http_common.h"
 
 #include <algorithm>
@@ -89,12 +87,13 @@ HttpVersion string_to_version(std::string_view str) {
 
 const char *status_to_string(HttpStatus status) {
     switch (status) {
-    // 1xx
+    // 1xx 信息响应
     case HttpStatus::CONTINUE:
         return "Continue";
     case HttpStatus::SWITCHING_PROTOCOLS:
         return "Switching Protocols";
-    // 2xx
+
+    // 2xx 成功响应
     case HttpStatus::OK:
         return "OK";
     case HttpStatus::PARTIAL_CONTENT:
@@ -109,7 +108,8 @@ const char *status_to_string(HttpStatus status) {
         return "Reset Content";
     case HttpStatus::EXPECTATION_FAILED:
         return "Expectation Failed";
-    // 3xx
+
+    // 3xx 重定向响应
     case HttpStatus::MOVED_PERMANENTLY:
         return "Moved Permanently";
     case HttpStatus::FOUND:
@@ -122,7 +122,8 @@ const char *status_to_string(HttpStatus status) {
         return "Temporary Redirect";
     case HttpStatus::PERMANENT_REDIRECT:
         return "Permanent Redirect";
-    // 4xx
+
+    // 4xx 客户端错误
     case HttpStatus::BAD_REQUEST:
         return "Bad Request";
     case HttpStatus::UNAUTHORIZED:
@@ -153,7 +154,8 @@ const char *status_to_string(HttpStatus status) {
         return "Request Header Fields Too Large";
     case HttpStatus::TOO_MANY_REQUESTS:
         return "Too Many Requests";
-    // 5xx
+
+    // 5xx 服务器错误
     case HttpStatus::INTERNAL_SERVER_ERROR:
         return "Internal Server Error";
     case HttpStatus::NOT_IMPLEMENTED:
@@ -177,10 +179,9 @@ bool is_body_allowed(HttpStatus status) {
            code != 304;
 }
 
-
 const char *get_mime_type(const std::string &extension) {
     static const std::unordered_map<std::string, const char *> mime_types = {
-        // Text
+        // 文本
         {"html", "text/html"},
         {"htm", "text/html"},
         {"css", "text/css"},
@@ -188,7 +189,8 @@ const char *get_mime_type(const std::string &extension) {
         {"json", "application/json"},
         {"xml", "application/xml"},
         {"txt", "text/plain"},
-        // Images
+
+        // 图像
         {"png", "image/png"},
         {"jpg", "image/jpeg"},
         {"jpeg", "image/jpeg"},
@@ -196,19 +198,23 @@ const char *get_mime_type(const std::string &extension) {
         {"svg", "image/svg+xml"},
         {"ico", "image/x-icon"},
         {"webp", "image/webp"},
-        // Audio/Video
+
+        // 音频／视频
         {"mp3", "audio/mpeg"},
         {"mp4", "video/mp4"},
         {"webm", "video/webm"},
-        // Documents
+
+        // 文档和归档
         {"pdf", "application/pdf"},
         {"zip", "application/zip"},
         {"gz", "application/gzip"},
-        // Fonts
+
+        // 字体
         {"woff", "font/woff"},
         {"woff2", "font/woff2"},
         {"ttf", "font/ttf"},
-        // Other
+
+        // 其他类型
         {"wasm", "application/wasm"},
     };
 
@@ -229,7 +235,8 @@ std::string to_lower(std::string_view str) {
 }
 
 std::string_view trim_view(std::string_view str) {
-    while (!str.empty() && std::isspace(static_cast<unsigned char>(str.front())))
+    while (!str.empty() &&
+           std::isspace(static_cast<unsigned char>(str.front())))
         str.remove_prefix(1);
     while (!str.empty() && std::isspace(static_cast<unsigned char>(str.back())))
         str.remove_suffix(1);
@@ -316,6 +323,7 @@ std::string url_decode(std::string_view str) {
     // 4) 其他字符原样保留。
     // 说明：非法或不完整的 '%' 序列不会报错，会按原字符输出。
     std::string output;
+
     // 解码后长度不会超过原串，先预留可减少扩容。
     output.reserve(str.size());
 
@@ -342,17 +350,20 @@ std::string url_decode(std::string_view str) {
             if (hi >= 0 && lo >= 0) {
                 // 两位十六进制都合法：合并为一个字节写入输出。
                 output.push_back(static_cast<char>(hi * 16 + lo));
+
                 // 已消费当前位置和后两位，for 迭代再 +1
                 // 后刚好指向下一个未处理字符。
                 i += 2;
                 continue;
             }
+
             // 非法 "%" 序列：降级为普通字符路径，保持输入可逆。
         } else if (str[i] == '+') {
             // 分支 B：'+' 按表单编码规则映射为空格。
             output.push_back(' ');
             continue;
         }
+
         // 分支 C：普通字符直接透传。
         output.push_back(str[i]);
     }
@@ -397,11 +408,11 @@ std::vector<std::string> accepted_content_encodings(std::string_view header,
                                                  : header.substr(comma + 1);
         const auto semi = item.find(';');
         const auto token = trim_view(item.substr(0, semi));
-        int *target = equal_case_insensitive(token, "br")       ? &br
-                    : equal_case_insensitive(token, "gzip")   ? &gzip
-                    : equal_case_insensitive(token, "identity") ? &identity
-                    : token == "*"                             ? &wildcard
-                                                               : nullptr;
+        int *target = equal_case_insensitive(token, "br")         ? &br
+                      : equal_case_insensitive(token, "gzip")     ? &gzip
+                      : equal_case_insensitive(token, "identity") ? &identity
+                      : token == "*"                              ? &wildcard
+                                                                  : nullptr;
         if (!target)
             continue;
         int quality = 1000;
@@ -416,6 +427,7 @@ std::vector<std::string> accepted_content_encodings(std::string_view header,
                           ? parse_encoding_quality(value)
                           : 0;
         }
+
         // 重复项取较严格值，显式 q=0 不能被另一个重复项覆盖。
         *target = *target < 0 ? quality : std::min(*target, quality);
     }

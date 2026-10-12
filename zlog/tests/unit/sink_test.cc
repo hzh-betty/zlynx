@@ -43,7 +43,9 @@ class SinkTest : public ::testing::Test {
     std::string testDir;
 };
 
-class BufferedSinkTest : public SinkTest, public ::testing::WithParamInterface<FileBufferMode> {};
+class BufferedSinkTest : public SinkTest,
+                         public ::testing::WithParamInterface<FileBufferMode> {
+};
 
 TEST_F(SinkTest, StdOutSinkBasic) {
     StdOutSink sink;
@@ -108,7 +110,7 @@ TEST_P(BufferedSinkTest, FileSinkAppend) {
 
 TEST_P(BufferedSinkTest, FileSinkLargeWrite) {
     std::string filepath = testDir + "/large.log";
-    std::string largeData(1024 * 100, 'X'); // 100KB
+    std::string largeData(1024 * 100, 'X');
 
     {
         FileSink sink(filepath, false, GetParam());
@@ -150,7 +152,7 @@ TEST_P(BufferedSinkTest, FileSinkAutoFlushWritesImmediately) {
 
 TEST_F(SinkTest, RollBySizeSinkBasic) {
     std::string basename = testDir + "/roll_test";
-    size_t maxSize = 1024; // 1KB
+    size_t maxSize = 1024;
 
     {
         RollBySizeSink sink(basename, maxSize);
@@ -198,12 +200,12 @@ TEST_F(SinkTest, RollBySizeSinkRollOver) {
 
 TEST_F(SinkTest, RollBySizeSinkLargeFile) {
     std::string basename = testDir + "/large_roll";
-    size_t maxSize = 1024 * 1024; // 1MB
+    size_t maxSize = 1024 * 1024;
 
     {
         RollBySizeSink sink(basename, maxSize);
 
-        std::string chunk(10240, 'A'); // 10KB
+        std::string chunk(10240, 'A');
         for (int i = 0; i < 50; i++) {
             sink.log(chunk.c_str(), chunk.size());
         }
@@ -282,7 +284,10 @@ TEST_F(SinkTest, CreateRollBySizeSink) {
 
 TEST_F(SinkTest, FileFailuresAreReportedDuringOpenWriteAndFlush) {
     const std::string blocked = testDir + "/not_a_directory";
-    { std::ofstream file(blocked); file << "existing file"; }
+    {
+        std::ofstream file(blocked);
+        file << "existing file";
+    }
     EXPECT_THROW(FileSink(blocked + "/log.txt"), std::system_error);
     EXPECT_THROW(RollBySizeSink(blocked + "/roll", 100), std::system_error);
     FileSink full("/dev/full", true);
@@ -290,7 +295,8 @@ TEST_F(SinkTest, FileFailuresAreReportedDuringOpenWriteAndFlush) {
     EXPECT_THROW(full.flush(), std::ios_base::failure);
 }
 
-TEST_P(BufferedSinkTest, OversizedRollingRecordIsRejectedWithoutRotationOrDataLoss) {
+TEST_P(BufferedSinkTest,
+       OversizedRollingRecordIsRejectedWithoutRotationOrDataLoss) {
     RollBySizeSink sink(testDir + "/limit", 10, false, 10, GetParam());
     sink.log("before", 6);
     EXPECT_THROW(sink.log("01234567890", 11), std::length_error);
@@ -300,16 +306,24 @@ TEST_P(BufferedSinkTest, OversizedRollingRecordIsRejectedWithoutRotationOrDataLo
     ASSERT_EQ(files.size(), 1u);
     EXPECT_EQ(readFile(testDir + "/" + files.front()), "beforenext");
     EXPECT_THROW(RollBySizeSink(testDir + "/zero", 0), std::invalid_argument);
-    EXPECT_THROW(RollBySizeSink(testDir + "/zero", 10, false, 0), std::invalid_argument);
+    EXPECT_THROW(RollBySizeSink(testDir + "/zero", 10, false, 0),
+                 std::invalid_argument);
 }
 
 TEST_P(BufferedSinkTest, RecreatingRollingSinkDoesNotReuseExistingFile) {
-    { RollBySizeSink sink(testDir + "/reopen", 10, false, 10, GetParam()); sink.log("AAAAAAAA", 8); }
-    { RollBySizeSink sink(testDir + "/reopen", 10, false, 10, GetParam()); sink.log("BBBBBBBB", 8); }
+    {
+        RollBySizeSink sink(testDir + "/reopen", 10, false, 10, GetParam());
+        sink.log("AAAAAAAA", 8);
+    }
+    {
+        RollBySizeSink sink(testDir + "/reopen", 10, false, 10, GetParam());
+        sink.log("BBBBBBBB", 8);
+    }
     const auto files = listDir(testDir);
     ASSERT_EQ(files.size(), 2u);
     std::vector<std::string> contents;
-    for (const auto &file : files) contents.push_back(readFile(testDir + "/" + file));
+    for (const auto &file : files)
+        contents.push_back(readFile(testDir + "/" + file));
     std::sort(contents.begin(), contents.end());
     EXPECT_EQ(contents, (std::vector<std::string>{"AAAAAAAA", "BBBBBBBB"}));
 }
@@ -322,20 +336,27 @@ TEST_P(BufferedSinkTest, RollingRetentionIncludesFilesFromPreviousInstances) {
         sink.log(message.data(), message.size());
     }
     EXPECT_EQ(listDir(testDir).size(), 10u);
-    { RollBySizeSink sink(testDir + "/retained", 10, false, 3, GetParam()); sink.log("last", 4); }
+    {
+        RollBySizeSink sink(testDir + "/retained", 10, false, 3, GetParam());
+        sink.log("last", 4);
+    }
     const auto files = listDir(testDir);
     ASSERT_EQ(files.size(), 3u);
     std::vector<std::string> contents;
-    for (const auto &file : files) contents.push_back(readFile(testDir + "/" + file));
+    for (const auto &file : files)
+        contents.push_back(readFile(testDir + "/" + file));
     std::sort(contents.begin(), contents.end());
     EXPECT_EQ(contents, (std::vector<std::string>{"13", "14", "last"}));
 }
 
 TEST_P(BufferedSinkTest, AsyncRollingKeepsSmallRecordsWithinFileLimit) {
-    const auto sink = std::make_shared<RollBySizeSink>(testDir + "/async_roll", 100, false, 10, GetParam());
-    AsyncLogger logger("async_roll", LogLevel::value::INFO, std::make_shared<Formatter>("%m"),
-                       {sink}, AsyncType::ASYNC_SAFE, std::chrono::hours(1));
-    for (int i = 0; i < 100; ++i) logger.info(__FILE__, __LINE__, "0123456789");
+    const auto sink = std::make_shared<RollBySizeSink>(
+        testDir + "/async_roll", 100, false, 10, GetParam());
+    AsyncLogger logger("async_roll", LogLevel::value::INFO,
+                       std::make_shared<Formatter>("%m"), {sink},
+                       AsyncType::ASYNC_SAFE, std::chrono::hours(1));
+    for (int i = 0; i < 100; ++i)
+        logger.info(__FILE__, __LINE__, "0123456789");
     logger.close();
     const auto files = listDir(testDir);
     ASSERT_EQ(files.size(), 10u);
@@ -353,23 +374,32 @@ TEST_P(BufferedSinkTest, SharedFileSinkWorksAcrossSyncAndAsyncLoggers) {
     const auto sink = std::make_shared<FileSink>(path, false, GetParam());
     const auto formatter = std::make_shared<Formatter>("%m%n");
     const std::vector<Logger::ptr> loggers{
-        std::make_shared<SyncLogger>("first", LogLevel::value::INFO, formatter, std::vector<LogSink::ptr>{sink}),
-        std::make_shared<SyncLogger>("second", LogLevel::value::INFO, formatter, std::vector<LogSink::ptr>{sink}),
-        std::make_shared<AsyncLogger>("third", LogLevel::value::INFO, formatter, std::vector<LogSink::ptr>{sink},
-                                     AsyncType::ASYNC_SAFE, std::chrono::hours(1))};
+        std::make_shared<SyncLogger>("first", LogLevel::value::INFO, formatter,
+                                     std::vector<LogSink::ptr>{sink}),
+        std::make_shared<SyncLogger>("second", LogLevel::value::INFO, formatter,
+                                     std::vector<LogSink::ptr>{sink}),
+        std::make_shared<AsyncLogger>("third", LogLevel::value::INFO, formatter,
+                                      std::vector<LogSink::ptr>{sink},
+                                      AsyncType::ASYNC_SAFE,
+                                      std::chrono::hours(1))};
     std::vector<std::thread> writers;
     for (size_t t = 0; t < loggers.size(); ++t) {
         writers.emplace_back([&, t] {
-            for (int i = 0; i < 200; ++i) loggers[t]->info(__FILE__, __LINE__, "{}:{}", t, i);
+            for (int i = 0; i < 200; ++i)
+                loggers[t]->info(__FILE__, __LINE__, "{}:{}", t, i);
         });
     }
-    for (auto &writer : writers) writer.join();
-    for (const auto &logger : loggers) logger->close();
+    for (auto &writer : writers)
+        writer.join();
+    for (const auto &logger : loggers)
+        logger->close();
     std::istringstream content(readFile(path));
     std::vector<std::string> actual, expected;
-    for (std::string line; std::getline(content, line);) actual.push_back(line);
+    for (std::string line; std::getline(content, line);)
+        actual.push_back(line);
     for (int t = 0; t < 3; ++t) {
-        for (int i = 0; i < 200; ++i) expected.push_back(std::to_string(t) + ":" + std::to_string(i));
+        for (int i = 0; i < 200; ++i)
+            expected.push_back(std::to_string(t) + ":" + std::to_string(i));
     }
     std::sort(actual.begin(), actual.end());
     std::sort(expected.begin(), expected.end());
@@ -377,14 +407,23 @@ TEST_P(BufferedSinkTest, SharedFileSinkWorksAcrossSyncAndAsyncLoggers) {
 }
 
 TEST_P(BufferedSinkTest, SharedRollingSinkSerializesWritesAndRotation) {
-    const auto sink = std::make_shared<RollBySizeSink>(testDir + "/shared_roll", 100, false, 100, GetParam());
+    const auto sink = std::make_shared<RollBySizeSink>(
+        testDir + "/shared_roll", 100, false, 100, GetParam());
     const auto formatter = std::make_shared<Formatter>("%m");
     SyncLogger first("first", LogLevel::value::INFO, formatter, {sink});
     SyncLogger second("second", LogLevel::value::INFO, formatter, {sink});
-    std::thread a([&] { for (int i = 0; i < 100; ++i) first.info(__FILE__, __LINE__, "AAAAAAAAAA"); });
-    std::thread b([&] { for (int i = 0; i < 100; ++i) second.info(__FILE__, __LINE__, "BBBBBBBBBB"); });
-    a.join(); b.join();
+    std::thread a([&] {
+        for (int i = 0; i < 100; ++i)
+            first.info(__FILE__, __LINE__, "AAAAAAAAAA");
+    });
+    std::thread b([&] {
+        for (int i = 0; i < 100; ++i)
+            second.info(__FILE__, __LINE__, "BBBBBBBBBB");
+    });
+    a.join();
+    b.join();
     first.close();
+
     // 关闭一个 logger 不能关闭另一个 logger 共用的 sink。
     second.info(__FILE__, __LINE__, "CCCCCCCCCC");
     second.close();
@@ -404,16 +443,19 @@ TEST_P(BufferedSinkTest, SharedRollingSinkSerializesWritesAndRotation) {
 }
 
 INSTANTIATE_TEST_SUITE_P(FileBufferModes, BufferedSinkTest,
-    ::testing::Values(FileBufferMode::UNBUFFERED, FileBufferMode::BUFFERED));
+                         ::testing::Values(FileBufferMode::UNBUFFERED,
+                                           FileBufferMode::BUFFERED));
 
 TEST_F(SinkTest, BufferedFileFlushPreservesBinaryRecords) {
     const std::string path = testDir + "/buffered.log";
     FileSink sink(path, false, FileBufferMode::BUFFERED);
     const char bytes[] = {'a', '\0', 'b', '\n'};
-    for (int i = 0; i < 100; ++i) sink.log(bytes, sizeof bytes);
+    for (int i = 0; i < 100; ++i)
+        sink.log(bytes, sizeof bytes);
     sink.flush();
     std::string expected;
-    for (int i = 0; i < 100; ++i) expected.append(bytes, sizeof bytes);
+    for (int i = 0; i < 100; ++i)
+        expected.append(bytes, sizeof bytes);
     EXPECT_EQ(readFile(path), expected);
 }
 
@@ -430,20 +472,28 @@ TEST_F(SinkTest, BufferedFailuresStillFlushOtherSinksAndCompleteClose) {
       public:
         std::string text;
         int flushes = 0;
-        void log(const char *data, size_t len) override { text.append(data, len); }
+
+        void log(const char *data, size_t len) override {
+            text.append(data, len);
+        }
+
         void flush() override { ++flushes; }
     };
+
     for (bool async : {false, true}) {
         const auto good = std::make_shared<RecordingSink>();
-        const auto bad = std::make_shared<FileSink>("/dev/full", false, FileBufferMode::BUFFERED);
+        const auto bad = std::make_shared<FileSink>("/dev/full", false,
+                                                    FileBufferMode::BUFFERED);
         const std::vector<LogSink::ptr> sinks{bad, good};
         const auto format = std::make_shared<Formatter>("%m%n");
         Logger::ptr logger;
         if (async) {
-            logger = std::make_shared<AsyncLogger>("buffered", LogLevel::value::INFO,
-                format, sinks, AsyncType::ASYNC_SAFE, std::chrono::hours(1));
+            logger = std::make_shared<AsyncLogger>(
+                "buffered", LogLevel::value::INFO, format, sinks,
+                AsyncType::ASYNC_SAFE, std::chrono::hours(1));
         } else {
-            logger = std::make_shared<SyncLogger>("buffered", LogLevel::value::INFO, format, sinks);
+            logger = std::make_shared<SyncLogger>(
+                "buffered", LogLevel::value::INFO, format, sinks);
         }
         logger->info(__FILE__, __LINE__, "first");
         logger->info(__FILE__, __LINE__, "second");
@@ -453,6 +503,7 @@ TEST_F(SinkTest, BufferedFailuresStillFlushOtherSinksAndCompleteClose) {
         EXPECT_THROW(logger->close(), std::ios_base::failure);
         EXPECT_EQ(good->flushes, 2);
         EXPECT_NO_THROW(logger->close());
-        EXPECT_THROW(logger->info(__FILE__, __LINE__, "closed"), std::runtime_error);
+        EXPECT_THROW(logger->info(__FILE__, __LINE__, "closed"),
+                     std::runtime_error);
     }
 }

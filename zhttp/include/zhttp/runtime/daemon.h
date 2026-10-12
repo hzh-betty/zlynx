@@ -1,10 +1,8 @@
 /**
- * daemon.h
- * daemon 定义。
+ * @file daemon.h
  *
  * @author hzh-betty
  */
-
 #ifndef ZHTTP_DAEMON_H_
 #define ZHTTP_DAEMON_H_
 
@@ -17,7 +15,7 @@
 namespace zhttp {
 
 /**
- * 进程信息结构体
+ * @brief 进程信息结构体
  *
  * 守护进程模式下通常会存在父进程和真正执行业务的工作进程，
  * 该结构用于记录它们的 PID、启动时间和重启次数，便于排障和状态输出。
@@ -30,14 +28,14 @@ struct ProcessInfo {
     uint32_t restart_count = 0;     // 重启次数
 
     /**
-     * 转换为字符串
+     * @brief 转换为字符串
      *
      * @return 便于日志输出的描述字符串
      */
     std::string to_string() const;
 
     /**
-     * 获取全局单例
+     * @brief 获取全局单例
      *
      * @return 进程信息单例引用
      */
@@ -45,7 +43,7 @@ struct ProcessInfo {
 };
 
 /**
- * 守护进程操作模块
+ * @brief 守护进程操作模块
  *
  * 该模块封装了一组与服务进程部署相关的能力，例如：
  * 1. 前后台启动
@@ -55,14 +53,14 @@ struct ProcessInfo {
 // 保留 Daemon:: 调用名称；进程共享停止标记，不创建没有实例状态的空对象。
 namespace Daemon {
 /**
- * 主函数回调类型
+ * @brief 主函数回调类型
  *
  * 回调的签名与普通 main 函数保持一致，便于复用现有启动逻辑。
  */
 using MainCallback = std::function<int(int argc, char **argv)>;
 
 /**
- * 启动守护进程（带子进程监控和自动重启）
+ * @brief 启动守护进程（带子进程监控和自动重启）
  *
  * @param argc 参数个数
  * @param argv 参数数组
@@ -77,7 +75,7 @@ int start_daemon(int argc, char **argv, MainCallback main_cb,
                  bool is_daemon = true, uint32_t restart_interval_sec = 5);
 
 /**
- * 检查是否收到停止信号
+ * @brief 检查是否收到停止信号
  *
  * @return true 表示进程应开始退出
  */
@@ -87,4 +85,4 @@ bool should_stop();
 
 } // namespace zhttp
 
-#endif // ZHTTP_DAEMON_H_
+#endif

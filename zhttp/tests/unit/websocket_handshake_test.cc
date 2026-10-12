@@ -182,14 +182,15 @@ TEST(WebSocketHandshakeTest, SubprotocolTokensUseTheHttpTokenAlphabet) {
         const bool valid =
             alphabet.find(static_cast<char>(byte)) != std::string::npos;
         options.subprotocols = {token};
-        EXPECT_FALSE(negotiate_websocket_subprotocol(
-            request, options, &selected, &error));
-        EXPECT_EQ(error, valid ? "No compatible Sec-WebSocket-Protocol"
-                              : "Invalid server WebSocket subprotocol configuration");
+        EXPECT_FALSE(negotiate_websocket_subprotocol(request, options,
+                                                     &selected, &error));
+        EXPECT_EQ(error,
+                  valid ? "No compatible Sec-WebSocket-Protocol"
+                        : "Invalid server WebSocket subprotocol configuration");
         if (valid) {
             request->set_header("Sec-WebSocket-Protocol", token);
-            ASSERT_TRUE(negotiate_websocket_subprotocol(
-                request, options, &selected, &error));
+            ASSERT_TRUE(negotiate_websocket_subprotocol(request, options,
+                                                        &selected, &error));
             EXPECT_EQ(selected, token);
             request->set_header("Sec-WebSocket-Protocol", "chat");
         }
@@ -384,7 +385,7 @@ TEST(WebSocketHandshakeTest, SessionOnMessageHandlesErrorBranches) {
             WebSocketOptions{kDefaultWebSocketMaxMessageSize, {}}, "");
 
         znet::ByteBuffer invalid;
-        invalid.append(std::string("\x81\x01x", 3)); // unmasked client frame
+        invalid.append(std::string("\x81\x01x", 3)); // 未掩码的客户端帧
         session.on_data(nullptr, invalid);
         EXPECT_EQ(close_count, 1);
         EXPECT_EQ(error_count, 1);

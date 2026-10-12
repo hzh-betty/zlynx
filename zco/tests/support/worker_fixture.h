@@ -1,4 +1,6 @@
-#pragma once
+#ifndef ZLYNX_ZCO_TESTS_SUPPORT_WORKER_FIXTURE_H_
+#define ZLYNX_ZCO_TESTS_SUPPORT_WORKER_FIXTURE_H_
+
 #include "runtime/worker.h"
 #include "support/fake_reactor.h"
 #include "support/runtime_fixture.h"
@@ -7,7 +9,9 @@
 
 namespace zco {
 namespace test {
-// Abort a partially started worker group before worker destructors join it.
+/**
+ * @brief 先中止部分启动的工作线程组，避免线程析构等待尚未释放的启动屏障。
+ */
 template <class Startup> class AbortStartup {
   public:
     explicit AbortStartup(std::shared_ptr<Startup> state)
@@ -68,3 +72,5 @@ class WorkerFixture {
 };
 } // namespace test
 } // namespace zco
+
+#endif

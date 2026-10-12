@@ -1,14 +1,11 @@
 /**
  * @file thread_cache.cc
- * @brief ThreadCache 实现
  * @author hzh-betty
-
  */
-
 #include "zmalloc/internal/thread_cache.h"
 
-#include <array>
 #include <algorithm>
+#include <array>
 #include <type_traits>
 
 #include "zmalloc/internal/central_cache.h"
@@ -25,6 +22,7 @@ thread_local size_t tls_allocator_call_depth = 0;
 } // namespace internal
 
 constexpr size_t ThreadCache::kCacheBudget;
+
 namespace {
 // 缓存本体不注册析构；退出钩子关闭后，晚于它执行的 TLS 析构仍可访问本体。
 static_assert(std::is_trivially_destructible<ThreadCache>::value,
@@ -61,12 +59,14 @@ ThreadCache *get_thread_cache() {
 
 void *ThreadCache::fetch_from_central_cache(const SizeClassLookup &e) {
     FreeList &list = free_lists_[e.index];
+
     // 第一步：根据该大小类的建议批量和动态阈值，决定本次补货数量。
     const size_t batch = std::min<size_t>(e.num_move, kMaxBatch);
     const size_t count = closed_ ? 1 : std::min(list.max_size(), batch);
     void *start = nullptr;
     void *end = nullptr;
     std::array<void *, kMaxBatch> objects;
+
     // 第二步：优先从传输缓存接收其他线程归还的对象，避免访问 Span 元数据。
     size_t got = closed_ ? 0
                          : TransferCache::get_instance().remove_range(
@@ -87,18 +87,21 @@ void *ThreadCache::fetch_from_central_cache(const SizeClassLookup &e) {
     if (closed_) {
         return start;
     }
+
     // 第三步：一个对象立即返回，其余对象挂入当前线程的自由链表。
     class_sizes_[e.index] = e.align_size;
     if (got > 1) {
         list.push_range(next_obj(start), end, got - 1);
         cached_bytes_ += (got - 1) * e.align_size;
     }
+
     // 先逐个增长到一批，再按批增长；每个规格最多缓存四批。
     if (list.max_size() < batch) {
         ++list.max_size();
     } else {
         list.max_size() = std::min(list.max_size() + batch, 4 * batch);
     }
+
     // 分配补货不回收其他规格刚预取的对象；预算回收由释放慢路径触发。
     return start;
 }
@@ -118,12 +121,13 @@ void ThreadCache::release_batch(size_t index, size_t count, bool use_transfer) {
         std::array<void *, kMaxBatch> objects;
         list.pop_batch(objects.data(), n);
         cached_bytes_ -= n * size;
+
         // 第二步：正常回收时先放入传输缓存，线程退出清理时直接跳过该层。
         const size_t inserted =
-            use_transfer
-                ? TransferCache::get_instance().insert_range(index,
-                                                              objects.data(), n)
-                : 0;
+            use_transfer ? TransferCache::get_instance().insert_range(
+                               index, objects.data(), n)
+                         : 0;
+
         // 第三步：传输缓存放不下的对象重新串链并归还中心缓存。
         // 已插入的指针可能立即被其他线程取走，之后只访问剩余对象。
         if (inserted < n) {
@@ -165,6 +169,7 @@ void ThreadCache::scavenge() {
         if (low > 0) {
             const size_t batch = std::min<size_t>(
                 SizeClass::lookup(class_sizes_[i]).num_move, kMaxBatch);
+
             // 尽量归还一批，避免扩大批量后低水位回收仍反复搬运零散对象。
             // 不超过低水位，保留本轮实际使用过的对象。
             release_batch(i, std::min(low, std::max(batch, low / 2)));

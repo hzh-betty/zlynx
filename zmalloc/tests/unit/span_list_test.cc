@@ -55,6 +55,7 @@ TEST(SpanListTest, ConcurrentConstructionUsesIndependentStorage) {
             while (!go.load(std::memory_order_acquire)) {
                 std::this_thread::yield();
             }
+
             // 反复并发构造，覆盖旧实现中共享无锁哨兵池的切分竞争。
             for (int round = 0; round < 1000; ++round) {
                 zmalloc::SpanList list;

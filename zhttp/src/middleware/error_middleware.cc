@@ -1,10 +1,8 @@
 /**
- * error_middleware.cc
- * error_middleware 实现。
+ * @file error_middleware.cc
  *
  * @author hzh-betty
  */
-
 #include "zhttp/middleware/error_middleware.h"
 
 namespace zhttp {

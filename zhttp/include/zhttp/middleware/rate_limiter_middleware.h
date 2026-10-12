@@ -1,10 +1,8 @@
 /**
- * rate_limiter_middleware.h
- * rate_limiter_middleware 定义。
+ * @file rate_limiter_middleware.h
  *
  * @author hzh-betty
  */
-
 #ifndef ZHTTP_RATE_LIMITER_MIDDLEWARE_H_
 #define ZHTTP_RATE_LIMITER_MIDDLEWARE_H_
 
@@ -22,7 +20,7 @@
 namespace zhttp {
 namespace mid {
 /**
- * 限流中间件：基于 RateLimiter 实现
+ * @brief 限流中间件：基于 RateLimiter 实现
  *
  * 默认行为：
  * - key：优先使用 request.remote_addr()；若为空再尝试
@@ -35,7 +33,7 @@ class RateLimiterMiddleware : public Middleware {
     using KeyFunc = std::function<std::string(HttpContext &)>;
 
     /**
-     * 限流中间件配置项
+     * @brief 限流中间件配置项
      */
     struct Options {
         Options() : limiter(), key_func(), retry_after_header("Retry-After") {}
@@ -46,14 +44,14 @@ class RateLimiterMiddleware : public Middleware {
     };
 
     /**
-     * 构造限流中间件
+     * @brief 构造限流中间件
      *
      * @param opt 限流器、中间件 key 提取规则等配置
      */
     explicit RateLimiterMiddleware(Options opt = Options());
 
     /**
-     * 在请求进入业务前执行限流判断
+     * @brief 在请求进入业务前执行限流判断
      *
      * @param context 当前请求与响应上下文
      * 放行时返回 true，限流时构造响应并返回 false
@@ -68,4 +66,4 @@ class RateLimiterMiddleware : public Middleware {
 
 } // namespace zhttp
 
-#endif // ZHTTP_RATE_LIMITER_MIDDLEWARE_H_
+#endif

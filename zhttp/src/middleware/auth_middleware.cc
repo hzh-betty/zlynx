@@ -1,10 +1,8 @@
 /**
- * auth_middleware.cc
- * auth_middleware 实现。
+ * @file auth_middleware.cc
  *
  * @author hzh-betty
  */
-
 #include "zhttp/middleware/auth_middleware.h"
 
 #include <algorithm>
@@ -22,6 +20,7 @@ AuthenticationMiddleware::AuthenticationMiddleware(
 
 bool AuthenticationMiddleware::before(HttpContext &request) {
     auto &response = request.response();
+
     // Session / Bearer 采用“或”关系：任意一种命中即放行。
     const bool by_session = is_authenticated_by_session(request);
     const bool by_bearer = is_authenticated_by_bearer_token(request);
@@ -101,6 +100,7 @@ RoleAuthorizationMiddleware::RoleAuthorizationMiddleware(
 
 bool RoleAuthorizationMiddleware::before(HttpContext &request) {
     auto &response = request.response();
+
     // 没有配置 required roles 时默认放行。
     if (required_roles_.empty()) {
         return true;
@@ -189,7 +189,8 @@ bool RoleAuthorizationMiddleware::has_authorization(
     }
 
     // require_all=false：命中任一 required role 即通过，全部未命中才失败。
-    return std::any_of(required_roles_.begin(), required_roles_.end(), has_role);
+    return std::any_of(required_roles_.begin(), required_roles_.end(),
+                       has_role);
 }
 
 std::string

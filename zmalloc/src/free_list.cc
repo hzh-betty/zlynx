@@ -2,8 +2,8 @@
  * @file free_list.cc
  * @brief FreeList 成员函数实现
  * @author hzh-betty
- */
 
+ */
 #include "zmalloc/internal/free_list.h"
 
 #include <algorithm>
@@ -15,6 +15,7 @@ namespace zmalloc {
 
 void FreeList::push_range(void *start, void *end, size_t n) {
     assert(start && end); // GCOVR_EXCL_LINE
+
     // 批量对象已在上层串成链，这里只做一次头拼接。
     next_obj(end) = free_list_;
     free_list_ = start;
@@ -31,6 +32,7 @@ size_t FreeList::pop_batch(void **batch, size_t n) {
     for (size_t i = 0; i < n; ++i) {
         batch[i] = cur;
         void *next = next_obj(cur);
+
         // 批量弹出时预取后继，平滑 tight loop 的访问延迟。
         prefetch_next(next);
         cur = next;

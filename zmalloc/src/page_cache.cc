@@ -1,9 +1,7 @@
 /**
  * @file page_cache.cc
- * @brief PageCache 实现
  * @author hzh-betty
  */
-
 #include "zmalloc/internal/page_cache.h"
 
 #include "zmalloc/internal/system_alloc.h"
@@ -207,8 +205,9 @@ void PageCache::release_span_to_page_cache(Span *span) {
                     unreleased_free_bytes_ -= old->n * PAGE_SIZE;
                 }
                 const size_t old_bytes = old->n * PAGE_SIZE;
-                system_free(reinterpret_cast<void *>(old->page_id << PAGE_SHIFT),
-                            old->n);
+                system_free(
+                    reinterpret_cast<void *>(old->page_id << PAGE_SHIFT),
+                    old->n);
                 large_cached_bytes_ -= old_bytes;
                 mapped_bytes_ -= old_bytes;
                 span_pool_.deallocate(old);
@@ -232,6 +231,7 @@ void PageCache::release_span_to_page_cache(Span *span) {
     }
 
     unreleased_free_bytes_ += returned_bytes;
+
     // 第三步：尝试与相邻空闲 Span 合并，减少外碎片。
     // 停止条件：
     // - 相邻 span 不存在
@@ -303,6 +303,7 @@ void PageCache::release_span_to_page_cache(Span *span) {
     id_span_map_.set(span->page_id + span->n - 1, span);
 
     span->is_use = false;
+
     // 新归还的页可能已被触碰；合并后整段重新允许建议回收。
     span->is_released = false;
     maybe_release_free_pages(returned_bytes);
@@ -312,6 +313,7 @@ void PageCache::maybe_release_free_pages(size_t returned_bytes) {
     if (!AUTO_RELEASE_ENABLED) {
         return;
     }
+
     // 仅整段页归还走此路径；TLS/传输缓存的逐对象热路径不扫描、不系统调用。
     if (returned_since_auto_release_ < AUTO_RELEASE_INTERVAL_BYTES) {
         returned_since_auto_release_ += returned_bytes;
@@ -325,24 +327,29 @@ void PageCache::maybe_release_free_pages(size_t returned_bytes) {
     size_t bytes = 0;
     size_t scanned = 0;
     size_t buckets = 0;
+
     // 从上轮停下的位置继续，避免已回收节点反复占用检查预算。
     while (buckets < NPAGES && scanned < AUTO_RELEASE_MAX_SPANS &&
            bytes < AUTO_RELEASE_MAX_BYTES) {
         SpanList &list = auto_release_bucket_ == 0
-                             ? large_spans_ : span_lists_[auto_release_bucket_];
+                             ? large_spans_
+                             : span_lists_[auto_release_bucket_];
         if (auto_release_cursor_ == nullptr) {
             auto_release_cursor_ = list.end()->prev;
         }
         while (auto_release_cursor_ != list.end() &&
-               scanned < AUTO_RELEASE_MAX_SPANS && bytes < AUTO_RELEASE_MAX_BYTES) {
+               scanned < AUTO_RELEASE_MAX_SPANS &&
+               bytes < AUTO_RELEASE_MAX_BYTES) {
             Span *span = auto_release_cursor_;
             auto_release_cursor_ = span->prev;
             ++scanned;
             const size_t span_bytes = span->n * PAGE_SIZE;
             assert(!span->is_use);
-            if (!span->is_released && span_bytes <= AUTO_RELEASE_MAX_BYTES - bytes &&
-                system_release(reinterpret_cast<void *>(span->page_id << PAGE_SHIFT),
-                               span->n)) {
+            if (!span->is_released &&
+                span_bytes <= AUTO_RELEASE_MAX_BYTES - bytes &&
+                system_release(
+                    reinterpret_cast<void *>(span->page_id << PAGE_SHIFT),
+                    span->n)) {
                 span->is_released = true;
                 bytes += span_bytes;
             }
@@ -361,14 +368,16 @@ void PageCache::maybe_release_free_pages(size_t returned_bytes) {
 
 size_t PageCache::release_free_pages() {
     size_t bytes = 0;
+
     // 遍历和系统调用均持有页锁，分配路径不能同时取得正在回收的 Span。
     for (size_t i = 1; i < NPAGES; ++i) {
         SpanList &list = span_lists_[i];
         for (Span *span = list.begin(); span != list.end(); span = span->next) {
             assert(!span->is_use);
             if (!span->is_released &&
-                system_release(reinterpret_cast<void *>(span->page_id << PAGE_SHIFT),
-                               span->n)) {
+                system_release(
+                    reinterpret_cast<void *>(span->page_id << PAGE_SHIFT),
+                    span->n)) {
                 span->is_released = true;
                 bytes += span->n * PAGE_SIZE;
             }
@@ -377,8 +386,9 @@ size_t PageCache::release_free_pages() {
     for (Span *span = large_spans_.begin(); span != large_spans_.end();
          span = span->next) {
         if (!span->is_released &&
-            system_release(reinterpret_cast<void *>(span->page_id << PAGE_SHIFT),
-                           span->n)) {
+            system_release(
+                reinterpret_cast<void *>(span->page_id << PAGE_SHIFT),
+                span->n)) {
             span->is_released = true;
             bytes += span->n * PAGE_SIZE;
         }

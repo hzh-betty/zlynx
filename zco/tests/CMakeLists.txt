@@ -3,7 +3,7 @@ if(BUILD_TESTING)
         find_package(GTest CONFIG REQUIRED)
     endif()
 
-    # --wrap cannot intercept calls already linked inside a shared library.
+    # --wrap 无法拦截已经在共享库内部完成链接的调用。
     if(BUILD_SHARED_LIBS)
         get_target_property(zco_sources zco SOURCES)
         get_target_property(zco_standard zco CXX_STANDARD)

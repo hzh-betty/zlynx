@@ -1,10 +1,7 @@
 /**
  * @file zmalloc_config.h
- * @brief zmalloc_config 定义。
- * @author
- * hzh-betty
+ * @author hzh-betty
  */
-
 #ifndef ZMALLOC_INTERNAL_CONFIG_H_
 #define ZMALLOC_INTERNAL_CONFIG_H_
 
@@ -88,4 +85,4 @@ using PageId = uintptr_t;
 
 } // namespace zmalloc
 
-#endif // ZMALLOC_INTERNAL_CONFIG_H_
+#endif

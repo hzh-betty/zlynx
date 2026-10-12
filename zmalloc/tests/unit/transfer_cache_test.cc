@@ -2,7 +2,6 @@
  * @file transfer_cache_test.cc
  * @brief TransferCache 单元测试
  */
-
 #include "zmalloc/internal/transfer_cache.h"
 #include <gtest/gtest.h>
 
@@ -76,7 +75,7 @@ TEST(TransferCacheTest, ManagerFitsOneBatchAndBoundsOtherClasses) {
                 ? 64
                 : std::min<size_t>(TransferCacheEntry::kMaxCacheSlots,
                                    std::max<size_t>(2, TRANSFER_CACHE_BUDGET /
-                                                          e.align_size));
+                                                           e.align_size));
         auto &entry = manager.get_entry(e.index);
         void *objects[TransferCacheEntry::kMaxCacheSlots + 1];
         FillUniquePtrs(objects, TransferCacheEntry::kMaxCacheSlots + 1,
@@ -201,7 +200,7 @@ TEST(TransferCacheTest, ManagerBasic) {
         objs[i] = reinterpret_cast<void *>(static_cast<uintptr_t>(i + 1));
     }
 
-    // size class 0
+    // 大小类索引为零
     size_t inserted = manager.insert_range(0, objs, 10);
     EXPECT_EQ(inserted, 10u);
 
@@ -439,10 +438,10 @@ TEST_P(TransferCacheEntryExactParamTest, InsertRemoveExactCount) {
     InsertRemoveExactEntry(cache, n, 0x1000u + static_cast<uintptr_t>(n));
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    Counts, TransferCacheEntryExactParamTest,
-    ::testing::Values(1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 9u, 10u, 15u, 16u, 31u,
-                      32u, 63u, 64u, 127u, 128u));
+INSTANTIATE_TEST_SUITE_P(Counts, TransferCacheEntryExactParamTest,
+                         ::testing::Values(1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 9u,
+                                           10u, 15u, 16u, 31u, 32u, 63u, 64u,
+                                           127u, 128u));
 
 TEST_P(TransferCacheEntryPartialParamTest, PartialRemoveKeepsRemainingCount) {
     const size_t inserted = std::get<0>(GetParam());
@@ -467,8 +466,7 @@ INSTANTIATE_TEST_SUITE_P(
                       std::make_tuple(8u, 7u), std::make_tuple(16u, 1u),
                       std::make_tuple(16u, 8u), std::make_tuple(32u, 1u),
                       std::make_tuple(32u, 16u), std::make_tuple(64u, 1u),
-                      std::make_tuple(64u, 32u),
-                      std::make_tuple(128u, 64u)));
+                      std::make_tuple(64u, 32u), std::make_tuple(128u, 64u)));
 
 TEST_P(TransferCacheEntryEmptyParamTest, EmptyRemoveReturnsZero) {
     TransferCacheEntry cache;

@@ -1,9 +1,9 @@
 /**
  * @file size_class.cc
  * @brief SizeClass 成员函数实现
- * @author hzh-betty
+ * @author
+ * hzh-betty
  */
-
 #include "zmalloc/internal/size_class.h"
 
 #include <algorithm>
@@ -136,8 +136,7 @@ void init_size_class_lookup_once() {
 #if defined(__GNUC__) || defined(__clang__)
 __attribute__((constructor))
 #endif
-static void
-zmalloc_init_tables() {
+static void zmalloc_init_tables() {
     // 进程级初始化：构建 SizeClass 查表。
     // 注意：这是“尽早”初始化手段（constructor attribute）。若未来希望更可控
     // （例如显式 init），可替换为函数式初始化并在入口处调用。

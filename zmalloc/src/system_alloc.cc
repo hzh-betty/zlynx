@@ -3,13 +3,12 @@
  * @brief 系统内存分配：按需处理对齐，不重试地址 hint
  * @author hzh-betty
  */
-
 #include "zmalloc/internal/system_alloc.h"
 
 #include <sys/mman.h>
 
-#include <cstdint>
 #include <cerrno>
+#include <cstdint>
 #include <limits>
 #include <new>
 
@@ -33,6 +32,7 @@ void *system_alloc_nothrow(size_t kpage) noexcept {
         return nullptr;
     }
     const size_t size = kpage * PAGE_SIZE;
+
     // 优先保留内核给出的完整映射，避免无条件裁剪留下地址空洞。
     void *ptr = mmap(nullptr, size, PROT_READ | PROT_WRITE,
                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -51,6 +51,7 @@ void *system_alloc_nothrow(size_t kpage) noexcept {
     if (ptr == MAP_FAILED) {
         return nullptr;
     }
+
     // 预留的是完整请求区间，不再用一个小空洞猜测大区间是否可用。
     const uintptr_t addr = reinterpret_cast<uintptr_t>(ptr);
     const uintptr_t aligned = (addr + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);

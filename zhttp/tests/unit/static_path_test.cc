@@ -1,5 +1,5 @@
-#include "zhttp/http_common.h"
 #include "static_files/path.h"
+#include "zhttp/http_common.h"
 
 #include <gtest/gtest.h>
 
@@ -24,12 +24,10 @@ TEST(StaticPathTest, StaticPathsNormalizeMatchAndMap) {
     EXPECT_TRUE(static_path::should_handle_path("/assets", "/assets"));
     EXPECT_TRUE(
         static_path::should_handle_path("/assets/js/app.js", "/assets"));
-    EXPECT_FALSE(
-        static_path::should_handle_path("/assets2/app.js", "/assets"));
+    EXPECT_FALSE(static_path::should_handle_path("/assets2/app.js", "/assets"));
 
-    EXPECT_EQ(
-        static_path::map_to_relative_path("/assets/js/app.js", "/assets"),
-        "/js/app.js");
+    EXPECT_EQ(static_path::map_to_relative_path("/assets/js/app.js", "/assets"),
+              "/js/app.js");
     EXPECT_EQ(static_path::map_to_relative_path("/assets", "/assets"), "/");
     EXPECT_EQ(static_path::map_to_relative_path("/index.html", "/"),
               "/index.html");

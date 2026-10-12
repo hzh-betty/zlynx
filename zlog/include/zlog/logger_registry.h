@@ -2,7 +2,6 @@
  * @file logger_registry.h
  * @brief 可选的全局日志器注册接口。
  */
-
 #ifndef ZLOG_LOGGER_REGISTRY_H_
 #define ZLOG_LOGGER_REGISTRY_H_
 
@@ -63,4 +62,4 @@ class LoggerManager {
 
 } // namespace zlog
 
-#endif // ZLOG_LOGGER_REGISTRY_H_
+#endif
