@@ -31,7 +31,7 @@ namespace zmalloc {
 class ThreadCache : public NonCopyable {
   public:
     // 释放路径触发的软预算；分配补货及低水位回收不保证立即低于预算。
-    static constexpr size_t kCacheBudget = THREAD_CACHE_BUDGET;
+    static const size_t kCacheBudget = THREAD_CACHE_BUDGET;
 
     /**
      * @brief 为当前线程分配一个小对象，未命中时向共享缓存批量补货。

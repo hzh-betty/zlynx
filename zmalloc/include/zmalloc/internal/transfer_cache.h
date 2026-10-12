@@ -34,7 +34,7 @@ namespace zmalloc {
 class TransferCacheEntry {
   public:
     // 指针槽位的物理上限；各规格另有按字节预算计算的逻辑容量。
-    static constexpr size_t kMaxCacheSlots = TRANSFER_CACHE_SLOTS;
+    static const size_t kMaxCacheSlots = TRANSFER_CACHE_SLOTS;
     static constexpr size_t kMask = kMaxCacheSlots - 1;
     static_assert((kMaxCacheSlots & (kMaxCacheSlots - 1)) == 0,
                   "kMaxCacheSlots must be power of two");

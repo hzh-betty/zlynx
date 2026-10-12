@@ -14,7 +14,7 @@
 
 namespace zmalloc {
 
-constexpr size_t TransferCacheEntry::kMaxCacheSlots;
+const size_t TransferCacheEntry::kMaxCacheSlots;
 
 TransferCache::TransferCache() {
     // 每规格以 64KiB 为目标，至少容纳一批，避免批量回收反复落到中心层。
