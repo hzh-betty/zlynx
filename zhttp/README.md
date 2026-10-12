@@ -1,5 +1,18 @@
 # zhttp
 
+构建版本 **1.0.0**，最低 CMake **3.18**。本目录可整体复制到仓库外独立构建；zhttp 先安装 zco、znet、zlog，通过 `CMAKE_PREFIX_PATH` 查找：
+
+```bash
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake --build build -j 2
+(cd build && ctest --output-on-failure)
+cmake --install build --prefix /path/to/prefix
+```
+
+未设置 `BUILD_SHARED_LIBS` 时构建静态库；共享库使用 `-DBUILD_SHARED_LIBS=ON`。
+下文 `--preset` 示例需要 CMake 3.20+，从 zlynx 根目录执行；仅提供 debug、release、relwithdebinfo。
+
+
 `zhttp` 是 zlynx 的 C++17 HTTP/HTTPS 与 WebSocket 服务模块，基于 `znet` 的
 协程 TCP 服务和 `zlog` 日志模块。它提供路由、中间件、请求体解析、静态文件服务
 以及同步响应写出。
@@ -65,9 +78,9 @@ curl -H 'Content-Type: application/json' \
 | fmt | 日志格式化 |
 | ZLIB、Brotli encoder (`brotlienc`) | gzip / br 压缩 |
 | nlohmann_json | JSON 请求体解析 |
-| 提供 `<toml.hpp>` 的 TOML 库 | 配置文件解析 |
+| toml11 (`toml11::toml11`) | 配置文件解析，使用 Config Package 显式声明 |
 
-仓库预设使用 Clang 和 Ninja，并要求 CMake 支持 `CMakePresets.json` 的版本 6。
+仓库预设使用系统默认编译器和 Ninja，并要求 CMake 支持 `CMakePresets.json` 的版本 2（CMake 3.20+）。
 在仓库根目录构建：
 
 ```bash
@@ -85,8 +98,8 @@ cmake -S . -B build/debug -G Ninja \
 cmake --build build/debug -j 4
 ```
 
-源码树内及安装后的完整应用链接 `zhttp::zhttp`；离线 HTTP 处理链接 `zhttp::core`，
-核心库不依赖 znet、zco 或 zlog。安装后通过 CMake 包接入：
+源码树内及安装后的应用和离线 HTTP 处理统一链接 `zhttp::zhttp`。
+原 `zhttp::core` 已合并，安装包通过 CMake 接入：
 
 ```bash
 cmake --preset release
@@ -406,9 +419,9 @@ Daemon 只在显式进程运行入口安装信号处理，返回时恢复原处�
 
 4.0 的 API 迁移、实际目录树和验证结果见 [重构实施报告](docs/refactoring-report.md)。
 
-5.0 将三种限流器的状态和互斥锁改为 16 个按 64 字节对齐的分片，公共源码接口保持不变，
-类布局及共享库 SOVERSION 已升级。升级时必须重新编译消费者，使用
-`find_package(zhttp 5 CONFIG REQUIRED)`。每次请求只持有所属分片的锁；显式
+历史 5.0 将三种限流器的状态和互斥锁改为 16 个按 64 字节对齐的分片，公共源码接口保持不变，
+类布局曾随之改变；本次构建版本和 SOVERSION 统一重置为 1.0.0 / 1，必须重新编译消费者，使用
+`find_package(zhttp 1 CONFIG REQUIRED)`。每次请求只持有所属分片的锁；显式
 `prune_expired()` 依次清理各分片，返回本次实际删除数，不提供跨分片的原子快照。
 自定义时钟须支持并发调用。性能修改和验证结果见 [优化实施报告](docs/optimization-report.md)。
 
@@ -419,12 +432,11 @@ Daemon 只在显式进程运行入口安装信号处理，返回时恢复原处�
 ```bash
 cmake --preset debug
 cmake --build --preset debug -j 4
-ctest --test-dir build/debug -R '^zhttp\.' --output-on-failure
+(cd build/debug && ctest -R '^zhttp_' --output-on-failure)
 ```
 
-分类过滤使用 `'^zhttp\.unit\.'` 或 `'^zhttp\.integration\.'`。
-也可调用 `zhttp_test`、`zhttp_test_unit`、`zhttp_test_integration` 构建目标；这些目标
-运行已构建的测试，不负责生成测试二进制。测试覆盖协议模型与解析、路由和中间件、
+仅保留模块前缀过滤，不再提供分类规则和自定义测试 target。
+测试覆盖协议模型与解析、路由和中间件、
 HTTP/TLS 往返、Keep-Alive、分块与同步流、WebSocket 握手/消息/关闭、配置及进程运行。
 
 覆盖率通过仓库统一脚本生成，需要 `gcovr`：
@@ -440,13 +452,13 @@ coverage/run_coverage.sh --no-test
 性能入口需要 `wrk`，benchmark 不注册到 CTest：
 
 ```bash
-cmake --preset perf
-cmake --build --preset perf --target zhttp_benchmark zhttp_core_benchmark -j 4
-build/perf/zhttp/tests/zhttp_benchmark \
+cmake --preset relwithdebinfo -DBUILD_BENCHMARKS=ON
+cmake --build --preset relwithdebinfo --target zhttp_benchmark zhttp_core_benchmark -j 4
+build/relwithdebinfo/zhttp/tests/zhttp_benchmark \
   --mode all --threads 4 --wrk-threads 4 \
   --wrk-connections 256 --wrk-duration 10s --path /
-taskset -c 2 build/perf/zhttp/tests/zhttp_core_benchmark cache
-taskset -c 0-7 build/perf/zhttp/tests/zhttp_core_benchmark limiter
+taskset -c 2 build/relwithdebinfo/zhttp/tests/zhttp_core_benchmark cache
+taskset -c 0-7 build/relwithdebinfo/zhttp/tests/zhttp_core_benchmark limiter
 ```
 
 `--mode` 支持 `independent`、`shared`、`all`。benchmark fork 本地 HTTP 服务，

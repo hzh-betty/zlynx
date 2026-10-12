@@ -1,5 +1,18 @@
 # zmalloc
 
+构建版本 **1.0.0**，最低 CMake **3.18**。本目录可整体复制到仓库外独立构建：
+
+```bash
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake --build build -j 2
+(cd build && ctest --output-on-failure)
+cmake --install build --prefix /path/to/prefix
+```
+
+未设置 `BUILD_SHARED_LIBS` 时构建静态库；共享库使用 `-DBUILD_SHARED_LIBS=ON`。
+下文 `--preset` 示例需要 CMake 3.20+，从 zlynx 根目录执行；仅提供 debug、release、relwithdebinfo。
+
+
 `zmalloc` 是 zlynx 的高性能内存分配模块。它提供显式 `zmalloc()` / `zfree()`
 接口，也提供可选的 `zmalloc_override` 目标用于全局替换 `malloc/free/new/delete`。
 模块面向大量小对象、多线程分配和网络运行时热路径。
@@ -39,8 +52,7 @@ target_link_libraries(zmalloc_demo PRIVATE zmalloc::zmalloc)
 target_link_libraries(zmalloc_demo PRIVATE zmalloc::override)
 ```
 
-在 zlynx 源码树整体构建时，`ZLYNX_USE_ZMALLOC_OVERRIDE` 默认开启，根工程会把
-`zmalloc_override` 私有链接到 `zlog`、`zco`、`znet`、`zhttp` 等运行时模块。
+全局替换需要最终程序显式链接 `zmalloc::override`，顶层工程不再自动注入。
 
 全局替换入口按 libc 约定处理分配失败，返回空指针并设置 `ENOMEM`；普通
 `new` 抛出 `std::bad_alloc`，`nothrow new` 返回空指针。`malloc(0)` 返回可释放的
@@ -55,7 +67,7 @@ Linux 构建使用 `initial-exec` TLS，模块及替换目标应随进程启动�
 PageCache 对超过 1 MiB、不超过 8 MiB 的空闲大块按精确页数复用，总缓存预算
 为 16 MiB，超预算驱逐最早归还的块；超过 8 MiB 的块释放时直接解除映射。
 
-自动回收默认关闭，可在构建时指定 `-DZLYNX_ZMALLOC_AUTO_RELEASE=ON` 启用；
+自动回收默认关闭，可在构建时指定 `-DZMALLOC_AUTO_RELEASE=ON` 启用；
 显式 `release_memory()` 始终可用。启用后，完全空闲且尚未建议回收的页达到
 32 MiB 时，每累计归还 8 MiB 页触发一次
 自动 `MADV_DONTNEED`，单轮最多检查 32 个 Span、建议回收 8 MiB。触发点在
@@ -125,14 +137,13 @@ zmalloc/
 基础构建依赖：
 
 - CMake 3.18+
-- C++11 或更高标准的编译器，仓库 preset 默认使用 `clang++` 和 C++17
+- C++11 或更高标准的编译器，仓库 preset 不指定编译器
 - Ninja，使用 preset 时需要
 - Threads
 
 测试和分析额外依赖：
 
-- GTest / GMock。`zmalloc/tests/CMakeLists.txt` 使用 `find_package(GTest QUIET)`，
-  找不到时会跳过 zmalloc 测试。
+- GTest / GMock；启用测试而缺少依赖时配置失败。
 - `gcovr`
 - `perf`、`valgrind`、`callgrind_annotate`，可选性能分析工具
 
@@ -162,9 +173,9 @@ cmake --build --preset release
 构建性能测试二进制：
 
 ```bash
-cmake --preset perf
-cmake --build --preset perf --target zmalloc_benchmark
-cmake --build --preset perf --target zmalloc_performance
+cmake --preset relwithdebinfo -DBUILD_BENCHMARKS=ON
+cmake --build --preset relwithdebinfo --target zmalloc_benchmark
+cmake --build --preset relwithdebinfo --target zmalloc_performance
 ```
 
 手动配置：
@@ -190,30 +201,10 @@ cmake --build --preset release --target install
 
 ## 测试
 
-运行全部 zmalloc 测试：
+构建后使用 CTest；不再提供按分类生成的自定义 target：
 
 ```bash
-cmake --build --preset debug --target zmalloc_test
-```
-
-只跑单元测试：
-
-```bash
-cmake --build --preset debug --target zmalloc_test_unit
-```
-
-只跑集成测试：
-
-```bash
-cmake --build --preset debug --target zmalloc_test_integration
-```
-
-直接使用 CTest：
-
-```bash
-ctest --test-dir build/debug -R '^zmalloc\.' --output-on-failure
-ctest --test-dir build/debug -R '^zmalloc\.unit\.' --output-on-failure
-ctest --test-dir build/debug -R '^zmalloc\.integration\.' --output-on-failure
+(cd build/debug && ctest -R '^zmalloc_' --output-on-failure)
 ```
 
 当前测试覆盖的主要行为：
@@ -252,18 +243,18 @@ coverage/run_coverage.sh
 单线程和多线程场景。
 
 ```bash
-cmake --preset perf
-cmake --build --preset perf --target zmalloc_benchmark
+cmake --preset relwithdebinfo -DBUILD_BENCHMARKS=ON
+cmake --build --preset relwithdebinfo --target zmalloc_benchmark
 
-build/perf/zmalloc/tests/zmalloc_benchmark
+build/relwithdebinfo/zmalloc/tests/zmalloc_benchmark
 ```
 
 `zmalloc_performance` 只测试 `zmalloc/zfree` 路径，适合 perf/callgrind 分析：
 
 ```bash
-cmake --build --preset perf --target zmalloc_performance
+cmake --build --preset relwithdebinfo --target zmalloc_performance
 
-build/perf/zmalloc/tests/zmalloc_performance \
+build/relwithdebinfo/zmalloc/tests/zmalloc_performance \
   --threads 8 \
   --min-size 1 \
   --max-size 8192 \

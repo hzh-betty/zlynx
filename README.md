@@ -67,121 +67,121 @@ zmalloc 可选全局 allocator override，也可显式使用 zmalloc/zfree
 
 ## 构建
 
-推荐使用仓库根目录的 CMake presets。
+所有项目版本统一为 **1.0.0**。需要 CMake 3.18+、Linux、C++ 编译器；
+`zlog`/`zmalloc` 最低 C++11，其余模块最低 C++17。依赖由系统包或用户工具链提供：
+fmt、OpenSSL 1.1+、zlib、nlohmann_json、toml11、Brotli 开发包及 pkg-config。
+测试还需要 GTest/GMock，TLS 集成测试需要 `openssl` 命令。
+
+构建脚本支持 CMake 3.18；该版本使用普通命令构建与测试：
+
+```bash
+cmake -S . -B build/debug -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake --build build/debug -j 2
+(cd build/debug && ctest --output-on-failure)
+```
+
+Presets 需要 CMake 3.20+，只有三种，不指定编译器，默认生成静态库并开启测试：
 
 ```bash
 cmake --preset debug
-cmake --build --preset debug
-```
+cmake --build --preset debug -j 2
+ctest --preset debug
 
-发布构建：
-
-```bash
 cmake --preset release
-cmake --build --preset release
+cmake --build --preset release -j 2
+ctest --preset release
+
+cmake --preset relwithdebinfo
+cmake --build --preset relwithdebinfo -j 2
+ctest --preset relwithdebinfo
 ```
 
-性能目标：
+共享库增加 `-DBUILD_SHARED_LIBS=ON`；只构建产品库增加 `-DBUILD_TESTING=OFF`。
+切换旧构建结构时使用新目录，不复用旧缓存。个人编译器、工具链等放入不提交的
+`CMakeUserPresets.json`，或配置时传递 `-DCMAKE_CXX_COMPILER=clang++`。
+
+### 独立源码包
+
+每个模块的整个目录都可以复制到仓库外，包含自己的 CMake 和安装模板，
+不需要顶层目录或 `../cmake`。例如在复制后的 zlog 目录执行：
 
 ```bash
-cmake --preset perf
-cmake --build --preset perf
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j 2
+(cd build && ctest --output-on-failure)
+cmake --install build --prefix /path/to/prefix
 ```
 
-手动配置：
-
-```bash
-cmake -S . -B build/debug -G Ninja \
-  -DCMAKE_CXX_COMPILER=clang++ \
-  -DCMAKE_BUILD_TYPE=Debug \
-  -DBUILD_TESTING=ON
-cmake --build build/debug -j
-```
+zmalloc、zlog、zco 仅需要系统依赖。znet 先安装 zco；zhttp 先安装 zco、znet、zlog，
+配置时通过 `-DCMAKE_PREFIX_PATH=/path/to/prefix` 指向它们。无需复制兄弟目录。
 
 ## 测试
 
-运行全部 CTest：
+CTest 直接运行全部测试，测试名与 executable 的模块前缀一致：
 
 ```bash
-ctest --test-dir build/debug --output-on-failure
+ctest --preset debug
+(cd build/debug && ctest -R '^zhttp_' --output-on-failure)
 ```
 
-按模块运行：
+不再提供 `_test_unit`、`_test_integration` 等自定义目标；缺少 GTest 时配置失败。
+多配置生成器使用 `cmake --build <build> --config Debug` 和 `(cd <build> && ctest -C Debug)`。
+
+## 性能与覆盖率
+
+常规测试和性能程序分开，性能程序不注册到 CTest：
 
 ```bash
-cmake --build --preset debug --target zlog_test
-cmake --build --preset debug --target zmalloc_test
-cmake --build --preset debug --target zco_test
-cmake --build --preset debug --target znet_test
-cmake --build --preset debug --target zhttp_test
+cmake --preset relwithdebinfo -DBUILD_BENCHMARKS=ON
+cmake --build --preset relwithdebinfo -j 2
 ```
 
-每个模块还提供 `_test_unit` 和 `_test_integration` 目标，例如：
+保留各模块的 benchmark/performance executable；`zlog_benchmark` 对比程序额外需要
+spdlog，缺失时明确提示，其他性能程序仍可构建。zco 显式开启 benchmark 时才启用
+现有栈复制统计。perf/wrk/valgrind 脚本仍位于各模块的 `tests/benchmark/`。
+
+覆盖率通过 `coverage/run_coverage.sh` 使用标准 CMake 编译/链接参数生成，不再有
+coverage 预设或项目 coverage target。`coverage/*-summary.txt` 是历史测量数据，
+不代表本次构建的覆盖率。Sanitizer 同样使用单独构建目录，例如：
 
 ```bash
-cmake --build --preset debug --target zhttp_test_unit
-cmake --build --preset debug --target zhttp_test_integration
+cmake -S . -B build/ubsan -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+  -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_CXX_FLAGS=-fsanitize=undefined \
+  -DCMAKE_EXE_LINKER_FLAGS=-fsanitize=undefined \
+  -DCMAKE_SHARED_LINKER_FLAGS=-fsanitize=undefined
+cmake --build build/ubsan -j 2
+(cd build/ubsan && UBSAN_OPTIONS=halt_on_error=1 ctest --output-on-failure)
 ```
 
-## 覆盖率
-
-统一脚本会按模块生成 summary、branch 报告和 HTML 明细：
-
-```bash
-coverage/run_coverage.sh
-```
-
-当前仓库保留了各模块 summary：
-
-| module | lines | functions | branches | decisions |
-|---|---:|---:|---:|---:|
-| zlog | 75.4% | 80.5% | 66.1% | 60.9% |
-| zmalloc | 97.5% | 100.0% | 90.2% | 97.1% |
-| zco | 96.6% | 100.0% | 87.6% | 88.7% |
-| znet | 92.2% | 97.3% | 80.5% | 87.3% |
-| zhttp | 94.8% | 98.3% | 85.1% | 84.3% |
-
-## 性能
-
-仓库把性能目标和常规测试分开：unit/integration 进入 CTest，benchmark/perf 目标需要
-`ZLYNX_BUILD_PERF_TESTS=ON`，也就是使用 `perf` preset。
-
-```bash
-cmake --preset perf
-cmake --build --preset perf --target zlog_performance
-cmake --build --preset perf --target zmalloc_benchmark
-cmake --build --preset perf --target zmalloc_performance
-cmake --build --preset perf --target zco_performance
-cmake --build --preset perf --target znet_wrk_benchmark
-cmake --build --preset perf --target zhttp_benchmark
-```
-
-性能脚本位于各模块 `tests/benchmark/` 下，常见工具包括 `wrk`、`perf`、`valgrind` 和
-`cachegrind`。性能数字强依赖机器、内核、编译器、第三方库、线程数、fd 限制和压测参数；
-这个项目更适合作为观察优化方向和理解瓶颈的实验台。
+ASan 接管 malloc/free，与显式全局 allocator 替换测试冲突；CMake 不禁用这些测试。
+独立 zlog 等不替换 allocator 的模块可以使用 `-fsanitize=address` 正常验证。
 
 ## 安装与消费
 
-每个模块都导出独立 CMake package：
+每个模块独立导出 Config Package，整体构建也可一次安装：
 
-```cmake
-find_package(zlog CONFIG REQUIRED)
-find_package(zmalloc CONFIG REQUIRED)
-find_package(zco CONFIG REQUIRED)
-find_package(znet CONFIG REQUIRED)
-find_package(zhttp CONFIG REQUIRED)
+```bash
+cmake --install build/release --prefix /path/to/prefix
 ```
 
-对应 target：
+消费者通过 `CMAKE_PREFIX_PATH` 找到安装前缀：
 
 ```cmake
-zlog::zlog
-zmalloc::zmalloc
-zmalloc::override
-zco::zco
-znet::znet
-zhttp::zhttp
+find_package(zhttp 1 CONFIG REQUIRED)
+add_executable(app main.cc)
+target_link_libraries(app PRIVATE zhttp::zhttp)
 ```
+
+其他核心 target 是 `zlog::zlog`、`zmalloc::zmalloc`、`zco::zco`、`znet::znet`。
+全局 allocator 替换由最终程序显式链接 `zmalloc::override`；顶层不再自动注入。
+`zhttp::core` 已合并到 `zhttp::zhttp`。所有共享库 SONAME 主版本改为 1，旧消费者
+必须重新链接；安装到新前缀以避免旧主版本、旧 core 库及 Config 混杂。
+
+安装包不强制修改动态加载路径。共享库部署时将安装 libdir 配置到系统加载器，
+或由应用设置相对其部署布局的 RPATH；测试临时前缀也可以设置 `LD_LIBRARY_PATH`。
+
+修改前分析与最终验证见 [CMake 审计](docs/cmake-audit.md) 和
+[CMake 重构报告](docs/cmake-refactor.md)。
 
 ## 学习顺序
 

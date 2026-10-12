@@ -1,4 +1,17 @@
-# znet 4（C++17）
+# znet 1.0.0（C++17）
+
+构建版本 **1.0.0**，最低 CMake **3.18**。本目录可整体复制到仓库外独立构建；znet 先安装 zco，通过 `CMAKE_PREFIX_PATH` 查找：
+
+```bash
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake --build build -j 2
+(cd build && ctest --output-on-failure)
+cmake --install build --prefix /path/to/prefix
+```
+
+未设置 `BUILD_SHARED_LIBS` 时构建静态库；共享库使用 `-DBUILD_SHARED_LIBS=ON`。
+下文 `--preset` 示例需要 CMake 3.20+，从 zlynx 根目录执行；仅提供 debug、release、relwithdebinfo。
+
 
 znet 提供 Linux 协程 TCP/UDP 与 TLS 传输，是 zhttp 的网络底座。
 版本 4 沿用版本 3 的接口，因内嵌 zco 同步类型布局改变而升级 ABI，消费者需要重新编译。
@@ -125,14 +138,14 @@ TLS 最低 1.2，加载完整证书链并验证私钥。握手属于传输启动
 
 ## 构建、测试与安装
 
-依赖：Linux、C++17、CMake 3.18+、zco 3、OpenSSL 1.1+；测试需要 GTest/GMock、
+依赖：Linux、C++17、CMake 3.18+、zco 1、OpenSSL 1.1+；测试需要 GTest/GMock、
 openssl 命令行工具。网络库不依赖 zlog，OpenSSL 为私有实现依赖。
 
 ```bash
 cmake --preset debug
 cmake --build --preset debug
-ctest --test-dir build/debug --output-on-failure
-ctest --test-dir build/debug -R '^znet\.' --output-on-failure
+(cd build/debug && ctest --output-on-failure)
+(cd build/debug && ctest -R '^znet_' --output-on-failure)
 cmake --preset release
 cmake --build --preset release
 cmake --install build/release --prefix /path/to/install
@@ -141,7 +154,7 @@ cmake --install build/release --prefix /path/to/install
 安装后：
 
 ```cmake
-find_package(znet 4 CONFIG REQUIRED)
+find_package(znet 1 CONFIG REQUIRED)
 add_executable(application main.cc)
 target_link_libraries(application PRIVATE znet::znet)
 ```
@@ -153,8 +166,8 @@ target_link_libraries(application PRIVATE znet::znet)
 性能程序及脚本沿用入口并已迁移到新 API：
 
 ```bash
-cmake --preset perf
-cmake --build --preset perf --target znet_wrk_benchmark
-build/perf/znet/tests/znet_wrk_benchmark --threads 4 --wrk-duration 5s
-BUILD_DIR=build/perf znet/tests/benchmark/znet_wrk_perf.sh baseline
+cmake --preset relwithdebinfo -DBUILD_BENCHMARKS=ON
+cmake --build --preset relwithdebinfo --target znet_wrk_benchmark
+build/relwithdebinfo/znet/tests/znet_wrk_benchmark --threads 4 --wrk-duration 5s
+BUILD_DIR=build/relwithdebinfo znet/tests/benchmark/znet_wrk_perf.sh baseline
 ```

@@ -1,5 +1,18 @@
 # zlog
 
+构建版本 **1.0.0**，最低 CMake **3.18**。本目录可整体复制到仓库外独立构建：
+
+```bash
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake --build build -j 2
+(cd build && ctest --output-on-failure)
+cmake --install build --prefix /path/to/prefix
+```
+
+未设置 `BUILD_SHARED_LIBS` 时构建静态库；共享库使用 `-DBUILD_SHARED_LIBS=ON`。
+下文 `--preset` 示例需要 CMake 3.20+，从 zlynx 根目录执行；仅提供 debug、release、relwithdebinfo。
+
+
 `zlog` 是 zlynx 的日志模块，整体设计参考 `spdlog` 的易用接口和 sink/formatter
 组合方式，提供同步日志、异步日志、格式化、日志落地器和全局 logger 管理能力。
 它是整个 zlynx 项目的基础设施模块，也可以独立作为轻量级 C++11 日志库使用。
@@ -193,7 +206,7 @@ zlog/
 基础构建依赖：
 
 - CMake 3.18+
-- C++11 或更高标准的编译器，仓库 preset 使用 `clang++` 和 C++17
+- C++11 或更高标准的编译器，仓库 preset 不指定编译器
 - Ninja，使用 preset 时需要
 - fmt
 - Threads
@@ -227,14 +240,14 @@ cmake --build --preset release
 构建性能测试二进制：
 
 ```bash
-cmake --preset perf
-cmake --build --preset perf --target zlog_performance
+cmake --preset relwithdebinfo -DBUILD_BENCHMARKS=ON
+cmake --build --preset relwithdebinfo --target zlog_performance
 ```
 
 如果系统安装了 `spdlog`，还可以构建第三方对比 benchmark：
 
 ```bash
-cmake --build --preset perf --target zlog_benchmark
+cmake --build --preset relwithdebinfo --target zlog_benchmark
 ```
 
 手动配置：
@@ -257,30 +270,10 @@ cmake --build --preset release --target install
 
 ## 测试
 
-运行全部 zlog 测试：
+构建后使用 CTest；不再提供按分类生成的自定义 target：
 
 ```bash
-cmake --build --preset debug --target zlog_test
-```
-
-只跑单元测试：
-
-```bash
-cmake --build --preset debug --target zlog_test_unit
-```
-
-只跑集成测试：
-
-```bash
-cmake --build --preset debug --target zlog_test_integration
-```
-
-直接使用 CTest：
-
-```bash
-ctest --test-dir build/debug -R '^zlog\.' --output-on-failure
-ctest --test-dir build/debug -R '^zlog\.unit\.' --output-on-failure
-ctest --test-dir build/debug -R '^zlog\.integration\.' --output-on-failure
+(cd build/debug && ctest -R '^zlog_' --output-on-failure)
 ```
 
 当前测试覆盖的主要行为：
@@ -327,10 +320,10 @@ coverage/run_coverage.sh --no-test
 计时结束前等待全部已接收日志输出及刷新。
 
 ```bash
-cmake --preset perf
-cmake --build --preset perf --target zlog_performance
+cmake --preset relwithdebinfo -DBUILD_BENCHMARKS=ON
+cmake --build --preset relwithdebinfo --target zlog_performance
 
-build/perf/zlog/tests/zlog_performance \
+build/relwithdebinfo/zlog/tests/zlog_performance \
   -m both \
   -t 4 \
   -c 1000000 \
@@ -352,7 +345,7 @@ build/perf/zlog/tests/zlog_performance \
 脚本入口：
 
 ```bash
-cd build/perf/zlog/tests
+cd build/relwithdebinfo/zlog/tests
 ../../../../zlog/tests/benchmark/zlog_perf.sh both 4 1000000 128
 ```
 

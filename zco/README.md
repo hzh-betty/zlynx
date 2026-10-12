@@ -1,5 +1,18 @@
 # zco
 
+构建版本 **1.0.0**，最低 CMake **3.18**。本目录可整体复制到仓库外独立构建：
+
+```bash
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake --build build -j 2
+(cd build && ctest --output-on-failure)
+cmake --install build --prefix /path/to/prefix
+```
+
+未设置 `BUILD_SHARED_LIBS` 时构建静态库；共享库使用 `-DBUILD_SHARED_LIBS=ON`。
+下文 `--preset` 示例需要 CMake 3.20+，从 zlynx 根目录执行；仅提供 debug、release、relwithdebinfo。
+
+
 `zco` 是 Linux/C++17 有栈协程运行时，提供多线程调度、任务窃取、共享栈与独立栈、
 定时等待、描述符 I/O，以及线程和协程混用的同步原语。2.0 使用显式 Runtime，
 不再提供全局启动、隐式重启或旧 API 兼容层。
@@ -102,31 +115,31 @@ StackArena 为每个工作线程最多缓存一块已结束任务的独立栈，
 ```bash
 cmake --preset debug
 cmake --build --preset debug -j 4
-ctest --test-dir build/debug -R '^zco\.' --output-on-failure -j 4
+(cd build/debug && ctest -R '^zco_' --output-on-failure -j 4)
 
 # 独立构建，无需先安装 zlog。
 cmake -S zco -B build/zco-standalone -G Ninja -DBUILD_TESTING=ON
 cmake --build build/zco-standalone -j 4
-ctest --test-dir build/zco-standalone --output-on-failure
+(cd build/zco-standalone && ctest --output-on-failure)
 ```
 
 安装消费：
 
 ```cmake
-find_package(zco 3 CONFIG REQUIRED)
+find_package(zco 1 CONFIG REQUIRED)
 add_executable(demo main.cc)
 target_link_libraries(demo PRIVATE zco::zco)
 ```
 
 基准覆盖提交、yield、Channel、I/O 和真实登记并触发的定时等待，分别测试两种栈
 模型，同时输出 timer 的延迟分位数、C++ new 分配次数、快照复制字节
-以及停止前后 RSS。计数仅在基准专用静态库启用，生产库不携带这些统计：
+以及停止前后 RSS。显式开启 `BUILD_BENCHMARKS` 时才在 zco 库启用复制计数：
 
 ```bash
-cmake --preset perf
-cmake --build --preset perf --target zco_performance -j 4
-ZCO_PERF_SCALE_PCT=10 build/perf/zco/tests/zco_performance
-BIN=build/perf/zco/tests/zco_performance zco/tests/benchmark/zco_perf.sh baseline
+cmake --preset relwithdebinfo -DBUILD_BENCHMARKS=ON
+cmake --build --preset relwithdebinfo --target zco_performance -j 4
+ZCO_PERF_SCALE_PCT=10 build/relwithdebinfo/zco/tests/zco_performance
+BIN=build/relwithdebinfo/zco/tests/zco_performance zco/tests/benchmark/zco_perf.sh baseline
 ```
 
 基准不纳入 CTest。不同机器、配置和任务预算的结果不可直接比较；验证记录不承诺
