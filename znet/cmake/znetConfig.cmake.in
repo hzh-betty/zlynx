@@ -1,0 +1,9 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+find_dependency(zco 1 CONFIG)
+find_dependency(OpenSSL 1.1 COMPONENTS SSL Crypto)
+find_dependency(Threads)
+
+include("${CMAKE_CURRENT_LIST_DIR}/znetTargets.cmake")
+check_required_components(znet)

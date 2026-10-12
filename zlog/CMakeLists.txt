@@ -1,23 +1,17 @@
 cmake_minimum_required(VERSION 3.18)
+project(zlog VERSION 1.0.0 LANGUAGES CXX)
 
-project(zlog VERSION 2.0.0 LANGUAGES CXX)
-
-# 支持两种使用方式：
-# 1. 从仓库根目录 add_subdirectory(zlog)，公共 helper 已由根 CMakeLists 加载；
-# 2. 单独配置 zlog/ 目录，下面的 fallback 会加载 ../cmake 中的公共函数。
-if(NOT COMMAND zlynx_apply_common_options)
-    set(ZLYNX_CMAKE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../cmake")
-    list(APPEND CMAKE_MODULE_PATH "${ZLYNX_CMAKE_DIR}")
-    include(ZlynxOptions)
-    include(ZlynxPackage)
-    include(ZlynxTesting)
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    include(CTest)
 endif()
+option(BUILD_BENCHMARKS "Build benchmark executables" OFF)
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
 
-find_package(fmt REQUIRED CONFIG)
+find_package(fmt CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 
-# zlog 源文件显式列出，避免 GLOB 在发布包/安装包中引入不确定性。
-set(ZLOG_SOURCES
+add_library(zlog
     src/async/buffer.cc
     src/async/looper.cc
     src/async_logger.cc
@@ -30,40 +24,44 @@ set(ZLOG_SOURCES
     src/sink.cc
     src/util.cc
 )
-
-add_library(zlog ${ZLOG_SOURCES})
 add_library(zlog::zlog ALIAS zlog)
 
-# PUBLIC include 同时区分构建树和安装树：
-# - BUILD_INTERFACE 使用源码目录 include；
-# - INSTALL_INTERFACE 使用安装后的 include 前缀。
+set(zlog_cxx_standard 11)
+target_compile_features(zlog PUBLIC cxx_std_${zlog_cxx_standard})
+if(NOT CMAKE_CXX_STANDARD)
+    set_property(TARGET zlog PROPERTY CXX_STANDARD ${zlog_cxx_standard})
+endif()
+set_target_properties(zlog PROPERTIES
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+    VERSION ${PROJECT_VERSION}
+    SOVERSION ${PROJECT_VERSION_MAJOR})
+target_compile_options(zlog PRIVATE
+    "$<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall;-Wextra;-Wpedantic>"
+    "$<$<CXX_COMPILER_ID:MSVC>:/W4;/permissive->")
 target_include_directories(zlog
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-)
-target_link_libraries(zlog
-    PUBLIC
-        fmt::fmt
-        Threads::Threads
-)
-# 源码与安装接口最低要求 C++11，允许调用方选择更高编译标准。
-zlynx_apply_common_options(zlog CXX_STANDARD 11)
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+target_link_libraries(zlog PUBLIC fmt::fmt Threads::Threads)
 
-# EXPORT_NAME 决定 install/export 后的目标名为 zlog::zlog。
-set_target_properties(zlog PROPERTIES
-    VERSION ${PROJECT_VERSION}
-    SOVERSION ${PROJECT_VERSION_MAJOR}
-    EXPORT_NAME zlog
-)
-
-# 普通测试由 BUILD_TESTING 控制；perf 目标需要 tests/benchmark 下的源码，
-# 所以 ZLYNX_BUILD_PERF_TESTS 打开时也进入 tests 子目录，但不会注册 CTest。
-if(BUILD_TESTING OR ZLYNX_BUILD_PERF_TESTS)
+if(BUILD_TESTING OR BUILD_BENCHMARKS)
     add_subdirectory(tests)
 endif()
 
-zlynx_install_module(zlog zlog
-    VERSION ${PROJECT_VERSION}
-    DEPENDENCIES fmt Threads
-)
+install(TARGETS zlog EXPORT zlogTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(EXPORT zlogTargets NAMESPACE zlog::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/zlog)
+configure_package_config_file(cmake/zlogConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/zlogConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/zlog)
+write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/zlogConfigVersion.cmake
+    VERSION ${PROJECT_VERSION} COMPATIBILITY SameMajorVersion)
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/zlogConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/zlogConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/zlog)

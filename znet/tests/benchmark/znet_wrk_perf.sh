@@ -6,7 +6,7 @@ shift || true
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
-BUILD_DIR="${BUILD_DIR:-${ROOT_DIR}/build/perf}"
+BUILD_DIR="${BUILD_DIR:-${ROOT_DIR}/build/relwithdebinfo}"
 RESULT_ROOT="${RESULT_ROOT:-${SCRIPT_DIR}/perf_results}"
 TS="$(date +%Y%m%d_%H%M%S)"
 
@@ -25,7 +25,7 @@ done
 
 if [[ -z "${BIN}" ]]; then
   echo "error: znet_wrk_benchmark not found. Build first:" >&2
-  echo "  cmake -S ${ROOT_DIR} -B ${BUILD_DIR} -G Ninja" >&2
+  echo "  cmake -S ${ROOT_DIR} -B ${BUILD_DIR} -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_BENCHMARKS=ON" >&2
   echo "  cmake --build ${BUILD_DIR} -j --target znet_wrk_benchmark" >&2
   exit 2
 fi

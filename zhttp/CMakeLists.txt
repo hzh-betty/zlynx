@@ -1,39 +1,39 @@
 cmake_minimum_required(VERSION 3.18)
+project(zhttp VERSION 1.0.0 LANGUAGES CXX)
 
-project(zhttp VERSION 5.0.0 LANGUAGES CXX)
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    include(CTest)
+endif()
+option(BUILD_BENCHMARKS "Build benchmark executables" OFF)
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
 
-# zhttp 是最上层 HTTP/WebSocket 模块。
-# 根工程构建时依赖本地 znet/zlog target；独立构建时通过 find_package 获取。
-if(NOT COMMAND zlynx_apply_common_options)
-    set(ZLYNX_CMAKE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../cmake")
-    list(APPEND CMAKE_MODULE_PATH "${ZLYNX_CMAKE_DIR}")
-    include(ZlynxOptions)
-    include(ZlynxPackage)
-    include(ZlynxTesting)
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    message(FATAL_ERROR "zhttp currently supports Linux only")
 endif()
 
-find_package(OpenSSL REQUIRED)
-find_package(fmt REQUIRED CONFIG)
+if(NOT TARGET zco::zco)
+    find_package(zco 1 CONFIG REQUIRED)
+endif()
+if(NOT TARGET znet::znet)
+    find_package(znet 1 CONFIG REQUIRED)
+endif()
+if(NOT TARGET zlog::zlog)
+    find_package(zlog 1 CONFIG REQUIRED)
+endif()
+find_package(fmt CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
+find_package(toml11 CONFIG REQUIRED)
+find_package(OpenSSL 1.1 REQUIRED COMPONENTS Crypto)
 find_package(ZLIB REQUIRED)
-find_package(nlohmann_json REQUIRED CONFIG)
-find_library(BROTLI_ENC_LIBRARY NAMES brotlienc REQUIRED)
+find_package(Threads REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(Brotli REQUIRED IMPORTED_TARGET libbrotlienc)
 
-# 同时兼容源码树内 target 和安装后的命名空间 target。
-if(TARGET znet)
-    set(ZHTTP_ZNET_TARGET znet)
-else()
-    find_package(znet 4 CONFIG REQUIRED)
-    set(ZHTTP_ZNET_TARGET znet::znet)
-endif()
-if(TARGET zlog)
-    set(ZHTTP_ZLOG_TARGET zlog)
-else()
-    find_package(zlog CONFIG REQUIRED)
-    set(ZHTTP_ZLOG_TARGET zlog::zlog)
-endif()
-
-set(ZHTTP_CORE_SOURCES
+add_library(zhttp
     src/application/http_application.cc
+    src/application/request_pipeline.cc
+    src/config/server_config.cc
     src/content/multipart.cc
     src/content/parsed_request_body.cc
     src/message/http_body.cc
@@ -42,79 +42,84 @@ set(ZHTTP_CORE_SOURCES
     src/message/http_headers.cc
     src/message/http_request.cc
     src/message/http_response.cc
-    src/static_files/path.cc
-    src/router/radix_tree.cc
-    src/static_files/range.cc
+    src/message/uri.cc
     src/middleware/auth_middleware.cc
     src/middleware/compression_middleware.cc
     src/middleware/cors_middleware.cc
     src/middleware/error_middleware.cc
-    src/rate_limit/rate_limiter.cc
     src/middleware/rate_limiter_middleware.cc
     src/middleware/request_body_middleware.cc
     src/middleware/security_middleware.cc
     src/middleware/session_middleware.cc
     src/middleware/static_file_middleware.cc
     src/middleware/timeout_middleware.cc
-    src/application/request_pipeline.cc
-    src/router/router.cc
-    src/static_files/static_resource_store.cc
-    src/session/session.cc
-    src/message/uri.cc
-    src/protocol/http/response_encoder.cc
-)
-set(ZHTTP_SOURCES
-    src/runtime/http_server.cc
-    src/runtime/http_server_builder.cc
-    src/protocol/http/chunked_decoder.cc
-    src/protocol/http/http_request_parser.cc
-    src/protocol/websocket/websocket_frame_parser.cc
     src/protocol/connection_session.cc
+    src/protocol/http/chunked_decoder.cc
     src/protocol/http/http_protocol_handler.cc
-    src/protocol/websocket/websocket_protocol_handler.cc
-    src/runtime/daemon.cc
-    src/runtime/server_bootstrap.cc
-    src/runtime/server_runner.cc
-    src/config/server_config.cc
+    src/protocol/http/http_request_parser.cc
+    src/protocol/http/http_response_writer.cc
+    src/protocol/http/response_encoder.cc
     src/protocol/websocket/websocket_connection.cc
     src/protocol/websocket/websocket_frame.cc
+    src/protocol/websocket/websocket_frame_parser.cc
     src/protocol/websocket/websocket_handshake.cc
     src/protocol/websocket/websocket_message_assembler.cc
-    src/protocol/http/http_response_writer.cc
+    src/protocol/websocket/websocket_protocol_handler.cc
+    src/rate_limit/rate_limiter.cc
+    src/router/radix_tree.cc
+    src/router/router.cc
+    src/runtime/daemon.cc
+    src/runtime/http_server.cc
+    src/runtime/http_server_builder.cc
     src/runtime/logging.cc
+    src/runtime/server_bootstrap.cc
+    src/runtime/server_runner.cc
+    src/session/session.cc
+    src/static_files/path.cc
+    src/static_files/range.cc
+    src/static_files/static_resource_store.cc
 )
-add_library(zhttp_core ${ZHTTP_CORE_SOURCES})
-add_library(zhttp::core ALIAS zhttp_core)
-add_library(zhttp ${ZHTTP_SOURCES})
 add_library(zhttp::zhttp ALIAS zhttp)
-foreach(target zhttp_core zhttp)
-    target_include_directories(${target} PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
-    target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-    zlynx_apply_common_options(${target})
-endforeach()
-target_link_libraries(zhttp_core PUBLIC nlohmann_json::nlohmann_json
-    PRIVATE ZLIB::ZLIB ${BROTLI_ENC_LIBRARY})
-target_link_libraries(zhttp PUBLIC zhttp_core ${ZHTTP_ZNET_TARGET}
-    PRIVATE ${ZHTTP_ZLOG_TARGET} OpenSSL::SSL OpenSSL::Crypto fmt::fmt)
-set_target_properties(zhttp_core PROPERTIES EXPORT_NAME core
-    VERSION ${PROJECT_VERSION} SOVERSION ${PROJECT_VERSION_MAJOR})
-zlynx_install_extra_target(zhttp zhttp_core)
 
-# 安装导出为 zhttp::zhttp；版本号用于生成 ConfigVersion 文件。
+set(zhttp_cxx_standard 17)
+target_compile_features(zhttp PUBLIC cxx_std_${zhttp_cxx_standard})
+if(NOT CMAKE_CXX_STANDARD)
+    set_property(TARGET zhttp PROPERTY CXX_STANDARD ${zhttp_cxx_standard})
+endif()
 set_target_properties(zhttp PROPERTIES
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
     VERSION ${PROJECT_VERSION}
-    SOVERSION ${PROJECT_VERSION_MAJOR}
-    EXPORT_NAME zhttp
-)
+    SOVERSION ${PROJECT_VERSION_MAJOR})
+target_compile_options(zhttp PRIVATE
+    "$<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall;-Wextra;-Wpedantic>"
+    "$<$<CXX_COMPILER_ID:MSVC>:/W4;/permissive->")
+target_include_directories(zhttp
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(zhttp
+    PUBLIC znet::znet zco::zco nlohmann_json::nlohmann_json
+    PRIVATE zlog::zlog fmt::fmt toml11::toml11 OpenSSL::Crypto ZLIB::ZLIB PkgConfig::Brotli Threads::Threads)
 
-# benchmark 位于 tests/benchmark；只构建 perf 时也进入 tests，但不注册 CTest。
-if(BUILD_TESTING OR ZLYNX_BUILD_PERF_TESTS)
+if(BUILD_TESTING OR BUILD_BENCHMARKS)
     add_subdirectory(tests)
 endif()
 
-zlynx_install_module(zhttp zhttp
-    VERSION ${PROJECT_VERSION}
-    DEPENDENCIES "znet 4" zlog OpenSSL fmt ZLIB nlohmann_json
-)
+install(TARGETS zhttp EXPORT zhttpTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(EXPORT zhttpTargets NAMESPACE zhttp::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/zhttp)
+configure_package_config_file(cmake/zhttpConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/zhttpConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/zhttp)
+write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/zhttpConfigVersion.cmake
+    VERSION ${PROJECT_VERSION} COMPATIBILITY SameMajorVersion)
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/zhttpConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/zhttpConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/zhttp)

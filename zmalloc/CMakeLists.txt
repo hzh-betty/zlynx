@@ -1,81 +1,88 @@
 cmake_minimum_required(VERSION 3.18)
+project(zmalloc VERSION 1.0.0 LANGUAGES CXX)
 
-project(zmalloc VERSION 2.0.0 LANGUAGES CXX)
-
-# 模块既可被根工程 add_subdirectory，也可独立配置构建。
-# 独立构建时需要手动加载公共 helper，保持 target/install/test 行为一致。
-if(NOT COMMAND zlynx_apply_common_options)
-    set(ZLYNX_CMAKE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../cmake")
-    list(APPEND CMAKE_MODULE_PATH "${ZLYNX_CMAKE_DIR}")
-    include(ZlynxOptions)
-    include(ZlynxPackage)
-    include(ZlynxTesting)
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    include(CTest)
 endif()
+option(BUILD_BENCHMARKS "Build benchmark executables" OFF)
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
 
 find_package(Threads REQUIRED)
+option(ZMALLOC_AUTO_RELEASE "Enable bounded automatic page reclamation" OFF)
 
-option(ZLYNX_ZMALLOC_AUTO_RELEASE "Enable bounded automatic page reclamation" OFF)
-
-# allocator 主库只包含正常分配器实现；全局替换符号放在 zmalloc_override。
-set(ZMALLOC_SOURCES
-    src/size_class.cc
-    src/system_alloc.cc
-    src/memory.cc
-    src/free_list.cc
-    src/transfer_cache.cc
-    src/thread_cache.cc
+add_library(zmalloc
     src/central_cache.cc
+    src/free_list.cc
+    src/memory.cc
     src/page_cache.cc
+    src/size_class.cc
     src/span_list.cc
+    src/system_alloc.cc
+    src/thread_cache.cc
+    src/transfer_cache.cc
 )
-
-add_library(zmalloc ${ZMALLOC_SOURCES})
 add_library(zmalloc::zmalloc ALIAS zmalloc)
 
-# 头文件作为 PUBLIC 用法需求导出，消费者链接 zmalloc::zmalloc 后自动获得 include。
+set(zmalloc_cxx_standard 11)
+target_compile_features(zmalloc PUBLIC cxx_std_${zmalloc_cxx_standard})
+if(NOT CMAKE_CXX_STANDARD)
+    set_property(TARGET zmalloc PROPERTY CXX_STANDARD ${zmalloc_cxx_standard})
+endif()
+set_target_properties(zmalloc PROPERTIES
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+    VERSION ${PROJECT_VERSION}
+    SOVERSION ${PROJECT_VERSION_MAJOR})
+target_compile_options(zmalloc PRIVATE
+    "$<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall;-Wextra;-Wpedantic>"
+    "$<$<CXX_COMPILER_ID:MSVC>:/W4;/permissive->")
 target_include_directories(zmalloc
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-)
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 target_link_libraries(zmalloc PUBLIC Threads::Threads)
 target_compile_definitions(zmalloc PUBLIC
-    ZMALLOC_AUTO_RELEASE_ENABLED=$<BOOL:${ZLYNX_ZMALLOC_AUTO_RELEASE}>
-)
-zlynx_apply_common_options(zmalloc CXX_STANDARD 11)
+    ZMALLOC_AUTO_RELEASE_ENABLED=$<BOOL:${ZMALLOC_AUTO_RELEASE}>)
 
-# 安装后保持版本化 soname，并导出为 zmalloc::zmalloc。
-set_target_properties(zmalloc PROPERTIES
-    VERSION ${PROJECT_VERSION}
-    SOVERSION ${PROJECT_VERSION_MAJOR}
-    EXPORT_NAME zmalloc
-)
-
-# zmalloc_override 提供全局 new/delete/malloc 替换符号。
-# 它单独建成目标，避免所有消费者被迫启用 allocator override。
 add_library(zmalloc_override STATIC src/override.cc)
 add_library(zmalloc::override ALIAS zmalloc_override)
-target_link_libraries(zmalloc_override PUBLIC zmalloc)
-target_link_libraries(zmalloc_override PRIVATE ${CMAKE_DL_LIBS})
-zlynx_apply_common_options(zmalloc_override CXX_STANDARD 11)
+target_link_libraries(zmalloc_override PUBLIC zmalloc::zmalloc PRIVATE ${CMAKE_DL_LIBS})
+if(NOT CMAKE_CXX_STANDARD)
+    set_property(TARGET zmalloc_override PROPERTY CXX_STANDARD ${zmalloc_cxx_standard})
+endif()
 set_target_properties(zmalloc_override PROPERTIES
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
     POSITION_INDEPENDENT_CODE ON
-    EXPORT_NAME override
-)
+    EXPORT_NAME override)
+target_compile_options(zmalloc_override PRIVATE
+    "$<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall;-Wextra;-Wpedantic>"
+    "$<$<CXX_COMPILER_ID:MSVC>:/W4;/permissive->")
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    # malloc 及其依赖不能通过动态 TLS 访问再次触发分配。
+    # malloc must not allocate while resolving its own thread-local state.
     target_compile_options(zmalloc PRIVATE -ftls-model=initial-exec)
     target_compile_options(zmalloc_override PRIVATE -ftls-model=initial-exec)
 endif()
 
-# benchmark/perf 源码位于 tests/benchmark，所以 perf 构建也需要进入 tests。
-if(BUILD_TESTING OR ZLYNX_BUILD_PERF_TESTS)
+if(BUILD_TESTING OR BUILD_BENCHMARKS)
     add_subdirectory(tests)
 endif()
 
-zlynx_install_module(zmalloc zmalloc
-    VERSION ${PROJECT_VERSION}
-    DEPENDENCIES Threads
-)
-zlynx_install_extra_target(zmalloc zmalloc_override)
+install(TARGETS zmalloc zmalloc_override EXPORT zmallocTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(EXPORT zmallocTargets NAMESPACE zmalloc::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/zmalloc)
+configure_package_config_file(cmake/zmallocConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/zmallocConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/zmalloc)
+write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/zmallocConfigVersion.cmake
+    VERSION ${PROJECT_VERSION} COMPATIBILITY SameMajorVersion)
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/zmallocConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/zmallocConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/zmalloc)

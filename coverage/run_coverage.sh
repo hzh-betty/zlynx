@@ -51,15 +51,14 @@ mkdir -p "${REPORT_ROOT}"
 # Keep report layout deterministic and avoid stale flat reports from older runs.
 find "${REPORT_ROOT}" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 
-if [[ ! -f "${BUILD_DIR}/CMakeCache.txt" ]]; then
-    cmake -S "${ROOT_DIR}" -B "${BUILD_DIR}" \
-        -G Ninja \
-        -DCMAKE_CXX_COMPILER=clang++ \
-        -DCMAKE_BUILD_TYPE=Debug \
-        -DBUILD_SHARED_LIBS=ON \
-        -DBUILD_TESTING=ON \
-        -DZLYNX_ENABLE_COVERAGE=ON
-fi
+cmake -S "${ROOT_DIR}" -B "${BUILD_DIR}" \
+    -G Ninja \
+    -DCMAKE_BUILD_TYPE=Debug \
+    -DBUILD_SHARED_LIBS=ON \
+    -DBUILD_TESTING=ON \
+    -DCMAKE_CXX_FLAGS=--coverage \
+    -DCMAKE_EXE_LINKER_FLAGS=--coverage \
+    -DCMAKE_SHARED_LINKER_FLAGS=--coverage
 
 cmake --build "${BUILD_DIR}" -j"${BUILD_JOBS:-4}"
 
@@ -67,13 +66,13 @@ test_exit=0
 test_status_file="${REPORT_ROOT}/test-status.txt"
 if [[ ${RUN_TESTS} -eq 1 ]]; then
     find "${BUILD_DIR}" -name '*.gcda' -delete
-    if ctest --test-dir "${BUILD_DIR}" --output-on-failure -j"${CTEST_JOBS}"; then
+    if (cd "${BUILD_DIR}" && ctest --output-on-failure -j"${CTEST_JOBS}"); then
         echo "initial_ctest_exit=0" >"${test_status_file}"
     else
         test_exit=$?
         echo "initial_ctest_exit=${test_exit}" >"${test_status_file}"
         echo "Initial ctest run failed, rerunning failed tests sequentially..."
-        if ctest --test-dir "${BUILD_DIR}" --output-on-failure --rerun-failed -j1; then
+        if (cd "${BUILD_DIR}" && ctest --output-on-failure --rerun-failed -j1); then
             echo "rerun_ctest_exit=0" >>"${test_status_file}"
             echo "flaky=true" >>"${test_status_file}"
             echo "Rerun passed; the initial failure is retained (flaky tests)." >&2

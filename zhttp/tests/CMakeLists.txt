@@ -1,111 +1,76 @@
-cmake_minimum_required(VERSION 3.18)
-
-find_package(Threads REQUIRED)
-
-# 单元测试显式列表便于对个别目标附加额外依赖或串行属性。
-set(ZHTTP_UNIT_TESTS
-    http_application_test
-    http_parser_test
-    http_common_test
-    http_request_test
-    http_response_test
-    http_response_writer_test
-    static_path_test
-    websocket_frame_test
-    websocket_handshake_test
-    multipart_test
-    server_config_test
-    session_test
-    rate_limiter_test
-    router_test
-    middleware_test
-    error_middleware_test
-    auth_middleware_test
-    cors_middleware_test
-    compression_middleware_test
-    request_body_middleware_test
-    request_components_test
-    timeout_middleware_test
-    security_middleware_test
-    static_resource_store_test
-    static_file_opt_test
-    http_server_context_test
-    router_detailed_test
-    regex_prefix_bucket_test
-    range_parse_test
-    logging_test
-    daemon_test
-    http_server_builder_test
-    socket_reader_test
-)
-
 if(BUILD_TESTING)
-    find_package(GTest REQUIRED)
-    find_library(BROTLI_DEC_LIBRARY NAMES brotlidec REQUIRED)
+    if(NOT TARGET GTest::gtest_main)
+        find_package(GTest CONFIG REQUIRED)
+    endif()
 
-    set(ZHTTP_NETWORK_UNIT_TESTS
-        http_parser_test
-        http_response_writer_test
-        websocket_frame_test
-        websocket_handshake_test
-        server_config_test
-        http_server_context_test
-        logging_test
-        daemon_test
-        http_server_builder_test
-        socket_reader_test
+    set(test_sources
+        integration/http_server_test.cc
+        integration/websocket_server_test.cc
+        unit/auth_middleware_test.cc
+        unit/compression_middleware_test.cc
+        unit/cors_middleware_test.cc
+        unit/daemon_test.cc
+        unit/error_middleware_test.cc
+        unit/http_application_test.cc
+        unit/http_common_test.cc
+        unit/http_parser_test.cc
+        unit/http_request_test.cc
+        unit/http_response_test.cc
+        unit/http_response_writer_test.cc
+        unit/http_server_builder_test.cc
+        unit/http_server_context_test.cc
+        unit/logging_test.cc
+        unit/middleware_test.cc
+        unit/multipart_test.cc
+        unit/range_parse_test.cc
+        unit/rate_limiter_test.cc
+        unit/regex_prefix_bucket_test.cc
+        unit/request_body_middleware_test.cc
+        unit/request_components_test.cc
+        unit/router_detailed_test.cc
+        unit/router_test.cc
+        unit/security_middleware_test.cc
+        unit/server_config_test.cc
+        unit/session_test.cc
+        unit/socket_reader_test.cc
+        unit/static_file_opt_test.cc
+        unit/static_path_test.cc
+        unit/static_resource_store_test.cc
+        unit/timeout_middleware_test.cc
+        unit/websocket_frame_test.cc
+        unit/websocket_handshake_test.cc
     )
-    # These two executables wrap steady_clock calls in an isolated static copy
-    # of the real core, avoiding interposition and duplicate shared-library RTTI.
-    set(clock_core_sources)
-    foreach(source IN LISTS ZHTTP_CORE_SOURCES)
-        list(APPEND clock_core_sources "${CMAKE_CURRENT_SOURCE_DIR}/../${source}")
-    endforeach()
-    add_library(zhttp_clock_test_core STATIC EXCLUDE_FROM_ALL ${clock_core_sources})
-    target_include_directories(zhttp_clock_test_core PUBLIC ../include PRIVATE ../src)
-    target_link_libraries(zhttp_clock_test_core PUBLIC nlohmann_json::nlohmann_json
-        PRIVATE ZLIB::ZLIB ${BROTLI_ENC_LIBRARY} zlynx_coverage_options)
-    zlynx_apply_common_options(zhttp_clock_test_core)
-
-    foreach(test_name ${ZHTTP_UNIT_TESTS})
-        if(test_name STREQUAL "session_test" OR test_name STREQUAL "timeout_middleware_test")
-            set(test_library zhttp_clock_test_core)
-        elseif(test_name IN_LIST ZHTTP_NETWORK_UNIT_TESTS)
-            set(test_library zhttp)
-        else()
-            set(test_library zhttp_core)
-        endif()
-        zlynx_add_gtest(${test_name} unit/${test_name}.cc zhttp unit ${test_library})
-        target_include_directories(${test_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+    foreach(source IN LISTS test_sources)
+        get_filename_component(name ${source} NAME_WE)
+        add_executable(zhttp_${name} ${source})
+        target_compile_features(zhttp_${name} PRIVATE cxx_std_17)
+        set_target_properties(zhttp_${name} PROPERTIES CXX_EXTENSIONS OFF)
+        target_link_libraries(zhttp_${name} PRIVATE zhttp::zhttp GTest::gtest_main Threads::Threads)
+        target_include_directories(zhttp_${name} PRIVATE ../src)
+        add_test(NAME zhttp_${name} COMMAND zhttp_${name})
+        set_tests_properties(zhttp_${name} PROPERTIES TIMEOUT 90)
     endforeach()
 
-    # Wrap libstdc++ steady_clock only in these isolated test executables.
     foreach(clock_test session_test timeout_middleware_test)
-        target_sources(${clock_test} PRIVATE support/manual_clock.cc)
-        target_link_options(${clock_test} PRIVATE "LINKER:--wrap=_ZNSt6chrono3_V212steady_clock3nowEv")
+        target_sources(zhttp_${clock_test} PRIVATE support/manual_clock.cc)
+        target_link_options(zhttp_${clock_test} PRIVATE
+            LINKER:--wrap=_ZNSt6chrono3_V212steady_clock3nowEv)
     endforeach()
-
-    target_link_libraries(logging_test PRIVATE ${ZHTTP_ZLOG_TARGET})
-    target_link_libraries(compression_middleware_test PRIVATE ZLIB::ZLIB ${BROTLI_DEC_LIBRARY})
-
-    set(ZHTTP_INTEGRATION_TESTS
-        http_server_test
-        websocket_server_test
-    )
-
-    foreach(test_name ${ZHTTP_INTEGRATION_TESTS})
-        zlynx_add_gtest(${test_name} integration/${test_name}.cc zhttp integration zhttp)
-        target_include_directories(${test_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
-    endforeach()
-
-    target_link_libraries(http_server_test PRIVATE OpenSSL::SSL OpenSSL::Crypto)
-
-    zlynx_add_module_test_targets(zhttp)
+    if(BUILD_SHARED_LIBS)
+        # Compile only the clock-sensitive implementations into the wrapping executables.
+        target_sources(zhttp_session_test PRIVATE ../src/session/session.cc)
+        target_sources(zhttp_timeout_middleware_test PRIVATE ../src/middleware/timeout_middleware.cc)
+    endif()
+    pkg_check_modules(BrotliDecoder REQUIRED IMPORTED_TARGET libbrotlidec)
+    target_link_libraries(zhttp_compression_middleware_test PRIVATE ZLIB::ZLIB PkgConfig::BrotliDecoder)
+    target_link_libraries(zhttp_logging_test PRIVATE zlog::zlog)
+    target_link_libraries(zhttp_http_server_test PRIVATE OpenSSL::SSL OpenSSL::Crypto)
 endif()
 
-if(ZLYNX_BUILD_PERF_TESTS)
-    # HTTP benchmark 需要手动运行，不参与覆盖率和 CTest。
-    zlynx_add_perf_target(zhttp_benchmark benchmark/zhttp_benchmark.cc zhttp)
-    zlynx_add_perf_target(zhttp_core_benchmark benchmark/zhttp_core_benchmark.cc zhttp_core)
-    target_include_directories(zhttp_core_benchmark PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+if(BUILD_BENCHMARKS)
+    add_executable(zhttp_benchmark benchmark/zhttp_benchmark.cc)
+    target_link_libraries(zhttp_benchmark PRIVATE zhttp::zhttp Threads::Threads)
+    add_executable(zhttp_core_benchmark benchmark/zhttp_core_benchmark.cc)
+    target_link_libraries(zhttp_core_benchmark PRIVATE zhttp::zhttp Threads::Threads)
+    target_include_directories(zhttp_core_benchmark PRIVATE ../src)
 endif()

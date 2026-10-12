@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-BUILD_DIR="${BUILD_DIR:-${ROOT_DIR}/build-zco-perf-nooverride}"
+BUILD_DIR="${BUILD_DIR:-${ROOT_DIR}/build/relwithdebinfo}"
 BIN="${BIN:-${BUILD_DIR}/zco/tests/zco_performance}"
 MODE="${1:-baseline}"
 OUT_ROOT="${ROOT_DIR}/zco/tests/benchmark/perf_results"
@@ -13,8 +13,8 @@ mkdir -p "${OUT_DIR}"
 
 if [[ ! -x "${BIN}" ]]; then
   echo "[error] test binary not found: ${BIN}"
-  echo "[hint] configure first: cmake -S . -B build-zco-perf-nooverride -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_TESTING=OFF -DZLYNX_BUILD_PERF_TESTS=ON -DZLYNX_USE_ZMALLOC_OVERRIDE=OFF"
-  echo "[hint] build first: cmake --build build-zco-perf-nooverride --target zco_performance"
+  echo "[hint] configure first: cmake -S . -B build/relwithdebinfo -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_TESTING=OFF -DBUILD_BENCHMARKS=ON"
+  echo "[hint] build first: cmake --build build/relwithdebinfo --target zco_performance"
   exit 1
 fi
 

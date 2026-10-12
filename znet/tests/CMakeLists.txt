@@ -1,33 +1,34 @@
-cmake_minimum_required(VERSION 3.18)
-
-# znet 的网络测试对 socket/thread 资源敏感；仅 unit/integration 注册进 CTest。
 if(BUILD_TESTING)
-    find_package(GTest REQUIRED)
-    find_package(Threads REQUIRED)
+    if(NOT TARGET GTest::gtest_main)
+        find_package(GTest CONFIG REQUIRED)
+    endif()
 
-    file(GLOB ZNET_UNIT_TESTS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/unit/*.cc")
-    file(GLOB ZNET_INTEGRATION_TESTS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/integration/*.cc")
-
-    foreach(test_src ${ZNET_UNIT_TESTS})
-        get_filename_component(test_name ${test_src} NAME_WE)
-        zlynx_add_gtest(${test_name} ${test_src} znet unit znet)
-    endforeach()
-
-    foreach(test_src ${ZNET_INTEGRATION_TESTS})
-        get_filename_component(test_name ${test_src} NAME_WE)
-        zlynx_add_gtest(${test_name} ${test_src} znet integration znet)
+    set(test_sources
+        integration/connection_io_test.cc
+        integration/socket_test.cc
+        integration/tcp_server_test.cc
+        integration/tls_stream_test.cc
+        unit/byte_buffer_test.cc
+        unit/connection_test.cc
+        unit/endpoint_test.cc
+        unit/error_test.cc
+    )
+    foreach(source IN LISTS test_sources)
+        get_filename_component(name ${source} NAME_WE)
+        add_executable(znet_${name} ${source})
+        target_compile_features(znet_${name} PRIVATE cxx_std_17)
+        set_target_properties(znet_${name} PROPERTIES CXX_EXTENSIONS OFF)
+        target_link_libraries(znet_${name} PRIVATE znet::znet GTest::gtest_main Threads::Threads)
+        add_test(NAME znet_${name} COMMAND znet_${name})
+        set_tests_properties(znet_${name} PROPERTIES TIMEOUT 90)
     endforeach()
 
     find_program(ZNET_TEST_OPENSSL NAMES openssl REQUIRED)
-    target_compile_definitions(tls_stream_test PRIVATE ZNET_TEST_OPENSSL="${ZNET_TEST_OPENSSL}")
-
-    # Only the TLS client integration test directly uses OpenSSL.
-    target_link_libraries(tls_stream_test PRIVATE OpenSSL::SSL OpenSSL::Crypto)
-
-    zlynx_add_module_test_targets(znet)
+    target_compile_definitions(znet_tls_stream_test PRIVATE ZNET_TEST_OPENSSL="${ZNET_TEST_OPENSSL}")
+    target_link_libraries(znet_tls_stream_test PRIVATE OpenSSL::SSL OpenSSL::Crypto)
 endif()
 
-if(ZLYNX_BUILD_PERF_TESTS)
-    # wrk benchmark 只生成二进制，不注册 CTest，避免默认验证跑压测。
-    zlynx_add_perf_target(znet_wrk_benchmark benchmark/znet_wrk_benchmark.cc znet)
+if(BUILD_BENCHMARKS)
+    add_executable(znet_wrk_benchmark benchmark/znet_wrk_benchmark.cc)
+    target_link_libraries(znet_wrk_benchmark PRIVATE znet::znet Threads::Threads)
 endif()

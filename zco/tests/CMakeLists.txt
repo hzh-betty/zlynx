@@ -1,58 +1,64 @@
-cmake_minimum_required(VERSION 3.18)
-
 if(BUILD_TESTING)
-    find_package(GTest REQUIRED)
-endif()
-find_package(Threads REQUIRED)
+    if(NOT TARGET GTest::gtest_main)
+        find_package(GTest CONFIG REQUIRED)
+    endif()
 
-set(zco_test_runtime zco)
-if(TARGET zco_stdalloc)
-    # 测试优先使用不带 allocator override 的运行时，避免 allocator 行为影响协程测试。
-    set(zco_test_runtime zco_stdalloc)
-endif()
+    # --wrap cannot intercept calls already linked inside a shared library.
+    if(BUILD_SHARED_LIBS)
+        get_target_property(zco_sources zco SOURCES)
+        get_target_property(zco_standard zco CXX_STANDARD)
+        list(TRANSFORM zco_sources PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/../")
+        add_library(zco_test_static STATIC ${zco_sources})
+        target_compile_features(zco_test_static PUBLIC $<TARGET_PROPERTY:zco,INTERFACE_COMPILE_FEATURES>)
+        target_compile_options(zco_test_static PRIVATE $<TARGET_PROPERTY:zco,COMPILE_OPTIONS>)
+        target_include_directories(zco_test_static PUBLIC ../include PRIVATE ../src)
+        target_link_libraries(zco_test_static PUBLIC Threads::Threads)
+        set_target_properties(zco_test_static PROPERTIES
+            CXX_STANDARD ${zco_standard} CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+    endif()
 
-function(add_zco_gtest target_name src_file labels timeout_seconds)
-    add_executable(${target_name} ${src_file})
-    target_link_libraries(${target_name} PRIVATE ${zco_test_runtime} GTest::gtest_main Threads::Threads zlynx_coverage_options)
-    target_include_directories(${target_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../src)
-    add_test(NAME zco.${labels}.${target_name} COMMAND ${target_name})
-    set_tests_properties(zco.${labels}.${target_name} PROPERTIES LABELS "${labels};total" TIMEOUT ${timeout_seconds})
-endfunction()
-
-file(GLOB ZCO_UNIT_TESTS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/unit/*.cc")
-file(GLOB ZCO_INTEGRATION_TESTS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/integration/*.cc")
-set(ZCO_PERF_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/benchmark/zco_performance.cc")
-
-# CTest 只纳入 unit/integration；perf 通过独立开关生成可执行文件。
-if(BUILD_TESTING)
-    foreach(test_src ${ZCO_UNIT_TESTS})
-        get_filename_component(test_name ${test_src} NAME_WE)
-        add_zco_gtest(${test_name} ${test_src} unit 20)
+    set(test_sources
+        integration/descriptor_lifecycle_test.cc
+        integration/runtime_shutdown_test.cc
+        integration/socket_io_test.cc
+        unit/descriptor_flags_test.cc
+        unit/io_operations_test.cc
+        unit/io_wait_registry_test.cc
+        unit/runtime_lifecycle_test.cc
+        unit/stack_arena_test.cc
+        unit/synchronization_test.cc
+        unit/task_completion_test.cc
+        unit/task_scheduling_test.cc
+        unit/timer_queue_test.cc
+        unit/wait_queue_test.cc
+        unit/wait_state_test.cc
+    )
+    foreach(source IN LISTS test_sources)
+        get_filename_component(name ${source} NAME_WE)
+        add_executable(zco_${name} ${source})
+        target_compile_features(zco_${name} PRIVATE cxx_std_17)
+        set_target_properties(zco_${name} PROPERTIES CXX_EXTENSIONS OFF)
+        if(BUILD_SHARED_LIBS AND name MATCHES "^(runtime_lifecycle|task_completion|descriptor_flags|task_scheduling)_test$")
+            target_link_libraries(zco_${name} PRIVATE zco_test_static GTest::gtest_main Threads::Threads)
+        else()
+            target_link_libraries(zco_${name} PRIVATE zco::zco GTest::gtest_main Threads::Threads)
+        endif()
+        target_include_directories(zco_${name} PRIVATE ../src ${CMAKE_CURRENT_SOURCE_DIR})
+        add_test(NAME zco_${name} COMMAND zco_${name})
+        set_tests_properties(zco_${name} PROPERTIES TIMEOUT 90)
     endforeach()
 
-    foreach(test_src ${ZCO_INTEGRATION_TESTS})
-        get_filename_component(test_name ${test_src} NAME_WE)
-        add_zco_gtest(${test_name} ${test_src} integration 45)
-    endforeach()
-
-    target_link_libraries(runtime_lifecycle_test PRIVATE ${CMAKE_DL_LIBS})
-    target_link_options(runtime_lifecycle_test PRIVATE -Wl,--wrap=epoll_create1)
-    target_link_options(task_completion_test PRIVATE -Wl,--wrap=_Znwm)
-    target_link_options(descriptor_flags_test PRIVATE -Wl,--wrap=fcntl)
-    target_link_options(task_scheduling_test PRIVATE -Wl,--wrap=swapcontext -Wl,--wrap=getcontext -Wl,--wrap=_Znwm)
-
+    target_link_libraries(zco_runtime_lifecycle_test PRIVATE ${CMAKE_DL_LIBS})
+    target_link_options(zco_runtime_lifecycle_test PRIVATE LINKER:--wrap=epoll_create1)
+    target_link_options(zco_task_completion_test PRIVATE LINKER:--wrap=_Znwm)
+    target_link_options(zco_descriptor_flags_test PRIVATE LINKER:--wrap=fcntl)
+    target_link_options(zco_task_scheduling_test PRIVATE
+        LINKER:--wrap=swapcontext LINKER:--wrap=getcontext LINKER:--wrap=_Znwm)
 endif()
 
-if(ZLYNX_BUILD_PERF_TESTS)
-    # perf 目标在 RelWithDebInfo 下构建，保留符号和足够优化。
-    foreach(perf_src ${ZCO_PERF_SOURCES})
-        get_filename_component(perf_name ${perf_src} NAME_WE)
-        zlynx_add_perf_target(${perf_name} ${perf_src} ${zco_test_runtime})
-        target_compile_definitions(${perf_name} PRIVATE ZCO_BENCHMARK_METRICS)
-        target_include_directories(${perf_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../src)
-    endforeach()
-endif()
-
-if(BUILD_TESTING)
-    zlynx_add_module_test_targets(zco)
+if(BUILD_BENCHMARKS)
+    add_executable(zco_performance benchmark/zco_performance.cc)
+    target_link_libraries(zco_performance PRIVATE zco::zco Threads::Threads)
+    target_include_directories(zco_performance PRIVATE ../src)
+    target_compile_definitions(zco_performance PRIVATE ZCO_BENCHMARK_METRICS)
 endif()

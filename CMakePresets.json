@@ -1,55 +1,35 @@
 {
-  "version": 6,
+  "version": 2,
   "cmakeMinimumRequired": {
     "major": 3,
-    "minor": 25,
+    "minor": 18,
     "patch": 0
   },
   "configurePresets": [
     {
       "name": "debug",
-      "displayName": "Debug (Clang + Ninja)",
-      "description": "开发调试预设：使用 clang++ 和 Ninja，默认构建 unit/integration 测试。",
-      "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/debug",
+      "generator": "Ninja",
       "cacheVariables": {
-        "CMAKE_CXX_COMPILER": "clang++",
         "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "BUILD_TESTING": "ON",
-        "BUILD_SHARED_LIBS": "ON"
+        "CMAKE_EXPORT_COMPILE_COMMANDS": true,
+        "BUILD_TESTING": true
       }
     },
     {
       "name": "release",
-      "displayName": "Release (Clang + Ninja)",
-      "description": "发布构建预设：关闭测试，只构建库目标。",
-      "inherits": "debug",
       "binaryDir": "${sourceDir}/build/release",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "BUILD_TESTING": "OFF"
-      }
-    },
-    {
-      "name": "coverage",
-      "displayName": "Coverage (Clang + Ninja)",
-      "description": "覆盖率预设：Debug + BUILD_TESTING + ZLYNX_ENABLE_COVERAGE。",
       "inherits": "debug",
-      "binaryDir": "${sourceDir}/build/coverage",
       "cacheVariables": {
-        "ZLYNX_ENABLE_COVERAGE": "ON"
+        "CMAKE_BUILD_TYPE": "Release"
       }
     },
     {
-      "name": "perf",
-      "displayName": "Performance binaries (RelWithDebInfo, Clang + Ninja)",
-      "description": "性能测试预设：使用 RelWithDebInfo，保留优化和调试符号，perf 二进制不注册进 CTest。",
-      "inherits": "release",
-      "binaryDir": "${sourceDir}/build/perf",
+      "name": "relwithdebinfo",
+      "binaryDir": "${sourceDir}/build/relwithdebinfo",
+      "inherits": "debug",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "ZLYNX_BUILD_PERF_TESTS": "ON"
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
       }
     }
   ],
@@ -63,12 +43,8 @@
       "configurePreset": "release"
     },
     {
-      "name": "coverage",
-      "configurePreset": "coverage"
-    },
-    {
-      "name": "perf",
-      "configurePreset": "perf"
+      "name": "relwithdebinfo",
+      "configurePreset": "relwithdebinfo"
     }
   ],
   "testPresets": [
@@ -77,13 +53,29 @@
       "configurePreset": "debug",
       "output": {
         "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
       }
     },
     {
-      "name": "coverage",
-      "configurePreset": "coverage",
+      "name": "release",
+      "configurePreset": "release",
       "output": {
         "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "relwithdebinfo",
+      "configurePreset": "relwithdebinfo",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
       }
     }
   ]

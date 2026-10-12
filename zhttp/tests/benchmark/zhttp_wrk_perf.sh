@@ -6,7 +6,7 @@ shift || true
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
-BUILD_DIR="${BUILD_DIR:-${ROOT_DIR}/build-zhttp-perf}"
+BUILD_DIR="${BUILD_DIR:-${ROOT_DIR}/build/relwithdebinfo}"
 RESULT_ROOT="${RESULT_ROOT:-${SCRIPT_DIR}/perf_results}"
 TS="$(date +%Y%m%d_%H%M%S)"
 
@@ -25,7 +25,7 @@ done
 
 if [[ -z "${BIN}" ]]; then
   echo "error: zhttp_benchmark not found. Build first:" >&2
-  echo "  cmake -S ${ROOT_DIR} -B ${BUILD_DIR} -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DZLYNX_BUILD_PERF_TESTS=ON -DZLYNX_USE_ZMALLOC_OVERRIDE=ON" >&2
+  echo "  cmake -S ${ROOT_DIR} -B ${BUILD_DIR} -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DBUILD_BENCHMARKS=ON" >&2
   echo "  cmake --build ${BUILD_DIR} -j --target zhttp_benchmark" >&2
   exit 2
 fi

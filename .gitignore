@@ -16,3 +16,4 @@ logfile/
 tmp/
 *.tmp
 .clangd
+CMakeUserPresets.json
