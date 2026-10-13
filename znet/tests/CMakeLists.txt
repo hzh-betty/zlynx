@@ -7,12 +7,15 @@ if(BUILD_TESTING)
         integration/connection_io_test.cc
         integration/socket_test.cc
         integration/tcp_server_test.cc
-        integration/tls_stream_test.cc
         unit/byte_buffer_test.cc
         unit/connection_test.cc
         unit/endpoint_test.cc
         unit/error_test.cc
+        unit/tls_credentials_test.cc
     )
+    if(ZNET_ENABLE_TLS)
+        list(APPEND test_sources integration/tls_stream_test.cc)
+    endif()
     foreach(source IN LISTS test_sources)
         get_filename_component(name ${source} NAME_WE)
         add_executable(znet_${name} ${source})
@@ -23,9 +26,11 @@ if(BUILD_TESTING)
         set_tests_properties(znet_${name} PROPERTIES TIMEOUT 90)
     endforeach()
 
-    find_program(ZNET_TEST_OPENSSL NAMES openssl REQUIRED)
-    target_compile_definitions(znet_tls_stream_test PRIVATE ZNET_TEST_OPENSSL="${ZNET_TEST_OPENSSL}")
-    target_link_libraries(znet_tls_stream_test PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+    if(ZNET_ENABLE_TLS)
+        find_program(ZNET_TEST_OPENSSL NAMES openssl REQUIRED)
+        target_compile_definitions(znet_tls_stream_test PRIVATE ZNET_TEST_OPENSSL="${ZNET_TEST_OPENSSL}")
+        target_link_libraries(znet_tls_stream_test PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+    endif()
 endif()
 
 if(BUILD_BENCHMARKS)

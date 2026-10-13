@@ -39,6 +39,7 @@ CMake 3.20+ 和 Ninja；预设不指定编译器。
 - pkg-config、Brotli 编码库（`libbrotlienc`）。
 - 开启测试时需要 GTest/GMock、Brotli 解码库（`libbrotlidec`）和 `openssl` 命令。
 - 可选工具：spdlog 用于日志对比测试，wrk 用于 HTTP 压测，gcovr 用于覆盖率报告。
+- 若仅构建 znet 且环境缺少 OpenSSL，可配置 `-DZNET_ENABLE_TLS=OFF` 关闭 TLS 传输实现。
 
 依赖需由系统或工具链提供，构建不会自动下载。单独构建模块时只需准备该模块的依赖。
 

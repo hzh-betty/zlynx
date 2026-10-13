@@ -91,6 +91,15 @@ server_options.handshake_timeout = std::chrono::seconds(10);
 将 `server_options` 作为 TcpServer 构造的第四个参数。TLS 握手属于传输启动阶段，
 服务器停止时可取消正在等待的握手。公共传输接口不暴露 OpenSSL 类型。
 
+如需在无 OpenSSL 环境下构建，可关闭 TLS 传输实现：
+
+```bash
+cmake -S znet -B build/znet-notls -DCMAKE_BUILD_TYPE=Debug -DZNET_ENABLE_TLS=OFF
+```
+
+关闭后 `TlsCredentials::load()` 会返回 `operation_not_supported`，TCP 明文传输、
+UDP、地址解析和缓冲组件仍可正常构建与使用。
+
 ## 构建、测试与安装
 
 整体构建方式见[根 README](../README.md)。独立构建需先安装 zco，以下命令从
@@ -106,6 +115,7 @@ cmake --install build/znet --prefix /path/to/prefix
 
 仅构建库可加 `-DBUILD_TESTING=OFF`，共享库可加 `-DBUILD_SHARED_LIBS=ON`。
 整体构建后用 `ctest -R '^znet_'` 筛选缓冲、地址、socket、连接、TCP 服务和 TLS 测试。
+关闭 TLS 时会自动跳过 `tls_stream` 集成测试目标。
 
 消费者通过同一安装前缀查找包：
 
