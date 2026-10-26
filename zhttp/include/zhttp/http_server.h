@@ -15,7 +15,34 @@ namespace zhttp {
  * start/stop/析构在控制线程调用；请求回调使用 request_stop()。
  * 自有 Runtime 在首次 start() 创建；借用 Runtime 必须比服务器活得更久。
  * start() 冻结应用与监听配置，包括启动失败的情况。
+ *
+ * 一次请求链路:
+ *  收到输入字节
+      ↓
+  HttpRequestParser 增量解析
+      ↓
+  请求头完成：检查 Expect 等协议选项
+      ↓
+  请求完整：构造 HttpContext
+      ↓
+  Router::match 选择处理器并提取路径参数
+      ↓
+  中间件 before，按顺序执行
+      ↓
+  业务处理器，或默认 404 处理器
+      ↓
+  中间件 after，按逆序执行
+      ↓
+  ResponseEncoder 计算响应写出计划
+      ↓
+  HttpResponseWriter 提交并发送响应
+      ↓
+  触发请求完成通知
+      ↓
+  继续解析下一个请求 / 关闭连接 / 切换 WebSocket
  */
+
+
 class HttpServer {
   public:
     using ptr = std::shared_ptr<HttpServer>;

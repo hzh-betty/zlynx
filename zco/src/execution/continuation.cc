@@ -17,10 +17,10 @@ uint64_t snapshot_bytes_copied() {
 #endif
 Continuation::Continuation(StackArena &arena, void (*entry)()) : arena_(arena) {
     if (arena.shared())
-        stack_ = &arena.shared_slot();
+        stack_ = &arena.shared_slot(); // 共享栈槽位由 Arena 持有，挂起后保存快照、恢复前还原。
     else {
         independent_ = arena.acquire_independent();
-        stack_ = independent_.get();
+        stack_ = independent_.get(); // 独立栈由 Continuation 持有，挂起后无需保存快照。
     }
     make_context(context_, stack_->data(), stack_->size(), entry);
 }

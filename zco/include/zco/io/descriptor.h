@@ -18,12 +18,17 @@ struct ResourceId {
 
 /**
  * @brief 独占文件描述符，并管理其未完成的 I/O 等待。
- *
- * 移动转移所有权；析构或 close() 关闭描述符并唤醒相关等待者。
- * 原生句柄只供借用，不得由调用方另行关闭。
+ *  
+ * @note 原生句柄只供借用，不得由调用方另行关闭。
  */
 class Descriptor {
   public:
+
+    /**
+     * @brief 在借用期间持有资源锁，防止原生调用期间描述符被关闭。
+     * @note 借用期间不得再次调用需要同一资源锁的操作。
+     * 原生调用不得改变此描述符及其所有别名的 O_NONBLOCK。
+     */
     class Borrow {
       public:
         explicit Borrow(std::shared_ptr<detail::Resource> resource);

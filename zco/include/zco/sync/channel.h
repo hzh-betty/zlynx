@@ -7,6 +7,8 @@
 namespace zco {
 /**
  * @brief 不可复制的有界队列，可供线程与协程发送、接收。
+ * 生产者 ── send(value) ──→ [消息1][消息2] ── receive() ──→ 消费者
+                              容量有限
  * @note 对象必须存活至所有操作结束；关闭后拒绝发送，但可继续取走已缓冲的值。
  */
 template <class T> class Channel {

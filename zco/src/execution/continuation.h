@@ -41,7 +41,7 @@ class Continuation {
     std::unique_ptr<StackBuffer> independent_;
     StackBuffer *stack_;
     NativeContext context_;
-    std::vector<char> snapshot_;
+    std::vector<char> snapshot_; // 快照数据
     std::exception_ptr interruption_;
 };
 } // namespace detail

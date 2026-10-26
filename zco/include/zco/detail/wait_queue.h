@@ -9,6 +9,18 @@ namespace detail {
 /**
  * @brief 为公开模板提供等待桥接；调用方须用同一互斥量保护谓词和队列，
  * 并在 ticket.wait() 前释放该锁，避免阻塞完成等待的一方。
+ *
+ * WaitQueue::add()
+    ↓
+  创建 WaitTicket，拥有 WaitState
+    ↓
+  把 ticket.token() 交给其他组件
+    ↓
+  ticket.wait() 挂起
+    ↓
+  其他组件通过 WakeToken 完成等待
+    ↓
+  ticket.wait() 返回
  */
 class WaitTicket {
   public:

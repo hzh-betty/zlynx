@@ -5,6 +5,63 @@
 #include <utility>
 
 namespace zhttp {
+/*
+ * application/x-www-form-urlencoded 请求体格式
+ *
+ * Content-Type: application/x-www-form-urlencoded
+ *
+ * 请求体示例：
+ *
+ * username=zhangsan&age=20&city=Chengdu&message=hello+world
+ *
+ * 格式说明：
+ *
+ * 1. 键值对（Key-Value）
+ *    - 每个表单字段由 key=value 组成。
+ *    - key 和 value 均需要按照表单 URL 编码规则进行编码。
+ *
+ * 2. 字段分隔符（&）
+ *    - 使用 '&' 分隔多个键值对。
+ *    - 例如：name=Tom&age=20
+ *
+ * 3. 键值分隔符（=）
+ *    - 使用 '=' 分隔字段名称与字段值。
+ *    - 第一个 '=' 通常作为键值分隔符。
+ *    - 值本身包含 '=' 时，应编码为 %3D。
+ *
+ * 4. 空格编码
+ *    - 表单 URL 编码中，空格通常编码为 '+'。
+ *    - 例如：hello world -> hello+world
+ *
+ * 5. 百分号编码（Percent-Encoding）
+ *    - 特殊字符及非 ASCII 字节可使用 %HH 编码。
+ *    - HH 表示一个十六进制字节。
+ *    - 例如：
+ *        '&'  -> %26
+ *        '='  -> %3D
+ *        '+'  -> %2B
+ *        '%'  -> %25
+ *        中文字符需要先转换为 UTF-8 字节，再逐字节进行百分号编码。
+ *
+ * 6. 空值与空字段
+ *    - name= 表示字段 name 的值为空。
+ *    - name 也可以表示没有显式 '=' 的字段，但解析器应明确约定其处理方式。
+ *    - name=Tom&name=Jerry 允许出现重复字段名，不能默认后者覆盖前者。
+ *
+ * 7. 解码规则
+ *    - '+' 解码为空格。
+ *    - %HH 解码为对应的一个字节。
+ *    - 解码时应检查 '%' 后是否存在两个合法的十六进制字符。
+ *    - 如果字段内容要求 UTF-8，应在百分号解码后验证 UTF-8 编码。
+ *
+ * 注意：
+ *    - 该格式通常用于 HTML 表单提交，不适合直接承载原始二进制文件。
+ *    - 请求体的长度由 HTTP 消息定界机制确定，例如 Content-Length
+ *      或适用协议版本中的传输分帧机制。
+ *    - '+' 在该格式中代表空格；字面量 '+' 必须编码为 %2B。
+ *    - 该格式属于表单编码，不是 HTTP Transfer-Encoding。
+ */
+
 
 void parse_urlencoded_params(std::string_view text, RequestParams &params) {
     size_t pos = 0;

@@ -22,8 +22,8 @@ void WaitQueue::erase(Entries::iterator entry) {
     entries_.erase(entry);
 }
 
+// 等待票据可能直接被销毁，没有显式调用 remove()，此时队列会留下失效的弱引用节点。
 void WaitQueue::prune_expired() {
-    // 每轮清理有界；后续添加时继续回收失去所有者的注册项。
     size_t budget = entries_.size() < 4 ? entries_.size() : 4;
     while (budget--) {
         if (cleanup_ == entries_.end())
@@ -38,6 +38,8 @@ WaitTicket WaitQueue::add() {
     prune_expired();
     WaitTicket ticket;
     entries_.push_back(ticket.state_);
+
+    // 记录队列和迭代器，便于 O(1) 删除
     ticket.state_->queue_ = this;
     ticket.state_->queue_entry_ = std::prev(entries_.end());
     return ticket;
@@ -46,7 +48,7 @@ WaitTicket WaitQueue::add() {
 void WaitQueue::remove(const WaitTicket &ticket) {
     auto &state = ticket.state_;
     if (state && state->queue_ == this) {
-        erase(state->queue_entry_);
+        erase(state->queue_entry_); // O(1) 删除，避免 O(n) 遍历
         state->queue_ = nullptr;
     }
 }

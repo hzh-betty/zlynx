@@ -76,7 +76,7 @@ bool parse_websocket_frame(znet::ByteBuffer *buffer,
         const WebSocketOpcode opcode = static_cast<WebSocketOpcode>(opcode_raw);
 
         uint64_t payload_length = static_cast<uint64_t>(bytes[1] & 0x7F);
-        size_t header_length = 2;
+        size_t header_length = 2; // 初始头部长度，后续可能扩展为 4 或 10 字节。
 
         // 处理扩展长度字段（126/127）并保持“半包即返回”语义。
         if (payload_length == 126) {
@@ -109,6 +109,7 @@ bool parse_websocket_frame(znet::ByteBuffer *buffer,
             header_length = 10;
         }
 
+        // 掩码字段必须存在，且在半包时不消费。
         if (!masked) {
             // 服务端接收客户端帧时，mask 位必须为 1。
             *close_code =
@@ -158,6 +159,7 @@ bool parse_websocket_frame(znet::ByteBuffer *buffer,
 
         buffer->retrieve(frame_size);
 
+        // 处理不同类型的帧，产出事件并返回。
         if (opcode == WebSocketOpcode::kContinuation ||
             opcode == WebSocketOpcode::kText ||
             opcode == WebSocketOpcode::kBinary) {
@@ -180,6 +182,7 @@ bool parse_websocket_frame(znet::ByteBuffer *buffer,
             event.close_code =
                 static_cast<uint16_t>(WebSocketCloseCode::kNormalClosure);
 
+            // 关闭帧的载荷长度为 0 或至少为 2 字节，前两字节为关闭码，后续为 UTF-8 原因文本。
             if (payload_size >= 2) {
                 event.close_code = static_cast<uint16_t>(read_u16_be(
                     reinterpret_cast<const uint8_t *>(payload.data())));

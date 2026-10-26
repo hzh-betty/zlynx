@@ -14,6 +14,9 @@ namespace znet {
  * append() 或 ensure_writable_bytes()
  * 搬移或重分配数据时，须重新获取指针和视图；
  * 消费数据后旧视图不再表示当前可读区间，赋值或销毁对象也可能使借用失效。
+ *
+ * [ 已消费、可回收 ][ 尚未消费的有效数据 ][ 可继续写入的空间 ]
+ *   0              reader_             writer_             数组末尾
  */
 class ByteBuffer {
   public:

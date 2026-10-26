@@ -19,13 +19,27 @@ class EpollReactor final : public Reactor {
   private:
     struct Bucket {
         int fd;
-        std::map<RegistrationId, unsigned> registrations;
+        std::map<RegistrationId, unsigned> registrations; // 该资源上所有登记的等待及其兴趣掩码
     };
 
     int epoll_ = -1, event_ = -1;
     std::mutex mutex_;
-    std::map<uint64_t, Bucket> resources_;
-    std::map<RegistrationId, uint64_t> registrations_;
+
+    /*
+      resources_
+        ResourceId=1001
+          fd=12
+          registrations:
+            501 → read
+            502 → write
+
+      registrations_
+        RegistrationId
+          501 → 1001
+          502 → 1001
+    */
+    std::map<uint64_t, Bucket> resources_;  
+    std::map<RegistrationId, uint64_t> registrations_;  // 
 };
 } // namespace detail
 } // namespace zco

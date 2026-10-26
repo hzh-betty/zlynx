@@ -8,6 +8,11 @@ namespace detail {
 class WaitState;
 }
 
+/**
+ * @brief WaitId 保证通知必须属于任务当前这一轮等待，避免过期通知误唤醒。
+ * 因为当前代码存在一条路径：Worker 可以直接观察到等待已完成，提前把任务入队，而邮箱（Inbox）里的通知还没被消费。
+ * （即如果通知发生在检查之后、切换期间，再由调度器检查, 防止丢失唤醒。）
+ */
 struct WaitId {
     TaskId task;
     uint64_t generation = 0;
@@ -18,7 +23,17 @@ inline bool operator==(WaitId a, WaitId b) {
 }
 
 /**
- * @brief 弱引用一次等待状态的完成令牌，不延长等待状态生命周期。
+ * @brief WakeToken 可以理解成“某一次等待的唤醒句柄”。
+ * 它存在的目的，是让不同的事件源用同一种方式结束等待：
+ * 协程创建 WaitState
+        ↓
+   把 WakeToken 交给定时器 / I/O / WaitQueue
+        ↓
+   某个事件发生，调用 token.complete(...)
+        ↓
+   WaitState 只接受第一个结果
+        ↓
+   通知 Worker，协程恢复执行
  */
 class WakeToken {
   public:
@@ -28,7 +43,7 @@ class WakeToken {
         : state_(std::move(state)) {}
 
     /**
-     * @brief 尝试完成该次等待。
+     * @brief 尝试完成该次等待。I/O、超时、取消可能同时发生
      * @return 状态已过期或已完成时返回 false，首次完成时返回 true。
      */
     bool complete(WaitOutcome outcome = WaitOutcome::ready) const;

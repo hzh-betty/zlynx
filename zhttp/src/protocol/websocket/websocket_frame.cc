@@ -15,11 +15,13 @@ bool valid_websocket_close_code(const uint16_t code) {
 }
 
 namespace {
+// 以大端序追加 16 位无符号整数到字节串。
 void append_u16_be(std::string *out, const uint16_t value) {
     out->push_back(static_cast<char>((value >> 8) & 0xFF));
     out->push_back(static_cast<char>(value & 0xFF));
 }
 
+// 以大端序追加 64 位无符号整数到字节串。
 void append_u64_be(std::string *out, const uint64_t value) {
     for (int shift = 56; shift >= 0; shift -= 8) {
         out->push_back(static_cast<char>((value >> shift) & 0xFF));
@@ -139,10 +141,13 @@ bool build_websocket_frame(const WebSocketOpcode opcode,
     frame->clear();
     frame->reserve(payload.size() + 14);
 
+    // FIN + RSV1/2/3 + Opcode
     const uint8_t first = static_cast<uint8_t>((fin ? 0x80 : 0x00) |
                                                static_cast<uint8_t>(opcode));
     frame->push_back(static_cast<char>(first));
 
+    // MASK + Payload length
+    // 服务端发送的帧不使用掩码，MASK = 0。
     if (payload.size() <= 125) {
         frame->push_back(static_cast<char>(payload.size()));
     } else if (payload.size() <= 0xFFFF) {

@@ -47,8 +47,33 @@ class TcpServer {
     ~TcpServer();
     TcpServer(const TcpServer &) = delete;
     TcpServer &operator=(const TcpServer &) = delete;
-
+    
+    /*
+      TcpServer::start()
+          │
+          └─ 创建本轮 ServerRun
+                │
+                ├─ 启动 reaper 任务：回收已完成的会话任务
+                │
+                └─ 启动 accept 任务：循环接收连接
+                      │
+                      └─ SessionManager::admit()
+                              ├─ 创建 Connection
+                              ├─ 登记会话
+                              ├─ 选择 worker
+                              └─ 提交会话任务
+                                    │
+                                    ├─ serve_session(...)
+                                    │    ├─ 启动传输 / TLS 握手
+                                    │    ├─ factory 创建业务回调
+                                    │    ├─ 循环读取并执行 on_message
+                                    │    ├─ 关闭连接
+                                    │    └─ 执行 on_close
+                                    │
+                                    └─ session_completed(id)    
+    */
     Result<void> start();
+    
     void request_stop();
 
     /**

@@ -25,9 +25,9 @@ struct Startup {
 };
 
 /**
- * @brief 接收跨线程完成通知的邮箱，按批交给所属工作线程处理。
- *
- * 空到非空的转换唤醒反应器；通知只携带等待 ID，不持有任务或执行栈。
+ * @brief Inbox 把来自定时器、I/O、同步对象、
+    关闭操作或其他线程的等待完成事件，安全地转交给负责该协程的 Worker，
+    并让 Worker 在自己的线程中恢复协程。
  */
 class Inbox final : public CompletionEndpoint {
   public:
@@ -81,17 +81,70 @@ class Worker {
     TaskId current_id() const;
     void yield_current();
     std::shared_ptr<WaitState> make_wait();
+
+    /**
+     * @brief 将当前任务挂起，直到指定的等待条件满足。
+     *
+     * @param wait 等待状态
+     * @param deadline 超时时间
+     * @return 等待结果
+     */
     WaitOutcome park(const std::shared_ptr<WaitState> &, Deadline);
+    
     Result<void> wait_io(const std::shared_ptr<io::detail::Resource> &,
                          io::Interest, Deadline);
 
   private:
     friend struct Submission;
+    /*
+    * Worker::Phase 状态转换图（执行记录的内部调度状态）
+    *
+    *                         +-----------+
+    *              +--------->|  running  |----------+
+    *              |          +-----------+          |
+    *              |                |                |
+    *            resume            park         返回 / 异常退出
+    *              |                |                |
+    *              |                v                v
+    *          +-------+       +---------+      +----------+
+    *          | ready |<------| waiting |      | finished |
+    *          +-------+       +---------+      +----------+
+    *              ^            等待完成              |
+    *              |                                  v
+    *              |                             释放执行记录
+    *              |
+    *              +---- running 经 yield 主动让出执行权
+    *
+    * 状态说明：
+    *   ready    : 就绪，等待调度执行
+    *   running  : 当前处于执行阶段，正在运行或准备切入任务上下文
+    *   waiting  : 已设置挂起等待，等待 WaitState 完成后重新就绪
+    *   finished : 执行结束，不再调度
+    *
+    * 常规转换：
+    *   创建 Record -> ready
+    *   ready   -> running  : resume 选中并执行任务
+    *   running -> ready    : yield 主动让出执行权
+    *   running -> waiting  : park 等待尚未完成，设置状态并切回调度器
+    *   waiting -> ready    : 匹配的完成通知到达，或切回调度器时等待已完成
+    *   running -> finished : 正常返回、异常退出或执行初始化失败
+    *   finished -> 释放记录 : 释放执行资源，再发布任务完成结果
+    *
+    * 特殊路径：
+    *   running -> running : park 发现等待已完成，直接返回
+    *   ready   -> running : 快照保存失败，interrupt 恢复原栈并注入异常
+    *   waiting -> running : 快照保存失败，interrupt 恢复原栈并注入异常
+    *
+    * 注意：
+    *   正常唤醒经过 waiting -> ready -> running。
+    *   完成通知校验 phase、任务 ID 和等待代次，避免旧通知重复入队。
+    *   ready、running、waiting 均对应对外 TaskStatus::running。
+    */
     enum class Phase { running, ready, waiting, finished };
 
     struct Record {
-        PendingTask pending;
-        std::unique_ptr<Continuation> execution;
+        PendingTask pending; // 用户函数和共享完成状态。
+        std::unique_ptr<Continuation> execution; // 协程上下文与栈的管理对象。
         Phase phase = Phase::ready;
         std::shared_ptr<WaitState> wait;
 
@@ -104,23 +157,35 @@ class Worker {
     static void entry();
     void run();
     void run_batch();
+
+    /**
+      @brief 计算下一次 poll 的超时时间。
+      有就绪任务或待执行任务	0
+      没有可运行任务，有有限定时器	距最近截止时间的毫秒数加 1
+      没有可运行任务，也没有有限定时器	-1 
+    */
     int poll_timeout() const;
+    
+    
     bool poll_once(int timeout);
+    
     bool take_task(PendingTask &);
     void collect_notifications();
     void resume(Record &);
     void cancel_pending();
+
+    
     size_t index_;
     size_t steal_cursor_;
     std::weak_ptr<Submission> submission_;
     std::vector<Worker *> peers_;
-    TaskQueues queues_;
+    TaskQueues queues_; // 任务还没开始，没有建立执行上下文
     std::shared_ptr<Reactor> reactor_;
-    std::shared_ptr<Inbox> inbox_;
+    std::shared_ptr<Inbox> inbox_; // 用于接收外部通知
     StackArena stacks_;
-    NativeContext caller_;
-    std::unordered_map<uint64_t, std::unique_ptr<Record>> tasks_;
-    std::deque<uint64_t> ready_;
+    NativeContext caller_; // 调度器上下文，切入任务前保存调度器栈，切回时恢复调度器栈
+    std::unordered_map<uint64_t, std::unique_ptr<Record>> tasks_; //任务已经开始，拥有执行记录可能正在执行、可以恢复，或者正在等待
+    std::deque<uint64_t> ready_;  // tasks_ 中当前可以执行的任务 ID
     IoWaitRegistry io_waits_;
     TimerQueue timers_;
     Record *current_ = nullptr;

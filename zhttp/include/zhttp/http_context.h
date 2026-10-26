@@ -10,6 +10,22 @@
 #include <nlohmann/json.hpp>
 #include <string>
 
+/*
+* HTTP 解析器取得完整请求
+          ↓
+* 创建栈上的 HttpContext
+          ↓
+application.handle(context)
+          ↓
+处理 WebSocket 升级意图、生成响应写出计划
+          ↓
+HttpResponseWriter 写出响应
+          ↓
+context.complete(...)
+          ↓
+当前作用域结束，销毁 context
+*/
+
 namespace zhttp {
 /**
  * @brief 连接地址及 TLS 信息；由网络层填充，不从 HTTP 头部推断。

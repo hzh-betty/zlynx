@@ -45,7 +45,9 @@ class SessionManager {
      * @pre id 对应已登记会话，且每个会话只通知一次。
      */
     void session_completed(uint64_t id);
+    
     void finish_accepting();
+    
     void reap_completed();
 
     /**
@@ -58,14 +60,14 @@ class SessionManager {
   private:
     struct Session {
         Connection::ptr connection;
-        zco::TaskHandle task;
+        zco::TaskHandle task; // 用于观察、等待该连接对应的会话任务。
     };
 
     const ServerOptions &options_;
     const std::vector<zco::Executor> &workers_;
     const std::atomic<bool> &running_;
-    zco::TaskHandle reaper_task_;
-    zco::Event completed_event_;
+    zco::TaskHandle reaper_task_; // 用于等待回收任务结束，确保所有会话都已回收。
+    zco::Event completed_event_; // 用于通知回收任务有新完成的会话；在 mutex_ 保护下访问。
     mutable std::mutex mutex_;
     std::unordered_map<uint64_t, Session> sessions_;
 
@@ -74,7 +76,7 @@ class SessionManager {
 
     // 表示不会再登记新连接，供回收任务排完当前通知后退出；由 mutex_ 保护。
     bool accepting_done_ = false;
-    uint64_t next_id_ = 0;
+    uint64_t next_id_ = 0; //分配本轮运行中的会话 ID
 };
 } // namespace znet::detail
 

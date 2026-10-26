@@ -7,7 +7,9 @@ SessionManager::SessionManager(const ServerOptions &options,
                                const std::atomic<bool> &running)
     : options_(options), workers_(workers), running_(running) {}
 
+// 先登记再提交，可以让停止逻辑找到尚在排队、尚未握手的连接。
 bool SessionManager::admit(Socket socket, const TaskFactory &make_task) {
+    // 把 socket 包装为传输流：
     auto stream = options_.tls ? options_.tls->make_stream(std::move(socket))
                                : make_tcp_stream(std::move(socket));
     if (!stream) {
@@ -16,17 +18,20 @@ bool SessionManager::admit(Socket socket, const TaskFactory &make_task) {
     }
     Error submission_error;
     {
-        // 在提交和握手前登记连接，使 stop 能关闭所有已接收的描述符，
-        // 包括任务尚在排队或等待 TLS 握手的连接。
+        // 分配 ID，并轮询选择 worker：
         std::lock_guard<std::mutex> lock(mutex_);
         if (!running_)
             return false;
         const auto id = ++next_id_;
-        auto executor = workers_[(id - 1) % workers_.size()];
+        auto executor = workers_[(id - 1) % workers_.size()]; //这是按连接轮询分配，不感知连接的实际负载。
+        
+        // 创建连接并登记
         auto connection = std::make_shared<Connection>(
             std::move(stream).value(), executor, options_.write_timeout);
         auto position =
             sessions_.emplace(id, Session{connection, zco::TaskHandle{}});
+        
+        // 创建任务、提交任务并补全句柄
         auto submitted = executor.spawn(make_task(connection, id));
         if (submitted) {
             position.first->second.task = std::move(submitted).value();
@@ -106,6 +111,8 @@ void SessionManager::reap_completed() {
         }
         for (auto id : completed) {
             zco::TaskHandle task;
+
+            // 锁内取得 TaskHandle
             {
                 std::lock_guard<std::mutex> lock(mutex_);
                 task = sessions_.at(id).task;
@@ -131,6 +138,7 @@ void SessionManager::reap_completed() {
 }
 
 void SessionManager::join() {
+    // 等待回收任务结束
     if (reaper_task_)
         (void)reaper_task_.join();
     std::unordered_map<uint64_t, Session> pending;
@@ -139,6 +147,8 @@ void SessionManager::join() {
         pending.swap(sessions_);
         completed_sessions_.clear();
     }
+
+    //  关闭并等待剩余会话任务
     for (auto &entry : pending) {
         (void)entry.second.connection->close();
         if (entry.second.task)

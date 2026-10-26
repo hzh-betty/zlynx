@@ -35,11 +35,56 @@ struct RuntimeOptions {
     size_t shared_stack_count = 8;
     StackModel stack_model = StackModel::kShared;
 };
+
+/**
+  * TaskStatus 状态转换图（任务对外状态）
+  *
+  *                         +-----------+
+  *                         |  pending  |
+  *                         +-----------+
+  *                               |
+  *                        建立执行记录成功
+  *                               |
+  *                               v
+  *                         +-----------+
+  *                         |  running  |
+  *                         +-----------+
+  *                               |
+  *              +----------------+----------------+
+  *              |                |                |
+  *           正常返回         异常退出       TaskCanceled 退出
+  *              |                |                |
+  *              v                v                v
+  *        +-----------+     +----------+     +----------+
+  *        | succeeded |     |  failed  |     | canceled |
+  *        +-----------+     +----------+     +----------+
+  *
+  * 状态说明：
+  *   pending   : 已提交，尚未建立执行记录
+  *   running   : 已建立执行记录，包含就绪、执行和等待阶段
+  *   succeeded : 任务正常返回
+  *   failed    : 建立执行记录失败，或执行过程中异常退出
+  *   canceled  : 执行前被取消，或 TaskCanceled 异常逃出任务入口
+  *
+  * 补充转换：
+  *   创建 Completion -> pending
+  *   pending -> failed   : 建立执行记录失败
+  *   pending -> canceled : 停止时任务尚未开始
+  *
+  * 注意：
+  *   yield、park 不改变 TaskStatus，任务仍为 running。
+  *   等待返回 canceled 不自动决定任务终态；正常返回仍可 succeeded。
+  *   已开始任务先释放执行资源，再发布终态并唤醒 join 等待者。
+  *   join 超时或丢弃 TaskHandle 不会取消任务。
+*/
 enum class TaskStatus { pending, running, succeeded, failed, canceled };
 
 /**
  * @brief 共享任务完成状态的句柄，不拥有运行时。
  * @note 丢弃句柄不会取消任务；join() 观察结果，exception() 返回捕获的异常。
+ *  Worker 中的任务 ──shared_ptr ──┐
+                                  ├──→ Completion
+    调用方的  TaskHandle  ─────────┘
  */
 class TaskHandle {
   public:

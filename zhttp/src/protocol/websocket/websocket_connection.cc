@@ -37,6 +37,19 @@ WebSocketConnection::WebSocketConnection(
       selected_subprotocol_(std::move(selected_subprotocol)),
       close_timeout_ms_(close_timeout_ms ? close_timeout_ms : 5000) {}
 
+/*
+    send_text(message)
+        ↓
+    send_frame(kText, message, true)
+        ↓ 检查 WebSocket 状态
+    write_frame(...)
+        ↓ 检查底层连接、载荷长度
+    build_websocket_frame(...)
+        ↓ 编码为帧字节串
+    conn->send(frame)
+        ↓ 检查错误及实际发送字节数
+    返回 bool
+*/
 bool WebSocketConnection::send_text(const std::string &message) {
     return send_frame(WebSocketOpcode::kText, message, true);
 }
@@ -69,6 +82,8 @@ bool WebSocketConnection::close(WebSocketCloseCode code,
     return accepted;
 }
 
+// 情况一：本地open，收到对端 Close 帧，进入 Closing 状态，回复 Close 后排空并关闭。
+// 情况二：本地先关闭，进入 Closing 状态，收到对端 Close 帧后排空并关闭。
 bool WebSocketConnection::accept_close(WebSocketCloseCode code,
                                        const std::string &reason) {
     auto conn = connection_.lock();

@@ -12,9 +12,13 @@ namespace zhttp {
  */
 class Uri {
   public:
-    /**
-     * @brief 请求目标形式：路径、绝对 URI、CONNECT authority 或星号。
-     */
+    /** 
+    * @brief 请求目标形式
+    *       Origin    : origin-form，常用于请求行，缺省为 /  GET /users?id=1 HTTP/1.1
+    *       Absolute  : absolute-form，包含 scheme、authority 和 path  GET http://example.com/users?id=1 HTTP/1.1
+    *       Authority : authority-form，包含 host 和可选 port  CONNECT example.com:443 HTTP/1.1
+    *       Asterisk  : asterisk-form，单独的 *，仅用于 OPTIONS  OPTIONS * HTTP/1.1
+    */
     enum class Form { Origin, Absolute, Authority, Asterisk };
 
     /**

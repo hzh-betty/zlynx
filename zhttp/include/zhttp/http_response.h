@@ -17,6 +17,9 @@ class HttpContext;
 struct ResponsePlan;
 enum class WriteResult;
 
+/**
+ * @brief 业务层构造好的响应提交为不可修改状态，然后把响应头和正文按顺序写入连接。
+ */
 namespace HttpResponseWriter {
 WriteResult send(const std::shared_ptr<znet::Connection> &, HttpContext &,
                  bool);

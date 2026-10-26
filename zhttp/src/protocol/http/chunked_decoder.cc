@@ -29,6 +29,7 @@ ParseResult ChunkedDecoder::parse(znet::ByteBuffer &buffer,
                 return ParseResult::NEED_MORE;
             state_ = State::DataEnd;
         }
+
         if (state_ == State::DataEnd) {
             if (buffer.readable_bytes() < 2)
                 return ParseResult::NEED_MORE;

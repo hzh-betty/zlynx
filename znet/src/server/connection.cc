@@ -41,6 +41,7 @@ Connection::~Connection() { (void)close(); }
 
 Result<void> Connection::start(zco::Deadline deadline) {
     auto result = perform_io(executor_, [&]() -> Transfer {
+        // 获取读锁，确保 start 与 read/write 不并发
         auto locked = reads_.lock(deadline);
         if (!locked)
             return {0, runtime_error("start connection", locked.error()),
@@ -50,6 +51,8 @@ Result<void> Connection::start(zco::Deadline deadline) {
             return {};
         if (state() == State::closed)
             return failed(std::errc::bad_file_descriptor, "start connection");
+        
+        // 调用底层传输启动或 TLS 握手
         try {
             auto started = stream_->start(deadline);
             if (!started) {
@@ -84,18 +87,27 @@ Transfer Connection::read(ByteBuffer &input, size_t limit,
             deadline = read_deadline_;
     }
     return perform_io(executor_, [&]() -> Transfer {
+        // 获取读锁
         auto locked = reads_.lock(deadline);
         if (!locked)
             return {0, runtime_error("read lock", locked.error()), false};
         std::lock_guard<zco::Mutex> unlock(reads_, std::adopt_lock);
+       
+       // 检查连接状态
         if (state() == State::peer_closed)
             return {0, {}, true};
         if (state() != State::open)
             return failed(std::errc::bad_file_descriptor, "read connection");
+        
+        // 确保 ByteBuffer 有足够可写空间
         input.ensure_writable_bytes(limit);
+
+        // 调用底层传输读取数据
         auto result = stream_->read_some(input.begin_write(), limit, deadline);
         if (result.bytes > limit)
             throw std::logic_error("Transport read exceeds supplied capacity");
+
+        // 更新 ByteBuffer 的写入位置
         input.has_written(result.bytes);
         if (result.eof) {
             State expected = State::open;
@@ -107,6 +119,7 @@ Transfer Connection::read(ByteBuffer &input, size_t limit,
 
 Transfer Connection::send(std::string_view bytes,
                           std::optional<Timeout> timeout) {
+    // 计算写入操作的截止时间
     const auto duration = timeout.value_or(write_timeout_);
     if (duration.count() < 0)
         return {0,
@@ -115,6 +128,7 @@ Transfer Connection::send(std::string_view bytes,
                 false};
     const auto deadline =
         duration.count() ? zco::Deadline::after(duration) : zco::Deadline{};
+
     return perform_io(executor_, [&]() -> Transfer {
         auto locked = writes_.lock(deadline);
         if (!locked)

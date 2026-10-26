@@ -47,13 +47,19 @@ Result<RegistrationId> EpollReactor::add(io::ResourceId resource, int fd,
     if (!resource.value || !requested || requested > 3)
         return Result<RegistrationId>(
             std::make_error_code(std::errc::invalid_argument));
+    
+    
     auto found = resources_.find(resource.value);
     Bucket next{fd, {}};
     unsigned old_mask = 0;
+
+    // 检查是否有兴趣冲突；如果没有，分配一个新的注册 ID 并登记到 epoll。
     if (found != resources_.end()) {
         if (found->second.fd != fd)
             throw std::logic_error("Resource identity changed its fd");
-        next = found->second;
+
+        // 拷贝桶内容，避免在 epoll_ctl 失败时留下半完成注册。
+        next = found->second; 
         for (auto &item : next.registrations)
             old_mask |= item.second;
     }
@@ -74,6 +80,10 @@ Result<RegistrationId> EpollReactor::add(io::ResourceId resource, int fd,
     }
     epoll_event event{};
     event.events = native_events(old_mask | requested);
+
+    //这里把传给内核的 event.data.u64 设置为 ResourceId，
+    //而不是 fd，也不是 RegistrationId。
+    //因为内核监听的是合并后的资源事件，用户态才负责把事件拆给具体登记
     event.data.u64 = resource.value;
     int op = old_mask ? EPOLL_CTL_MOD : EPOLL_CTL_ADD;
     if (::epoll_ctl(epoll_, op, fd, &event) != 0) {
@@ -84,6 +94,8 @@ Result<RegistrationId> EpollReactor::add(io::ResourceId resource, int fd,
         return Result<RegistrationId>(
             std::error_code(error, std::generic_category()));
     }
+
+    // 交换桶内容，避免在 epoll_ctl 失败时留下半完成注册。
     found->second.registrations.swap(next.registrations);
     return Result<RegistrationId>(id);
 }
@@ -94,7 +106,8 @@ Result<void> EpollReactor::remove(RegistrationId id) {
     if (index == registrations_.end())
         return {};
     auto bucket = resources_.find(index->second);
-    bucket->second.registrations.erase(id);
+    bucket->second.registrations.erase(id); //删除对应的注册
+
     unsigned mask = 0;
     for (auto &item : bucket->second.registrations)
         mask |= item.second;
@@ -114,6 +127,9 @@ Result<void> EpollReactor::remove(RegistrationId id) {
 
 std::vector<ReadyEvent> EpollReactor::poll(int timeout_ms) {
     epoll_event events[64];
+
+    // 调用 epoll_wait() 时没有持有 mutex_。其他线程仍能调用 add() 或 remove()；
+    // 锁只保护返回事件与用户态映射之间的转换
     int count = ::epoll_wait(epoll_, events, 64, timeout_ms);
     if (count < 0) {
         if (errno == EINTR)

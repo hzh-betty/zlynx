@@ -147,7 +147,7 @@ class PageCache : public NonCopyable {
     friend struct CacheTestAccess;
     static_assert(alignof(Span) >= 2,
                   "Span must reserve a low bit for tagging");
-    static constexpr uintptr_t kCachedObjectTag = 1;
+    static constexpr uintptr_t kCachedObjectTag = 1; 
 
     // 标记保存在原子叶项的低位；所有通用查询和合并路径须先去除标记。
     static Span *decode_span(void *entry) {

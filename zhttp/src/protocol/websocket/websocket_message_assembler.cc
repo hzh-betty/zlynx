@@ -7,6 +7,7 @@ bool WebSocketMessageAssembler::assemble(
     const auto opcode = frame.opcode;
     const bool fin = frame.fin;
     auto payload = std::move(frame.payload);
+
     if (opcode == WebSocketOpcode::kContinuation) {
         if (!fragmented_message_active_) {
             close_code =

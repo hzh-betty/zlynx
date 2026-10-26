@@ -116,7 +116,7 @@ template <class T> class Result {
 
     const T *pointer() const { return reinterpret_cast<const T *>(&storage_); }
 
-    typename std::aligned_storage<sizeof(T), alignof(T)>::type storage_;
+    typename std::aligned_storage<sizeof(T), alignof(T)>::type storage_; // 存储值的未初始化缓冲区
     bool has_value_ = false;
     std::error_code error_;
 };

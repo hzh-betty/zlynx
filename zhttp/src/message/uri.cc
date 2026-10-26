@@ -41,11 +41,13 @@ Uri::Uri(std::string target) : raw_(std::move(target)) {
     if (q != std::string::npos)
         query_ = raw_.substr(q + 1);
     if (raw_ == "*")
-        form_ = Form::Asterisk;
+        form_ = Form::Asterisk; // OPTIONS * HTTP/1.1
     else if (raw_[0] == '/')
-        form_ = Form::Origin;
+        form_ = Form::Origin; //GET /users?id=1 HTTP/1.1
     else if (raw_.find("://") != std::string::npos) {
-        form_ = Form::Absolute;
+        form_ = Form::Absolute; // GET http://example.com/users?id=1 HTTP/1.1
+
+        // 去掉 scheme 和 authority，保留路径用于路由匹配；绝对 URI 不能缺省路径。
         const auto scheme = path_.find("://");
         const auto authority_start = scheme + 3;
         const auto slash = path_.find('/', authority_start);
@@ -56,7 +58,9 @@ Uri::Uri(std::string target) : raw_(std::move(target)) {
         // 绝对形式请求目标只保留路由使用的路径，原始目标仍存放在 raw_。
         path_ = slash == std::string::npos ? "/" : path_.substr(slash);
     } else {
-        form_ = Form::Authority;
+        form_ = Form::Authority; // CONNECT example.com:443 HTTP/1.1
+
+        // authority 不能包含查询串、路径或用户信息；端口必须为数字。
         const auto colon = path_.rfind(':');
         if (q != std::string::npos || colon == std::string::npos ||
             colon == 0 || colon + 1 == path_.size() ||

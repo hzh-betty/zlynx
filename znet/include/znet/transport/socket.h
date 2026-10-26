@@ -13,8 +13,8 @@ enum class SocketKind { stream, datagram };
 
 struct Datagram {
     size_t bytes;
-    Endpoint source;
-    bool truncated;
+    Endpoint source; 
+    bool truncated; // 数据包被截断
 };
 
 /**

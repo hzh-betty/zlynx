@@ -52,6 +52,7 @@ class RequestPipeline {
         const std::function<void(std::exception_ptr)> &error) const;
     std::vector<mid::Middleware::ptr>
     collect_group_middlewares(const std::string &path) const;
+    
     std::unordered_map<std::string, std::vector<mid::Middleware::ptr>>
         route_middlewares_, group_middlewares_;
     std::vector<mid::Middleware::ptr> global_middlewares_;

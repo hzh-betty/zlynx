@@ -22,7 +22,13 @@ class Event {
      * @brief 等待信号；超时或取消返回对应错误。
      */
     Result<void> wait(Deadline deadline = {});
+
+    /**
+     * @brief 设置信号。有有效等待者：完成其中一个等待。
+        没有有效等待者：保存一个信号，让后续一次 wait() 直接通过。
+     */
     void signal();
+
     void reset();
 
   private:

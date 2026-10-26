@@ -2,24 +2,28 @@
 #include "server_error.h"
 
 namespace znet::detail {
+
 void serve_session(const Connection::ptr &connection,
                    const SessionFactory &factory, const ServerOptions &options,
                    const std::atomic<bool> &running) {
     SessionCallbacks callbacks;
     bool established = false;
     try {
+        // 连接启动和 TLS 握手可能阻塞，使用 handshake_timeout 限制等待时间。
         const auto handshake =
             options.handshake_timeout.count()
                 ? zco::Deadline::after(options.handshake_timeout)
                 : zco::Deadline{};
         auto started = connection->start(handshake);
+        
+        // 如果连接启动失败，且运行状态为真，且错误不是操作取消，则报告错误。
         if (!started) {
             if (running &&
                 started.error().code != std::errc::operation_canceled)
                 report_error(options.on_error, started.error());
         } else if (running) {
             callbacks = factory(connection);
-            established = true;
+            established = true; // 工厂已经正常返回，会话回调已经建立。
             ByteBuffer input;
             auto idle = options.idle_timeout.count()
                             ? zco::Deadline::after(options.idle_timeout)
@@ -43,6 +47,8 @@ void serve_session(const Connection::ptr &connection,
                     else
                         input.retrieve_all();
                 }
+
+                // 处理数据、EOF 和错误
                 if (received.eof)
                     break;
                 if (received.error) {
@@ -62,7 +68,7 @@ void serve_session(const Connection::ptr &connection,
                     report_error(options.on_error, received.error);
                     break;
                 }
-                if (!received.bytes)
+                if (!received.bytes) //避免底层异常返回导致无进展的忙循环
                     throw std::logic_error(
                         "Transport read made no progress without EOF");
             }
@@ -72,6 +78,8 @@ void serve_session(const Connection::ptr &connection,
     } catch (...) {
         report_error(options.on_error, callback_error("unknown exception"));
     }
+
+    // 关闭连接并通知回调；如果连接已经关闭，close() 直接返回成功。
     (void)connection->close();
     if (established && callbacks.on_close) {
         try {

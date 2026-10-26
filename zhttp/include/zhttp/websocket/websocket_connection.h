@@ -22,9 +22,50 @@ class WebSocketConnection {
   public:
     using ptr = std::shared_ptr<WebSocketConnection>;
 
-    /**
-     * @brief 连接状态：打开、等待关闭握手、已关闭。
-     */
+    /*
+    * WebSocketConnection::State 状态转换图
+    *
+    *   创建对象
+    *       |
+    *       v
+    *   +------+  主动 close() / 接收对端 Close  +---------+
+    *   | Open |------------------------------->| Closing |
+    *   +------+                                +---------+
+    *       |                                        |
+    *       | 底层连接关闭通知                        | 底层连接关闭通知
+    *       v                                        v
+    *   +------------------------------------------------+
+    *   |                     Closed                     |
+    *   +------------------------------------------------+
+    *
+    * 状态说明：
+    *   Open    : 允许发送数据帧和控制帧
+    *   Closing : 已进入关闭流程，等待关闭握手或底层连接结束
+    *   Closed  : 已收到底层关闭通知，不再发送
+    *
+    * 常规转换：
+    *   创建对象 -> Open
+    *   Open     -> Closing : close() 参数合法，开始主动关闭
+    *   Open     -> Closing : accept_close() 接收对端关闭帧并尝试回复
+    *   Closing  -> Closed  : on_closed() 调用 mark_closed()
+    *   Open     -> Closed  : 底层连接直接关闭，on_closed() 调用 mark_closed()
+    *
+    * 特殊路径：
+    *   Closing -> Closing : 接收对端 Close，调用 shutdown()
+    *   Closing -> Closing : 重复调用参数合法的 close()，直接返回 true
+    *   Closed  -> Closed  : 重复关闭通知；或调用参数合法的 close()
+    *   Open    -> Open    : close() 的关闭码或 UTF-8 原因文本非法
+    *
+    * 注意：
+    *   close() 先设置 Closing，再发送关闭帧。
+    *   关闭帧发送失败不会把状态恢复为 Open。
+    *   Closing 下普通发送入口只允许 Pong。
+    *   主动关闭发送成功后设置读取期限，等待对端关闭响应。
+    *   回复对端关闭帧成功后调用 shutdown()。
+    *   Closed 由 mark_closed() 设置，不由 close() 直接设置。
+    *   业务 on_close 通知与 Closed 状态并不同时发生：
+    *   收到对端关闭帧或发生协议错误时，可能先通知业务，稍后才进入 Closed。
+    */
     enum class State { Open, Closing, Closed };
 
     /**

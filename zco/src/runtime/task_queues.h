@@ -12,8 +12,13 @@ namespace zco {
 namespace detail {
 /**
  * @brief 独立于执行栈的共享完成状态，使任务结束后仍可查询和等待。
- *
- * status、exception 和 waiters 均由 mutex 保护；发布终态前先释放任务执行资源。
+ * @example 
+ *   任务 B 的 Completion
+ *   ├── status：B 是否结束、如何结束
+ *   ├── exception：B 抛出的异常
+ *   └── waiters：所有等待 B 结束的人
+ *           ├── A 的 WaitState
+ *           └── C 的 WaitState（假如 C 也调用 B.join）
  */
 struct Completion {
     explicit Completion(TaskId identity) : id(identity) {}
@@ -82,10 +87,16 @@ class TaskQueues {
 class Worker;
 
 /**
- * @brief 共享的提交准入和空闲线程索引；Executor 仅弱引用此端点。
- *
- * workers 和空闲链表借用 Runtime 拥有的 Worker；提交、停止和销毁
- * 通过 mutex 协调，避免准入检查后工作线程已被销毁。
+ * @brief 一个 Runtime 共用的“任务投递入口”, 
+ * 它本身不是任务，也不保存任务队列，而是管理“任务怎么交给工作线程”需要的共享信息
+ * Runtime::spawn(task)  ──→ submit(Submission, task) ──→ 选择 Worker
+   Executor::spawn(task) ──→ submit(Submission, task) ──→ 指定 Worker
+                                                            ↓
+                                                        Worker 的任务队列
+
+ * Executor 可以被复制、保存，甚至比 Runtime 活得更久。因此它通过 weak_ptr 引用这个入口：
+ * 提交前先检查入口是否存在、是否还接收任务；Runtime 停止或销毁后，就能返回错误，'
+ * 也不会因为保存了 Executor 而延长 Runtime 的生命周期。
  */
 struct Submission {
     // 这些操作以及工作线程生命周期、提交准入状态均由 mutex 保护。
@@ -99,6 +110,15 @@ struct Submission {
     Worker *idle_first = nullptr;
 };
 
+/**
+ * @brief 提交任务给运行时的工作线程；由 Executor 和 Runtime 调用。
+ *
+ * @param endpoint 运行时的提交端点；若已销毁则返回取消错误。
+ * @param task 待提交的任务；空任务返回无效参数错误。
+ * @param index 固定到指定工作线程的索引；若 pinned 为 false 则忽略。
+ * @param pinned 是否固定到指定工作线程；若为 false 则轮换选择负载较轻的线程。
+ * @return 成功时返回任务句柄，失败时返回对应错误。
+ */
 Result<TaskHandle> submit(const std::shared_ptr<Submission> &, Task,
                           size_t index, bool pinned);
 } // namespace detail

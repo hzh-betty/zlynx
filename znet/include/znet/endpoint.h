@@ -21,6 +21,12 @@ class Endpoint {
      * 未命名端点。
      */
     static Result<Endpoint> unix_domain(std::string_view path);
+
+    /**
+     * @brief 从原生地址创建；size 必须至少为 sockaddr_storage 的大小。
+     * @note 仅支持 AF_INET、AF_INET6 和 AF_UNIX；Unix 地址长度可能小于
+     * sockaddr_un 的大小。
+     */
     static Result<Endpoint> from_native(const sockaddr *address,
                                         socklen_t size);
 

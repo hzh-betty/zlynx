@@ -24,8 +24,9 @@ ParseResult HttpRequestParser::fail(HttpStatus status, const char *message) {
     state_ = ParseState::ERROR;
     return ParseResult::ERROR;
 }
-
+// METHOD SP TARGET SP VERSION CRLF
 bool HttpRequestParser::parse_line(std::string_view line) {
+    // 请求行必须包含两个空格，且 METHOD 和 VERSION 必须合法。
     auto first = line.find(kSP), last = line.rfind(kSP);
     if (first == std::string::npos || first == last ||
         line.find(kSP, first + 1) != last)
@@ -33,6 +34,7 @@ bool HttpRequestParser::parse_line(std::string_view line) {
     const auto method = line.substr(0, first), version = line.substr(last + 1);
     request_->set_method(string_to_method(method));
     request_->set_version(string_to_version(version));
+    
     if (request_->method() == HttpMethod::UNKNOWN ||
         method != method_to_string(request_->method()) ||
         request_->version() == HttpVersion::UNKNOWN)
@@ -43,6 +45,8 @@ bool HttpRequestParser::parse_line(std::string_view line) {
     } catch (...) {
         return false;
     }
+
+    // 请求行的 METHOD 与 TARGET 组合必须合法；CONNECT 仅允许 authority，OPTIONS * 仅允许星号。
     if ((request_->method() == HttpMethod::CONNECT) !=
         (request_->uri().form() == Uri::Form::Authority))
         return false;
@@ -61,6 +65,8 @@ bool HttpRequestParser::finish_headers() {
         fail(HttpStatus::BAD_REQUEST, "Content-Length with Transfer-Encoding");
         return false;
     }
+
+    // 仅支持 HTTP/1.1 chunked 正文；其他 Transfer-Encoding 或 HTTP/1.0 chunked 都拒绝。
     if (encodings) {
         if (request_->version() != HttpVersion::HTTP_1_1 || encodings != 1 ||
             !HttpHeaders::equal_name(request_->header_view("Transfer-Encoding"),
@@ -121,10 +127,14 @@ ParseResult HttpRequestParser::parse(znet::ByteBuffer *buffer) {
     if (!buffer)
         return fail(HttpStatus::BAD_REQUEST, "Missing input buffer");
     while (true) {
+        // 已失败 → 返回 ERROR
         if (state_ == ParseState::ERROR)
             return ParseResult::ERROR;
+        // 已完成 → 返回 COMPLETE
         if (state_ == ParseState::COMPLETE)
             return ParseResult::COMPLETE;
+
+        // 处理正文；chunked 正文可跨多个读事件到达，非 chunked 正文只消费当前请求所需字节。
         if (state_ == ParseState::BODY) {
             if (chunked_) {
                 const auto result = chunked_->parse(*buffer, *request_);
@@ -152,6 +162,8 @@ ParseResult HttpRequestParser::parse(znet::ByteBuffer *buffer) {
         }
         if (!buffer->readable_bytes())
             return ParseResult::NEED_MORE;
+
+        // 解析请求行或头部；半行不消费，保留在输入缓冲区。
         const auto *crlf = buffer->find_crlf();
         const size_t bytes =
             crlf ? static_cast<size_t>(crlf - buffer->peek()) + 2
@@ -168,16 +180,20 @@ ParseResult HttpRequestParser::parse(znet::ByteBuffer *buffer) {
         if (!crlf)
             return ParseResult::NEED_MORE;
 
-        // retrieve 只调整读位置；本轮不写入 Buffer，离开前将字段复制到请求。
         const std::string_view line(buffer->peek(), bytes - 2);
         buffer->retrieve(bytes);
+
+        // 处理请求行；成功后进入头部，失败返回 ERROR。
         if (state_ == ParseState::REQUEST_LINE) {
             if (!parse_line(line))
                 return fail(HttpStatus::BAD_REQUEST, "Invalid request line");
             state_ = ParseState::HEADERS;
             continue;
         }
+
         header_bytes_ += bytes;
+
+        // 如果头部行为空，则表示头部结束，进入正文或完成状态。
         if (line.empty()) {
             if (!finish_headers())
                 return ParseResult::ERROR;

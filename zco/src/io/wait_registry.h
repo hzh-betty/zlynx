@@ -15,7 +15,7 @@ namespace detail {
 class IoWaitRegistry {
   public:
     /**
-     * @brief 持有资源控制状态的登记作用域；移动转移解除责任，析构时解除登记。
+     * @brief RAII 持有资源控制状态的登记作用域；移动转移解除责任，析构时解除登记。
      *
      * 析构忽略解除登记的错误；需要获知失败时应显式调用 finish()。
      */
@@ -37,8 +37,8 @@ class IoWaitRegistry {
         Registration(IoWaitRegistry &, std::shared_ptr<io::detail::Resource>,
                      std::shared_ptr<io::detail::Registration>);
         IoWaitRegistry *owner_;
-        std::shared_ptr<io::detail::Resource> resource_;
-        std::shared_ptr<io::detail::Registration> registration_;
+        std::shared_ptr<io::detail::Resource> resource_; // 资源控制状态；用于撤销登记
+        std::shared_ptr<io::detail::Registration> registration_; // 反应器登记；用于撤销登记
     };
 
     explicit IoWaitRegistry(std::shared_ptr<Reactor> reactor)

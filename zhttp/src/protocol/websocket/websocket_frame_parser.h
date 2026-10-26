@@ -3,6 +3,28 @@
 
 #include "protocol/websocket/websocket_frame.h"
 
+/*
+    网络收到字节
+        │
+        ▼
+    ByteBuffer
+        │
+        ▼
+    parse_websocket_frame()
+    校验帧格式、提取长度、去掩码
+        │
+        ▼
+    WebSocketFrameEvent
+        │
+        ▼
+    WebSocketMessageAssembler
+    检查分片顺序、组装消息、校验文本 UTF-8
+        │
+        ▼
+    WebSocketProtocolHandler
+    调用 on_message、回复 Pong、处理 Close
+*/
+
 namespace znet {
 class ByteBuffer;
 }

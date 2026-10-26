@@ -9,10 +9,9 @@
 namespace znet {
 namespace {
 /**
- * @brief 一次启动的不可变配置与可停止运行状态，由本轮任务共享持有。
- *
- * 重启创建新状态与会话编号；任务不借用 TcpServer 外观，避免请求停止后
- * 外观先销毁时留下悬空捕获。所属 Runtime 仍须覆盖任务生命周期。
+ * @brief 任务所需状态的寿命与 TcpServer 对象本身的寿命分开。
+ * 例如，业务回调中可能销毁 TcpServer。此时当前会话任务还在执行，
+ * 不能因为服务器外观对象销毁，就让任务访问的配置和管理器一起失效。
  */
 struct ServerRun {
     ServerRun(Socket socket, Endpoint bound, SessionFactory create_session,
@@ -31,12 +30,15 @@ struct ServerRun {
 
     Result<void> start_tasks(const std::shared_ptr<ServerRun> &self) {
         try {
+            // 先提交清理任务，再提交接收连接任务，避免接收循环结束后没有清理任务。
             auto reaper = sessions.start_reaper(
                 workers.front(), [self] { self->sessions.reap_completed(); });
             if (!reaper) {
                 rollback_start();
                 return reaper.error();
             }
+
+            // 提交接收连接任务；在循环中提交会话任务，直到停止或发生错误。
             auto accepting = acceptor.start(workers.front(), [self] {
                 self->acceptor.accept(
                     self->running,
@@ -54,6 +56,8 @@ struct ServerRun {
                             });
                     },
                     self->options.on_error);
+                
+                // 接收循环结束后，通知清理任务退出；清理任务会等待所有会话任务完成。
                 self->request_stop();
                 self->sessions.finish_accepting();
             });
@@ -125,14 +129,20 @@ Result<void> TcpServer::start() {
     if (zco::in_coroutine())
         throw std::logic_error("Start the server from a control thread");
     std::lock_guard<std::mutex> lock(impl_->lifecycle_mutex);
+
+    // 如果服务器已经在运行，则直接返回。
     auto previous = std::atomic_load(&impl_->run);
     if (previous && previous->running)
         return {};
+    
+    // 如果之前有运行的服务器，则停止它。
     if (previous) {
         previous->request_stop();
         previous->join();
         std::atomic_store(&impl_->run, std::shared_ptr<ServerRun>{});
     }
+
+    // 创建监听套接字并绑定到指定的端点。
     auto socket = detail::Acceptor::listen(
         impl_->endpoint, impl_->options.backlog, impl_->options.reuse_port);
     if (!socket)
@@ -140,6 +150,8 @@ Result<void> TcpServer::start() {
     auto endpoint = socket.value().local_endpoint();
     if (!endpoint)
         return endpoint.error();
+
+    // 收集工作执行器，创建本次启动对应的 ServerRun。
     std::vector<zco::Executor> workers;
     for (size_t i = 0; i < impl_->runtime.worker_count(); ++i)
         workers.push_back(impl_->runtime.executor(i));
@@ -166,9 +178,11 @@ void TcpServer::request_stop() {
 }
 
 void TcpServer::stop() {
+    // 在协程中调用 stop 会导致死锁，因为 stop 会等待所有任务完成，而当前协程可能是其中之一。
     if (zco::in_coroutine())
         throw std::logic_error(
             "Use request_stop from a callback; stop joins all tasks");
+    
     std::lock_guard<std::mutex> lock(impl_->lifecycle_mutex);
     if (auto run = std::atomic_load(&impl_->run)) {
         run->request_stop();

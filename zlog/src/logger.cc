@@ -11,7 +11,8 @@
 
 namespace zlog {
 namespace {
-// 不分配内存的调用栈，拒绝同一 logger 在 sink 回调中的递归操作。
+
+// 拒绝同一 logger 在 sink 回调中的递归操作。 active → callB(loggerB) → callA(loggerA) → nullptr
 struct SinkCall {
     explicit SinkCall(const Logger *logger) : logger(logger), previous(active) {
         active = this;

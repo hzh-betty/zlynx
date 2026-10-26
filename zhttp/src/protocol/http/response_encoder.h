@@ -3,6 +3,31 @@
 #include "zhttp/http_request.h"
 #include "zhttp/http_response.h"
 
+/**
+ * @brief HTTP 响应除了携带内容，还必须让客户端知道：这一条响应在哪里结束。
+ *   已知正文长度     → Content-Length
+ *   使用分块传输     → Transfer-Encoding: chunked
+ *   未知长度且不分块 → 通过关闭连接表示正文结束
+ */
+
+/*
+ * 业务代码构造 HttpResponse
+ *           │
+ *           ▼
+ * ResponseEncoder::plan()
+ * 计算是否发送正文、是否分块、是否关闭连接
+ *           │
+ *           ▼
+ * HttpResponseWriter::send()
+ *           │
+ *           ├─ ResponseEncoder::headers() → 状态行和响应头
+ *           │
+ *           ├─ 取得正文数据
+ *           │       └─ 分块时调用 ResponseEncoder::chunk()
+ *           │
+ *           └─ 发送到连接
+ */
+
 namespace zhttp {
 /**
  * @brief 从请求方法与响应正文推导的写出计划，不拥有或发送正文。
@@ -27,6 +52,12 @@ namespace ResponseEncoder {
  */
 ResponsePlan plan(const HttpRequestLine &request, const HttpResponse &response,
                   bool upgrade = false);
+
+/**
+ * @brief 生成响应头部字符串；不包含正文。
+ *
+ * @param upgrade 允许 101 作为最终响应；普通 1xx 不能作为最终响应。
+ */
 std::string headers(const HttpRequestLine &request,
                     const HttpResponse &response, bool upgrade = false);
 std::string headers(const HttpResponse &response, const ResponsePlan &plan,

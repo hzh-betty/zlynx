@@ -81,6 +81,8 @@ Result<void> Descriptor::close() {
     if (resource->fd < 0)
         return {};
     std::error_code removal_error;
+
+    // 撤销所有已登记的I/O操作
     for (auto &weak : resource->registrations) {
         if (auto registration = weak.lock()) {
             if (auto reactor = registration->reactor.lock()) {
@@ -96,7 +98,7 @@ Result<void> Descriptor::close() {
     int fd = resource->fd;
     resource->fd = -1;
 
-    // Linux 在返回 EINTR 时也会关闭 fd；重试可能误关已复用该编号的描述符。
+    // Linux close在返回 EINTR 时也会关闭 fd；重试可能误关已复用该编号的描述符。
     if (::close(fd) != 0)
         return Result<void>(std::error_code(errno, std::generic_category()));
     return Result<void>(removal_error);

@@ -171,6 +171,8 @@ bool prepare_websocket_handshake(
     const std::shared_ptr<const HttpRequest> &request,
     const WebSocketOptions &options, HttpResponse &response,
     std::string &selected, std::string &error) {
+    
+    // 校验握手请求并协商子协议；失败时构造 400 响应并关闭连接。
     const auto result = check_websocket_handshake_request(request, &error);
     if (result != WebSocketHandshakeResult::kOk ||
         !negotiate_websocket_subprotocol(request, options, &selected, &error)) {
@@ -181,6 +183,8 @@ bool prepare_websocket_handshake(
             response.header("Sec-WebSocket-Version", "13");
         return false;
     }
+    
+    // 构造 101 响应，包含必要的升级头部和 Sec-WebSocket-Accept。
     response.status(HttpStatus::SWITCHING_PROTOCOLS).body("");
     response.set_version(HttpVersion::HTTP_1_1);
     response.header("Upgrade", "websocket")

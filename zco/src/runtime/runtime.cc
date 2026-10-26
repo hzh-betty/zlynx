@@ -13,6 +13,7 @@ std::atomic<uint64_t> next_task{0};
 
 Result<TaskHandle> submit(const std::shared_ptr<Submission> &endpoint,
                           Task task, size_t index, bool pinned) {
+    //  错误检查顺序：空任务、端点失效、端点不接收、固定索引越界。
     if (!task)
         return Result<TaskHandle>(
             std::make_error_code(std::errc::invalid_argument));
@@ -25,6 +26,8 @@ Result<TaskHandle> submit(const std::shared_ptr<Submission> &endpoint,
     if (pinned && index >= workers.size())
         return Result<TaskHandle>(
             std::make_error_code(std::errc::invalid_argument));
+
+    // 轮换选择负载较轻的工作线程；固定索引的任务直接提交给指定线程。
     if (!pinned) {
         index = endpoint->next_worker;
         endpoint->next_worker = (index + 1) % workers.size();
@@ -38,7 +41,7 @@ Result<TaskHandle> submit(const std::shared_ptr<Submission> &endpoint,
     auto completion = std::make_shared<Completion>(TaskId{++next_task});
     auto *selected = workers[index];
     selected->push(PendingTask{std::move(task), completion}, pinned);
-    if (!pinned && !selected->idle())
+    if (!pinned && !selected->idle()) // 唤醒空闲线程，让其可以窃取任务。
         endpoint->wake_idle();
     return Result<TaskHandle>(TaskHandle(std::move(completion)));
 }
@@ -64,12 +67,14 @@ struct Runtime::Impl {
             (options.stack_model == StackModel::kShared &&
              !options.shared_stack_count))
             throw std::invalid_argument("Invalid runtime stack configuration");
+
+        // 创建工作线程和反应器；通过锁与条件变量保证在启动前不允许提交任务。
         for (size_t i = 0; i < options.worker_count; ++i)
             workers.emplace_back(
                 new detail::Worker(i, options, submission,
                                    std::make_shared<detail::EpollReactor>()));
         for (auto &worker : workers)
-            submission->workers.push_back(worker.get());
+            submission->workers.push_back(worker.get()); 
         for (auto &worker : workers)
             worker->set_peers(submission->workers);
         auto startup = std::make_shared<detail::Startup>();

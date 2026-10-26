@@ -41,9 +41,14 @@ http_sessions(std::shared_ptr<const HttpApplication> application,
               HttpProtocolOptions options) {
     return [application = std::move(application),
             options = std::move(options)](const znet::Connection::ptr &conn) {
+        
+        // 连接会话闭包共享只读应用和协议配置；每连接唯一拥有当前及候选协议。
         auto session = std::make_shared<ConnectionSession>();
         session->connection = conn;
-        std::weak_ptr<ConnectionSession> weak = session;
+
+        // 防止循环引用：ConnectionSession->HttpProtocolHandler->ConnectionSession
+        std::weak_ptr<ConnectionSession> weak = session; 
+        
         session->current = std::make_unique<HttpProtocolHandler>(
             *application, options.limits, options.request_timeout,
             options.server_name,
@@ -51,6 +56,8 @@ http_sessions(std::shared_ptr<const HttpApplication> application,
                 if (auto session = weak.lock())
                     session->pending = std::move(pending);
             });
+        
+        // 连接关闭时释放协议状态；会话闭包由连接任务持有，保证在回调返回后销毁。
         return znet::SessionCallbacks{
             [session](const znet::Connection::ptr &, znet::ByteBuffer &buffer) {
                 session->drive(buffer);

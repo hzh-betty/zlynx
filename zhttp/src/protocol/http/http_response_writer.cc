@@ -53,6 +53,8 @@ HttpResponseWriter::send(const std::shared_ptr<znet::Connection> &conn,
             file->size > static_cast<std::uint64_t>(st.st_size) - file->offset)
             throw std::runtime_error("Response file changed before commit");
     }
+
+    // 生成响应头部；如果正文是内存且不分块，且头部与正文总长度不超过 64KB，则合并发送。
     auto header_bytes = ResponseEncoder::headers(response, p, upgrade);
     const bool combined =
         p.send_body && !p.chunked && body.kind() == HttpBody::Kind::Memory &&
@@ -63,6 +65,8 @@ HttpResponseWriter::send(const std::shared_ptr<znet::Connection> &conn,
 
     // 文件范围与头部在提交前校验；提交后只允许发送或失败，不能改写响应。
     response.commit();
+
+    // 响应头
     if (!send_all_or_fail(conn, header_bytes.data(), header_bytes.size()))
         return WriteResult::Failed;
     if (!p.send_body || combined)
@@ -104,6 +108,8 @@ HttpResponseWriter::send(const std::shared_ptr<znet::Connection> &conn,
         std::uint64_t sent = 0;
         char buffer[8192];
         while (sent < file->size) {
+
+            // 创建正文到真正发送之间，文件可能被截断
             auto n = ::pread(
                 file->fd, buffer,
                 std::min<std::uint64_t>(sizeof(buffer), file->size - sent),

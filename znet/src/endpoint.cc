@@ -64,9 +64,12 @@ Result<Endpoint> Endpoint::unix_domain(std::string_view path) {
 
 Result<Endpoint> Endpoint::from_native(const sockaddr *address,
                                        socklen_t size) {
+    // 检查地址指针和长度的有效性
     if (!address || size < sizeof(sa_family_t) ||
         size > sizeof(sockaddr_storage))
         return invalid_address("invalid native address length");
+    
+    // 检查地址族
     sa_family_t family;
     std::memcpy(&family, address, sizeof(family));
     socklen_t required;
@@ -78,6 +81,7 @@ Result<Endpoint> Endpoint::from_native(const sockaddr *address,
         required = sizeof(sockaddr_in6);
         break;
     case AF_UNIX:
+        // Unix 域套接字的地址长度可以是可变的。
         required = offsetof(sockaddr_un, sun_path);
         if (size > sizeof(sockaddr_un))
             return invalid_address("invalid Unix address length");
@@ -134,7 +138,7 @@ Result<std::vector<Endpoint>> resolve_endpoints(std::string_view host,
     addrinfo hints{};
     hints.ai_family = family;
     hints.ai_socktype = SOCK_STREAM;
-    addrinfo *raw = nullptr;
+    addrinfo *raw = nullptr; // 由 getaddrinfo 分配的链表，必须使用 freeaddrinfo 释放
     const int rc = ::getaddrinfo(std::string(host).c_str(),
                                  std::to_string(port).c_str(), &hints, &raw);
     if (rc == EAI_SYSTEM)

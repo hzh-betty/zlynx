@@ -14,7 +14,7 @@ class WebSocketMessageAssembler {
         : max_message_size_(limit) {}
 
     /**
-     * @brief 接收帧并向 messages 追加完整消息或控制事件。
+     * @brief 接收已经解析好的 WebSocket 帧，将分片数据组装成完整消息，同时检查分片顺序、消息大小和文本 UTF-8 编码。
      *
      * @param frame 已解码帧，载荷被接管。
      * @param messages 输出列表，保留已有条目。

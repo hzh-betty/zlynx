@@ -58,6 +58,8 @@ class HttpProtocolHandler : public ProtocolHandler {
 
     // receiving_ 保留跨读取事件的请求边界，防止半包到达时重新延长整体期限。
     bool receiving_ = false, closed_ = false;
+
+    // connection_info_ 保存连接的元信息，如客户端 IP、端口等。
     bool connection_info_ready_ = false;
     ConnectionInfo connection_info_;
 };

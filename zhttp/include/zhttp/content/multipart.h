@@ -10,6 +10,66 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+/*
+ * multipart/form-data 请求体格式
+ *
+ * 适用于 HTTP 表单提交，尤其是同时上传文件和普通表单字段的场景。
+ *
+ * Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryABC123
+ *
+ * 请求体格式：
+ *
+ * ------WebKitFormBoundaryABC123\r\n
+ * Content-Disposition: form-data; name="username"\r\n
+ * \r\n
+ * zhangsan\r\n
+ * ------WebKitFormBoundaryABC123\r\n
+ * Content-Disposition: form-data; name="file"; filename="test.txt"\r\n
+ * Content-Type: text/plain\r\n
+ * \r\n
+ * Hello World!\r\n
+ * ------WebKitFormBoundaryABC123--\r\n
+ *
+ * 格式说明：
+ *
+ * 1. Boundary（分隔符）
+ *    - 由 Content-Type 请求头中的 boundary 参数指定。
+ *    - 用于分隔请求体中的不同表单部分。
+ *    - 每个分隔符前面需要添加两个连字符 "--"。
+ *    - 最后一个分隔符以两个额外的连字符 "--" 结束。
+ *    - boundary 参数本身不包含开头的两个连字符。
+ *
+ * 2. Content-Disposition
+ *    - 每个表单部分通常都包含该头部。
+ *    - name：表单字段名称。
+ *    - filename：上传文件的原始文件名，可选。
+ *
+ * 3. Content-Type
+ *    - 可选，用于描述当前部分的数据类型。
+ *    - 文件部分通常会携带该字段，例如 application/octet-stream。
+ *    - 普通文本字段可以不指定。
+ *
+ * 4. 空行（\r\n）
+ *    - 每个部分的头部结束后，需要一个空行。
+ *    - 空行用于分隔头部与实际数据。
+ *
+ * 5. Part Body（部分数据）
+ *    - 可以是普通文本、文件内容或其他二进制数据。
+ *    - 文件内容可以包含任意二进制字节，不应按文本字符串处理。
+ *
+ * 6. 结束标记
+ *    - 最后一个 Boundary 后追加 "--"。
+ *    - 表示整个 multipart/form-data 请求体结束。
+ *
+ * 注意：
+ *    - 各部分之间使用 CRLF（\r\n）分隔。
+ *    - Boundary 必须与 Content-Type 中声明的值一致。
+ *    - Boundary 不得出现在各部分内容中，形成无法区分的有效分隔符。
+ *    - 请求体长度由 HTTP 消息定界机制确定，例如 Content-Length
+ *      或适用协议版本中的传输分帧机制。
+ *    - multipart/form-data 是请求体的媒体类型，不是 HTTP 传输编码。
+ */
+
 
 namespace zhttp {
 
